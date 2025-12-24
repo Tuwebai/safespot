@@ -99,6 +99,12 @@ export function DetalleReporte() {
     
     try {
       const result = await reportsApi.toggleFavorite(id)
+      
+      // Validate result structure - explicit contract validation
+      if (!result || typeof result !== 'object' || typeof result.is_favorite !== 'boolean') {
+        throw new Error('Respuesta inválida del servidor: is_favorite debe ser un booleano')
+      }
+      
       setIsSaved(result.is_favorite)
       // Update report state
       if (report) {
@@ -505,7 +511,7 @@ export function DetalleReporte() {
             <div>
               <div className="text-sm text-muted-foreground mb-1">Fecha del incidente</div>
               <div className="font-medium text-foreground">
-                {new Date(report.created_at).toLocaleDateString('es-AR', {
+                {new Date(report.incident_date || report.created_at).toLocaleDateString('es-AR', {
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric',

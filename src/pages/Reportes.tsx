@@ -143,12 +143,17 @@ export function Reportes() {
     try {
       const result = await reportsApi.toggleFavorite(reportId)
       
-      // Validate result
+      // Validate result structure - explicit contract validation
       if (!result || typeof result !== 'object') {
-        throw new Error('Respuesta inválida del servidor')
+        throw new Error('Respuesta inválida del servidor: resultado no es un objeto')
       }
       
-      const serverFavoriteState = result.is_favorite ?? newFavoriteState
+      // Validate that is_favorite is a boolean (explicit contract)
+      if (typeof result.is_favorite !== 'boolean') {
+        throw new Error('Respuesta inválida del servidor: is_favorite debe ser un booleano')
+      }
+      
+      const serverFavoriteState = result.is_favorite
       
       // Update with actual server response - defensive update
       setReports(prev => {

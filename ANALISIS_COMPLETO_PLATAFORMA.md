@@ -157,11 +157,17 @@
 - ✅ Feedback al usuario: toasts de error si no se puede determinar la zona
 - **Estado:** Sistema completo implementado. Las zonas ahora reflejan la ubicación real del reporte.
 
-### 13. Falta Campo `incident_date` en Schema
-**Ubicación:** `database/schema.sql`
-- ❌ Tabla `reports` no tiene columna `incident_date`
-- ⚠️ Frontend envía `incident_date` pero backend lo ignora
-- **Impacto:** Fecha del incidente no se guarda
+### 13. ✅ RESUELTO - Campo `incident_date` en Schema
+**Ubicación:** `database/schema.sql`, `database/migration_add_incident_date.sql`, `server/src/routes/reports.js`
+- ✅ Migración SQL creada: `migration_add_incident_date.sql`
+- ✅ Columna `incident_date` agregada a tabla `reports` (TIMESTAMP WITH TIME ZONE)
+- ✅ Backend actualizado para persistir `incident_date` en INSERT
+- ✅ Validación agregada en `validateReport()` para `incident_date`
+- ✅ Frontend envía y backend persiste correctamente
+- ✅ Interfaz TypeScript `Report` y `CreateReportData` actualizadas
+- ✅ Visualización en DetalleReporte usa `incident_date` cuando está disponible
+- ✅ Compatibilidad hacia atrás: registros existentes tienen `incident_date = created_at`
+- **Estado:** Campo completamente implementado y funcional en todo el stack.
 
 ### 14. Uso de `queryWithRLS` vs Supabase Client
 **Ubicación:** `server/src/routes/`
@@ -238,12 +244,14 @@
 - **Problema:** Errores de red/API se ocultan al usuario
 - **Impacto:** Usuario no sabe si algo falló o si simplemente no hay datos
 
-### 33. Falta Campo `incident_date` en Schema
-**Ubicación:** `database/schema.sql`, `src/pages/CrearReporte.tsx`
-- ❌ Tabla `reports` no tiene columna `incident_date`
-- ⚠️ Frontend envía `incident_date` en payload (línea 120)
-- ⚠️ Backend lo ignora completamente
-- **Impacto:** Fecha del incidente no se persiste
+### 33. ✅ RESUELTO - Campo `incident_date` en Schema
+**Ubicación:** `database/schema.sql`, `database/migration_add_incident_date.sql`, `server/src/routes/reports.js`
+- ✅ Tabla `reports` ahora tiene columna `incident_date`
+- ✅ Frontend envía `incident_date` en payload
+- ✅ Backend lo persiste correctamente en el INSERT
+- ✅ Validación implementada en backend
+- ✅ Visualización actualizada en DetalleReporte
+- **Estado:** Problema de pérdida silenciosa de datos resuelto completamente.
 
 ### 34. Falta Validación de Zone en Backend
 **Ubicación:** `server/src/routes/reports.js`
@@ -292,7 +300,7 @@
 ### Base de Datos
 - [x] Aplicar `migration_comments_likes_and_threads.sql` - **APLICADA**
 - [x] Aplicar `migration_favorites_and_flags.sql` - **APLICADA**
-- [ ] Agregar columna `incident_date` a `reports` (TIMESTAMP)
+- [x] Agregar columna `incident_date` a `reports` (TIMESTAMP) - **MIGRACIÓN CREADA** (`migration_add_incident_date.sql`)
 - [x] Agregar columna `image_urls` JSONB a `reports` - **MIGRACIÓN CREADA** (`migration_add_image_urls.sql`)
 - [x] Crear tabla `comment_flags` (para denuncias de comentarios) - **MIGRACIÓN CREADA** (`migration_comment_flags.sql`)
 - [x] Agregar columna `is_thread` a `comments` - **MIGRACIÓN CREADA** (`migration_add_is_thread.sql`)
@@ -569,7 +577,7 @@
 - [ ] Crear página `/favoritos`
 
 ### 🟢 MEJORAS (Próximas 2 Semanas)
-- [ ] Agregar columna `incident_date` a `reports`
+- [x] Agregar columna `incident_date` a `reports` - **RESUELTO** (migración creada, backend actualizado)
 - [x] Implementar subida de imágenes real - **COMPLETADO** (backend y frontend)
 - [ ] Implementar mapa real (Leaflet)
 - [ ] Implementar búsqueda real en backend
@@ -695,6 +703,28 @@
    - ✅ Estilos consistentes con el tema dark de la aplicación
    - ✅ UX mejorada significativamente - feedback visual no bloqueante
 
+9. **Corrección Crítica: Campo `incident_date` Persistente**
+   - ✅ **Problema identificado:** Frontend enviaba `incident_date` pero backend no lo persistía, causando pérdida silenciosa de datos
+   - ✅ Migración SQL creada: `database/migration_add_incident_date.sql`
+   - ✅ Columna `incident_date` agregada a tabla `reports` (TIMESTAMP WITH TIME ZONE)
+   - ✅ Backend actualizado: `server/src/routes/reports.js` ahora incluye `incident_date` en INSERT
+   - ✅ Validación agregada: `validateReport()` valida formato ISO 8601 y previene fechas futuras
+   - ✅ Interfaz TypeScript actualizada: `Report` y `CreateReportData` incluyen `incident_date`
+   - ✅ Visualización corregida: `DetalleReporte.tsx` muestra `incident_date` cuando está disponible
+   - ✅ Compatibilidad hacia atrás: registros existentes tienen `incident_date = created_at`
+   - ✅ Índice creado: `idx_reports_incident_date` para filtrado/ordenamiento futuro
+   - ✅ Schema.sql actualizado para reflejar el cambio
+   - ✅ **Estado:** Campo completamente funcional en todo el stack (frontend → backend → DB)
+
+10. **Corrección de Contrato Roto: Toggle de Favoritos**
+   - ✅ **Problema identificado:** Frontend recibía "Respuesta inválida del servidor" al togglear favoritos debido a contrato roto entre capas
+   - ✅ **Causa raíz:** `apiRequest` extrae `data.data`, pero `toggleFavorite` intentaba acceder a `response.data` nuevamente, resultando en `undefined`
+   - ✅ **Solución:** Corregido método `toggleFavorite` en `src/lib/api.ts` para devolver directamente `response` (que ya es `{ is_favorite: boolean }`)
+   - ✅ Validación explícita agregada: `Reportes.tsx` y `DetalleReporte.tsx` ahora validan que `result.is_favorite` sea un booleano
+   - ✅ Mensajes de error mejorados: Errores específicos en lugar de "Respuesta inválida del servidor" genérico
+   - ✅ Backend verificado: Estructura de respuesta consistente `{ success: true, data: { is_favorite: boolean } }`
+   - ✅ **Estado:** Contrato unificado y validado explícitamente en todo el stack
+
 ### 📝 Archivos Modificados Recientemente
 
 - `database/migration_add_image_urls.sql` (nuevo)
@@ -719,7 +749,16 @@
 - `src/pages/Reportes.tsx` (modificado) - **ACTUALIZADO:** Todos los alerts reemplazados con toasts
 - `src/pages/CrearReporte.tsx` (modificado) - **ACTUALIZADO:** Todos los alerts reemplazados con toasts
 - `src/components/LocationSelector.tsx` (modificado) - **ACTUALIZADO:** Todos los alerts reemplazados con toasts
+- `database/migration_add_incident_date.sql` (nuevo) - **AGREGADO:** Migración para agregar columna incident_date
+- `database/schema.sql` (modificado) - **ACTUALIZADO:** Columna incident_date agregada a tabla reports
+- `server/src/routes/reports.js` (modificado) - **ACTUALIZADO:** INSERT ahora incluye incident_date con validación
+- `server/src/utils/validation.js` (modificado) - **ACTUALIZADO:** Validación de incident_date agregada
+- `src/lib/api.ts` (modificado) - **ACTUALIZADO:** Interfaces Report y CreateReportData incluyen incident_date
+- `src/pages/DetalleReporte.tsx` (modificado) - **ACTUALIZADO:** Visualización usa incident_date cuando está disponible
 - `src/components/ui/rich-text-editor.tsx` (modificado) - **ACTUALIZADO:** prompt() reemplazado con modal controlado por React
+- `src/lib/api.ts` (modificado) - **CORREGIDO:** toggleFavorite ahora devuelve correctamente la estructura esperada
+- `src/pages/Reportes.tsx` (modificado) - **MEJORADO:** Validación explícita del contrato de respuesta de toggleFavorite
+- `src/pages/DetalleReporte.tsx` (modificado) - **MEJORADO:** Validación explícita del contrato de respuesta de toggleFavorite
 
 ---
 

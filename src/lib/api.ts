@@ -75,6 +75,7 @@ export interface Report {
   flags_count?: number; // Total number of flags on this report
   created_at: string;
   updated_at: string;
+  incident_date?: string; // ISO 8601 date string - Date when the incident occurred
   image_urls?: string[]; // Array of public image URLs from Supabase Storage
   is_favorite?: boolean; // If the current user has favorited this report
   is_flagged?: boolean; // If the current user has flagged this report
@@ -89,6 +90,7 @@ export interface CreateReportData {
   latitude?: number;
   longitude?: number;
   status?: 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado';
+  incident_date?: string; // ISO 8601 date string
 }
 
 export interface ReportFilters {
@@ -182,13 +184,14 @@ export const reportsApi = {
    * Toggle favorite status for a report
    */
   toggleFavorite: async (reportId: string): Promise<{ is_favorite: boolean }> => {
-    const response = await apiRequest<{ data: { is_favorite: boolean } }>(
+    // apiRequest already extracts data.data, so response is already { is_favorite: boolean }
+    const response = await apiRequest<{ is_favorite: boolean }>(
       `/reports/${reportId}/favorite`,
       {
         method: 'POST',
       }
     );
-    return response.data;
+    return response;
   },
 
   /**

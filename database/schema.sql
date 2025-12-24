@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS reports (
     upvotes_count INTEGER DEFAULT 0,
     comments_count INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    incident_date TIMESTAMP WITH TIME ZONE -- Date when the incident actually occurred (may differ from created_at)
     -- Note: anonymous_id is UUID NOT NULL, NO foreign key constraint
     -- This allows 100% anonymous operations without requiring anonymous_users table
 );
@@ -61,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_category ON reports(category);
 CREATE INDEX IF NOT EXISTS idx_reports_zone ON reports(zone);
 CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_location ON reports(latitude, longitude) WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_reports_incident_date ON reports(incident_date DESC);
 
 -- ============================================
 -- 3. COMMENTS TABLE

@@ -201,6 +201,19 @@ router.post('/', requireAnonymousId, async (req, res) => {
     }
     
     // Insert report using Supabase client (100% Supabase, NO SQL manual)
+    // Parse and validate incident_date if provided
+    let incidentDate = null;
+    if (req.body.incident_date) {
+      const parsedDate = new Date(req.body.incident_date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          error: 'VALIDATION_ERROR',
+          message: 'incident_date must be a valid ISO 8601 date string'
+        });
+      }
+      incidentDate = parsedDate.toISOString();
+    }
+    
     const { data, error } = await supabase
       .from('reports')
       .insert({
@@ -212,7 +225,8 @@ router.post('/', requireAnonymousId, async (req, res) => {
         address: req.body.address.trim(),
         latitude: req.body.latitude || null,
         longitude: req.body.longitude || null,
-        status: req.body.status || 'pendiente'
+        status: req.body.status || 'pendiente',
+        incident_date: incidentDate || new Date().toISOString() // Default to current date if not provided
       })
       .select()
       .single();

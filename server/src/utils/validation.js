@@ -92,6 +92,22 @@ export function validateReport(data) {
     errors.push('status must be one of: pendiente, en_proceso, resuelto, cerrado');
   }
   
+  // Validate incident_date if provided
+  if (data.incident_date !== undefined && data.incident_date !== null) {
+    if (typeof data.incident_date !== 'string') {
+      errors.push('incident_date must be a string (ISO 8601 format)');
+    } else {
+      const parsedDate = new Date(data.incident_date);
+      if (isNaN(parsedDate.getTime())) {
+        errors.push('incident_date must be a valid ISO 8601 date string');
+      }
+      // Optional: Validate that incident_date is not in the future
+      if (parsedDate > new Date()) {
+        errors.push('incident_date cannot be in the future');
+      }
+    }
+  }
+  
   if (errors.length > 0) {
     throw new Error(`VALIDATION_ERROR: ${errors.join('; ')}`);
   }
