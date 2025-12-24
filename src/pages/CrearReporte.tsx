@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +14,7 @@ import { VisualDatePicker } from '@/components/VisualDatePicker'
 import { useCreateReport } from '@/hooks/useReports'
 import { reportsApi } from '@/lib/api'
 import { ALL_CATEGORIES } from '@/lib/constants'
+import { determineZone, isValidZone } from '@/lib/zone-utils'
 import { AlertCircle, Upload, X } from 'lucide-react'
 
 // Zod schema
@@ -34,6 +36,7 @@ type CreateReportFormData = z.infer<typeof createReportSchema>
 
 export function CrearReporte() {
   const navigate = useNavigate()
+  const toast = useToast()
   const { createReport, isLoading, error } = useCreateReport()
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
@@ -79,7 +82,7 @@ export function CrearReporte() {
       for (let i = 0; i < Math.min(files.length, 5 - imageFiles.length); i++) {
         const file = files[i]
         if (file.size > 10 * 1024 * 1024) {
-          alert(`La imagen ${file.name} es demasiado grande. Máximo 10MB.`)
+          toast.warning(`La imagen ${file.name} es demasiado grande. Máximo 10MB.`)
           continue
         }
 
@@ -92,7 +95,7 @@ export function CrearReporte() {
       setImageFiles(prev => [...prev, ...newFiles].slice(0, 5))
       setImagePreviews(prev => [...prev, ...newPreviews].slice(0, 5))
     } catch (error) {
-      alert('Error al procesar las imágenes')
+      toast.error('Error al procesar las imágenes')
     }
   }
 
@@ -112,12 +115,32 @@ export function CrearReporte() {
 
   const onSubmit = async (data: CreateReportFormData) => {
     try {
+      // Determine zone from location
+      if (!data.location.location_name || data.location.location_name.trim().length === 0) {
+        toast.error('Debes seleccionar una ubicación válida')
+        return
+      }
+
+      // Validate location has minimum required data
+      if (!data.location.latitude || !data.location.longitude) {
+        toast.error('La ubicación debe incluir coordenadas. Por favor, selecciona una ubicación desde las sugerencias o usa tu ubicación actual.')
+        return
+      }
+
+      // Determine zone from location
+      const zone = await determineZone(data.location)
+      
+      if (!zone || !isValidZone(zone)) {
+        toast.error('No se pudo determinar la zona de la ubicación. Por favor, intenta con una ubicación más específica.')
+        return
+      }
+
       // Map form data to backend payload (without images)
       const payload = {
         title: data.title,
         description: data.description,
         category: data.category,
-        zone: 'Centro', // Default zone, can be extracted from location if needed
+        zone: zone,
         address: data.location.location_name,
         latitude: data.location.latitude,
         longitude: data.location.longitude,
@@ -137,7 +160,7 @@ export function CrearReporte() {
           console.error('Error uploading images:', imageError)
           // Report was created successfully, but images failed
           // Navigate anyway - user can add images later
-          alert('El reporte se creó correctamente, pero hubo un error al subir las imágenes.')
+          toast.warning('El reporte se creó correctamente, pero hubo un error al subir las imágenes.')
         } finally {
           setIsUploadingImages(false)
         }

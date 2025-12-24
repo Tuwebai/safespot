@@ -130,6 +130,39 @@ export function validateComment(data) {
     }
   }
   
+  // Validate is_thread if provided
+  if (data.is_thread !== undefined && data.is_thread !== null) {
+    if (typeof data.is_thread !== 'boolean') {
+      errors.push('is_thread must be a boolean');
+    }
+    
+    // Business rule: threads cannot have parent_id (they are top-level)
+    if (data.is_thread === true && data.parent_id !== undefined && data.parent_id !== null) {
+      errors.push('is_thread cannot be true when parent_id is provided (threads must be top-level)');
+    }
+  }
+  
+  if (errors.length > 0) {
+    throw new Error(`VALIDATION_ERROR: ${errors.join('; ')}`);
+  }
+  
+  return true;
+}
+
+/**
+ * Validate comment update data (only content)
+ */
+export function validateCommentUpdate(data) {
+  const errors = [];
+  
+  if (!data.content || typeof data.content !== 'string' || data.content.trim().length === 0) {
+    errors.push('content is required and must be a non-empty string');
+  }
+  
+  if (data.content && data.content.length > 5000) {
+    errors.push('content must be 5000 characters or less');
+  }
+  
   if (errors.length > 0) {
     throw new Error(`VALIDATION_ERROR: ${errors.join('; ')}`);
   }

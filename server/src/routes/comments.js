@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAnonymousId, validateComment } from '../utils/validation.js';
+import { requireAnonymousId, validateComment, validateCommentUpdate } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import supabase from '../config/supabase.js';
@@ -39,10 +39,14 @@ router.get('/:reportId', async (req, res) => {
       });
     }
 
-    // If anonymous_id is provided, check which comments the user has liked
+    // If anonymous_id is provided, check which comments the user has liked and flagged
     let likedCommentIds = new Set();
+    let flaggedCommentIds = new Set();
+    
     if (anonymousId) {
       const commentIds = comments.map(c => c.id);
+      
+      // Check likes
       const { data: likes, error: likesError } = await supabase
         .from('comment_likes')
         .select('comment_id')
@@ -52,12 +56,24 @@ router.get('/:reportId', async (req, res) => {
       if (!likesError && likes) {
         likedCommentIds = new Set(likes.map(l => l.comment_id));
       }
+      
+      // Check flags
+      const { data: flags, error: flagsError } = await supabase
+        .from('comment_flags')
+        .select('comment_id')
+        .eq('anonymous_id', anonymousId)
+        .in('comment_id', commentIds);
+      
+      if (!flagsError && flags) {
+        flaggedCommentIds = new Set(flags.map(f => f.comment_id));
+      }
     }
 
-    // Enrich comments with liked_by_me flag
+    // Enrich comments with liked_by_me and is_flagged flags
     const enrichedComments = comments.map(comment => ({
       ...comment,
-      liked_by_me: anonymousId ? likedCommentIds.has(comment.id) : false
+      liked_by_me: anonymousId ? likedCommentIds.has(comment.id) : false,
+      is_flagged: anonymousId ? flaggedCommentIds.has(comment.id) : false
     }));
 
     res.json({
@@ -119,8 +135,18 @@ router.post('/', requireAnonymousId, async (req, res) => {
       });
     }
     
+    // Validate thread rules: if is_thread is true, parent_id must be null
+    const isThread = req.body.is_thread === true;
+    const hasParentId = req.body.parent_id !== undefined && req.body.parent_id !== null;
+    
+    if (isThread && hasParentId) {
+      return res.status(400).json({
+        error: 'Threads cannot have a parent_id (threads must be top-level)'
+      });
+    }
+    
     // If parent_id is provided, verify it exists and belongs to the same report
-    if (req.body.parent_id) {
+    if (hasParentId) {
       const { data: parentComment, error: parentError } = await supabase
         .from('comments')
         .select('id, report_id')
@@ -162,11 +188,12 @@ router.post('/', requireAnonymousId, async (req, res) => {
     const insertData = {
       report_id: req.body.report_id,
       anonymous_id: anonymousId,
-      content: content
+      content: content,
+      is_thread: isThread || false
     };
     
-    // Add parent_id if provided (for replies)
-    if (req.body.parent_id) {
+    // Add parent_id if provided (for replies) - but not for threads
+    if (hasParentId && !isThread) {
       insertData.parent_id = req.body.parent_id;
     }
     
@@ -201,6 +228,106 @@ router.post('/', requireAnonymousId, async (req, res) => {
     
     res.status(500).json({
       error: 'Failed to create comment',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * PATCH /api/comments/:id
+ * Update a comment (only by creator)
+ * Requires: X-Anonymous-Id header
+ * Body: { content: string }
+ */
+router.patch('/:id', requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+    
+    // Validate request body
+    try {
+      validateCommentUpdate(req.body);
+    } catch (error) {
+      if (error.message.startsWith('VALIDATION_ERROR')) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          message: error.message
+        });
+      }
+      throw error;
+    }
+    
+    // Check if comment exists and belongs to user
+    const { data: comment, error: checkError } = await supabase
+      .from('comments')
+      .select('id, anonymous_id, content')
+      .eq('id', id)
+      .eq('anonymous_id', anonymousId)
+      .maybeSingle();
+    
+    if (checkError) {
+      logError(checkError, req);
+      return res.status(500).json({
+        error: 'Failed to check comment',
+        message: checkError.message
+      });
+    }
+    
+    if (!comment) {
+      return res.status(404).json({
+        error: 'Comment not found or you do not have permission to edit it'
+      });
+    }
+    
+    // Prepare content (preserve JSON structure if valid, otherwise trim)
+    let content = req.body.content;
+    try {
+      JSON.parse(content);
+      // Es JSON válido, no hacer trim
+    } catch {
+      // No es JSON, hacer trim
+      content = content.trim();
+    }
+    
+    // Update comment
+    const { data: updatedComment, error: updateError } = await supabase
+      .from('comments')
+      .update({ 
+        content: content,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .eq('anonymous_id', anonymousId)
+      .select()
+      .single();
+    
+    if (updateError) {
+      logError(updateError, req);
+      return res.status(500).json({
+        error: 'Failed to update comment',
+        message: updateError.message
+      });
+    }
+    
+    logSuccess(`Comment ${id} updated by ${anonymousId}`, req);
+    
+    res.json({
+      success: true,
+      data: updatedComment,
+      message: 'Comment updated successfully'
+    });
+  } catch (error) {
+    logError(error, req);
+    
+    if (error.message.startsWith('VALIDATION_ERROR')) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: error.message
+      });
+    }
+    
+    res.status(500).json({
+      error: 'Failed to update comment',
       message: error.message
     });
   }
@@ -434,6 +561,117 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
     logError(error, req);
     res.status(500).json({
       error: 'Failed to unlike comment',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/comments/:id/flag
+ * Flag a comment as inappropriate
+ * Requires: X-Anonymous-Id header
+ */
+router.post('/:id/flag', requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+    const reason = req.body.reason || null;
+    
+    // Verify comment exists and get owner
+    const { data: comment, error: commentError } = await supabase
+      .from('comments')
+      .select('id, anonymous_id')
+      .eq('id', id)
+      .maybeSingle();
+    
+    if (commentError) {
+      logError(commentError, req);
+      return res.status(500).json({
+        error: 'Failed to verify comment',
+        message: commentError.message
+      });
+    }
+    
+    if (!comment) {
+      return res.status(404).json({
+        error: 'Comment not found'
+      });
+    }
+    
+    // Check if user is trying to flag their own comment
+    if (comment.anonymous_id === anonymousId) {
+      return res.status(403).json({
+        error: 'You cannot flag your own comment'
+      });
+    }
+    
+    // Ensure anonymous user exists
+    try {
+      await ensureAnonymousUser(anonymousId);
+    } catch (error) {
+      logError(error, req);
+      return res.status(500).json({
+        error: 'Failed to ensure anonymous user',
+        message: error.message
+      });
+    }
+    
+    // Check if already flagged
+    const { data: existingFlag, error: checkError } = await supabase
+      .from('comment_flags')
+      .select('id')
+      .eq('anonymous_id', anonymousId)
+      .eq('comment_id', id)
+      .maybeSingle();
+    
+    if (checkError) {
+      logError(checkError, req);
+      return res.status(500).json({
+        error: 'Failed to check flag status',
+        message: checkError.message
+      });
+    }
+    
+    if (existingFlag) {
+      return res.status(409).json({
+        error: 'Comment already flagged by this user',
+        message: 'You have already flagged this comment'
+      });
+    }
+    
+    // Create flag
+    const { data: newFlag, error: insertError } = await supabase
+      .from('comment_flags')
+      .insert({
+        anonymous_id: anonymousId,
+        comment_id: id,
+        reason: reason
+      })
+      .select()
+      .single();
+    
+    if (insertError) {
+      logError(insertError, req);
+      return res.status(500).json({
+        error: 'Failed to flag comment',
+        message: insertError.message
+      });
+    }
+    
+    logSuccess(`Comment ${id} flagged by ${anonymousId}`, req);
+    
+    res.status(201).json({
+      success: true,
+      data: {
+        flagged: true,
+        flag_id: newFlag.id
+      },
+      message: 'Comment flagged successfully'
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({
+      error: 'Failed to flag comment',
       message: error.message
     });
   }

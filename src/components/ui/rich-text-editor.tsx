@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -8,6 +8,9 @@ import { Location } from './tiptap-extensions/safespot-location'
 import { Object as SafeSpotObject } from './tiptap-extensions/safespot-object'
 import { User as SafeSpotUser } from './tiptap-extensions/safespot-user'
 import { Button } from './button'
+import { Input } from './input'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card'
+import { normalizeTipTapContent } from '@/lib/tiptap-content'
 import { 
   Bold, 
   Italic, 
@@ -75,11 +78,30 @@ export function RichTextEditor({
     SafeSpotUser,
   ], [maxLength, placeholder])
 
+  // Normalizar contenido inicial para soportar texto plano legacy
+  // Solo se calcula una vez en la inicialización del editor (no depende de cambios de value)
+  const normalizedInitialContent = useMemo(() => {
+    if (!value) {
+      // Return empty TipTap document structure (empty paragraph, no text node)
+      return {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph'
+          }
+        ]
+      }
+    }
+    return normalizeTipTapContent(value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Solo se calcula en la inicialización, cambios posteriores se manejan en useEffect
+
   const editor = useEditor({
     extensions,
-    content: value ? (typeof value === 'string' ? JSON.parse(value) : value) : '',
+    content: normalizedInitialContent,
     onUpdate: ({ editor }) => {
       // Guardar como JSON (formato nativo de TipTap)
+      // Siempre guardar en formato JSON estructurado (normaliza contenido legacy)
       const json = editor.getJSON()
       const jsonString = JSON.stringify(json)
       onChange(jsonString)
@@ -94,32 +116,53 @@ export function RichTextEditor({
 
   // Sincronizar value externo con editor
   useEffect(() => {
-    if (editor && value) {
-      try {
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value
-        const currentJson = editor.getJSON()
-        
-        // Solo actualizar si es diferente para evitar loops
-        if (JSON.stringify(currentJson) !== JSON.stringify(parsed)) {
-          editor.commands.setContent(parsed)
-        }
-      } catch (error) {
-        // Si no es JSON válido, intentar como markdown/HTML legacy
-        if (value && !value.startsWith('{')) {
-          editor.commands.setContent(value)
-        }
+    if (editor && value !== undefined) {
+      // Normalizar contenido para soportar texto plano legacy
+      const normalized = normalizeTipTapContent(value)
+      const currentJson = editor.getJSON()
+      
+      // Solo actualizar si es diferente para evitar loops infinitos
+      if (JSON.stringify(currentJson) !== JSON.stringify(normalized)) {
+        editor.commands.setContent(normalized)
       }
     }
   }, [value, editor])
 
-  // Función para insertar SafeSpot tags usando nodos
-  const insertSafeSpotTag = (type: 'ubicacion' | 'objeto' | 'usuario', promptText: string) => {
-    if (!editor) return
+  // Estado para el modal de entrada de texto
+  const [showPreview, setShowPreview] = useState(false)
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [inputModalText, setInputModalText] = useState('')
+  const [inputModalLabel, setInputModalLabel] = useState('')
+  const [pendingTagType, setPendingTagType] = useState<'ubicacion' | 'objeto' | 'usuario' | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Focus en el input cuando se abre el modal
+  useEffect(() => {
+    if (isInputModalOpen && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [isInputModalOpen])
+
+  // Función para abrir modal de entrada de texto
+  const openInputModal = (type: 'ubicacion' | 'objeto' | 'usuario', label: string) => {
+    setPendingTagType(type)
+    setInputModalLabel(label)
+    setInputModalText('')
+    setIsInputModalOpen(true)
+  }
+
+  // Función para confirmar entrada del modal
+  const handleInputModalConfirm = () => {
+    if (!editor || !pendingTagType || !inputModalText.trim()) {
+      setIsInputModalOpen(false)
+      setPendingTagType(null)
+      setInputModalText('')
+      return
+    }
+
+    const text = inputModalText.trim()
     
-    const text = prompt(promptText)
-    if (!text) return
-    
-    switch (type) {
+    switch (pendingTagType) {
       case 'ubicacion':
         editor.chain().focus().setLocation({ value: text }).run()
         break
@@ -130,9 +173,29 @@ export function RichTextEditor({
         editor.chain().focus().setUser({ value: text }).run()
         break
     }
+
+    setIsInputModalOpen(false)
+    setPendingTagType(null)
+    setInputModalText('')
   }
 
-  const [showPreview, setShowPreview] = useState(false)
+  // Función para cancelar modal
+  const handleInputModalCancel = () => {
+    setIsInputModalOpen(false)
+    setPendingTagType(null)
+    setInputModalText('')
+  }
+
+  // Manejar Enter en el input del modal
+  const handleInputModalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleInputModalConfirm()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      handleInputModalCancel()
+    }
+  }
 
   if (!editor) {
     return null
@@ -212,7 +275,7 @@ export function RichTextEditor({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => insertSafeSpotTag('ubicacion', 'Ingresa la ubicación:')}
+            onClick={() => openInputModal('ubicacion', 'Ingresa la ubicación:')}
             className="h-8 w-8 p-0"
             title="Ubicación"
           >
@@ -222,7 +285,7 @@ export function RichTextEditor({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => insertSafeSpotTag('objeto', 'Ingresa el objeto:')}
+            onClick={() => openInputModal('objeto', 'Ingresa el objeto:')}
             className="h-8 w-8 p-0"
             title="Objeto"
           >
@@ -232,7 +295,7 @@ export function RichTextEditor({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => insertSafeSpotTag('usuario', 'Ingresa el usuario:')}
+            onClick={() => openInputModal('usuario', 'Ingresa el usuario:')}
             className="h-8 w-8 p-0"
             title="Usuario"
           >
@@ -396,6 +459,56 @@ export function RichTextEditor({
           <div>
             <strong>Formato:</strong> El contenido se guarda en formato JSON estructurado para máxima consistencia
           </div>
+        </div>
+      )}
+
+      {/* Modal de Entrada de Texto para SafeSpot Tags */}
+      {isInputModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={handleInputModalCancel}
+        >
+          <Card 
+            className="w-full max-w-md bg-dark-card border-dark-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <CardTitle>{inputModalLabel}</CardTitle>
+              <CardDescription>
+                Ingresa el valor para el tag de SafeSpot
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Input
+                  ref={inputRef}
+                  type="text"
+                  value={inputModalText}
+                  onChange={(e) => setInputModalText(e.target.value)}
+                  onKeyDown={handleInputModalKeyDown}
+                  placeholder="Escribe aquí..."
+                  className="w-full"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleInputModalCancel}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="neon"
+                    onClick={handleInputModalConfirm}
+                    disabled={!inputModalText.trim()}
+                  >
+                    Confirmar
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
 import { getAnonymousId } from '@/lib/identity'
+import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import type { Report } from '@/lib/api'
 
 export function Reportes() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -22,6 +24,7 @@ export function Reportes() {
   const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
   const [flaggingReportId, setFlaggingReportId] = useState<string | null>(null)
   const [flaggingReports, setFlaggingReports] = useState<Set<string>>(new Set())
+  const [togglingFavorites, setTogglingFavorites] = useState<Set<string>>(new Set())
 
   const loadReports = useCallback(async () => {
     try {
@@ -100,35 +103,98 @@ export function Reportes() {
     e.preventDefault()
     e.stopPropagation()
     
-    // Optimistic update: update UI immediately
-    setReports(prev => prev.map(r => {
-      if (r.id !== reportId) return r
-      
-      // Toggle the favorite status optimistically
-      const currentFavorite = r.is_favorite ?? false
-      return { ...r, is_favorite: !currentFavorite }
-    }))
+    // Prevent multiple simultaneous toggles
+    if (togglingFavorites.has(reportId)) {
+      return
+    }
+    
+    // Find the report to get current state
+    const currentReport = reports.find(r => r && r.id === reportId)
+    if (!currentReport) {
+      toast.error('No se pudo encontrar el reporte')
+      return
+    }
+    
+    // Store previous state for potential revert
+    const previousFavoriteState = currentReport.is_favorite ?? false
+    const newFavoriteState = !previousFavoriteState
+    
+    // Mark as toggling
+    setTogglingFavorites(prev => new Set(prev).add(reportId))
+    
+    // Optimistic update: update UI immediately with defensive checks
+    setReports(prev => {
+      return prev
+        .filter(r => r != null && r.id != null) // Filter out any invalid reports first
+        .map(r => {
+          if (r.id !== reportId) return r
+          
+          // Ensure we have a valid report object before spreading
+          if (!r || typeof r !== 'object') return r
+          
+          // Return updated report with all properties preserved
+          return {
+            ...r,
+            is_favorite: newFavoriteState
+          }
+        })
+    })
     
     try {
       const result = await reportsApi.toggleFavorite(reportId)
       
-      // Update with actual server response
-      setReports(prev => prev.map(r => {
-        if (r.id !== reportId) return r
-        return { ...r, is_favorite: result.is_favorite ?? false }
-      }))
+      // Validate result
+      if (!result || typeof result !== 'object') {
+        throw new Error('Respuesta inválida del servidor')
+      }
+      
+      const serverFavoriteState = result.is_favorite ?? newFavoriteState
+      
+      // Update with actual server response - defensive update
+      setReports(prev => {
+        return prev
+          .filter(r => r != null && r.id != null) // Filter out any invalid reports
+          .map(r => {
+            if (r.id !== reportId) return r
+            
+            // Ensure we have a valid report object
+            if (!r || typeof r !== 'object') return r
+            
+            // Return updated report with server state
+            return {
+              ...r,
+              is_favorite: serverFavoriteState
+            }
+          })
+      })
     } catch (error) {
-      // Revert optimistic update on error
-      setReports(prev => prev.map(r => {
-        if (r.id !== reportId) return r
-        
-        // Revert to previous state
-        const currentFavorite = r.is_favorite ?? false
-        return { ...r, is_favorite: !currentFavorite }
-      }))
+      // Revert optimistic update on error - defensive revert
+      setReports(prev => {
+        return prev
+          .filter(r => r != null && r.id != null) // Filter out any invalid reports
+          .map(r => {
+            if (r.id !== reportId) return r
+            
+            // Ensure we have a valid report object
+            if (!r || typeof r !== 'object') return r
+            
+            // Revert to previous state
+            return {
+              ...r,
+              is_favorite: previousFavoriteState
+            }
+          })
+      })
       
       console.error('Error toggling favorite:', error)
-      alert(error instanceof Error ? error.message : 'Error al guardar en favoritos')
+      toast.error(error instanceof Error ? error.message : 'Error al guardar en favoritos')
+    } finally {
+      // Remove from toggling set
+      setTogglingFavorites(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(reportId)
+        return newSet
+      })
     }
   }
 
@@ -216,11 +282,11 @@ export function Reportes() {
       const errorMessage = error instanceof Error ? error.message : 'Error al denunciar el reporte'
       
       if (errorMessage.includes('own report')) {
-        alert('No puedes denunciar tu propio reporte')
+        toast.warning('No puedes denunciar tu propio reporte')
       } else if (errorMessage.includes('already flagged')) {
-        alert('Ya has denunciado este reporte anteriormente')
+        toast.warning('Ya has denunciado este reporte anteriormente')
       } else {
-        alert(errorMessage)
+        toast.error(errorMessage)
       }
     } finally {
       // Remover de flagging en proceso
@@ -329,9 +395,24 @@ export function Reportes() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {reports
-              .filter((report) => report != null && report.id != null) // Defensive: filter out any invalid reports
+              .filter((report) => {
+                // Defensive: filter out any invalid reports
+                return (
+                  report != null &&
+                  typeof report === 'object' &&
+                  report.id != null &&
+                  typeof report.id === 'string' &&
+                  report.title != null &&
+                  typeof report.title === 'string'
+                )
+              })
               .map((report) => {
-                const imageUrls: string[] = report?.image_urls ?? [] // Use image_urls from report if available
+                // Additional defensive check inside map
+                if (!report || !report.id) {
+                  return null
+                }
+                
+                const imageUrls: string[] = Array.isArray(report.image_urls) ? report.image_urls : []
                 const hasImage = imageUrls.length > 0
 
                 return (
@@ -415,14 +496,22 @@ export function Reportes() {
                       </Button>
                       <div className="flex items-center space-x-2">
                         {(() => {
-                          const isFavorite = report?.is_favorite ?? false
+                          // Defensive check: ensure report exists and has required properties
+                          if (!report || !report.id) {
+                            return null
+                          }
+                          
+                          const isFavorite = report.is_favorite ?? false
+                          const isToggling = togglingFavorites.has(report.id)
+                          
                           return (
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={(e) => handleSave(e, report.id)}
+                              disabled={isToggling}
                               className={isFavorite ? 'text-red-400 hover:text-red-300' : ''}
-                              title={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                              title={isToggling ? 'Guardando...' : (isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos')}
                             >
                               <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
                             </Button>
@@ -467,7 +556,9 @@ export function Reportes() {
                   </CardContent>
                 </Card>
               )
-            })}
+            })
+            .filter(Boolean) // Remove any null entries from map
+          }
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { MapPin, Search, Navigation } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
 
@@ -23,6 +24,7 @@ interface NominatimResult {
 }
 
 export function LocationSelector({ value, onChange, error }: LocationSelectorProps) {
+  const toast = useToast()
   const [searchQuery, setSearchQuery] = useState(value.location_name || '')
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -67,7 +69,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocalización no está disponible en tu navegador')
+      toast.warning('Geolocalización no está disponible en tu navegador')
       return
     }
 
@@ -84,7 +86,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         setIsLoading(false)
       },
       () => {
-        alert('No se pudo obtener tu ubicación')
+        toast.error('No se pudo obtener tu ubicación')
         setIsLoading(false)
       }
     )

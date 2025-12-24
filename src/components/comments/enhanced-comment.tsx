@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TipTapRenderer } from '@/components/ui/tiptap-renderer'
+import { useToast } from '@/components/ui/toast'
 import { 
   MessageCircle, 
   ThumbsUp, 
@@ -48,6 +49,7 @@ export function EnhancedComment({
   onPin,
   onUnpin
 }: EnhancedCommentProps) {
+  const toast = useToast()
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
   const [isLiking, setIsLiking] = useState(false)
   const [localLiked, setLocalLiked] = useState(comment.liked_by_me ?? false)
@@ -131,9 +133,9 @@ export function EnhancedComment({
     try {
       await navigator.clipboard.writeText(comment.content)
       setIsContextMenuOpen(false)
-      // TODO: Mostrar toast de éxito
+      toast.success('Texto copiado al portapapeles')
     } catch (error) {
-      // TODO: Mostrar toast de error
+      toast.error('No se pudo copiar el texto al portapapeles')
     }
   }
 
@@ -146,33 +148,57 @@ export function EnhancedComment({
   const handleLike = async () => {
     if (isLiking) return // Prevent double clicks
     
+    // Guardar estado previo para revertir en caso de error
+    const previousLiked = localLiked
+    const previousCount = localCount
+    
+    // Optimistic UI: actualizar estado inmediatamente
+    const newLiked = !localLiked
+    const newCount = newLiked ? localCount + 1 : Math.max(0, localCount - 1)
+    
+    setLocalLiked(newLiked)
+    setLocalCount(newCount)
     setIsLiking(true)
+    
     try {
-      if (localLiked) {
+      let result: { liked: boolean; upvotes_count: number } | undefined
+      
+      if (previousLiked) {
         // Unlike
-        const result = await commentsApi.unlike(comment.id)
+        result = await commentsApi.unlike(comment.id)
+      } else {
+        // Like
+        result = await commentsApi.like(comment.id)
+      }
+      
+      // Validación defensiva: solo actualizar si result es válido
+      if (result && typeof result.liked === 'boolean' && typeof result.upvotes_count === 'number') {
         setLocalLiked(result.liked)
         setLocalCount(result.upvotes_count)
         onLikeChange?.(comment.id, result.liked, result.upvotes_count)
       } else {
-        // Like
-        const result = await commentsApi.like(comment.id)
-        setLocalLiked(result.liked)
-        setLocalCount(result.upvotes_count)
-        onLikeChange?.(comment.id, result.liked, result.upvotes_count)
+        // Si la respuesta es inválida, mantener el estado optimistic
+        // (asumimos que funcionó si no hay error)
+        onLikeChange?.(comment.id, newLiked, newCount)
       }
     } catch (error) {
       console.error('Error toggling like:', error)
-      // Revert on error
-      setLocalLiked(comment.liked_by_me ?? false)
-      setLocalCount(comment.upvotes_count ?? 0)
+      // Revertir al estado previo en caso de error
+      setLocalLiked(previousLiked)
+      setLocalCount(previousCount)
     } finally {
       setIsLiking(false)
     }
   }
 
+  const isThread = comment.is_thread === true
+  
   return (
-    <Card className="card-glow bg-dark-card border-dark-border hover:border-neon-green/30 transition-all duration-200">
+    <Card className={`card-glow bg-dark-card transition-all duration-200 ${
+      isThread 
+        ? 'border-2 border-purple-500/50 hover:border-purple-500/80' 
+        : 'border-dark-border hover:border-neon-green/30'
+    }`}>
       <CardContent className="p-4">
         {/* Header Section */}
         <div className="flex items-start justify-between mb-3">
@@ -194,6 +220,13 @@ export function EnhancedComment({
 
               {/* Badges Row (Visual Indicators) */}
               <div className="flex items-center gap-1 flex-wrap mb-1">
+                {/* Thread Badge */}
+                {isThread && (
+                  <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 font-semibold">
+                    💬 Hilo
+                  </Badge>
+                )}
+                
                 {/* Pinned Badge */}
                 {comment.is_pinned && (
                   <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
@@ -432,15 +465,18 @@ export function EnhancedComment({
                 </Button>
               </>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 hover:text-yellow-400"
-              onClick={() => onFlag?.(comment.id)}
-              title="Reportar"
-            >
-              <Flag className="h-4 w-4" />
-            </Button>
+            {!isOwner && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-7 w-7 p-0 ${comment.is_flagged ? 'text-yellow-400 opacity-50 cursor-not-allowed' : 'hover:text-yellow-400'}`}
+                onClick={() => onFlag?.(comment.id)}
+                disabled={comment.is_flagged ?? false}
+                title={comment.is_flagged ? 'Ya has reportado este comentario' : 'Reportar'}
+              >
+                <Flag className={`h-4 w-4 ${comment.is_flagged ? 'fill-current' : ''}`} />
+              </Button>
+            )}
           </div>
         </div>
 

@@ -219,13 +219,16 @@ export interface Comment {
   created_at: string;
   updated_at: string;
   parent_id?: string; // Para comentarios anidados (replies)
+  is_thread?: boolean; // Si es un hilo (thread) - debe ser top-level (parent_id null)
   liked_by_me?: boolean; // Si el usuario actual dio like
+  is_flagged?: boolean; // Si el usuario actual flaggeó este comentario
 }
 
 export interface CreateCommentData {
   report_id: string;
   content: string;
   parent_id?: string; // Para crear respuestas
+  is_thread?: boolean; // Para crear un nuevo hilo (debe ser false si parent_id está presente)
 }
 
 export const commentsApi = {
@@ -245,6 +248,17 @@ export const commentsApi = {
     return apiRequest<Comment>('/comments', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update a comment
+   * Only the creator can update their own comment
+   */
+  update: async (id: string, content: string): Promise<Comment> => {
+    return apiRequest<Comment>(`/comments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
     });
   },
 
@@ -280,6 +294,20 @@ export const commentsApi = {
       `/comments/${commentId}/like`,
       {
         method: 'DELETE',
+      }
+    );
+    return response.data;
+  },
+
+  /**
+   * Flag a comment as inappropriate
+   */
+  flag: async (commentId: string, reason?: string): Promise<{ flagged: boolean; flag_id: string }> => {
+    const response = await apiRequest<{ data: { flagged: boolean; flag_id: string } }>(
+      `/comments/${commentId}/flag`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
       }
     );
     return response.data;

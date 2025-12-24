@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { EnhancedComment } from './enhanced-comment'
 import { Search, Plus } from 'lucide-react'
 import type { Comment } from '@/lib/api'
@@ -17,6 +18,18 @@ interface ThreadListProps {
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
   isOwner?: (commentId: string) => boolean
   isMod?: boolean
+  editingCommentId?: string | null
+  editText?: string
+  onEditTextChange?: (text: string) => void
+  onEditSubmit?: (commentId: string) => void
+  onEditCancel?: () => void
+  submittingEdit?: boolean
+  creatingThread?: boolean
+  threadText?: string
+  onThreadTextChange?: (text: string) => void
+  onThreadSubmit?: () => void
+  onThreadCancel?: () => void
+  submittingThread?: boolean
 }
 
 type ThreadType = 'all' | 'investigation' | 'evidence' | 'coordination' | 'testimony'
@@ -31,14 +44,26 @@ export function ThreadList({
   onFlag,
   onLikeChange,
   isOwner = () => false,
-  isMod = false
+  isMod = false,
+  editingCommentId = null,
+  editText = '',
+  onEditTextChange,
+  onEditSubmit,
+  onEditCancel,
+  submittingEdit = false,
+  creatingThread = false,
+  threadText = '',
+  onThreadTextChange,
+  onThreadSubmit,
+  onThreadCancel,
+  submittingThread = false
 }: ThreadListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [threadType, setThreadType] = useState<ThreadType>('all')
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
 
-  // Agrupar comentarios por parentId (los que no tienen parentId son top-level)
-  const topLevelComments = comments.filter(c => !c.parent_id)
+  // Filtrar solo hilos (is_thread = true y parent_id IS NULL)
+  const threads = comments.filter(c => c.is_thread === true && !c.parent_id)
   const repliesMap = new Map<string, Comment[]>()
   
   comments.forEach(comment => {
@@ -52,7 +77,7 @@ export function ThreadList({
   })
 
   // Filtrar y ordenar
-  let filteredComments = topLevelComments
+  let filteredComments = threads
 
   // Filtrar por búsqueda
   if (searchTerm) {
@@ -161,6 +186,27 @@ export function ThreadList({
         </CardContent>
       </Card>
 
+      {/* New Thread Editor */}
+      {creatingThread && onThreadTextChange && onThreadSubmit && onThreadCancel && (
+        <Card className="bg-dark-card border-dark-border border-2 border-neon-green/30">
+          <CardHeader>
+            <CardTitle className="text-neon-green">Nuevo Hilo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RichTextEditor
+              value={threadText}
+              onChange={onThreadTextChange}
+              onSubmit={onThreadSubmit}
+              disabled={submittingThread}
+              placeholder="Escribe el contenido de tu nuevo hilo..."
+              hideHelp={true}
+              showCancel={true}
+              onCancel={onThreadCancel}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Thread Rendering */}
       <div className="space-y-4">
         {filteredComments.length === 0 ? (
@@ -173,18 +219,37 @@ export function ThreadList({
           </Card>
         ) : (
           filteredComments.map((comment) => (
-            <EnhancedComment
-              key={comment.id}
-              comment={comment}
-              replies={repliesMap.get(comment.id) || []}
-              isOwner={isOwner(comment.id)}
-              isMod={isMod}
-              onReply={onReply}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onFlag={onFlag}
-              onLikeChange={onLikeChange}
-            />
+            <div key={comment.id}>
+              <EnhancedComment
+                comment={comment}
+                replies={repliesMap.get(comment.id) || []}
+                isOwner={isOwner(comment.id)}
+                isMod={isMod}
+                onReply={onReply}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onFlag={onFlag}
+                onLikeChange={onLikeChange}
+              />
+              
+              {/* Edit Editor (Inline) */}
+              {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
+                <Card className="mt-3 bg-dark-card border-dark-border">
+                  <CardContent className="p-4">
+                    <RichTextEditor
+                      value={editText}
+                      onChange={onEditTextChange}
+                      onSubmit={() => onEditSubmit(comment.id)}
+                      disabled={submittingEdit}
+                      placeholder="Edita tu comentario..."
+                      hideHelp={true}
+                      showCancel={true}
+                      onCancel={onEditCancel}
+                    />
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           ))
         )}
       </div>

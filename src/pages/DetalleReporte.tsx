@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { reportsApi, commentsApi } from '@/lib/api'
 import { getAnonymousId } from '@/lib/identity'
+import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import type { Report, Comment } from '@/lib/api'
 export function DetalleReporte() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const toast = useToast()
   const [report, setReport] = useState<Report | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [commentText, setCommentText] = useState('')
@@ -35,6 +37,12 @@ export function DetalleReporte() {
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
   const [submittingReply, setSubmittingReply] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [submittingEdit, setSubmittingEdit] = useState(false)
+  const [creatingThread, setCreatingThread] = useState(false)
+  const [threadText, setThreadText] = useState('')
+  const [submittingThread, setSubmittingThread] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -98,7 +106,7 @@ export function DetalleReporte() {
       }
     } catch (error) {
       console.error('Error toggling favorite:', error)
-      alert(error instanceof Error ? error.message : 'Error al guardar en favoritos')
+      toast.error(error instanceof Error ? error.message : 'Error al guardar en favoritos')
     }
   }
 
@@ -123,17 +131,17 @@ export function DetalleReporte() {
       }
       
       // Show success message
-      alert('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
+      toast.success('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
     } catch (error) {
       console.error('Error flagging report:', error)
       const errorMessage = error instanceof Error ? error.message : 'Error al denunciar el reporte'
       
       if (errorMessage.includes('own report')) {
-        alert('No puedes denunciar tu propio reporte')
+        toast.warning('No puedes denunciar tu propio reporte')
       } else if (errorMessage.includes('already flagged')) {
-        alert('Ya has denunciado este reporte anteriormente')
+        toast.warning('Ya has denunciado este reporte anteriormente')
       } else {
-        alert(errorMessage)
+        toast.error(errorMessage)
       }
     }
   }
@@ -152,7 +160,7 @@ export function DetalleReporte() {
       await loadComments()
       await loadReport()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Error al crear comentario')
+      toast.error(error instanceof Error ? error.message : 'Error al crear comentario')
     } finally {
       setSubmittingComment(false)
     }
@@ -206,6 +214,128 @@ export function DetalleReporte() {
       console.error('Error deleting comment:', error)
       setError('No se pudo eliminar el comentario')
     }
+  }
+
+  const handleFlagComment = async (commentId: string) => {
+    const comment = comments.find(c => c.id === commentId)
+    if (!comment) return
+    
+    // Check if already flagged (frontend check)
+    if (comment.is_flagged) {
+      toast.warning('Ya has reportado este comentario')
+      return
+    }
+    
+    // Check if user is trying to flag their own comment
+    const currentAnonymousId = getAnonymousId()
+    if (comment.anonymous_id === currentAnonymousId) {
+      toast.warning('No puedes reportar tu propio comentario')
+      return
+    }
+    
+    if (!confirm('¿Estás seguro de que quieres reportar este comentario como inapropiado?')) {
+      return
+    }
+    
+    try {
+      await commentsApi.flag(commentId)
+      
+      // Update local state immediately
+      setComments(prev => prev.map(c => 
+        c.id === commentId 
+          ? { ...c, is_flagged: true }
+          : c
+      ))
+      
+      toast.success('Comentario reportado correctamente. Gracias por ayudar a mantener la comunidad segura.')
+    } catch (error) {
+      console.error('Error flagging comment:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Error al reportar el comentario'
+      
+      if (errorMessage.includes('own comment')) {
+        toast.warning('No puedes reportar tu propio comentario')
+      } else if (errorMessage.includes('already flagged')) {
+        // Update local state to reflect already flagged
+        setComments(prev => prev.map(c => 
+          c.id === commentId 
+            ? { ...c, is_flagged: true }
+            : c
+        ))
+        toast.warning('Ya has reportado este comentario anteriormente')
+      } else {
+        toast.error(errorMessage)
+      }
+    }
+  }
+
+  const handleEdit = (commentId: string) => {
+    const comment = comments.find(c => c.id === commentId)
+    if (comment) {
+      setEditingCommentId(commentId)
+      setEditText(comment.content)
+    }
+  }
+
+  const handleEditSubmit = async (commentId: string) => {
+    if (!editText.trim() || submittingEdit) return
+
+    try {
+      setSubmittingEdit(true)
+      const updatedComment = await commentsApi.update(commentId, editText.trim())
+      
+      // Update local state immediately
+      setComments(prev => prev.map(c => 
+        c.id === commentId 
+          ? { ...c, content: updatedComment.content, updated_at: updatedComment.updated_at }
+          : c
+      ))
+      
+      setEditingCommentId(null)
+      setEditText('')
+    } catch (error) {
+      console.error('Error updating comment:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al editar el comentario')
+    } finally {
+      setSubmittingEdit(false)
+    }
+  }
+
+  const handleEditCancel = () => {
+    setEditingCommentId(null)
+    setEditText('')
+  }
+
+  const handleNewThread = () => {
+    setCreatingThread(true)
+    setThreadText('')
+  }
+
+  const handleNewThreadSubmit = async () => {
+    if (!id || !threadText.trim() || submittingThread) return
+
+    try {
+      setSubmittingThread(true)
+      await commentsApi.create({
+        report_id: id,
+        content: threadText.trim(),
+        is_thread: true
+      })
+      
+      setThreadText('')
+      setCreatingThread(false)
+      await loadComments()
+      await loadReport()
+    } catch (error) {
+      console.error('Error creating thread:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al crear el hilo')
+    } finally {
+      setSubmittingThread(false)
+    }
+  }
+
+  const handleNewThreadCancel = () => {
+    setCreatingThread(false)
+    setThreadText('')
   }
 
   const getStatusColor = (status: Report['status']) => {
@@ -467,7 +597,7 @@ export function DetalleReporte() {
               </Card>
             ) : (
               comments
-                .filter(c => !c.parent_id) // Solo comentarios top-level
+                .filter(c => !c.parent_id && !(c.is_thread === true)) // Solo comentarios top-level que NO son hilos
                 .map((comment) => {
                   const commentReplies = comments.filter(c => c.parent_id === comment.id)
                   const currentAnonymousId = getAnonymousId()
@@ -482,17 +612,29 @@ export function DetalleReporte() {
                         isOwner={isCommentOwner}
                         isMod={isCommentMod}
                         onReply={handleReply}
-                        onEdit={(commentId) => {
-                          // TODO: Implementar edit
-                          console.log('Edit:', commentId)
-                        }}
+                        onEdit={handleEdit}
                         onDelete={handleDeleteComment}
-                        onFlag={(commentId) => {
-                          // TODO: Implementar flag
-                          console.log('Flag:', commentId)
-                        }}
+                        onFlag={handleFlagComment}
                         onLikeChange={handleLikeChange}
                       />
+                      
+                      {/* Edit Editor (Inline) */}
+                      {editingCommentId === comment.id && (
+                        <Card className="mt-3 bg-dark-card border-dark-border">
+                          <CardContent className="p-4">
+                            <RichTextEditor
+                              value={editText}
+                              onChange={setEditText}
+                              onSubmit={() => handleEditSubmit(comment.id)}
+                              disabled={submittingEdit}
+                              placeholder="Edita tu comentario..."
+                              hideHelp={true}
+                              showCancel={true}
+                              onCancel={handleEditCancel}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
                       
                       {/* Reply Editor (Inline) */}
                       {replyingTo === comment.id && (
@@ -529,26 +671,29 @@ export function DetalleReporte() {
           return (
             <ThreadList
               comments={comments}
-              onNewThread={() => {
-                // TODO: Implementar nuevo hilo
-                console.log('New thread')
-              }}
+              onNewThread={handleNewThread}
               onReply={handleReply}
-              onEdit={(commentId) => {
-                // TODO: Implementar edit
-                console.log('Edit:', commentId)
-              }}
+              onEdit={handleEdit}
               onDelete={handleDeleteComment}
-              onFlag={(commentId) => {
-                // TODO: Implementar flag
-                console.log('Flag:', commentId)
-              }}
+              onFlag={handleFlagComment}
               onLikeChange={handleLikeChange}
               isOwner={(commentId) => {
                 const comment = comments.find(c => c.id === commentId)
                 return comment ? comment.anonymous_id === currentAnonymousId : false
               }}
               isMod={isThreadMod}
+              editingCommentId={editingCommentId}
+              editText={editText}
+              onEditTextChange={setEditText}
+              onEditSubmit={handleEditSubmit}
+              onEditCancel={handleEditCancel}
+              submittingEdit={submittingEdit}
+              creatingThread={creatingThread}
+              threadText={threadText}
+              onThreadTextChange={setThreadText}
+              onThreadSubmit={handleNewThreadSubmit}
+              onThreadCancel={handleNewThreadCancel}
+              submittingThread={submittingThread}
             />
           )
         })()}
