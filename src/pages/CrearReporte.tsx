@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -42,6 +42,10 @@ export function CrearReporte() {
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [isUploadingImages, setIsUploadingImages] = useState(false)
+  // Track previous preview URLs to clean up when they're removed
+  const previousPreviewsRef = useRef<string[]>([])
+  // Keep a ref of current previews for cleanup on unmount
+  const currentPreviewsRef = useRef<string[]>([])
 
   const {
     register,
@@ -63,6 +67,48 @@ export function CrearReporte() {
 
   const location = watch('location')
   const incidentDate = watch('incidentDate')
+
+  // Cleanup Object URLs when previews change (images removed or replaced)
+  useEffect(() => {
+    const previousPreviews = previousPreviewsRef.current
+    const currentPreviews = imagePreviews
+
+    // Find URLs that were removed (exist in previous but not in current)
+    const removedUrls = previousPreviews.filter(url => !currentPreviews.includes(url))
+
+    // Revoke Object URLs that are no longer in use
+    removedUrls.forEach(url => {
+      try {
+        URL.revokeObjectURL(url)
+      } catch (error) {
+        // Silently handle errors (URL might already be revoked)
+        // This prevents double-revoke errors
+      }
+    })
+
+    // Update refs for next comparison and unmount cleanup
+    previousPreviewsRef.current = currentPreviews
+    currentPreviewsRef.current = currentPreviews
+  }, [imagePreviews])
+
+  // Cleanup all Object URLs on component unmount
+  useEffect(() => {
+    return () => {
+      // Revoke all Object URLs when component unmounts
+      // Use the ref to get the latest previews at unmount time
+      const previewsToCleanup = currentPreviewsRef.current
+      previewsToCleanup.forEach(url => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch (error) {
+          // Silently handle errors (URL might already be revoked)
+        }
+      })
+      // Clear refs
+      previousPreviewsRef.current = []
+      currentPreviewsRef.current = []
+    }
+  }, []) // Empty dependency array - only run on mount/unmount
 
   const handleLocationChange = (location: LocationData) => {
     setValue('location', location, { shouldValidate: true })
@@ -108,7 +154,13 @@ export function CrearReporte() {
     })
     setImagePreviews(prev => {
       const newPreviews = [...prev]
-      URL.revokeObjectURL(newPreviews[index])
+      // URL will be revoked by useEffect cleanup when previews change
+      // But we can revoke immediately for better memory management
+      try {
+        URL.revokeObjectURL(newPreviews[index])
+      } catch (error) {
+        // Silently handle if already revoked
+      }
       newPreviews.splice(index, 1)
       return newPreviews
     })
@@ -167,8 +219,19 @@ export function CrearReporte() {
         }
       }
 
-      // Clean up preview URLs
-      imagePreviews.forEach(url => URL.revokeObjectURL(url))
+      // Clean up preview URLs after successful submission
+      // URLs will also be cleaned up by useEffect on unmount, but we clean them here
+      // immediately to free memory right after submission
+      imagePreviews.forEach(url => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch (error) {
+          // Silently handle if already revoked
+        }
+      })
+      // Clear the refs as well
+      previousPreviewsRef.current = []
+      currentPreviewsRef.current = []
     } catch (error) {
       // Error handled by useCreateReport hook
     }

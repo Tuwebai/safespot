@@ -416,8 +416,17 @@ export function EnhancedComment({
               disabled={isLiking}
               className={localLiked ? "text-yellow-400 font-medium" : "text-foreground/60 hover:text-foreground"}
             >
-              <ThumbsUp className={`h-4 w-4 mr-1 ${localLiked ? 'fill-current' : ''}`} />
-              Me gusta {localCount > 0 && `(${localCount})`}
+              {isLiking ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-1" />
+                  Cargando...
+                </>
+              ) : (
+                <>
+                  <ThumbsUp className={`h-4 w-4 mr-1 ${localLiked ? 'fill-current' : ''}`} />
+                  Me gusta {localCount > 0 && `(${localCount})`}
+                </>
+              )}
             </Button>
           </div>
 

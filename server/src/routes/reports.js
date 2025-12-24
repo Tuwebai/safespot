@@ -1,25 +1,147 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateReport } from '../utils/validation.js';
+import { requireAnonymousId, validateReport, validateFlagReason } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
+import { flagRateLimiter } from '../utils/rateLimiter.js';
+import { queryWithRLS } from '../utils/rls.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
 
 /**
  * GET /api/reports
- * List all reports with optional filters
- * Query params: search, category, zone, status
+ * List all reports with optional filters and pagination
+ * Query params: search, category, zone, status, page, limit
  * Optional: includes is_favorite and is_flagged if X-Anonymous-Id header is present
  */
 router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
-    const { search, category, zone, status } = req.query;
+    const { search, category, zone, status, page, limit } = req.query;
     
-    // Build Supabase query
-    let query = supabase
+    // Parse pagination parameters with defaults and validation
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
+    const offset = (pageNum - 1) * limitNum;
+    
+    // OPTIMIZATION: If anonymous_id is provided, use optimized SQL query with JOINs
+    // This eliminates N+1 queries by fetching reports, favorites, and flags in a single query
+    if (anonymousId) {
+      try {
+        // Build WHERE conditions dynamically
+        const conditions = [];
+        const params = [anonymousId]; // $1 = anonymousId
+        let paramIndex = 2;
+        
+        // Search filter
+        if (search && typeof search === 'string' && search.trim()) {
+          const searchTerm = `%${search.trim()}%`;
+          conditions.push(`(
+            r.title ILIKE $${paramIndex} OR 
+            r.description ILIKE $${paramIndex} OR 
+            r.category ILIKE $${paramIndex} OR 
+            r.address ILIKE $${paramIndex} OR 
+            r.zone ILIKE $${paramIndex}
+          )`);
+          params.push(searchTerm);
+          paramIndex++;
+        }
+        
+        // Category filter
+        if (category && typeof category === 'string' && category.trim() && category !== 'all') {
+          conditions.push(`r.category = $${paramIndex}`);
+          params.push(category.trim());
+          paramIndex++;
+        }
+        
+        // Zone filter
+        if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
+          conditions.push(`r.zone = $${paramIndex}`);
+          params.push(zone.trim());
+          paramIndex++;
+        }
+        
+        // Status filter
+        if (status && typeof status === 'string' && status.trim() && status !== 'all') {
+          conditions.push(`r.status = $${paramIndex}`);
+          params.push(status.trim());
+          paramIndex++;
+        }
+        
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        
+        // Build optimized SQL query with LEFT JOINs to get everything in one query
+        // This replaces the previous approach of: 1 query for reports + 2 queries for favorites/flags
+        const countQuery = `
+          SELECT COUNT(*) as total
+          FROM reports r
+          ${whereClause}
+        `;
+        
+        const dataQuery = `
+          SELECT 
+            r.*,
+            CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
+            CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged
+          FROM reports r
+          LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
+          LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
+          ${whereClause}
+          ORDER BY r.created_at DESC
+          LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+        
+        params.push(limitNum, offset);
+        
+        // Execute both queries in parallel
+        const [countResult, dataResult] = await Promise.all([
+          queryWithRLS('', countQuery, params.slice(0, paramIndex)),
+          queryWithRLS('', dataQuery, params)
+        ]);
+        
+        const totalItems = parseInt(countResult.rows[0].total, 10);
+        const totalPages = Math.ceil(totalItems / limitNum);
+        const hasNextPage = pageNum < totalPages;
+        const hasPrevPage = pageNum > 1;
+        
+        // Map results to match Supabase format
+        const enrichedReports = dataResult.rows.map(row => {
+          const { is_favorite, is_flagged, ...report } = row;
+          return {
+            ...report,
+            is_favorite: is_favorite === true,
+            is_flagged: is_flagged === true
+          };
+        });
+        
+        return res.json({
+          success: true,
+          data: enrichedReports,
+          pagination: {
+            page: pageNum,
+            limit: limitNum,
+            totalItems,
+            totalPages,
+            hasNextPage,
+            hasPrevPage
+          }
+        });
+      } catch (sqlError) {
+        // Fallback to Supabase approach if SQL query fails
+        logError(sqlError, req);
+        // Continue to Supabase fallback below
+      }
+    }
+    
+    // Fallback: Use Supabase for cases without anonymousId or if SQL query fails
+    // Build base query for counting total items (without pagination)
+    let countQuery = supabase
+      .from('reports')
+      .select('*', { count: 'exact', head: true });
+    
+    // Build query for fetching data (with pagination)
+    let dataQuery = supabase
       .from('reports')
       .select('*');
     
@@ -28,58 +150,83 @@ router.get('/', async (req, res) => {
       const searchTerm = search.trim();
       // Search in title, description, category, address, and zone using OR conditions
       // Supabase .or() syntax: 'column1.ilike.%term%,column2.ilike.%term%'
-      query = query.or(
-        `title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,zone.ilike.%${searchTerm}%`
-      );
+      const searchFilter = `title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,zone.ilike.%${searchTerm}%`;
+      countQuery = countQuery.or(searchFilter);
+      dataQuery = dataQuery.or(searchFilter);
     }
     
     // Apply category filter if provided
     if (category && typeof category === 'string' && category.trim() && category !== 'all') {
-      query = query.eq('category', category.trim());
+      const categoryValue = category.trim();
+      countQuery = countQuery.eq('category', categoryValue);
+      dataQuery = dataQuery.eq('category', categoryValue);
     }
     
     // Apply zone filter if provided
     if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
-      query = query.eq('zone', zone.trim());
+      const zoneValue = zone.trim();
+      countQuery = countQuery.eq('zone', zoneValue);
+      dataQuery = dataQuery.eq('zone', zoneValue);
     }
     
     // Apply status filter if provided
     if (status && typeof status === 'string' && status.trim() && status !== 'all') {
-      query = query.eq('status', status.trim());
+      const statusValue = status.trim();
+      countQuery = countQuery.eq('status', statusValue);
+      dataQuery = dataQuery.eq('status', statusValue);
     }
     
-    // Order by created_at descending
-    query = query.order('created_at', { ascending: false });
+    // Order by created_at descending (only for data query)
+    dataQuery = dataQuery.order('created_at', { ascending: false });
     
-    const { data: reports, error } = await query;
+    // Apply pagination to data query
+    dataQuery = dataQuery.range(offset, offset + limitNum - 1);
+    
+    // Execute both queries in parallel
+    const [{ count: totalItems, error: countError }, { data: reports, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery
+    ]);
 
-    if (error) {
+    if (countError) {
       return res.status(500).json({
         error: 'Database query error',
-        message: error.message
+        message: countError.message
       });
     }
 
-    // If anonymous_id is provided, enrich reports with favorite and flag status
+    if (dataError) {
+      return res.status(500).json({
+        error: 'Database query error',
+        message: dataError.message
+      });
+    }
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil((totalItems || 0) / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    // If anonymous_id is provided but SQL optimization failed, use original approach
     if (anonymousId && reports && reports.length > 0) {
       const reportIds = reports.map(r => r.id);
       
-      // Get favorites
-      const { data: favorites } = await supabase
-        .from('favorites')
-        .select('report_id')
-        .eq('anonymous_id', anonymousId)
-        .in('report_id', reportIds);
+      // Get favorites and flags in parallel (2 queries instead of N+1)
+      const [favoritesResult, flagsResult] = await Promise.all([
+        supabase
+          .from('favorites')
+          .select('report_id')
+          .eq('anonymous_id', anonymousId)
+          .in('report_id', reportIds),
+        supabase
+          .from('report_flags')
+          .select('report_id')
+          .eq('anonymous_id', anonymousId)
+          .in('report_id', reportIds)
+      ]);
       
-      // Get flags
-      const { data: flags } = await supabase
-        .from('report_flags')
-        .select('report_id')
-        .eq('anonymous_id', anonymousId)
-        .in('report_id', reportIds);
-      
-      const favoriteIds = new Set(favorites?.map(f => f.report_id) || []);
-      const flaggedIds = new Set(flags?.map(f => f.report_id) || []);
+      const favoriteIds = new Set(favoritesResult?.data?.map(f => f.report_id) || []);
+      const flaggedIds = new Set(flagsResult?.data?.map(f => f.report_id) || []);
       
       // Enrich reports
       const enrichedReports = reports.map(report => ({
@@ -90,13 +237,29 @@ router.get('/', async (req, res) => {
       
       return res.json({
         success: true,
-        data: enrichedReports
+        data: enrichedReports,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalItems: totalItems || 0,
+          totalPages,
+          hasNextPage,
+          hasPrevPage
+        }
       });
     }
 
     res.json({
       success: true,
-      data: reports
+      data: reports || [],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalItems: totalItems || 0,
+        totalPages,
+        hasNextPage,
+        hasPrevPage
+      }
     });
   } catch (err) {
     res.status(500).json({
@@ -545,12 +708,27 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
  * POST /api/reports/:id/flag
  * Flag a report as inappropriate
  * Requires: X-Anonymous-Id header
+ * Rate limited: 5 flags per minute per anonymous ID
  */
-router.post('/:id/flag', requireAnonymousId, async (req, res) => {
+router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
     const reason = req.body.reason || null;
+    
+    // Validate reason if provided
+    try {
+      validateFlagReason(reason);
+    } catch (error) {
+      if (error.message.startsWith('VALIDATION_ERROR')) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          message: error.message.replace('VALIDATION_ERROR: ', ''),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+      throw error;
+    }
     
     // Verify report exists and get owner
     const { data: report, error: reportError } = await supabase

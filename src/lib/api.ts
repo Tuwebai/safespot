@@ -3,18 +3,30 @@
  * All requests include X-Anonymous-Id header
  */
 
-import { getAnonymousId, validateAnonymousId } from './identity';
+import { getAnonymousIdSafe, ensureAnonymousId, validateAnonymousId } from './identity';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 /**
  * Get headers with anonymous_id
+ * Uses safe version that never fails and auto-recovers
  */
 function getHeaders(): HeadersInit {
-  const anonymousId = getAnonymousId();
+  // Use ensureAnonymousId to guarantee we have a valid ID
+  // This will regenerate if corrupted and never throw
+  const anonymousId = ensureAnonymousId();
   
-  // Validate before sending
-  validateAnonymousId(anonymousId);
+  // Validate before sending (should always pass, but double-check)
+  try {
+    validateAnonymousId(anonymousId);
+  } catch (error) {
+    // If validation fails, regenerate and try again
+    const newId = ensureAnonymousId();
+    return {
+      'Content-Type': 'application/json',
+      'X-Anonymous-Id': newId,
+    };
+  }
   
   return {
     'Content-Type': 'application/json',
@@ -165,8 +177,8 @@ export const reportsApi = {
       formData.append('images', file);
     });
 
-    const anonymousId = getAnonymousId();
-    validateAnonymousId(anonymousId);
+    // Use ensureAnonymousId to guarantee we have a valid ID
+    const anonymousId = ensureAnonymousId();
 
     const url = `${API_BASE_URL}/reports/${reportId}/images`;
     const response = await fetch(url, {

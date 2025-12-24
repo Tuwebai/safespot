@@ -14,6 +14,7 @@ export function Explorar() {
   const [viewMode, setViewMode] = useState<'map' | 'list'>('list')
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadReports()
@@ -22,10 +23,13 @@ export function Explorar() {
   const loadReports = async () => {
     try {
       setLoading(true)
+      setError(null)
       const data = await reportsApi.getAll()
       setReports(data)
     } catch (error) {
-      handleError(error, toast.error, 'Explorar.loadReports')
+      const errorInfo = handleError(error, toast.error, 'Explorar.loadReports')
+      setError(errorInfo.userMessage)
+      setReports([]) // Clear reports on error
     } finally {
       setLoading(false)
     }
@@ -112,6 +116,21 @@ export function Explorar() {
             <Card className="bg-dark-card border-dark-border">
               <CardContent className="py-12 text-center">
                 <p className="text-muted-foreground">Cargando reportes...</p>
+              </CardContent>
+            </Card>
+          ) : error ? (
+            <Card className="bg-dark-card border-dark-border">
+              <CardContent className="py-12 text-center">
+                <p className="text-destructive mb-4">{error}</p>
+                <Button onClick={loadReports} variant="outline">
+                  Reintentar
+                </Button>
+              </CardContent>
+            </Card>
+          ) : reports.length === 0 ? (
+            <Card className="bg-dark-card border-dark-border">
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">No hay reportes disponibles</p>
               </CardContent>
             </Card>
           ) : (

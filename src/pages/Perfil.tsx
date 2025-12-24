@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
 import { User, Award, TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { getAnonymousId } from '@/lib/identity'
+import { getAnonymousIdSafe } from '@/lib/identity'
 import type { UserProfile, Report } from '@/lib/api'
 
 export function Perfil() {
@@ -42,7 +42,7 @@ export function Perfil() {
     return Math.min(100, Math.max(0, progress))
   }
 
-  const anonymousId = getAnonymousId()
+  const anonymousId = getAnonymousIdSafe()
 
   if (loading) {
     return (

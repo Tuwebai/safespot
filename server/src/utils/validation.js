@@ -186,3 +186,95 @@ export function validateCommentUpdate(data) {
   return true;
 }
 
+/**
+ * Validate flag reason
+ * Reason is optional but if provided, must be a valid string with max length
+ */
+export function validateFlagReason(reason) {
+  const MAX_REASON_LENGTH = 500;
+  
+  // Reason is optional (can be null)
+  if (reason === null || reason === undefined) {
+    return true;
+  }
+  
+  // If provided, must be a string
+  if (typeof reason !== 'string') {
+    throw new Error('VALIDATION_ERROR: reason must be a string');
+  }
+  
+  // Check length
+  if (reason.length > MAX_REASON_LENGTH) {
+    throw new Error(`VALIDATION_ERROR: reason must be ${MAX_REASON_LENGTH} characters or less`);
+  }
+  
+  return true;
+}
+
+/**
+ * Validate URL format
+ * Only allows http:// and https:// schemes
+ * Rejects dangerous schemes like file://, javascript:, data:, etc.
+ */
+export function validateImageUrl(url) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('VALIDATION_ERROR: URL must be a non-empty string');
+  }
+  
+  try {
+    const urlObj = new URL(url);
+    
+    // Only allow http and https schemes
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      throw new Error('VALIDATION_ERROR: URL must use http:// or https:// protocol');
+    }
+    
+    // Additional security: reject common dangerous patterns
+    const dangerousPatterns = [
+      /javascript:/i,
+      /data:/i,
+      /vbscript:/i,
+      /file:/i,
+      /about:/i,
+    ];
+    
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(url)) {
+        throw new Error('VALIDATION_ERROR: Invalid URL scheme');
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    // If URL constructor throws, it's an invalid URL
+    if (error.message.startsWith('VALIDATION_ERROR')) {
+      throw error;
+    }
+    throw new Error('VALIDATION_ERROR: Invalid URL format');
+  }
+}
+
+/**
+ * Validate array of image URLs (if provided)
+ */
+export function validateImageUrls(urls) {
+  if (!urls) {
+    return true; // Optional field
+  }
+  
+  if (!Array.isArray(urls)) {
+    throw new Error('VALIDATION_ERROR: image_urls must be an array');
+  }
+  
+  // Validate each URL
+  urls.forEach((url, index) => {
+    try {
+      validateImageUrl(url);
+    } catch (error) {
+      throw new Error(`VALIDATION_ERROR: image_urls[${index}]: ${error.message.replace('VALIDATION_ERROR: ', '')}`);
+    }
+  });
+  
+  return true;
+}
+

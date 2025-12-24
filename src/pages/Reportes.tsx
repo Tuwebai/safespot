@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
-import { getAnonymousId } from '@/lib/identity'
+import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -18,6 +18,7 @@ export function Reportes() {
   const toast = useToast()
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedZone, setSelectedZone] = useState<string>('all')
@@ -30,6 +31,7 @@ export function Reportes() {
   const loadReports = useCallback(async () => {
     try {
       setLoading(true)
+      setError(null)
       const filters: any = {}
       if (selectedCategory !== 'all') filters.category = selectedCategory
       if (selectedZone !== 'all') filters.zone = selectedZone
@@ -39,11 +41,13 @@ export function Reportes() {
       const data = await reportsApi.getAll(filters)
       setReports(data)
     } catch (error) {
-      handleError(error, toast.error, 'Reportes.loadReports')
+      const errorInfo = handleError(error, toast.error, 'Reportes.loadReports')
+      setError(errorInfo.userMessage)
+      setReports([]) // Clear reports on error
     } finally {
       setLoading(false)
     }
-  }, [selectedCategory, selectedZone, selectedStatus, searchTerm])
+  }, [selectedCategory, selectedZone, selectedStatus, searchTerm, toast])
 
   // Debounced search and filters
   useEffect(() => {
@@ -211,8 +215,7 @@ export function Reportes() {
     const report = reports.find(r => r.id === reportId)
     if (!report) return
     
-    const currentAnonymousId = getAnonymousId()
-    if (!currentAnonymousId) return
+    const currentAnonymousId = getAnonymousIdSafe()
     
     // No permitir flag si es owner
     if (report.anonymous_id === currentAnonymousId) {
@@ -247,8 +250,8 @@ export function Reportes() {
     }
     
     // Validaciones finales
-    const currentAnonymousId = getAnonymousId()
-    if (!currentAnonymousId || report.anonymous_id === currentAnonymousId || report.is_flagged === true) {
+    const currentAnonymousId = getAnonymousIdSafe()
+    if (report.anonymous_id === currentAnonymousId || report.is_flagged === true) {
       setIsFlagDialogOpen(false)
       setFlaggingReportId(null)
       return
@@ -389,6 +392,15 @@ export function Reportes() {
               <p className="text-muted-foreground">Cargando reportes...</p>
             </CardContent>
           </Card>
+        ) : error ? (
+          <Card className="bg-dark-card border-dark-border">
+            <CardContent className="py-12 text-center">
+              <p className="text-destructive mb-4">{error}</p>
+              <Button onClick={() => loadReports()} variant="outline">
+                Reintentar
+              </Button>
+            </CardContent>
+          </Card>
         ) : reports.length === 0 ? (
           <Card className="bg-dark-card border-dark-border">
             <CardContent className="py-12 text-center">
@@ -518,12 +530,16 @@ export function Reportes() {
                               className={isFavorite ? 'text-red-400 hover:text-red-300' : ''}
                               title={isToggling ? 'Guardando...' : (isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos')}
                             >
-                              <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
+                              {isToggling ? (
+                                <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                              ) : (
+                                <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
+                              )}
                             </Button>
                           )
                         })()}
                         {(() => {
-                          const currentAnonymousId = getAnonymousId()
+                          const currentAnonymousId = getAnonymousIdSafe()
                           const isOwner = report?.anonymous_id === currentAnonymousId
                           const isFlagged = report?.is_flagged ?? false
                           const isFlagging = flaggingReports.has(report.id)
@@ -550,9 +566,13 @@ export function Reportes() {
                               onClick={(e) => handleFlag(e, report.id)}
                               disabled={isFlagging}
                               className="hover:text-yellow-400"
-                              title="Reportar contenido inapropiado"
+                              title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
                             >
-                              <Flag className="h-4 w-4" />
+                              {isFlagging ? (
+                                <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                              ) : (
+                                <Flag className="h-4 w-4" />
+                              )}
                             </Button>
                           )
                         })()}
@@ -583,17 +603,27 @@ export function Reportes() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => (
-                  <Button
-                    key={reason}
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => handleFlagSubmit(reason)}
-                    disabled={flaggingReports.has(flaggingReportId ?? '')}
-                  >
-                    {reason}
-                  </Button>
-                ))}
+                {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
+                  const isFlagging = flaggingReports.has(flaggingReportId ?? '')
+                  return (
+                    <Button
+                      key={reason}
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => handleFlagSubmit(reason)}
+                      disabled={isFlagging}
+                    >
+                      {isFlagging ? (
+                        <>
+                          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                          Reportando...
+                        </>
+                      ) : (
+                        reason
+                      )}
+                    </Button>
+                  )
+                })}
                 <Button
                   variant="ghost"
                   className="w-full mt-4"

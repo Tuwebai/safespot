@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { reportsApi, commentsApi } from '@/lib/api'
-import { getAnonymousId } from '@/lib/identity'
+import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
-import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
+import { handleError, handleErrorWithMessage, handleErrorSilently } from '@/lib/errorHandler'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select } from '@/components/ui/select'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
+import { STATUS_OPTIONS } from '@/lib/constants'
 import { EnhancedComment } from '@/components/comments/enhanced-comment'
 import { ThreadList } from '@/components/comments/thread-list'
 import { 
@@ -20,7 +24,10 @@ import {
   Eye,
   Image as ImageIcon,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Edit,
+  Save,
+  X
 } from 'lucide-react'
 import type { Report, Comment } from '@/lib/api'
 
@@ -48,6 +55,15 @@ export function DetalleReporte() {
   const [submittingThread, setSubmittingThread] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [flaggingReport, setFlaggingReport] = useState(false)
+  const [flaggingCommentId, setFlaggingCommentId] = useState<string | null>(null)
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editStatus, setEditStatus] = useState<Report['status']>('pendiente')
+  const [updating, setUpdating] = useState(false)
+  const [savingFavorite, setSavingFavorite] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -70,6 +86,8 @@ export function DetalleReporte() {
       const data = await reportsApi.getById(id)
       setReport(data)
       setError(null)
+      // Reset edit mode when loading a new report
+      setIsEditing(false)
     } catch (error) {
       const errorInfo = handleError(error, toast.error, 'DetalleReporte.loadReport')
       setError(errorInfo.userMessage)
@@ -85,7 +103,7 @@ export function DetalleReporte() {
       const data = await commentsApi.getByReportId(id)
       setComments(data)
     } catch (error) {
-      // Comments are non-critical, log but don't show error to user
+      // Show error to user but allow page to continue functioning
       handleError(error, toast.error, 'DetalleReporte.loadComments')
     }
   }
@@ -97,16 +115,17 @@ export function DetalleReporte() {
       // The is_favorite flag comes from the report data
       setIsSaved(report.is_favorite ?? false)
     } catch (error) {
-      // Non-critical error, just set default
-      handleError(error, toast.error, 'DetalleReporte.checkSaved')
+      // Set default and log error (this is non-critical for page functionality)
+      handleErrorSilently(error, 'DetalleReporte.checkSaved')
       setIsSaved(false)
     }
   }
 
   const handleSave = async () => {
-    if (!id) return
+    if (!id || savingFavorite) return
     
     try {
+      setSavingFavorite(true)
       const result = await reportsApi.toggleFavorite(id)
       
       // Validate result structure - explicit contract validation
@@ -121,6 +140,8 @@ export function DetalleReporte() {
       }
     } catch (error) {
       handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'DetalleReporte.handleSave')
+    } finally {
+      setSavingFavorite(false)
     }
   }
 
@@ -133,9 +154,10 @@ export function DetalleReporte() {
   }
 
   const handleFlagSubmit = async (reason: string) => {
-    if (!id) return
+    if (!id || flaggingReport) return
     
     try {
+      setFlaggingReport(true)
       await reportsApi.flag(id, reason)
       setIsFlagDialogOpen(false)
       
@@ -156,6 +178,8 @@ export function DetalleReporte() {
       } else {
         handleErrorWithMessage(error, 'Error al denunciar el reporte', toast.error, 'DetalleReporte.handleFlagSubmit')
       }
+    } finally {
+      setFlaggingReport(false)
     }
   }
 
@@ -173,6 +197,54 @@ export function DetalleReporte() {
     } finally {
       setDeleting(false)
       setIsDeleteDialogOpen(false)
+    }
+  }
+
+  const handleStartEdit = () => {
+    if (!report) return
+    setEditTitle(report.title)
+    setEditDescription(report.description)
+    setEditStatus(report.status)
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditTitle('')
+    setEditDescription('')
+    setEditStatus('pendiente')
+  }
+
+  const handleUpdateReport = async () => {
+    if (!id || !report) return
+    
+    // Validate fields
+    if (!editTitle.trim()) {
+      toast.error('El título es requerido')
+      return
+    }
+    
+    if (!editDescription.trim()) {
+      toast.error('La descripción es requerida')
+      return
+    }
+
+    try {
+      setUpdating(true)
+      const updatedReport = await reportsApi.update(id, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        status: editStatus
+      })
+      
+      // Update local state
+      setReport(updatedReport)
+      setIsEditing(false)
+      toast.success('Reporte actualizado correctamente')
+    } catch (error) {
+      handleErrorWithMessage(error, 'Error al actualizar el reporte', toast.error, 'DetalleReporte.handleUpdateReport')
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -204,6 +276,22 @@ export function DetalleReporte() {
   const handleReplySubmit = async (parentId: string) => {
     if (!id || !replyText.trim() || submittingReply) return
 
+    // Validate that parent comment exists and belongs to the same report
+    const parentComment = comments.find(c => c.id === parentId)
+    if (!parentComment) {
+      toast.error('El comentario al que intentas responder ya no existe. Por favor, recarga la página.')
+      setReplyingTo(null)
+      setReplyText('')
+      return
+    }
+
+    if (parentComment.report_id !== id) {
+      toast.error('Error: El comentario padre no pertenece a este reporte.')
+      setReplyingTo(null)
+      setReplyText('')
+      return
+    }
+
     try {
       setSubmittingReply(true)
       await commentsApi.create({
@@ -234,21 +322,24 @@ export function DetalleReporte() {
   }
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este comentario?')) return
+    if (!confirm('¿Estás seguro de que quieres eliminar este comentario?') || deletingCommentId === commentId) return
 
     try {
+      setDeletingCommentId(commentId)
       await commentsApi.delete(commentId)
       await loadComments()
       await loadReport()
     } catch (error) {
       const errorInfo = handleErrorWithMessage(error, 'No se pudo eliminar el comentario', toast.error, 'DetalleReporte.handleDeleteComment')
       setError(errorInfo.userMessage)
+    } finally {
+      setDeletingCommentId(null)
     }
   }
 
   const handleFlagComment = async (commentId: string) => {
     const comment = comments.find(c => c.id === commentId)
-    if (!comment) return
+    if (!comment || flaggingCommentId === commentId) return
     
     // Check if already flagged (frontend check)
     if (comment.is_flagged) {
@@ -257,7 +348,7 @@ export function DetalleReporte() {
     }
     
     // Check if user is trying to flag their own comment
-    const currentAnonymousId = getAnonymousId()
+    const currentAnonymousId = getAnonymousIdSafe()
     if (comment.anonymous_id === currentAnonymousId) {
       toast.warning('No puedes reportar tu propio comentario')
       return
@@ -268,6 +359,7 @@ export function DetalleReporte() {
     }
     
     try {
+      setFlaggingCommentId(commentId)
       await commentsApi.flag(commentId)
       
       // Update local state immediately
@@ -294,6 +386,8 @@ export function DetalleReporte() {
       } else {
         handleErrorWithMessage(error, 'Error al reportar el comentario', toast.error, 'DetalleReporte.handleFlagComment')
       }
+    } finally {
+      setFlaggingCommentId(null)
     }
   }
 
@@ -435,17 +529,53 @@ export function DetalleReporte() {
           {/* Left Column */}
           <div className="flex-1">
             {/* Title Row */}
-            <div className="flex items-center gap-3 mb-3">
-              <h1 className="text-3xl font-bold text-foreground">{report.title}</h1>
-              <Badge className={getStatusColor(report.status)}>
-                {getStatusLabel(report.status)}
-              </Badge>
-            </div>
-            {/* Location Row */}
-            <div className="flex items-center text-foreground/60">
-              <MapPin className="h-4 w-4 mr-2" />
-              <span>{report.zone}</span>
-            </div>
+            {isEditing ? (
+              <div className="space-y-4 mb-3">
+                <div>
+                  <label className="block text-sm font-medium text-foreground/80 mb-2">
+                    Título
+                  </label>
+                  <Input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Título del reporte"
+                    className="bg-dark-bg border-dark-border"
+                    disabled={updating}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground/80 mb-2">
+                    Estado
+                  </label>
+                  <Select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as Report['status'])}
+                    className="bg-dark-bg border-dark-border"
+                    disabled={updating}
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-3">
+                  <h1 className="text-3xl font-bold text-foreground">{report.title}</h1>
+                  <Badge className={getStatusColor(report.status)}>
+                    {getStatusLabel(report.status)}
+                  </Badge>
+                </div>
+                {/* Location Row */}
+                <div className="flex items-center text-foreground/60">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  <span>{report.zone}</span>
+                </div>
+              </>
+            )}
           </div>
           {/* Right Column (Actions) */}
           <div className="flex items-center space-x-2">
@@ -453,29 +583,80 @@ export function DetalleReporte() {
               variant="ghost"
               size="sm"
               onClick={handleSave}
+              disabled={savingFavorite}
               className={isSaved ? 'text-red-400 hover:text-red-300' : ''}
-              title={isSaved ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+              title={savingFavorite ? 'Guardando...' : (isSaved ? 'Quitar de favoritos' : 'Guardar en favoritos')}
             >
-              <Heart className={`h-4 w-4 mr-2 ${isSaved ? 'fill-current' : ''}`} />
-              Guardar
+              {savingFavorite ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Heart className={`h-4 w-4 mr-2 ${isSaved ? 'fill-current' : ''}`} />
+                  Guardar
+                </>
+              )}
             </Button>
             {(() => {
-              const currentAnonymousId = getAnonymousId()
+              const currentAnonymousId = getAnonymousIdSafe()
               const isOwner = report.anonymous_id === currentAnonymousId
               const isFlagged = report.is_flagged ?? false
               
               if (isOwner) {
                 return (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    className="hover:text-red-400"
-                    title="Eliminar reporte"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Eliminar
-                  </Button>
+                  <>
+                    {!isEditing ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleStartEdit}
+                          className="hover:text-neon-green"
+                          title="Editar reporte"
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsDeleteDialogOpen(true)}
+                          className="hover:text-red-400"
+                          title="Eliminar reporte"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Eliminar
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleUpdateReport}
+                          disabled={updating}
+                          className="hover:text-neon-green"
+                          title="Guardar cambios"
+                        >
+                          <Save className="h-4 w-4 mr-2" />
+                          {updating ? 'Guardando...' : 'Guardar'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCancelEdit}
+                          disabled={updating}
+                          className="hover:text-red-400"
+                          title="Cancelar edición"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancelar
+                        </Button>
+                      </>
+                    )}
+                  </>
                 )
               }
               
@@ -511,9 +692,24 @@ export function DetalleReporte() {
           <CardTitle>Descripción</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-foreground/80 leading-relaxed">
-            {report.description}
-          </p>
+          {isEditing ? (
+            <div>
+              <label className="block text-sm font-medium text-foreground/80 mb-2">
+                Descripción
+              </label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Descripción del reporte"
+                className="bg-dark-bg border-dark-border min-h-[150px]"
+                disabled={updating}
+              />
+            </div>
+          ) : (
+            <p className="text-foreground/80 leading-relaxed">
+              {report.description}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -638,7 +834,7 @@ export function DetalleReporte() {
                 .filter(c => !c.parent_id && !(c.is_thread === true)) // Solo comentarios top-level que NO son hilos
                 .map((comment) => {
                   const commentReplies = comments.filter(c => c.parent_id === comment.id)
-                  const currentAnonymousId = getAnonymousId()
+                  const currentAnonymousId = getAnonymousIdSafe()
                   const isCommentOwner = comment.anonymous_id === currentAnonymousId
                   const isCommentMod = false // Prepared for future mod system
                   
@@ -703,7 +899,7 @@ export function DetalleReporte() {
 
         {/* Threads View */}
         {viewMode === 'threads' && (() => {
-          const currentAnonymousId = getAnonymousId()
+                  const currentAnonymousId = getAnonymousIdSafe()
           const isThreadMod = false // Prepared for future mod system
           
           return (
@@ -795,14 +991,23 @@ export function DetalleReporte() {
                     variant="outline"
                     className="w-full justify-start"
                     onClick={() => handleFlagSubmit(reason)}
+                    disabled={flaggingReport}
                   >
-                    {reason}
+                    {flaggingReport ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                        Reportando...
+                      </>
+                    ) : (
+                      reason
+                    )}
                   </Button>
                 ))}
                 <Button
                   variant="ghost"
                   className="w-full mt-4"
                   onClick={() => setIsFlagDialogOpen(false)}
+                  disabled={flaggingReport}
                 >
                   Cancelar
                 </Button>

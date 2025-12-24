@@ -1,28 +1,57 @@
 import express from 'express';
-import { requireAnonymousId, validateComment, validateCommentUpdate } from '../utils/validation.js';
+import { requireAnonymousId, validateComment, validateCommentUpdate, validateFlagReason } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
+import { flagRateLimiter } from '../utils/rateLimiter.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
 
 /**
  * GET /api/comments/:reportId
- * Get all comments for a report with likes information
- * Optional query param: anonymous_id to check if user liked each comment
+ * Get all comments for a report with likes information and pagination
+ * Query params: page, limit
+ * Optional: anonymous_id header to check if user liked each comment
  */
 router.get('/:reportId', async (req, res) => {
   try {
     const { reportId } = req.params;
     const anonymousId = req.headers['x-anonymous-id'];
+    const { page, limit } = req.query;
     
-    // Get all comments for the report
-    const { data: comments, error: commentsError } = await supabase
+    // Parse pagination parameters with defaults and validation
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
+    const offset = (pageNum - 1) * limitNum;
+    
+    // Build base query for counting total comments (without pagination)
+    const countQuery = supabase
+      .from('comments')
+      .select('*', { count: 'exact', head: true })
+      .eq('report_id', reportId);
+    
+    // Build query for fetching comments (with pagination)
+    let dataQuery = supabase
       .from('comments')
       .select('*')
       .eq('report_id', reportId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .range(offset, offset + limitNum - 1);
     
+    // Execute both queries in parallel
+    const [{ count: totalItems, error: countError }, { data: comments, error: commentsError }] = await Promise.all([
+      countQuery,
+      dataQuery
+    ]);
+    
+    if (countError) {
+      logError(countError, req);
+      return res.status(500).json({
+        error: 'Failed to fetch comments',
+        message: countError.message
+      });
+    }
+
     if (commentsError) {
       logError(commentsError, req);
       return res.status(500).json({
@@ -31,11 +60,24 @@ router.get('/:reportId', async (req, res) => {
       });
     }
 
+    // Calculate pagination metadata
+    const totalPages = Math.ceil((totalItems || 0) / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
     if (!comments || comments.length === 0) {
       return res.json({
         success: true,
         data: [],
-        count: 0
+        count: 0,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalItems: totalItems || 0,
+          totalPages,
+          hasNextPage,
+          hasPrevPage
+        }
       });
     }
 
@@ -79,7 +121,15 @@ router.get('/:reportId', async (req, res) => {
     res.json({
       success: true,
       data: enrichedComments,
-      count: enrichedComments.length
+      count: enrichedComments.length,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalItems: totalItems || 0,
+        totalPages,
+        hasNextPage,
+        hasPrevPage
+      }
     });
   } catch (err) {
     logError(err, req);
@@ -570,12 +620,27 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
  * POST /api/comments/:id/flag
  * Flag a comment as inappropriate
  * Requires: X-Anonymous-Id header
+ * Rate limited: 5 flags per minute per anonymous ID
  */
-router.post('/:id/flag', requireAnonymousId, async (req, res) => {
+router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
     const reason = req.body.reason || null;
+    
+    // Validate reason if provided
+    try {
+      validateFlagReason(reason);
+    } catch (error) {
+      if (error.message.startsWith('VALIDATION_ERROR')) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          message: error.message.replace('VALIDATION_ERROR: ', ''),
+          code: 'VALIDATION_ERROR'
+        });
+      }
+      throw error;
+    }
     
     // Verify comment exists and get owner
     const { data: comment, error: commentError } = await supabase
