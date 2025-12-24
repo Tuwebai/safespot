@@ -1,0 +1,139 @@
+import { validate as uuidValidate } from 'uuid';
+import { logError } from './logger.js';
+
+/**
+ * Validates anonymous_id format (must be UUID v4)
+ */
+export function validateAnonymousId(anonymousId) {
+  if (!anonymousId) {
+    throw new Error('ANONYMOUS_ID_REQUIRED: anonymous_id is required in X-Anonymous-Id header');
+  }
+  
+  if (typeof anonymousId !== 'string') {
+    throw new Error('ANONYMOUS_ID_INVALID: anonymous_id must be a string');
+  }
+  
+  if (!uuidValidate(anonymousId)) {
+    throw new Error('ANONYMOUS_ID_INVALID: anonymous_id must be a valid UUID v4');
+  }
+  
+  return true;
+}
+
+/**
+ * Middleware to validate anonymous_id in request
+ */
+export function requireAnonymousId(req, res, next) {
+  try {
+    const anonymousId = req.headers['x-anonymous-id'];
+    validateAnonymousId(anonymousId);
+    req.anonymousId = anonymousId;
+    next();
+  } catch (error) {
+    logError(error, req);
+    return res.status(400).json({
+      error: error.message,
+      code: 'ANONYMOUS_ID_VALIDATION_FAILED'
+    });
+  }
+}
+
+/**
+ * Validate report data
+ */
+export function validateReport(data) {
+  const errors = [];
+  
+  if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
+    errors.push('title is required and must be a non-empty string');
+  }
+  
+  if (data.title && data.title.length > 255) {
+    errors.push('title must be 255 characters or less');
+  }
+  
+  if (!data.description || typeof data.description !== 'string' || data.description.trim().length === 0) {
+    errors.push('description is required and must be a non-empty string');
+  }
+  
+  if (!data.category || typeof data.category !== 'string') {
+    errors.push('category is required');
+  }
+  
+  // Validate category is one of the official categories
+  const validCategories = ['Celulares', 'Bicicletas', 'Motos', 'Autos', 'Laptops', 'Carteras'];
+  if (data.category && !validCategories.includes(data.category)) {
+    errors.push(`category must be one of: ${validCategories.join(', ')}`);
+  }
+  
+  if (!data.zone || typeof data.zone !== 'string') {
+    errors.push('zone is required');
+  }
+  
+  if (!data.address || typeof data.address !== 'string' || data.address.trim().length === 0) {
+    errors.push('address is required and must be a non-empty string');
+  }
+  
+  if (data.latitude !== undefined && data.latitude !== null) {
+    const lat = parseFloat(data.latitude);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      errors.push('latitude must be a number between -90 and 90');
+    }
+  }
+  
+  if (data.longitude !== undefined && data.longitude !== null) {
+    const lng = parseFloat(data.longitude);
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      errors.push('longitude must be a number between -180 and 180');
+    }
+  }
+  
+  if (data.status && !['pendiente', 'en_proceso', 'resuelto', 'cerrado'].includes(data.status)) {
+    errors.push('status must be one of: pendiente, en_proceso, resuelto, cerrado');
+  }
+  
+  if (errors.length > 0) {
+    throw new Error(`VALIDATION_ERROR: ${errors.join('; ')}`);
+  }
+  
+  return true;
+}
+
+/**
+ * Validate comment data
+ */
+export function validateComment(data) {
+  const errors = [];
+  
+  if (!data.content || typeof data.content !== 'string' || data.content.trim().length === 0) {
+    errors.push('content is required and must be a non-empty string');
+  }
+  
+  if (data.content && data.content.length > 5000) {
+    errors.push('content must be 5000 characters or less');
+  }
+  
+  if (!data.report_id || typeof data.report_id !== 'string') {
+    errors.push('report_id is required and must be a valid UUID');
+  }
+  
+  if (data.report_id && !uuidValidate(data.report_id)) {
+    errors.push('report_id must be a valid UUID');
+  }
+  
+  // Validate parent_id if provided (for replies)
+  if (data.parent_id !== undefined && data.parent_id !== null) {
+    if (typeof data.parent_id !== 'string') {
+      errors.push('parent_id must be a string');
+    } else if (!uuidValidate(data.parent_id)) {
+      errors.push('parent_id must be a valid UUID');
+    }
+  }
+  
+  if (errors.length > 0) {
+    throw new Error(`VALIDATION_ERROR: ${errors.join('; ')}`);
+  }
+  
+  return true;
+}
+
