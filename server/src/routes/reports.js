@@ -3,7 +3,6 @@ import multer from 'multer';
 import { requireAnonymousId, validateReport } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { queryWithRLS } from '../utils/rls.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
@@ -11,16 +10,48 @@ const router = express.Router();
 /**
  * GET /api/reports
  * List all reports with optional filters
+ * Query params: search, category, zone, status
  * Optional: includes is_favorite and is_flagged if X-Anonymous-Id header is present
  */
 router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
+    const { search, category, zone, status } = req.query;
     
-    const { data: reports, error } = await supabase
+    // Build Supabase query
+    let query = supabase
       .from('reports')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
+    
+    // Apply search filter if provided
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTerm = search.trim();
+      // Search in title, description, category, address, and zone using OR conditions
+      // Supabase .or() syntax: 'column1.ilike.%term%,column2.ilike.%term%'
+      query = query.or(
+        `title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,zone.ilike.%${searchTerm}%`
+      );
+    }
+    
+    // Apply category filter if provided
+    if (category && typeof category === 'string' && category.trim() && category !== 'all') {
+      query = query.eq('category', category.trim());
+    }
+    
+    // Apply zone filter if provided
+    if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
+      query = query.eq('zone', zone.trim());
+    }
+    
+    // Apply status filter if provided
+    if (status && typeof status === 'string' && status.trim() && status !== 'all') {
+      query = query.eq('status', status.trim());
+    }
+    
+    // Order by created_at descending
+    query = query.order('created_at', { ascending: false });
+    
+    const { data: reports, error } = await query;
 
     if (error) {
       return res.status(500).json({
@@ -216,38 +247,42 @@ router.post('/', requireAnonymousId, async (req, res) => {
       incidentDate = new Date().toISOString();
     }
     
-    // Insert report using queryWithRLS to ensure RLS context is set
-    // This ensures the INSERT policy can verify anonymous_id = current_anonymous_id()
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      `INSERT INTO reports (
-        anonymous_id, title, description, category, zone, address,
-        latitude, longitude, status, incident_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
-      [
-        anonymousId,
-        req.body.title.trim(),
-        req.body.description.trim(),
-        req.body.category,
-        req.body.zone,
-        req.body.address.trim(),
-        req.body.latitude || null,
-        req.body.longitude || null,
-        req.body.status || 'pendiente',
-        incidentDate
-      ]
-    );
+    // Insert report using Supabase (which respects RLS policies)
+    // The RLS policy will verify anonymous_id = current_anonymous_id()
+    const { data: newReport, error: insertError } = await supabase
+      .from('reports')
+      .insert({
+        anonymous_id: anonymousId,
+        title: req.body.title.trim(),
+        description: req.body.description.trim(),
+        category: req.body.category,
+        zone: req.body.zone,
+        address: req.body.address.trim(),
+        latitude: req.body.latitude || null,
+        longitude: req.body.longitude || null,
+        status: req.body.status || 'pendiente',
+        incident_date: incidentDate
+      })
+      .select()
+      .single();
     
-    if (!insertResult.rows || insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no rows'), req);
+    if (insertError) {
+      logError(insertError, req);
+      return res.status(500).json({
+        error: 'Failed to create report',
+        message: insertError.message
+      });
+    }
+    
+    if (!newReport) {
+      logError(new Error('Insert returned no data'), req);
       return res.status(500).json({
         error: 'Failed to create report',
         message: 'Insert operation returned no data'
       });
     }
     
-    const data = insertResult.rows[0];
+    const data = newReport;
     
     logSuccess('Report created', { 
       id: data.id,
@@ -334,42 +369,32 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
       });
     }
     
-    // Update report using queryWithRLS to ensure RLS context is set
-    // RLS policy will verify anonymous_id = current_anonymous_id()
-    const updateFields = Object.keys(updateData);
-    const updateValues = Object.values(updateData);
-    const updatedAt = new Date().toISOString();
+    // Add updated_at timestamp
+    updateData.updated_at = new Date().toISOString();
     
-    // Build SET clause: campo1 = $2, campo2 = $3, ..., updated_at = $N
-    // WHERE id = $1 AND anonymous_id = $N+1
-    const setParts = updateFields.map((key, i) => `${key} = $${i + 2}`);
-    setParts.push(`updated_at = $${updateFields.length + 2}`);
+    // Update report using Supabase (which respects RLS policies)
+    // The RLS policy will verify anonymous_id = current_anonymous_id()
+    const { data: updatedReport, error: updateError } = await supabase
+      .from('reports')
+      .update(updateData)
+      .eq('id', id)
+      .eq('anonymous_id', anonymousId)
+      .select()
+      .single();
     
-    const allValues = [
-      id,                    // $1
-      ...updateValues,       // $2, $3, ...
-      updatedAt,             // $N+1
-      anonymousId            // $N+2 (for WHERE clause)
-    ];
+    if (updateError) {
+      logError(updateError, req);
+      return res.status(500).json({
+        error: 'Failed to update report',
+        message: updateError.message
+      });
+    }
     
-    const anonymousIdParamIndex = updateFields.length + 3;
-    
-    const updateResult = await queryWithRLS(
-      anonymousId,
-      `UPDATE reports
-       SET ${setParts.join(', ')}
-       WHERE id = $1 AND anonymous_id = $${anonymousIdParamIndex}
-       RETURNING *`,
-      allValues
-    );
-    
-    if (!updateResult.rows || updateResult.rows.length === 0) {
+    if (!updatedReport) {
       return res.status(403).json({
         error: 'Forbidden: You can only update your own reports'
       });
     }
-    
-    const updatedReport = updateResult.rows[0];
     
     logSuccess('Report updated', { id, anonymousId });
     
@@ -566,40 +591,55 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       });
     }
     
-    // Check if already flagged using queryWithRLS
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id FROM report_flags
-       WHERE anonymous_id = $1 AND report_id = $2
-       LIMIT 1`,
-      [anonymousId, id]
-    );
+    // Check if already flagged using Supabase
+    const { data: existingFlag, error: checkError } = await supabase
+      .from('report_flags')
+      .select('id')
+      .eq('anonymous_id', anonymousId)
+      .eq('report_id', id)
+      .maybeSingle();
     
-    if (checkResult.rows && checkResult.rows.length > 0) {
+    if (checkError) {
+      logError(checkError, req);
+      return res.status(500).json({
+        error: 'Failed to check for existing flag',
+        message: checkError.message
+      });
+    }
+    
+    if (existingFlag) {
       return res.status(409).json({
         error: 'Report already flagged by this user',
         message: 'You have already flagged this report'
       });
     }
     
-    // Create flag using queryWithRLS
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      `INSERT INTO report_flags (anonymous_id, report_id, reason)
-       VALUES ($1, $2, $3)
-       RETURNING id, report_id, reason`,
-      [anonymousId, id, reason]
-    );
+    // Create flag using Supabase (which respects RLS policies)
+    const { data: newFlag, error: insertError } = await supabase
+      .from('report_flags')
+      .insert({
+        anonymous_id: anonymousId,
+        report_id: id,
+        reason: reason
+      })
+      .select('id, report_id, reason')
+      .single();
     
-    if (!insertResult.rows || insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no rows'), req);
+    if (insertError) {
+      logError(insertError, req);
+      return res.status(500).json({
+        error: 'Failed to flag report',
+        message: insertError.message
+      });
+    }
+    
+    if (!newFlag) {
+      logError(new Error('Insert returned no data'), req);
       return res.status(500).json({
         error: 'Failed to flag report',
         message: 'Insert operation returned no data'
       });
     }
-    
-    const newFlag = insertResult.rows[0];
     
     res.status(201).json({
       success: true,
@@ -650,17 +690,25 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       });
     }
     
-    // Delete report using queryWithRLS to ensure RLS context is set
-    // RLS policy will verify anonymous_id = current_anonymous_id()
-    const deleteResult = await queryWithRLS(
-      anonymousId,
-      `DELETE FROM reports
-       WHERE id = $1 AND anonymous_id = $2
-       RETURNING id`,
-      [id, anonymousId]
-    );
+    // Delete report using Supabase (which respects RLS policies)
+    // The RLS policy will verify anonymous_id = current_anonymous_id()
+    const { data: deletedReport, error: deleteError } = await supabase
+      .from('reports')
+      .delete()
+      .eq('id', id)
+      .eq('anonymous_id', anonymousId)
+      .select('id')
+      .single();
     
-    if (!deleteResult.rows || deleteResult.rows.length === 0) {
+    if (deleteError) {
+      logError(deleteError, req);
+      return res.status(500).json({
+        error: 'Failed to delete report',
+        message: deleteError.message
+      });
+    }
+    
+    if (!deletedReport) {
       return res.status(403).json({
         error: 'Forbidden: You can only delete your own reports'
       });
