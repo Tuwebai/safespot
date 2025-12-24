@@ -3,12 +3,15 @@ import { usersApi, reportsApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
+import { handleError } from '@/lib/errorHandler'
 import { User, Award, TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getAnonymousId } from '@/lib/identity'
 import type { UserProfile, Report } from '@/lib/api'
 
 export function Perfil() {
+  const toast = useToast()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -22,8 +25,10 @@ export function Perfil() {
       setLoading(true)
       const data = await usersApi.getProfile()
       setProfile(data)
+      setError(null)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Error al cargar perfil')
+      const errorInfo = handleError(error, toast.error, 'Perfil.loadProfile')
+      setError(errorInfo.userMessage)
     } finally {
       setLoading(false)
     }

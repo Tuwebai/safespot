@@ -619,6 +619,69 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
 });
 
 /**
+ * DELETE /api/reports/:id
+ * Delete a report (only by creator)
+ * Requires: X-Anonymous-Id header
+ */
+router.delete('/:id', requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+    
+    // Check if report exists and belongs to user
+    const { data: report, error: checkError } = await supabase
+      .from('reports')
+      .select('id, anonymous_id')
+      .eq('id', id)
+      .eq('anonymous_id', anonymousId)
+      .maybeSingle();
+    
+    if (checkError) {
+      logError(checkError, req);
+      return res.status(500).json({
+        error: 'Failed to verify report',
+        message: checkError.message
+      });
+    }
+    
+    if (!report) {
+      return res.status(404).json({
+        error: 'Report not found or you do not have permission to delete it'
+      });
+    }
+    
+    // Delete report using queryWithRLS to ensure RLS context is set
+    // RLS policy will verify anonymous_id = current_anonymous_id()
+    const deleteResult = await queryWithRLS(
+      anonymousId,
+      `DELETE FROM reports
+       WHERE id = $1 AND anonymous_id = $2
+       RETURNING id`,
+      [id, anonymousId]
+    );
+    
+    if (!deleteResult.rows || deleteResult.rows.length === 0) {
+      return res.status(403).json({
+        error: 'Forbidden: You can only delete your own reports'
+      });
+    }
+    
+    logSuccess('Report deleted', { id, anonymousId });
+    
+    res.json({
+      success: true,
+      message: 'Report deleted successfully'
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({
+      error: 'Failed to delete report',
+      message: error.message
+    });
+  }
+});
+
+/**
  * POST /api/reports/:id/images
  * Upload images for a report
  * Requires: X-Anonymous-Id header

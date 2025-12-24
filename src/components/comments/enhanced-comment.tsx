@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import type { Comment } from '@/lib/api'
 import { commentsApi } from '@/lib/api'
+import { handleErrorSilently } from '@/lib/errorHandler'
 
 interface EnhancedCommentProps {
   comment: Comment & {
@@ -182,8 +183,8 @@ export function EnhancedComment({
         onLikeChange?.(comment.id, newLiked, newCount)
       }
     } catch (error) {
-      console.error('Error toggling like:', error)
       // Revertir al estado previo en caso de error
+      handleErrorSilently(error, 'EnhancedComment.handleLike')
       setLocalLiked(previousLiked)
       setLocalCount(previousCount)
     } finally {

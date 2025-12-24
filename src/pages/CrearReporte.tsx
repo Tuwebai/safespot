@@ -15,6 +15,7 @@ import { useCreateReport } from '@/hooks/useReports'
 import { reportsApi } from '@/lib/api'
 import { ALL_CATEGORIES } from '@/lib/constants'
 import { determineZone, isValidZone } from '@/lib/zone-utils'
+import { handleErrorSilently } from '@/lib/errorHandler'
 import { AlertCircle, Upload, X } from 'lucide-react'
 
 // Zod schema
@@ -157,9 +158,9 @@ export function CrearReporte() {
         try {
           await reportsApi.uploadImages(newReport.id, imageFiles)
         } catch (imageError) {
-          console.error('Error uploading images:', imageError)
           // Report was created successfully, but images failed
           // Navigate anyway - user can add images later
+          handleErrorSilently(imageError, 'CrearReporte.uploadImages')
           toast.warning('El reporte se creó correctamente, pero hubo un error al subir las imágenes.')
         } finally {
           setIsUploadingImages(false)

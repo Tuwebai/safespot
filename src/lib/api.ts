@@ -147,6 +147,15 @@ export const reportsApi = {
   },
 
   /**
+   * Delete a report
+   */
+  delete: async (id: string): Promise<void> => {
+    return apiRequest<void>(`/reports/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
    * Upload images for a report
    * Accepts FormData with image files
    */

@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { usersApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { useToast } from '@/components/ui/toast'
+import { handleError } from '@/lib/errorHandler'
 import { Award, TrendingUp, Trophy, Star } from 'lucide-react'
 import type { UserProfile } from '@/lib/api'
 
 export function Gamificacion() {
+  const toast = useToast()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -19,8 +22,10 @@ export function Gamificacion() {
       setLoading(true)
       const data = await usersApi.getProfile()
       setProfile(data)
+      setError(null)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Error al cargar perfil')
+      const errorInfo = handleError(error, toast.error, 'Gamificacion.loadProfile')
+      setError(errorInfo.userMessage)
     } finally {
       setLoading(false)
     }

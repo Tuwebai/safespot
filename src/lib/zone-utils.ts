@@ -6,6 +6,7 @@
 
 import { ZONES, type Zone } from './constants'
 import type { LocationData } from '@/components/LocationSelector'
+import { handleErrorSilently } from './errorHandler'
 
 /**
  * Interface for Nominatim reverse geocoding result
@@ -106,7 +107,8 @@ async function reverseGeocode(latitude: number, longitude: number): Promise<Nomi
     const data = await response.json()
     return data as NominatimReverseResult
   } catch (error) {
-    console.error('Error in reverse geocoding:', error)
+    // Non-critical error, log but don't show to user
+    handleErrorSilently(error, 'zone-utils.reverseGeocode')
     return null
   }
 }

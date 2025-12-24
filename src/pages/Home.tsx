@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle, Clock } from 'lucide-react'
 import { usersApi } from '@/lib/api'
+import { handleErrorSilently } from '@/lib/errorHandler'
 import type { GlobalStats, CategoryStats } from '@/lib/api'
 
 export function Home() {
@@ -22,7 +23,8 @@ export function Home() {
       const statsData = await usersApi.getStats()
       setStats(statsData)
     } catch (error) {
-      // Set default stats if API fails
+      // Set default stats if API fails (non-critical, log but don't show to user)
+      handleErrorSilently(error, 'Home.loadStats')
       setStats({
         total_reports: 0,
         resolved_reports: 0,
@@ -39,7 +41,8 @@ export function Home() {
       const statsData = await usersApi.getCategoryStats()
       setCategoryStats(statsData)
     } catch (error) {
-      // Set default category stats if API fails
+      // Set default category stats if API fails (non-critical, log but don't show to user)
+      handleErrorSilently(error, 'Home.loadCategoryStats')
       setCategoryStats({
         Celulares: 0,
         Bicicletas: 0,

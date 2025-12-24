@@ -203,10 +203,12 @@
 
 ## 🔵 MEJORAS RECOMENDADAS
 
-### 17. Eliminar Datos Mock
+### 17. ✅ RESUELTO - Eliminar Datos Mock
 **Ubicación:** `src/lib/mockData.ts`
-- ⚠️ Archivo existe pero puede no estar en uso
-- **Verificar:** Si se usa en algún lugar y eliminarlo
+- ✅ Archivo eliminado completamente
+- ✅ Verificado que no estaba en uso en ningún lugar del código
+- ✅ Referencias en documentación actualizadas
+- **Estado:** Código limpio sin datos mock
 
 ### 18. Mejorar Manejo de Errores
 **Ubicación:** Múltiples archivos
@@ -285,11 +287,14 @@
 - ⚠️ Algunas operaciones async no muestran loading
 - **Ejemplo:** Toggle favorite puede no mostrar feedback inmediato
 
-### 25. Falta Confirmación para Eliminar Reportes
-**Ubicación:** No implementado
-- ❌ No hay endpoint `DELETE /api/reports/:id` en backend
-- ❌ No hay UI para eliminar reportes
-- **Impacto:** Usuarios no pueden eliminar sus reportes
+### 25. ✅ RESUELTO - Confirmación y Eliminación de Reportes
+**Ubicación:** `server/src/routes/reports.js`, `src/pages/DetalleReporte.tsx`, `src/lib/api.ts`
+- ✅ Endpoint `DELETE /api/reports/:id` implementado en backend
+- ✅ UI para eliminar reportes con modal de confirmación
+- ✅ Botón "Eliminar" visible solo para el propietario del reporte
+- ✅ Modal de confirmación con advertencia de acción irreversible
+- ✅ Manejo de errores y navegación automática tras eliminación
+- **Estado:** Funcionalidad completa e implementada
 
 ### 26. Falta Actualización de Reportes desde Frontend
 **Ubicación:** `src/pages/DetalleReporte.tsx`
@@ -323,7 +328,7 @@
 - [ ] `GET /api/comments/:id` - Obtener un comentario específico
 
 ### Reportes
-- [ ] `DELETE /api/reports/:id` - Eliminar reporte
+- [x] `DELETE /api/reports/:id` - Eliminar reporte - **IMPLEMENTADO**
 - [ ] `GET /api/reports/search?q=...` - Búsqueda real con full-text search
 - [ ] `GET /api/reports?page=1&limit=20` - Paginación
 - [x] `POST /api/reports/:id/images` - Subir imágenes a un reporte - **IMPLEMENTADO**

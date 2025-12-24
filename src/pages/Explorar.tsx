@@ -4,10 +4,13 @@ import { reportsApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
+import { handleError } from '@/lib/errorHandler'
 import { MapPin, List, ThumbsUp, Calendar } from 'lucide-react'
 import type { Report } from '@/lib/api'
 
 export function Explorar() {
+  const toast = useToast()
   const [viewMode, setViewMode] = useState<'map' | 'list'>('list')
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +25,7 @@ export function Explorar() {
       const data = await reportsApi.getAll()
       setReports(data)
     } catch (error) {
-      // Silently fail
+      handleError(error, toast.error, 'Explorar.loadReports')
     } finally {
       setLoading(false)
     }

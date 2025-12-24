@@ -4,6 +4,7 @@ import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusO
 import { reportsApi } from '@/lib/api'
 import { getAnonymousId } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
+import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,7 +39,7 @@ export function Reportes() {
       const data = await reportsApi.getAll(filters)
       setReports(data)
     } catch (error) {
-      // Silently fail
+      handleError(error, toast.error, 'Reportes.loadReports')
     } finally {
       setLoading(false)
     }
@@ -191,8 +192,7 @@ export function Reportes() {
           })
       })
       
-      console.error('Error toggling favorite:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al guardar en favoritos')
+      handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'Reportes.handleToggleFavorite')
     } finally {
       // Remove from toggling set
       setTogglingFavorites(prev => {
@@ -284,14 +284,14 @@ export function Reportes() {
         }
       }))
       
-      const errorMessage = error instanceof Error ? error.message : 'Error al denunciar el reporte'
+      const errorMessage = error instanceof Error ? error.message : ''
       
       if (errorMessage.includes('own report')) {
         toast.warning('No puedes denunciar tu propio reporte')
       } else if (errorMessage.includes('already flagged')) {
         toast.warning('Ya has denunciado este reporte anteriormente')
       } else {
-        toast.error(errorMessage)
+        handleErrorWithMessage(error, 'Error al denunciar el reporte', toast.error, 'Reportes.handleFlagSubmit')
       }
     } finally {
       // Remover de flagging en proceso

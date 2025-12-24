@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { reportsApi, commentsApi } from '@/lib/api'
 import { getAnonymousId } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
+import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,7 +18,9 @@ import {
   Heart, 
   Flag, 
   Eye,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
 import type { Report, Comment } from '@/lib/api'
 
@@ -43,6 +46,8 @@ export function DetalleReporte() {
   const [creatingThread, setCreatingThread] = useState(false)
   const [threadText, setThreadText] = useState('')
   const [submittingThread, setSubmittingThread] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -64,8 +69,10 @@ export function DetalleReporte() {
       setLoading(true)
       const data = await reportsApi.getById(id)
       setReport(data)
+      setError(null)
     } catch (error) {
-      setError('No se pudo cargar el reporte')
+      const errorInfo = handleError(error, toast.error, 'DetalleReporte.loadReport')
+      setError(errorInfo.userMessage)
     } finally {
       setLoading(false)
     }
@@ -78,7 +85,8 @@ export function DetalleReporte() {
       const data = await commentsApi.getByReportId(id)
       setComments(data)
     } catch (error) {
-      // Silently fail
+      // Comments are non-critical, log but don't show error to user
+      handleError(error, toast.error, 'DetalleReporte.loadComments')
     }
   }
 
@@ -89,7 +97,8 @@ export function DetalleReporte() {
       // The is_favorite flag comes from the report data
       setIsSaved(report.is_favorite ?? false)
     } catch (error) {
-      console.error('Error checking favorite status:', error)
+      // Non-critical error, just set default
+      handleError(error, toast.error, 'DetalleReporte.checkSaved')
       setIsSaved(false)
     }
   }
@@ -111,8 +120,7 @@ export function DetalleReporte() {
         setReport({ ...report, is_favorite: result.is_favorite })
       }
     } catch (error) {
-      console.error('Error toggling favorite:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al guardar en favoritos')
+      handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'DetalleReporte.handleSave')
     }
   }
 
@@ -139,16 +147,32 @@ export function DetalleReporte() {
       // Show success message
       toast.success('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
     } catch (error) {
-      console.error('Error flagging report:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Error al denunciar el reporte'
+      const errorMessage = error instanceof Error ? error.message : ''
       
       if (errorMessage.includes('own report')) {
         toast.warning('No puedes denunciar tu propio reporte')
       } else if (errorMessage.includes('already flagged')) {
         toast.warning('Ya has denunciado este reporte anteriormente')
       } else {
-        toast.error(errorMessage)
+        handleErrorWithMessage(error, 'Error al denunciar el reporte', toast.error, 'DetalleReporte.handleFlagSubmit')
       }
+    }
+  }
+
+  const handleDeleteReport = async () => {
+    if (!id) return
+    
+    try {
+      setDeleting(true)
+      await reportsApi.delete(id)
+      toast.success('Reporte eliminado correctamente')
+      // Navigate to home after successful deletion
+      navigate('/')
+    } catch (error) {
+      handleErrorWithMessage(error, 'Error al eliminar el reporte', toast.error, 'DetalleReporte.handleDeleteReport')
+    } finally {
+      setDeleting(false)
+      setIsDeleteDialogOpen(false)
     }
   }
 
@@ -166,7 +190,7 @@ export function DetalleReporte() {
       await loadComments()
       await loadReport()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Error al crear comentario')
+      handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'DetalleReporte.handleCommentSubmit')
     } finally {
       setSubmittingComment(false)
     }
@@ -193,8 +217,8 @@ export function DetalleReporte() {
       await loadComments()
       await loadReport()
     } catch (error) {
-      console.error('Error creating reply:', error)
-      setError('No se pudo crear la respuesta')
+      const errorInfo = handleErrorWithMessage(error, 'No se pudo crear la respuesta', toast.error, 'DetalleReporte.handleReplySubmit')
+      setError(errorInfo.userMessage)
     } finally {
       setSubmittingReply(false)
     }
@@ -217,8 +241,8 @@ export function DetalleReporte() {
       await loadComments()
       await loadReport()
     } catch (error) {
-      console.error('Error deleting comment:', error)
-      setError('No se pudo eliminar el comentario')
+      const errorInfo = handleErrorWithMessage(error, 'No se pudo eliminar el comentario', toast.error, 'DetalleReporte.handleDeleteComment')
+      setError(errorInfo.userMessage)
     }
   }
 
@@ -255,8 +279,7 @@ export function DetalleReporte() {
       
       toast.success('Comentario reportado correctamente. Gracias por ayudar a mantener la comunidad segura.')
     } catch (error) {
-      console.error('Error flagging comment:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Error al reportar el comentario'
+      const errorMessage = error instanceof Error ? error.message : ''
       
       if (errorMessage.includes('own comment')) {
         toast.warning('No puedes reportar tu propio comentario')
@@ -269,7 +292,7 @@ export function DetalleReporte() {
         ))
         toast.warning('Ya has reportado este comentario anteriormente')
       } else {
-        toast.error(errorMessage)
+        handleErrorWithMessage(error, 'Error al reportar el comentario', toast.error, 'DetalleReporte.handleFlagComment')
       }
     }
   }
@@ -299,8 +322,7 @@ export function DetalleReporte() {
       setEditingCommentId(null)
       setEditText('')
     } catch (error) {
-      console.error('Error updating comment:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al editar el comentario')
+      handleErrorWithMessage(error, 'Error al editar el comentario', toast.error, 'DetalleReporte.handleEditSubmit')
     } finally {
       setSubmittingEdit(false)
     }
@@ -332,8 +354,7 @@ export function DetalleReporte() {
       await loadComments()
       await loadReport()
     } catch (error) {
-      console.error('Error creating thread:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al crear el hilo')
+      handleErrorWithMessage(error, 'Error al crear el hilo', toast.error, 'DetalleReporte.handleNewThreadSubmit')
     } finally {
       setSubmittingThread(false)
     }
@@ -444,7 +465,18 @@ export function DetalleReporte() {
               const isFlagged = report.is_flagged ?? false
               
               if (isOwner) {
-                return null // Don't show flag button for own reports
+                return (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    className="hover:text-red-400"
+                    title="Eliminar reporte"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar
+                  </Button>
+                )
               }
               
               if (isFlagged) {
@@ -704,6 +736,46 @@ export function DetalleReporte() {
           )
         })()}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {isDeleteDialogOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md bg-dark-card border-dark-border">
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <AlertTriangle className="h-6 w-6 text-red-400" />
+                <CardTitle>Eliminar Reporte</CardTitle>
+              </div>
+              <CardDescription>
+                Esta acción no se puede deshacer
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-foreground/80">
+                  ¿Estás seguro de que quieres eliminar este reporte? Todos los datos asociados (comentarios, favoritos, etc.) también se eliminarán permanentemente.
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDeleteDialogOpen(false)}
+                    disabled={deleting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteReport}
+                    disabled={deleting}
+                  >
+                    {deleting ? 'Eliminando...' : 'Eliminar'}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Flag Dialog */}
       {isFlagDialogOpen && (

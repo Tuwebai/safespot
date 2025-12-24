@@ -40,7 +40,6 @@ src/
 │   ├── layout/          # Header, Footer, Layout
 │   └── ui/              # Componentes base (Button, Card, Badge, etc.)
 ├── lib/
-│   ├── mockData.ts      # Datos mock para desarrollo
 │   └── utils.ts         # Utilidades (cn function)
 ├── pages/               # Pantallas principales
 │   ├── Home.tsx
@@ -67,24 +66,24 @@ src/
    - Formulario completo con validaciones
    - Campos: título, descripción, categoría, zona, dirección
    - Validación visual de errores
-   - Sin submit real (mock)
+   - Integración con backend para crear reportes
 
 3. **Detalle de Reporte** (`/reporte/:id`)
    - Información completa del reporte
    - Estado y categoría
-   - Sistema de upvotes (mock)
-   - Comentarios (mock)
+   - Sistema de upvotes integrado con backend
+   - Comentarios con sistema de hilos
    - Formulario para agregar comentarios
 
 4. **Explorar** (`/explorar`)
    - Vista de lista de todos los reportes
-   - Toggle entre vista lista/mapa (mapa mock)
+   - Toggle entre vista lista/mapa
    - Estadísticas generales
 
 5. **Perfil Anónimo** (`/perfil`)
    - Información del usuario anónimo
-   - Sistema de niveles y puntos (mock)
-   - Insignias (mock)
+   - Sistema de niveles y puntos
+   - Insignias y gamificación
    - Historial de reportes del usuario
 
 ## 🎨 Componentes UI
@@ -96,14 +95,6 @@ Todos los componentes siguen el sistema de diseño:
 - **Badge**: Para estados y categorías
 - **Input/Textarea/Select**: Con estilos consistentes
 
-## 📊 Datos Mock
-
-Los datos están en `src/lib/mockData.ts`:
-- `mockReports`: Lista de reportes de ejemplo
-- `mockComments`: Comentarios de ejemplo
-- `mockUserProfile`: Perfil de usuario anónimo
-- Categorías, zonas y estados predefinidos
-
 ## 🔧 Tecnologías
 
 - **React 18** con TypeScript
@@ -114,18 +105,16 @@ Los datos están en `src/lib/mockData.ts`:
 
 ## 📝 Notas Importantes
 
-- **100% Anónimo**: No hay sistema de autenticación
-- **Sin Backend**: Todo funciona con datos mock locales
-- **Sin API Calls**: Todas las interacciones son simuladas
-- **Listo Visualmente**: El frontend está completo y funcional
+- **100% Anónimo**: Sistema de identidad anónima basado en localStorage
+- **Backend Integrado**: La aplicación consume APIs reales del backend
+- **API Calls**: Todas las interacciones se realizan mediante llamadas al backend
+- **Listo para Producción**: El frontend está completo y funcional
 
-## 🎯 Próximos Pasos (No Implementados)
+## 🎯 Próximos Pasos
 
-- Integración con backend real
-- Sistema de autenticación (si se requiere)
 - Integración de mapas reales (Leaflet/Mapbox)
-- Subida de imágenes
 - Notificaciones en tiempo real
+- Mejoras de performance y optimizaciones
 
 ---
 
