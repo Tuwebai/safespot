@@ -169,18 +169,17 @@
 - ✅ Compatibilidad hacia atrás: registros existentes tienen `incident_date = created_at`
 - **Estado:** Campo completamente implementado y funcional en todo el stack.
 
-### 14. Uso de `queryWithRLS` vs Supabase Client
-**Ubicación:** `server/src/routes/`
-- ⚠️ Mezcla de métodos:
-  - `reports.js` PATCH usa `queryWithRLS` (SQL raw)
-  - `users.js` usa `queryWithRLS` (SQL raw)
-  - `comments.js` usa `supabase.from()` (Supabase client)
-  - `reports.js` otros endpoints usan `supabase.from()`
-
-**Problema:** Inconsistencia puede causar:
-- Diferentes comportamientos de RLS
-- Dificultad para mantener
-- Posibles bugs de seguridad
+### 14. ✅ PARCIALMENTE RESUELTO - Uso de `queryWithRLS` vs Supabase Client
+**Ubicación:** `server/src/routes/reports.js`
+- ✅ **Estrategia definida:** Operaciones que requieren RLS con contexto usan `queryWithRLS`, operaciones públicas usan `supabase.from()`
+- ✅ `reports.js` POST (INSERT) usa `queryWithRLS` - requiere contexto RLS
+- ✅ `reports.js` PATCH (UPDATE) usa `queryWithRLS` - requiere contexto RLS
+- ✅ `reports.js` POST /favorite usa `supabase.from()` - RLS permite NULL, funciona correctamente
+- ✅ `reports.js` POST /flag usa `queryWithRLS` - requiere contexto RLS
+- ✅ Helper `db.js` creado para acceso unificado futuro
+- ✅ Documentación creada: `DATABASE_ACCESS_STRATEGY.md` y `RLS_UNIFICATION_SUMMARY.md`
+- ⚠️ **Pendiente:** Migrar `comments.js` y `votes.js` a enfoque unificado
+- **Estado:** `reports.js` completamente unificado según estrategia. Otros módulos pendientes de migración.
 
 ### 15. ✅ RESUELTO - Página "Mis Favoritos" Implementada
 **Ubicación:** `src/pages/MisFavoritos.tsx`, `src/App.tsx`, `src/components/layout/Header.tsx`

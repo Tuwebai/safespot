@@ -337,25 +337,30 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     // Update report using queryWithRLS to ensure RLS context is set
     // RLS policy will verify anonymous_id = current_anonymous_id()
     const updateFields = Object.keys(updateData);
+    const updateValues = Object.values(updateData);
+    const updatedAt = new Date().toISOString();
+    
+    // Build SET clause: campo1 = $2, campo2 = $3, ..., updated_at = $N
+    // WHERE id = $1 AND anonymous_id = $N+1
     const setParts = updateFields.map((key, i) => `${key} = $${i + 2}`);
     setParts.push(`updated_at = $${updateFields.length + 2}`);
     
-    const updateValues = [
-      id,
-      ...Object.values(updateData),
-      new Date().toISOString(),
-      anonymousId
+    const allValues = [
+      id,                    // $1
+      ...updateValues,       // $2, $3, ...
+      updatedAt,             // $N+1
+      anonymousId            // $N+2 (for WHERE clause)
     ];
     
-    const whereParamIndex = updateFields.length + 3;
+    const anonymousIdParamIndex = updateFields.length + 3;
     
     const updateResult = await queryWithRLS(
       anonymousId,
       `UPDATE reports
        SET ${setParts.join(', ')}
-       WHERE id = $1 AND anonymous_id = $${whereParamIndex}
+       WHERE id = $1 AND anonymous_id = $${anonymousIdParamIndex}
        RETURNING *`,
-      updateValues
+      allValues
     );
     
     if (!updateResult.rows || updateResult.rows.length === 0) {
@@ -424,32 +429,36 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
       });
     }
     
-    // Check if favorite already exists using queryWithRLS
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id FROM favorites
-       WHERE anonymous_id = $1 AND report_id = $2
-       LIMIT 1`,
-      [anonymousId, id]
-    );
+    // Check if favorite already exists
+    // Note: Using supabase.from() because favorites RLS policy allows current_anonymous_id() IS NULL
+    const { data: existingFavorite, error: checkError } = await supabase
+      .from('favorites')
+      .select('id')
+      .eq('anonymous_id', anonymousId)
+      .eq('report_id', id)
+      .maybeSingle();
     
-    const existingFavorite = checkResult.rows[0];
+    if (checkError) {
+      logError(checkError, req);
+      return res.status(500).json({
+        error: 'Failed to check favorite status',
+        message: checkError.message
+      });
+    }
     
     if (existingFavorite) {
-      // Remove favorite (toggle off) using queryWithRLS
-      const deleteResult = await queryWithRLS(
-        anonymousId,
-        `DELETE FROM favorites
-         WHERE id = $1 AND anonymous_id = $2
-         RETURNING id`,
-        [existingFavorite.id, anonymousId]
-      );
+      // Remove favorite (toggle off)
+      const { error: deleteError } = await supabase
+        .from('favorites')
+        .delete()
+        .eq('id', existingFavorite.id)
+        .eq('anonymous_id', anonymousId);
       
-      if (!deleteResult.rows || deleteResult.rows.length === 0) {
-        logError(new Error('Failed to delete favorite'), req);
+      if (deleteError) {
+        logError(deleteError, req);
         return res.status(500).json({
           error: 'Failed to remove favorite',
-          message: 'Delete operation failed'
+          message: deleteError.message
         });
       }
       
@@ -461,30 +470,19 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
         message: 'Favorite removed successfully'
       });
     } else {
-      // Add favorite (toggle on) using queryWithRLS
-      try {
-        const insertResult = await queryWithRLS(
-          anonymousId,
-          `INSERT INTO favorites (anonymous_id, report_id)
-           VALUES ($1, $2)
-           RETURNING id`,
-          [anonymousId, id]
-        );
-        
-        if (!insertResult.rows || insertResult.rows.length === 0) {
-          throw new Error('Insert returned no rows');
-        }
-        
-        res.json({
-          success: true,
-          data: {
-            is_favorite: true
-          },
-          message: 'Favorite added successfully'
-        });
-      } catch (insertError) {
+      // Add favorite (toggle on)
+      const { data: newFavorite, error: insertError } = await supabase
+        .from('favorites')
+        .insert({
+          anonymous_id: anonymousId,
+          report_id: id
+        })
+        .select()
+        .single();
+      
+      if (insertError) {
         // Check if it's a unique constraint violation (race condition)
-        if (insertError.code === '23505' || insertError.message.includes('unique')) {
+        if (insertError.code === '23505' || insertError.message.includes('unique') || insertError.message.includes('duplicate')) {
           res.json({
             success: true,
             data: {
@@ -499,6 +497,14 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
             message: insertError.message
           });
         }
+      } else {
+        res.json({
+          success: true,
+          data: {
+            is_favorite: true
+          },
+          message: 'Favorite added successfully'
+        });
       }
     }
   } catch (error) {
