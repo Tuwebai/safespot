@@ -7,6 +7,7 @@ import { DetalleReporte } from '@/pages/DetalleReporte'
 import { Explorar } from '@/pages/Explorar'
 import { Gamificacion } from '@/pages/Gamificacion'
 import { Perfil } from '@/pages/Perfil'
+import { MisFavoritos } from '@/pages/MisFavoritos'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <Route path="/explorar" element={<Explorar />} />
           <Route path="/gamificacion" element={<Gamificacion />} />
           <Route path="/perfil" element={<Perfil />} />
+          <Route path="/favoritos" element={<MisFavoritos />} />
         </Routes>
       </Layout>
     </BrowserRouter>

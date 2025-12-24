@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -13,6 +13,7 @@ export function Header() {
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home },
     { path: '/reportes', label: 'Reportes', icon: FileBarChart },
+    { path: '/favoritos', label: 'Favoritos', icon: Heart },
     { path: '/explorar', label: 'Mapa', icon: MapPin },
     { path: '/gamificacion', label: 'Gamificación', icon: Trophy },
   ]
