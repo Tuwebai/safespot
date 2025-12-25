@@ -7,6 +7,7 @@
 import { logError, logSuccess } from './logger.js';
 import { ensureAnonymousUser } from './anonymousUser.js';
 import { queryWithRLS } from './rls.js';
+import { calculateLevelFromPoints } from './levelCalculation.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 /**
@@ -88,10 +89,10 @@ export async function evaluateBadges(anonymousId) {
       is_good_citizen: (totalFlags === 0 && (userStats.total_reports > 0 || userStats.total_comments > 0)) ? 1 : 0
     };
 
-    // Get all badges and user's obtained badges
+    // Get all badges with points and user's obtained badges
     const { data: allBadges } = await clientToUse
       .from('badges')
-      .select('id, code');
+      .select('id, code, points');
 
     const { data: obtainedBadges } = await clientToUse
       .from('user_badges')
@@ -114,8 +115,22 @@ export async function evaluateBadges(anonymousId) {
       GOOD_CITIZEN: { target: 'is_good_citizen', threshold: 1 }
     };
 
+    // Get current user points and level
+    const userPointsResult = await queryWithRLS(
+      anonymousId,
+      `SELECT points, level FROM anonymous_users WHERE anonymous_id = $1`,
+      [anonymousId]
+    );
+    
+    let currentPoints = 0;
+    if (userPointsResult.rows.length > 0) {
+      currentPoints = userPointsResult.rows[0].points || 0;
+    }
+
     // Evaluate and award badges
     const newlyAwarded = [];
+    let totalPointsToAdd = 0;
+    
     for (const badge of (allBadges || [])) {
       const rule = badgeRules[badge.code];
       if (!rule) continue;
@@ -137,15 +152,56 @@ export async function evaluateBadges(anonymousId) {
         if (!insertError) {
           obtainedBadgeIds.add(badge.id);
           newlyAwarded.push(badge.code);
-          logSuccess('Badge awarded', { anonymousId, badgeCode: badge.code });
+          
+          // Add points from this badge
+          const badgePoints = badge.points || 0;
+          totalPointsToAdd += badgePoints;
+          
+          logSuccess('Badge awarded', { 
+            anonymousId, 
+            badgeCode: badge.code,
+            points: badgePoints 
+          });
         } else {
           logError(insertError, null);
         }
       }
     }
 
+    // If any badges were awarded, update user's points and level
+    if (totalPointsToAdd > 0) {
+      const newPoints = currentPoints + totalPointsToAdd;
+      const newLevel = calculateLevelFromPoints(newPoints);
+      
+      // Update user's points and level using queryWithRLS
+      try {
+        await queryWithRLS(
+          anonymousId,
+          `UPDATE anonymous_users 
+           SET points = $1, level = $2 
+           WHERE anonymous_id = $3`,
+          [newPoints, newLevel, anonymousId]
+        );
+        
+        logSuccess('User points and level updated', {
+          anonymousId,
+          pointsAdded: totalPointsToAdd,
+          oldPoints: currentPoints,
+          newPoints,
+          oldLevel: userPointsResult.rows[0]?.level || 1,
+          newLevel
+        });
+      } catch (updateError) {
+        logError(updateError, null);
+      }
+    }
+
     if (newlyAwarded.length > 0) {
-      logSuccess('Badges evaluated', { anonymousId, newlyAwarded });
+      logSuccess('Badges evaluated', { 
+        anonymousId, 
+        newlyAwarded,
+        totalPointsAdded: totalPointsToAdd
+      });
     }
   } catch (error) {
     logError(error, null);

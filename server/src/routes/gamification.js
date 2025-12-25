@@ -3,6 +3,8 @@ import { requireAnonymousId } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { queryWithRLS } from '../utils/rls.js';
+import { calculateLevelFromPoints } from '../utils/levelCalculation.js';
+import { syncUserPointsIfNeeded } from '../utils/syncUserPoints.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
@@ -40,7 +42,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     const clientToUse = supabaseAdmin || supabase;
     const { data: allBadges, error: badgesError } = await clientToUse
       .from('badges')
-      .select('id, code, name, description, icon, category')
+      .select('id, code, name, description, icon, category, points')
       .order('category', { ascending: true })
       .order('code', { ascending: true });
 
@@ -189,7 +191,8 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
               newlyAwardedBadges.push({
                 code: badgeInfo.code,
                 name: badgeInfo.name,
-                icon: badgeInfo.icon
+                icon: badgeInfo.icon,
+                points: badgeInfo.points || 0
               });
             }
           }
@@ -224,6 +227,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
         description: badge.description,
         icon: badge.icon,
         category: badge.category,
+        points: badge.points || 0,
         // CRITICAL: Badge is obtained if in DB OR if conditions are met
         obtained: isObtained || shouldBeObtained,
         obtained_at: obtainedBadgesMap.get(badge.id) || (shouldBeObtained && !isObtained ? new Date().toISOString() : null),
@@ -312,7 +316,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       // Get all badges (public catalog)
       clientToUse
         .from('badges')
-        .select('id, code, name, description, icon, category')
+        .select('id, code, name, description, icon, category, points')
         .order('category', { ascending: true })
         .order('code', { ascending: true }),
       // Get user's obtained badges
@@ -359,7 +363,48 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       });
     }
 
-    const userStats = userResult.rows[0];
+    const userStatsRow = userResult.rows[0];
+    
+    // CRITICAL: Sync user points if they don't match obtained badges
+    // This ensures points are correct, especially for users who obtained badges
+    // before the points system was implemented
+    const currentPoints = userStatsRow.points || 0;
+    let syncedPoints = currentPoints;
+    let syncedLevel = userStatsRow.level || 1;
+    
+    try {
+      const syncResult = await syncUserPointsIfNeeded(anonymousId, currentPoints);
+      if (syncResult) {
+        syncedPoints = syncResult.points;
+        syncedLevel = syncResult.level;
+        logSuccess('Points synced in summary endpoint', { anonymousId, points: syncedPoints, level: syncedLevel });
+      } else {
+        // Points are correct, but ensure level is correct
+        syncedLevel = calculateLevelFromPoints(syncedPoints);
+        const currentLevel = userStatsRow.level || 1;
+        if (currentLevel !== syncedLevel) {
+          try {
+            await queryWithRLS(
+              anonymousId,
+              `UPDATE anonymous_users SET level = $1 WHERE anonymous_id = $2`,
+              [syncedLevel, anonymousId]
+            );
+            logSuccess('Level corrected', { anonymousId, oldLevel: currentLevel, newLevel: syncedLevel });
+          } catch (error) {
+            logError(error, req);
+          }
+        }
+      }
+    } catch (error) {
+      logError(error, req);
+      // Continue with current values if sync fails
+    }
+    
+    const userStats = {
+      ...userStatsRow,
+      level: syncedLevel,
+      points: syncedPoints
+    };
     const allBadges = allBadgesResult.data || [];
     const obtainedBadges = obtainedBadgesResult.data || [];
     const reports = reportsResult.data || [];
@@ -415,12 +460,20 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       const { evaluateBadges } = await import('../utils/badgeEvaluation.js');
       await evaluateBadges(anonymousId);
       
-      // Re-fetch obtained badges after evaluation (only if evaluation ran)
-      const { data: updatedObtainedBadges } = await clientToUse
-        .from('user_badges')
-        .select('badge_id, obtained_at')
-        .eq('anonymous_id', anonymousId);
+      // Re-fetch obtained badges and user stats after evaluation
+      const [updatedBadgesResult, updatedUserResult] = await Promise.all([
+        clientToUse
+          .from('user_badges')
+          .select('badge_id, obtained_at')
+          .eq('anonymous_id', anonymousId),
+        queryWithRLS(
+          anonymousId,
+          `SELECT points, level FROM anonymous_users WHERE anonymous_id = $1`,
+          [anonymousId]
+        )
+      ]);
       
+      const updatedObtainedBadges = updatedBadgesResult.data;
       if (updatedObtainedBadges) {
         obtainedBadgeIds.clear();
         obtainedBadgesMap.clear();
@@ -434,11 +487,20 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
               newlyAwardedBadges.push({
                 code: badgeInfo.code,
                 name: badgeInfo.name,
-                icon: badgeInfo.icon
+                icon: badgeInfo.icon,
+                points: badgeInfo.points || 0
               });
             }
           }
         });
+      }
+      
+      // Update user stats if points/level changed
+      if (updatedUserResult.rows.length > 0) {
+        const updatedPoints = updatedUserResult.rows[0].points || 0;
+        const updatedLevel = calculateLevelFromPoints(updatedPoints);
+        userStats.points = updatedPoints;
+        userStats.level = updatedLevel;
       }
     } catch (error) {
       logError(error, req);
@@ -467,6 +529,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
         description: badge.description,
         icon: badge.icon,
         category: badge.category,
+        points: badge.points || 0,
         obtained: isObtained || shouldBeObtained,
         obtained_at: obtainedBadgesMap.get(badge.id) || (shouldBeObtained && !isObtained ? new Date().toISOString() : null),
         progress: {
@@ -476,10 +539,12 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       };
     });
 
-    // Build profile data
+    // Build profile data - use corrected level and points
+    const finalPoints = userStats.points || 0;
+    const finalLevel = calculateLevelFromPoints(finalPoints);
     const profile = {
-      level: userStats.level || 1,
-      points: userStats.points || 0,
+      level: finalLevel,
+      points: finalPoints,
       total_reports: userStats.total_reports || 0,
       total_comments: userStats.total_comments || 0,
       total_votes: userStats.total_votes || 0
@@ -606,7 +671,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
     // Get all badges and user's obtained badges
     const { data: allBadges } = await clientToUse
       .from('badges')
-      .select('id, code');
+      .select('id, code, points');
 
     const { data: obtainedBadges } = await clientToUse
       .from('user_badges')
@@ -629,8 +694,22 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
       GOOD_CITIZEN: { target: 'is_good_citizen', threshold: 1 }
     };
 
+    // Get current user points
+    const userPointsResult = await queryWithRLS(
+      anonymousId,
+      `SELECT points, level FROM anonymous_users WHERE anonymous_id = $1`,
+      [anonymousId]
+    );
+    
+    let currentPoints = 0;
+    if (userPointsResult.rows.length > 0) {
+      currentPoints = userPointsResult.rows[0].points || 0;
+    }
+
     // Evaluate and award badges
     const newlyAwarded = [];
+    let totalPointsToAdd = 0;
+    
     for (const badge of (allBadges || [])) {
       const rule = badgeRules[badge.code];
       if (!rule) continue;
@@ -652,17 +731,52 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
         if (!insertError) {
           obtainedBadgeIds.add(badge.id);
           newlyAwarded.push(badge.code);
-          logSuccess('Badge awarded', { anonymousId, badgeCode: badge.code });
+          
+          // Add points from this badge
+          const badgePoints = badge.points || 0;
+          totalPointsToAdd += badgePoints;
+          
+          logSuccess('Badge awarded', { 
+            anonymousId, 
+            badgeCode: badge.code,
+            points: badgePoints 
+          });
         } else {
           logError(insertError, req);
         }
       }
     }
 
+    // If any badges were awarded, update user's points and level
+    if (totalPointsToAdd > 0) {
+      const newPoints = currentPoints + totalPointsToAdd;
+      const newLevel = calculateLevelFromPoints(newPoints);
+      
+      try {
+        await queryWithRLS(
+          anonymousId,
+          `UPDATE anonymous_users 
+           SET points = $1, level = $2 
+           WHERE anonymous_id = $3`,
+          [newPoints, newLevel, anonymousId]
+        );
+        
+        logSuccess('User points and level updated', {
+          anonymousId,
+          pointsAdded: totalPointsToAdd,
+          newPoints,
+          newLevel
+        });
+      } catch (updateError) {
+        logError(updateError, req);
+      }
+    }
+
     res.json({
       success: true,
       newly_awarded: newlyAwarded,
-      count: newlyAwarded.length
+      count: newlyAwarded.length,
+      points_added: totalPointsToAdd
     });
   } catch (error) {
     logError(error, req);

@@ -120,10 +120,11 @@ export function useBadgeNotifications() {
             markBadgeAsNotified(badge.code)
             notified.add(badge.code)
             
-            // Show toast notification
+            // Show toast notification with points
+            const pointsText = badge.points ? `+${badge.points} pts` : ''
             toast.success(
-              `🎉 ¡Nueva insignia desbloqueada! ${badge.name} ${badge.icon}`,
-              4000
+              `🎉 ¡Nueva insignia desbloqueada!\n${badge.name} ${badge.icon} ${pointsText}`,
+              5000
             )
             
             // Play sound (only if audio is enabled)

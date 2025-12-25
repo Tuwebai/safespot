@@ -36,10 +36,49 @@ export function Perfil() {
 
   const getLevelProgress = () => {
     if (!profile) return 0
-    const currentLevelPoints = (profile.level - 1) * 200
-    const nextLevelPoints = profile.level * 200
-    const progress = ((profile.points - currentLevelPoints) / (nextLevelPoints - currentLevelPoints)) * 100
+    // Use correct level calculation: Level 1: 0-49, Level 2: 50-149, Level 3: 150-299, Level 4: 300+
+    const currentPoints = profile.points || 0
+    const currentLevel = profile.level || 1
+    
+    if (currentLevel >= 4) {
+      return 100 // Max level
+    }
+    
+    const ranges: Record<number, { min: number; max: number }> = {
+      1: { min: 0, max: 49 },
+      2: { min: 50, max: 149 },
+      3: { min: 150, max: 299 },
+      4: { min: 300, max: Infinity }
+    }
+    
+    const currentRange = ranges[currentLevel] || ranges[1]
+    const nextRange = ranges[currentLevel + 1] || ranges[4]
+    
+    const pointsInCurrentLevel = Math.max(0, currentPoints - currentRange.min)
+    const pointsNeededForNext = nextRange.min - currentRange.min
+    
+    if (pointsNeededForNext === 0) return 100
+    
+    const progress = (pointsInCurrentLevel / pointsNeededForNext) * 100
     return Math.min(100, Math.max(0, progress))
+  }
+  
+  const getPointsToNextLevel = () => {
+    if (!profile) return 0
+    const currentPoints = profile.points || 0
+    const currentLevel = profile.level || 1
+    
+    if (currentLevel >= 4) return 0 // Max level
+    
+    const ranges: Record<number, { min: number; max: number }> = {
+      1: { min: 0, max: 49 },
+      2: { min: 50, max: 149 },
+      3: { min: 150, max: 299 },
+      4: { min: 300, max: Infinity }
+    }
+    
+    const nextRange = ranges[currentLevel + 1] || ranges[4]
+    return Math.max(0, nextRange.min - currentPoints)
   }
 
   const anonymousId = getAnonymousIdSafe()
@@ -120,7 +159,7 @@ export function Perfil() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {profile.level * 200 - profile.points} puntos para el siguiente nivel
+                    {getPointsToNextLevel()} puntos para el siguiente nivel
                   </p>
                 </div>
 

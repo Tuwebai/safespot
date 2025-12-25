@@ -476,6 +476,7 @@ export interface GamificationBadge {
   description: string;
   icon: string;
   category: string;
+  points: number;
   obtained: boolean;
   obtained_at: string | null;
   progress: {
@@ -488,6 +489,7 @@ export interface NewBadge {
   code: string;
   name: string;
   icon: string;
+  points: number;
 }
 
 export const badgesApi = {

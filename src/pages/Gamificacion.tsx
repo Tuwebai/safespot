@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { gamificationApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { Award, Trophy, Star, Lock } from 'lucide-react'
 import type { GamificationBadge, NewBadge } from '@/lib/api'
+import { usePointsAnimation } from '@/hooks/usePointsAnimation'
+import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
+import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
 
 // Simple in-memory cache (cleared on page refresh)
 let gamificationCache: {
@@ -22,6 +25,7 @@ export function Gamificacion() {
   const [loading, setLoading] = useState(false) // CRITICAL: Start as false for immediate render
   const [error, setError] = useState<string | null>(null)
   const [newlyUnlockedBadgeIds, setNewlyUnlockedBadgeIds] = useState<Set<string>>(new Set())
+  const [latestNewBadge, setLatestNewBadge] = useState<NewBadge | null>(null)
 
   // Load data on component mount
   useEffect(() => {
@@ -59,6 +63,15 @@ export function Gamificacion() {
       
       // CRITICAL: Mark newly unlocked badges for animation only (notifications handled globally)
       if (summary.newBadges && summary.newBadges.length > 0) {
+        // Store the latest new badge for points feedback
+        const latestBadge = summary.newBadges[summary.newBadges.length - 1]
+        setLatestNewBadge(latestBadge)
+        
+        // Clear after animation duration
+        setTimeout(() => {
+          setLatestNewBadge(null)
+        }, 2000)
+        
         summary.newBadges.forEach((badge: NewBadge) => {
           // Find the full badge info
           const fullBadge = summary.badges.find(b => b.code === badge.code)
@@ -88,13 +101,47 @@ export function Gamificacion() {
     }
   }
 
-  const getLevelProgress = () => {
-    if (!profile) return 0
-    const currentLevelPoints = (profile.level - 1) * 200
-    const nextLevelPoints = profile.level * 200
-    const progress = ((profile.points - currentLevelPoints) / (nextLevelPoints - currentLevelPoints)) * 100
-    return Math.min(100, Math.max(0, progress))
-  }
+  // Use animated points and level
+  const {
+    animatedPoints,
+    animatedLevel,
+    animatedProgress,
+    pointsAdded,
+    levelUp
+  } = usePointsAnimation({
+    currentPoints: profile?.points || 0,
+    currentLevel: profile?.level || 1,
+    animationDuration: 600
+  })
+
+  // Get latest badge info for points feedback
+  const latestBadgeInfo = useMemo(() => {
+    // Use latestNewBadge if available (most accurate)
+    if (latestNewBadge && pointsAdded && latestNewBadge.points === pointsAdded) {
+      return {
+        name: latestNewBadge.name,
+        icon: latestNewBadge.icon
+      }
+    }
+    
+    // Fallback: find badge with matching points
+    if (profile && pointsAdded && badges.length > 0) {
+      const obtainedBadges = badges.filter(b => b.obtained)
+      const badgeWithPoints = obtainedBadges.find(b => b.points === pointsAdded)
+      if (badgeWithPoints) {
+        return {
+          name: badgeWithPoints.name,
+          icon: badgeWithPoints.icon
+        }
+      }
+    }
+    return null
+  }, [profile, pointsAdded, badges, latestNewBadge])
+
+  // Calculate points to next level using utility function
+  const pointsToNextLevel = profile 
+    ? getPointsToNextLevel(profile.points || 0, profile.level || 1)
+    : 0
 
   // Get obtained badges for display under user name
   const obtainedBadges = badges.filter(b => b.obtained)
@@ -122,11 +169,12 @@ export function Gamificacion() {
   const getProgressText = (badge: GamificationBadge): string => {
     // CRITICAL: If badge is obtained, show obtained message
     if (badge.obtained) {
+      const pointsText = badge.points > 0 ? ` (+${badge.points} pts)` : ''
       const date = badge.obtained_at ? new Date(badge.obtained_at) : null
       if (date) {
-        return `Insignia desbloqueada el ${date.toLocaleDateString('es-AR')} 🎉`
+        return `Ya obtenida el ${date.toLocaleDateString('es-AR')}${pointsText} 🎉`
       }
-      return 'Insignia desbloqueada 🎉'
+      return `Ya obtenida${pointsText} 🎉`
     }
 
     // CRITICAL: If progress is complete but not obtained (shouldn't happen, but handle it)
@@ -221,13 +269,24 @@ export function Gamificacion() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              <div className="text-center">
-                <div className="text-6xl font-bold text-neon-green mb-2">
-                  Nivel {profile.level}
+              <div className="text-center relative">
+                {/* Level Up Feedback */}
+                <LevelUpFeedback newLevel={animatedLevel} visible={levelUp} />
+                
+                {/* Points Added Feedback */}
+                <PointsAddedFeedback
+                  points={pointsAdded || 0}
+                  badgeName={latestBadgeInfo?.name}
+                  badgeIcon={latestBadgeInfo?.icon}
+                  visible={pointsAdded !== null && pointsAdded > 0}
+                />
+                
+                <div className="text-6xl font-bold text-neon-green mb-2 transition-all duration-300">
+                  Nivel {animatedLevel}
                 </div>
-                  <div className="text-lg text-muted-foreground mb-4">
-                  {profile.points} puntos totales
-                  </div>
+                <div className="text-lg text-muted-foreground mb-4">
+                  <span className="font-semibold text-foreground">{animatedPoints}</span> puntos totales
+                </div>
                 
                   {/* Obtained badges under user name */}
                   {obtainedBadges.length > 0 && (
@@ -254,14 +313,20 @@ export function Gamificacion() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Progreso al siguiente nivel</span>
                   <span className="text-sm text-muted-foreground">
-                    {profile.level * 200 - profile.points} puntos restantes
+                    {profile.level >= 4 ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
                   </span>
                 </div>
-                <div className="w-full bg-dark-bg rounded-full h-4">
+                <div className="w-full bg-dark-bg rounded-full h-4 overflow-hidden relative">
                   <div
-                    className="bg-neon-green h-4 rounded-full transition-all"
-                    style={{ width: `${getLevelProgress()}%` }}
-                  />
+                    className="bg-neon-green h-4 rounded-full transition-all duration-600 ease-out relative"
+                    style={{ 
+                      width: `${animatedProgress}%`,
+                      transition: 'width 600ms cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                  >
+                    {/* Shimmer effect on progress bar */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                  </div>
                 </div>
               </div>
 
@@ -279,8 +344,8 @@ export function Gamificacion() {
                   <div className="text-xs text-muted-foreground">Apoyos</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-neon-green">
-                    {profile.points}
+                  <div className="text-2xl font-bold text-neon-green transition-all duration-300">
+                    {animatedPoints}
                   </div>
                   <div className="text-xs text-muted-foreground">Puntos</div>
                 </div>
@@ -337,6 +402,13 @@ export function Gamificacion() {
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm text-neon-green">{badge.name}</div>
                         <div className="text-xs text-muted-foreground line-clamp-1">{badge.description}</div>
+                        {badge.points > 0 && (
+                          <div className="text-xs font-bold text-neon-green mt-1 inline-flex items-center gap-1 bg-neon-green/10 px-2 py-0.5 rounded border border-neon-green/20">
+                            <span>+</span>
+                            <span>{badge.points}</span>
+                            <span className="font-normal text-[10px]">puntos</span>
+                          </div>
+                        )}
                       </div>
                       <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" />
                     </div>
@@ -456,6 +528,16 @@ export function Gamificacion() {
                                 <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
                                   {badge.description}
                                 </p>
+                                {/* Show points for this badge - more prominent */}
+                                {badge.points > 0 && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-neon-green bg-neon-green/10 px-2 py-0.5 rounded border border-neon-green/20">
+                                      <span>+</span>
+                                      <span>{badge.points}</span>
+                                      <span className="font-normal text-[10px]">pts</span>
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="mt-2">
                                   <p className={`
                                     text-xs font-medium
