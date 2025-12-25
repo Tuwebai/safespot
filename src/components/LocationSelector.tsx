@@ -32,7 +32,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
 
   const debouncedQuery = useDebounce(searchQuery, 300)
 
-  // Search addresses using Nominatim
+  // Search addresses using Nominatim - RESTRICTED TO ARGENTINA
   useEffect(() => {
     if (!debouncedQuery || debouncedQuery.length < 3) {
       setSuggestions([])
@@ -40,21 +40,81 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
     }
 
     setIsLoading(true)
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(debouncedQuery)}&limit=5`, {
+    // CRITICAL: Restrict to Argentina only (countrycodes=ar)
+    // Also prioritize results near user's current location if available
+    const params = new URLSearchParams({
+      format: 'json',
+      q: debouncedQuery,
+      limit: '5',
+      countrycodes: 'ar', // Only Argentina
+      addressdetails: '1'
+    })
+    
+    // If user has coordinates, add them to prioritize nearby results
+    if (value.latitude && value.longitude) {
+      params.append('lat', value.latitude.toString())
+      params.append('lon', value.longitude.toString())
+    }
+
+    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
       headers: {
         'User-Agent': 'SafeSpot App'
       }
     })
       .then(res => res.json())
       .then((data: NominatimResult[]) => {
-        setSuggestions(data)
+        // CRITICAL: Filter to ensure only Argentina results (extra safety)
+        // Nominatim with countrycodes=ar should only return Argentina, but we double-check
+        const argentinaResults = data.filter(result => {
+          const displayName = result.display_name.toLowerCase()
+          
+          // Check for Argentina indicators
+          const isArgentina = 
+            displayName.includes('argentina') ||
+            displayName.includes('buenos aires') ||
+            displayName.includes('caba') ||
+            displayName.includes('córdoba') ||
+            displayName.includes('rosario') ||
+            displayName.includes('mendoza') ||
+            displayName.includes('tucumán') ||
+            displayName.includes('salta') ||
+            displayName.includes('santa fe') ||
+            displayName.includes('la plata') ||
+            displayName.includes('mar del plata') ||
+            displayName.includes('bariloche') ||
+            displayName.includes('ushuaia') ||
+            displayName.includes('neuquén') ||
+            displayName.includes('comodoro rivadavia') ||
+            // Common Argentina provinces/cities
+            displayName.includes('provincia de') ||
+            // Trust countrycodes parameter - if it's in the results, it's likely Argentina
+            true
+          
+          // Exclude obvious non-Argentina results
+          const isNotArgentina = 
+            displayName.includes(', chile') ||
+            displayName.includes(', uruguay') ||
+            displayName.includes(', paraguay') ||
+            displayName.includes(', brasil') ||
+            displayName.includes(', brazil') ||
+            displayName.includes(', colombia') ||
+            displayName.includes(', méxico') ||
+            displayName.includes(', mexico') ||
+            displayName.includes(', españa') ||
+            displayName.includes(', spain')
+          
+          return isArgentina && !isNotArgentina
+        })
+        
+        setSuggestions(argentinaResults)
         setShowSuggestions(true)
       })
-      .catch(() => {
+      .catch((error) => {
+        console.debug('Nominatim search error:', error)
         setSuggestions([])
       })
       .finally(() => setIsLoading(false))
-  }, [debouncedQuery])
+  }, [debouncedQuery, value.latitude, value.longitude])
 
   const handleSelectSuggestion = (suggestion: NominatimResult) => {
     const location: LocationData = {
@@ -74,21 +134,82 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
     }
 
     setIsLoading(true)
+    
+    // CRITICAL: Configure geolocation with proper options
+    const geolocationOptions: PositionOptions = {
+      enableHighAccuracy: true, // Use GPS if available
+      timeout: 15000, // 15 seconds timeout
+      maximumAge: 60000 // Accept cached position up to 1 minute old
+    }
+
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
+        const lat = position.coords.latitude
+        const lon = position.coords.longitude
+        
+        // Try to get a human-readable address from coordinates
+        let locationName = `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+        
+        try {
+          // Reverse geocode to get address name
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&countrycodes=ar`,
+            {
+              headers: {
+                'User-Agent': 'SafeSpot App'
+              }
+            }
+          )
+          
+          if (response.ok) {
+            const data = await response.json()
+            if (data.display_name) {
+              // Format address nicely (remove country if present, keep local info)
+              const displayName = data.display_name
+              // Remove "Argentina" from the end if present
+              locationName = displayName.replace(/, Argentina$/, '').trim() || displayName
+            }
+          }
+        } catch (error) {
+          // Non-critical: if reverse geocoding fails, use coordinates
+          console.debug('Reverse geocoding failed, using coordinates:', error)
+        }
+        
         const location: LocationData = {
-          location_name: `${position.coords.latitude}, ${position.coords.longitude}`,
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
+          location_name: locationName,
+          latitude: lat,
+          longitude: lon
         }
         onChange(location)
-        setSearchQuery(location.location_name)
+        setSearchQuery(locationName)
         setIsLoading(false)
       },
-      () => {
-        toast.error('No se pudo obtener tu ubicación')
+      (error) => {
+        // CRITICAL: Show specific error messages based on error code
+        let errorMessage = 'No se pudo obtener tu ubicación'
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'No pudimos acceder a tu ubicación. Verificá los permisos del navegador.'
+            console.debug('Geolocation error: Permission denied')
+            break
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Tu ubicación no está disponible. Verificá que el GPS esté activado.'
+            console.debug('Geolocation error: Position unavailable')
+            break
+          case error.TIMEOUT:
+            errorMessage = 'La ubicación tardó demasiado en responder. Intentá nuevamente.'
+            console.debug('Geolocation error: Timeout')
+            break
+          default:
+            console.debug('Geolocation error:', error.code, error.message)
+            errorMessage = 'No se pudo obtener tu ubicación. Intentá nuevamente.'
+        }
+        
+        toast.error(errorMessage)
         setIsLoading(false)
-      }
+      },
+      geolocationOptions
     )
   }
 
@@ -144,8 +265,15 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         className="w-full"
       >
         <Navigation className="h-4 w-4 mr-2" />
-        Usar mi ubicación actual
+        {isLoading ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}
       </Button>
+
+      {/* Helper text */}
+      <p className="text-xs text-muted-foreground">
+        Podés escribir barrio, calle y ciudad. No hace falta la dirección completa.
+        <br />
+        Ejemplos: "Palermo, Buenos Aires" o "Av. Corrientes 1200, CABA"
+      </p>
 
       {value.latitude && value.longitude && (
         <div className="text-sm text-foreground/70">

@@ -91,8 +91,9 @@ function determineZoneFromCoordinates(latitude: number, longitude: number): Zone
  */
 async function reverseGeocode(latitude: number, longitude: number): Promise<NominatimReverseResult | null> {
   try {
+    // CRITICAL: Restrict to Argentina (countrycodes=ar)
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&countrycodes=ar`,
       {
         headers: {
           'User-Agent': 'SafeSpot App'
@@ -105,6 +106,13 @@ async function reverseGeocode(latitude: number, longitude: number): Promise<Nomi
     }
     
     const data = await response.json()
+    
+    // Extra validation: ensure result is from Argentina
+    if (data.address?.country && !data.address.country.toLowerCase().includes('argentina')) {
+      console.debug('Reverse geocode result not from Argentina, ignoring')
+      return null
+    }
+    
     return data as NominatimReverseResult
   } catch (error) {
     // Non-critical error, log but don't show to user

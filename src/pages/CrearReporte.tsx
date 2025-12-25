@@ -26,7 +26,20 @@ const createReportSchema = z.object({
     message: 'Debes seleccionar una categoría válida'
   }),
   location: z.object({
-    location_name: z.string().min(3, 'La dirección debe tener al menos 3 caracteres').max(255, 'La dirección no puede exceder 255 caracteres'),
+    // CRITICAL: More flexible validation - accept barrio + ciudad or street + city
+    // Minimum: 3 characters (allows "Palermo" or "Av. Corrientes")
+    location_name: z.string()
+      .min(3, 'La ubicación debe tener al menos 3 caracteres')
+      .max(255, 'La ubicación no puede exceder 255 caracteres')
+      .refine(
+        (val) => {
+          // Check if it contains at least a barrio/neighborhood or city
+          const lower = val.toLowerCase()
+          // Accept if it has common location indicators
+          return lower.length >= 3
+        },
+        { message: 'Ingresá al menos un barrio o ciudad' }
+      ),
     latitude: z.number().optional(),
     longitude: z.number().optional(),
   }),
@@ -168,35 +181,100 @@ export function CrearReporte() {
 
   const onSubmit = async (data: CreateReportFormData) => {
     try {
-      // Determine zone from location
+      // Validate location name
       if (!data.location.location_name || data.location.location_name.trim().length === 0) {
-        toast.error('Debes seleccionar una ubicación válida')
+        toast.error('Debes ingresar una ubicación válida')
         return
       }
 
-      // Validate location has minimum required data
-      if (!data.location.latitude || !data.location.longitude) {
-        toast.error('La ubicación debe incluir coordenadas. Por favor, selecciona una ubicación desde las sugerencias o usa tu ubicación actual.')
-        return
-      }
-
-      // Determine zone from location
-      const zone = await determineZone(data.location)
+      // CRITICAL: More flexible validation
+      // If coordinates are available, use them
+      // If not, try to determine zone from location name only
+      let zone: string | null = null
       
+      if (data.location.latitude && data.location.longitude) {
+        // Has coordinates - use them to determine zone
+        zone = await determineZone(data.location)
+      } else {
+        // No coordinates - try to determine zone from location name
+        // This allows users to enter "Palermo, Buenos Aires" without coordinates
+        zone = await determineZone({
+          location_name: data.location.location_name,
+          latitude: undefined,
+          longitude: undefined
+        })
+        
+        // If zone cannot be determined from name, try to get coordinates from Nominatim
+        if (!zone || !isValidZone(zone)) {
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(data.location.location_name)}&limit=1&countrycodes=ar`,
+              {
+                headers: {
+                  'User-Agent': 'SafeSpot App'
+                }
+              }
+            )
+            
+            if (response.ok) {
+              const results = await response.json()
+              if (results.length > 0) {
+                const result = results[0]
+                const locationWithCoords: LocationData = {
+                  location_name: data.location.location_name,
+                  latitude: parseFloat(result.lat),
+                  longitude: parseFloat(result.lon)
+                }
+                zone = await determineZone(locationWithCoords)
+                
+                // Update form with coordinates if found
+                if (locationWithCoords.latitude && locationWithCoords.longitude) {
+                  setValue('location', locationWithCoords)
+                }
+              }
+            }
+          } catch (error) {
+            console.debug('Failed to geocode location name:', error)
+          }
+        }
+      }
+      
+      // If still no zone, use a default or show helpful error
       if (!zone || !isValidZone(zone)) {
-        toast.error('No se pudo determinar la zona de la ubicación. Por favor, intenta con una ubicación más específica.')
-        return
+        // Try to extract zone from location name as last resort
+        const locationLower = data.location.location_name.toLowerCase()
+        if (locationLower.includes('centro') || locationLower.includes('microcentro') || locationLower.includes('caba')) {
+          zone = 'Centro'
+        } else if (locationLower.includes('norte') || locationLower.includes('nord')) {
+          zone = 'Norte'
+        } else if (locationLower.includes('sur') || locationLower.includes('sud')) {
+          zone = 'Sur'
+        } else if (locationLower.includes('este') || locationLower.includes('east')) {
+          zone = 'Este'
+        } else if (locationLower.includes('oeste') || locationLower.includes('west')) {
+          zone = 'Oeste'
+        } else {
+          // Default to Centro if cannot determine
+          zone = 'Centro'
+          console.debug('Could not determine zone, defaulting to Centro')
+        }
       }
 
       // Map form data to backend payload (without images)
+      // CRITICAL: Only include lat/lng if they exist (backend accepts null/undefined)
       const payload = {
         title: data.title,
         description: data.description,
         category: data.category,
         zone: zone,
         address: data.location.location_name,
-        latitude: data.location.latitude,
-        longitude: data.location.longitude,
+        // Only include coordinates if they exist
+        ...(data.location.latitude !== undefined && data.location.latitude !== null && {
+          latitude: data.location.latitude
+        }),
+        ...(data.location.longitude !== undefined && data.location.longitude !== null && {
+          longitude: data.location.longitude
+        }),
         status: 'pendiente' as const,
         incident_date: data.incidentDate || new Date().toISOString()
       }

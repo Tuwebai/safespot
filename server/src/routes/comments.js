@@ -3,6 +3,7 @@ import { requireAnonymousId, validateComment, validateCommentUpdate, validateFla
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
+import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
@@ -260,6 +261,13 @@ router.post('/', requireAnonymousId, async (req, res) => {
         message: insertError.message
       });
     }
+    
+    // Evaluate badges (async, don't wait for response)
+    // This will check if user should receive badges for creating comments
+    evaluateBadges(anonymousId).catch(err => {
+      logError(err, req);
+      // Don't fail the request if badge evaluation fails
+    });
     
     res.status(201).json({
       success: true,

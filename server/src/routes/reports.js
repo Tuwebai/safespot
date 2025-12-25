@@ -5,6 +5,7 @@ import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
+import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
@@ -36,13 +37,14 @@ router.get('/', async (req, res) => {
         
         // Search filter
         if (search && typeof search === 'string' && search.trim()) {
-          const searchTerm = `%${search.trim()}%`;
+          const searchTerm = search.trim();
+          // Use concatenation for ILIKE pattern matching (correct SQL syntax)
           conditions.push(`(
-            r.title ILIKE $${paramIndex} OR 
-            r.description ILIKE $${paramIndex} OR 
-            r.category ILIKE $${paramIndex} OR 
-            r.address ILIKE $${paramIndex} OR 
-            r.zone ILIKE $${paramIndex}
+            r.title ILIKE '%' || $${paramIndex} || '%' OR 
+            r.description ILIKE '%' || $${paramIndex} || '%' OR 
+            r.category ILIKE '%' || $${paramIndex} || '%' OR 
+            r.address ILIKE '%' || $${paramIndex} || '%' OR 
+            r.zone ILIKE '%' || $${paramIndex} || '%'
           )`);
           params.push(searchTerm);
           paramIndex++;
@@ -79,6 +81,12 @@ router.get('/', async (req, res) => {
           ${whereClause}
         `;
         
+        // Add LIMIT and OFFSET parameters
+        const limitParamIndex = paramIndex;
+        const offsetParamIndex = paramIndex + 1;
+        params.push(limitNum, offset);
+        
+        // Build data query - use $1 for anonymousId in both JOINs (PostgreSQL allows reusing params)
         const dataQuery = `
           SELECT 
             r.*,
@@ -89,12 +97,15 @@ router.get('/', async (req, res) => {
           LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
           ${whereClause}
           ORDER BY r.created_at DESC
-          LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+          LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
         `;
         
-        params.push(limitNum, offset);
+        // Note: PostgreSQL allows reusing $1 multiple times in the same query
+        // The params array is: [anonymousId, ...filterParams, limitNum, offset]
+        // $1 is used twice (in both JOINs) but only passed once - this is valid SQL
         
         // Execute both queries in parallel
+        // countQuery uses only filter params (no LIMIT/OFFSET), dataQuery uses all params
         const [countResult, dataResult] = await Promise.all([
           queryWithRLS('', countQuery, params.slice(0, paramIndex)),
           queryWithRLS('', dataQuery, params)
@@ -450,6 +461,13 @@ router.post('/', requireAnonymousId, async (req, res) => {
     logSuccess('Report created', { 
       id: data.id,
       anonymousId 
+    });
+    
+    // Evaluate badges (async, don't wait for response)
+    // This will check if user should receive badges for creating reports
+    evaluateBadges(anonymousId).catch(err => {
+      logError(err, req);
+      // Don't fail the request if badge evaluation fails
     });
     
     res.status(201).json({

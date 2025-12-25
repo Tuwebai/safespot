@@ -76,13 +76,21 @@ export class DB {
     let orderClause = '';
     if (orderBy) {
       const [column, direction = 'ASC'] = Array.isArray(orderBy) ? orderBy : [orderBy];
+      // ORDER BY doesn't use parameters (column names and directions are safe)
       orderClause = `ORDER BY ${column} ${direction.toUpperCase()}`;
     }
 
-    // Build LIMIT clause
+    // Build LIMIT clause (use parameterized query for safety)
     let limitClause = '';
     if (limit) {
-      limitClause = `LIMIT ${limit}`;
+      // Validate limit is a positive integer
+      const limitNum = parseInt(limit, 10);
+      if (isNaN(limitNum) || limitNum <= 0) {
+        throw new Error('LIMIT must be a positive integer');
+      }
+      params.push(limitNum);
+      limitClause = `LIMIT $${paramIndex}`;
+      paramIndex++;
     }
 
     // Build query

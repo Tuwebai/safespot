@@ -2,6 +2,7 @@ import express from 'express';
 import { requireAnonymousId } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
+import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import { validate as uuidValidate } from 'uuid';
 import supabase from '../config/supabase.js';
 
@@ -168,6 +169,34 @@ router.post('/', requireAnonymousId, async (req, res) => {
       anonymousId,
       target: report_id || comment_id
     });
+    
+    // Evaluate badges for the user who received the like (not the voter)
+    // Get the owner of the report/comment that received the vote
+    if (report_id) {
+      const { data: report } = await supabase
+        .from('reports')
+        .select('anonymous_id')
+        .eq('id', report_id)
+        .single();
+      
+      if (report && report.anonymous_id) {
+        evaluateBadges(report.anonymous_id).catch(err => {
+          logError(err, req);
+        });
+      }
+    } else if (comment_id) {
+      const { data: comment } = await supabase
+        .from('comments')
+        .select('anonymous_id')
+        .eq('id', comment_id)
+        .single();
+      
+      if (comment && comment.anonymous_id) {
+        evaluateBadges(comment.anonymous_id).catch(err => {
+          logError(err, req);
+        });
+      }
+    }
     
     res.status(201).json({
       success: true,

@@ -18,25 +18,31 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       throw new Error('Params array contains undefined or null values');
     }
     
-    // CRITICAL: Count placeholders in query and validate against params
+    // CRITICAL: Count UNIQUE placeholders in query and validate against params
+    // PostgreSQL allows reusing the same parameter ($1) multiple times
     const placeholderMatches = queryText.match(/\$\d+/g) || [];
-    const placeholderCount = placeholderMatches.length;
+    const uniquePlaceholders = new Set(placeholderMatches);
+    const maxPlaceholderIndex = placeholderMatches.length > 0 
+      ? Math.max(...placeholderMatches.map(m => parseInt(m.replace('$', ''))))
+      : 0;
     
-    // CRITICAL: If query has placeholders, params must match exactly
-    if (placeholderCount > 0 && cleanParams.length !== placeholderCount) {
+    // CRITICAL: Params must match the highest placeholder index
+    // If query has $1, $2, $3, we need at least 3 params (even if $1 is used twice)
+    if (maxPlaceholderIndex > 0 && cleanParams.length < maxPlaceholderIndex) {
       const error = new Error(
-        `Parameter count mismatch: query has ${placeholderCount} placeholders (${placeholderMatches.join(', ')}) but ${cleanParams.length} params provided`
+        `Parameter count mismatch: query has placeholder $${maxPlaceholderIndex} but only ${cleanParams.length} params provided`
       );
       if (process.env.NODE_ENV === 'development') {
         console.error('[RLS ERROR]', error.message);
         console.error('[RLS ERROR] Query:', queryText);
         console.error('[RLS ERROR] Params:', cleanParams);
+        console.error('[RLS ERROR] Placeholders found:', Array.from(uniquePlaceholders).join(', '));
       }
       throw error;
     }
     
     // CRITICAL: If query has no placeholders, params must be empty
-    if (placeholderCount === 0 && cleanParams.length > 0) {
+    if (maxPlaceholderIndex === 0 && cleanParams.length > 0) {
       const error = new Error(
         `Query has no placeholders but ${cleanParams.length} params provided`
       );

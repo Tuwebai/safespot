@@ -443,6 +443,93 @@ export const usersApi = {
 };
 
 // ============================================
+// BADGES API
+// ============================================
+
+export interface Badge {
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  is_earned: boolean;
+  awarded_at: string | null;
+  progress: {
+    current: number;
+    required: number;
+    progress: number;
+    text: string;
+  };
+}
+
+export interface BadgeProgress {
+  badges: Badge[];
+  earned_count: number;
+  total_count: number;
+}
+
+// New gamification badge interface
+export interface GamificationBadge {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  obtained: boolean;
+  obtained_at: string | null;
+  progress: {
+    current: number;
+    required: number;
+  };
+}
+
+export const badgesApi = {
+  /**
+   * Get all available badges (catalog)
+   */
+  getAll: async (): Promise<Badge[]> => {
+    const response = await apiRequest<{ data: Badge[] }>('/badges/all');
+    return response.data || [];
+  },
+
+  /**
+   * Get user's badge progress (earned + progress towards next)
+   */
+  getProgress: async (): Promise<BadgeProgress> => {
+    const response = await apiRequest<{ data: BadgeProgress }>('/badges/progress');
+    return response.data;
+  },
+};
+
+// ============================================
+// GAMIFICATION API
+// ============================================
+
+export const gamificationApi = {
+  /**
+   * Get all badges with user's progress (obtained + progress towards not obtained)
+   */
+  getBadges: async (): Promise<GamificationBadgesResponse> => {
+    const response = await apiRequest<GamificationBadgesResponse>('/gamification/badges');
+    return {
+      badges: response.badges || [],
+      newBadges: response.newBadges || []
+    };
+  },
+
+  /**
+   * Evaluate and award badges (called automatically after user actions)
+   */
+  evaluate: async (): Promise<{ newly_awarded: string[]; count: number }> => {
+    const response = await apiRequest<{ newly_awarded: string[]; count: number }>('/gamification/evaluate', {
+      method: 'POST',
+    });
+    return response;
+  },
+};
+
+// ============================================
 // FAVORITES API
 // ============================================
 

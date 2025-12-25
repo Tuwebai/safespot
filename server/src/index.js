@@ -66,6 +66,8 @@ import commentsRouter from './routes/comments.js';
 import votesRouter from './routes/votes.js';
 import usersRouter from './routes/users.js';
 import favoritesRouter from './routes/favorites.js';
+import badgesRouter from './routes/badges.js';
+import gamificationRouter from './routes/gamification.js';
 import testRouter from './routes/test.js';
 
 app.use('/api/reports', reportsRouter);
@@ -73,6 +75,8 @@ app.use('/api/comments', commentsRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api/badges', badgesRouter);
+app.use('/api/gamification', gamificationRouter);
 app.use('/api/test', testRouter);
 
 // ============================================

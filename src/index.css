@@ -175,6 +175,26 @@
     background-size: 200px 100%;
     animation: shimmer 1.5s infinite;
   }
+
+  /* Badge Unlock Animation */
+  @keyframes badgeUnlock {
+    0% {
+      transform: scale(0.8);
+      opacity: 0.5;
+    }
+    50% {
+      transform: scale(1.05);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .animate-badge-unlock {
+    animation: badgeUnlock 0.6s ease-out;
+  }
 }
 
 /* Scrollbar Personalizada */
