@@ -484,6 +484,12 @@ export interface GamificationBadge {
   };
 }
 
+export interface NewBadge {
+  code: string;
+  name: string;
+  icon: string;
+}
+
 export const badgesApi = {
   /**
    * Get all available badges (catalog)
@@ -506,6 +512,23 @@ export const badgesApi = {
 // GAMIFICATION API
 // ============================================
 
+export interface GamificationBadgesResponse {
+  badges: GamificationBadge[];
+  newBadges?: NewBadge[];
+}
+
+export interface GamificationSummaryResponse {
+  profile: {
+    level: number;
+    points: number;
+    total_reports: number;
+    total_comments: number;
+    total_votes: number;
+  };
+  badges: GamificationBadge[];
+  newBadges?: NewBadge[];
+}
+
 export const gamificationApi = {
   /**
    * Get all badges with user's progress (obtained + progress towards not obtained)
@@ -513,6 +536,18 @@ export const gamificationApi = {
   getBadges: async (): Promise<GamificationBadgesResponse> => {
     const response = await apiRequest<GamificationBadgesResponse>('/gamification/badges');
     return {
+      badges: response.badges || [],
+      newBadges: response.newBadges || []
+    };
+  },
+
+  /**
+   * Get complete gamification summary (profile + badges) in a single optimized request
+   */
+  getSummary: async (): Promise<GamificationSummaryResponse> => {
+    const response = await apiRequest<GamificationSummaryResponse>('/gamification/summary');
+    return {
+      profile: response.profile,
       badges: response.badges || [],
       newBadges: response.newBadges || []
     };

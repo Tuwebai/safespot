@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { MapPin, Search, Navigation } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
+import { normalizeAddress, normalizeSearchResult } from '@/lib/address-utils'
 
 export interface LocationData {
   location_name: string
@@ -21,6 +22,15 @@ interface NominatimResult {
   display_name: string
   lat: string
   lon: string
+  address?: {
+    road?: string
+    house_number?: string
+    suburb?: string
+    neighbourhood?: string
+    city?: string
+    state?: string
+    [key: string]: string | undefined
+  }
 }
 
 export function LocationSelector({ value, onChange, error }: LocationSelectorProps) {
@@ -65,46 +75,52 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       .then((data: NominatimResult[]) => {
         // CRITICAL: Filter to ensure only Argentina results (extra safety)
         // Nominatim with countrycodes=ar should only return Argentina, but we double-check
-        const argentinaResults = data.filter(result => {
-          const displayName = result.display_name.toLowerCase()
-          
-          // Check for Argentina indicators
-          const isArgentina = 
-            displayName.includes('argentina') ||
-            displayName.includes('buenos aires') ||
-            displayName.includes('caba') ||
-            displayName.includes('córdoba') ||
-            displayName.includes('rosario') ||
-            displayName.includes('mendoza') ||
-            displayName.includes('tucumán') ||
-            displayName.includes('salta') ||
-            displayName.includes('santa fe') ||
-            displayName.includes('la plata') ||
-            displayName.includes('mar del plata') ||
-            displayName.includes('bariloche') ||
-            displayName.includes('ushuaia') ||
-            displayName.includes('neuquén') ||
-            displayName.includes('comodoro rivadavia') ||
-            // Common Argentina provinces/cities
-            displayName.includes('provincia de') ||
-            // Trust countrycodes parameter - if it's in the results, it's likely Argentina
-            true
-          
-          // Exclude obvious non-Argentina results
-          const isNotArgentina = 
-            displayName.includes(', chile') ||
-            displayName.includes(', uruguay') ||
-            displayName.includes(', paraguay') ||
-            displayName.includes(', brasil') ||
-            displayName.includes(', brazil') ||
-            displayName.includes(', colombia') ||
-            displayName.includes(', méxico') ||
-            displayName.includes(', mexico') ||
-            displayName.includes(', españa') ||
-            displayName.includes(', spain')
-          
-          return isArgentina && !isNotArgentina
-        })
+        const argentinaResults = data
+          .filter(result => {
+            const displayName = result.display_name.toLowerCase()
+            
+            // Check for Argentina indicators
+            const isArgentina = 
+              displayName.includes('argentina') ||
+              displayName.includes('buenos aires') ||
+              displayName.includes('caba') ||
+              displayName.includes('córdoba') ||
+              displayName.includes('rosario') ||
+              displayName.includes('mendoza') ||
+              displayName.includes('tucumán') ||
+              displayName.includes('salta') ||
+              displayName.includes('santa fe') ||
+              displayName.includes('la plata') ||
+              displayName.includes('mar del plata') ||
+              displayName.includes('bariloche') ||
+              displayName.includes('ushuaia') ||
+              displayName.includes('neuquén') ||
+              displayName.includes('comodoro rivadavia') ||
+              // Common Argentina provinces/cities
+              displayName.includes('provincia de') ||
+              // Trust countrycodes parameter - if it's in the results, it's likely Argentina
+              true
+            
+            // Exclude obvious non-Argentina results
+            const isNotArgentina = 
+              displayName.includes(', chile') ||
+              displayName.includes(', uruguay') ||
+              displayName.includes(', paraguay') ||
+              displayName.includes(', brasil') ||
+              displayName.includes(', brazil') ||
+              displayName.includes(', colombia') ||
+              displayName.includes(', méxico') ||
+              displayName.includes(', mexico') ||
+              displayName.includes(', españa') ||
+              displayName.includes(', spain')
+            
+            return isArgentina && !isNotArgentina
+          })
+          .map(result => ({
+            ...result,
+            // CRITICAL: Normalize display_name to show only relevant parts
+            display_name: normalizeSearchResult(result.display_name)
+          }))
         
         setSuggestions(argentinaResults)
         setShowSuggestions(true)
@@ -147,8 +163,8 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         const lat = position.coords.latitude
         const lon = position.coords.longitude
         
-        // Try to get a human-readable address from coordinates
-        let locationName = `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+        // CRITICAL: Try to get a normalized, human-readable address from coordinates
+        let locationName = ''
         
         try {
           // Reverse geocode to get address name
@@ -163,16 +179,18 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           
           if (response.ok) {
             const data = await response.json()
-            if (data.display_name) {
-              // Format address nicely (remove country if present, keep local info)
-              const displayName = data.display_name
-              // Remove "Argentina" from the end if present
-              locationName = displayName.replace(/, Argentina$/, '').trim() || displayName
-            }
+            // CRITICAL: Normalize address to show only relevant parts
+            locationName = normalizeAddress(data)
           }
         } catch (error) {
-          // Non-critical: if reverse geocoding fails, use coordinates
-          console.debug('Reverse geocoding failed, using coordinates:', error)
+          // Non-critical: if reverse geocoding fails, log but don't show error
+          console.debug('Reverse geocoding failed:', error)
+        }
+        
+        // CRITICAL: If we couldn't get a normalized address, use a generic message
+        // Don't show raw coordinates to the user
+        if (!locationName || locationName.trim().length === 0) {
+          locationName = 'Ubicación actual'
         }
         
         const location: LocationData = {
@@ -185,25 +203,30 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         setIsLoading(false)
       },
       (error) => {
-        // CRITICAL: Show specific error messages based on error code
-        let errorMessage = 'No se pudo obtener tu ubicación'
+        // CRITICAL: Show clear, human-friendly error messages
+        let errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
+        
+        // Log detailed error for debugging
+        console.debug('Geolocation error:', {
+          code: error.code,
+          message: error.message,
+          PERMISSION_DENIED: error.PERMISSION_DENIED,
+          POSITION_UNAVAILABLE: error.POSITION_UNAVAILABLE,
+          TIMEOUT: error.TIMEOUT
+        })
         
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'No pudimos acceder a tu ubicación. Verificá los permisos del navegador.'
-            console.debug('Geolocation error: Permission denied')
+            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
             break
           case error.POSITION_UNAVAILABLE:
-            errorMessage = 'Tu ubicación no está disponible. Verificá que el GPS esté activado.'
-            console.debug('Geolocation error: Position unavailable')
+            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
             break
           case error.TIMEOUT:
-            errorMessage = 'La ubicación tardó demasiado en responder. Intentá nuevamente.'
-            console.debug('Geolocation error: Timeout')
+            errorMessage = 'La ubicación tardó demasiado. Probá ingresarla manualmente.'
             break
           default:
-            console.debug('Geolocation error:', error.code, error.message)
-            errorMessage = 'No se pudo obtener tu ubicación. Intentá nuevamente.'
+            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
         }
         
         toast.error(errorMessage)
@@ -274,13 +297,6 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         <br />
         Ejemplos: "Palermo, Buenos Aires" o "Av. Corrientes 1200, CABA"
       </p>
-
-      {value.latitude && value.longitude && (
-        <div className="text-sm text-foreground/70">
-          <MapPin className="h-4 w-4 inline mr-1" />
-          Coordenadas: {value.latitude.toFixed(6)}, {value.longitude.toFixed(6)}
-        </div>
-      )}
 
       {error && (
         <div className="text-sm text-destructive mt-1">{error}</div>

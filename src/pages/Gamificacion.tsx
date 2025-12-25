@@ -1,188 +1,70 @@
-import { useState, useEffect, useRef } from 'react'
-import { usersApi, gamificationApi } from '@/lib/api'
+import { useState, useEffect } from 'react'
+import { gamificationApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { useToast } from '@/components/ui/toast'
-import { handleError } from '@/lib/errorHandler'
+import { handleErrorSilently } from '@/lib/errorHandler'
 import { Award, Trophy, Star, Lock } from 'lucide-react'
-import type { UserProfile, GamificationBadge, NewBadge } from '@/lib/api'
+import type { GamificationBadge, NewBadge } from '@/lib/api'
 
-// Storage key for tracking shown badges (per anonymous user session)
-const SHOWN_BADGES_STORAGE_KEY = 'safespot_shown_badges'
+// Simple in-memory cache (cleared on page refresh)
+let gamificationCache: {
+  data: { profile: any; badges: GamificationBadge[]; newBadges?: NewBadge[] } | null;
+  timestamp: number;
+} = {
+  data: null,
+  timestamp: 0
+};
 
-// Get shown badges from sessionStorage
-function getShownBadges(): Set<string> {
-  try {
-    const stored = sessionStorage.getItem(SHOWN_BADGES_STORAGE_KEY)
-    if (stored) {
-      return new Set(JSON.parse(stored))
-    }
-  } catch (error) {
-    console.debug('Failed to read shown badges from storage:', error)
-  }
-  return new Set()
-}
-
-// Save shown badge to sessionStorage
-function markBadgeAsShown(badgeCode: string) {
-  try {
-    const shown = getShownBadges()
-    shown.add(badgeCode)
-    sessionStorage.setItem(SHOWN_BADGES_STORAGE_KEY, JSON.stringify(Array.from(shown)))
-  } catch (error) {
-    console.debug('Failed to save shown badge to storage:', error)
-  }
-}
+const CACHE_DURATION = 30000; // 30 seconds
 
 export function Gamificacion() {
-  const toast = useToast()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profile, setProfile] = useState<{ level: number; points: number; total_reports: number; total_comments: number; total_votes: number } | null>(null)
   const [badges, setBadges] = useState<GamificationBadge[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // CRITICAL: Start as false for immediate render
   const [error, setError] = useState<string | null>(null)
   const [newlyUnlockedBadgeIds, setNewlyUnlockedBadgeIds] = useState<Set<string>>(new Set())
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const audioEnabledRef = useRef<boolean>(false)
-  const soundPlayedRef = useRef<Set<string>>(new Set())
-
-  // CRITICAL: Enable audio on first user interaction
-  useEffect(() => {
-    const enableAudio = () => {
-      if (audioEnabledRef.current) return
-      
-      try {
-        // Create AudioContext on first user interaction
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-        if (AudioContextClass) {
-          audioContextRef.current = new AudioContextClass()
-          audioEnabledRef.current = true
-        }
-      } catch (error) {
-        console.debug('Failed to enable audio:', error)
-      }
-    }
-
-    // Enable audio on any user interaction
-    const events = ['click', 'touchstart', 'keydown']
-    events.forEach(event => {
-      document.addEventListener(event, enableAudio, { once: true, passive: true })
-    })
-
-    return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, enableAudio)
-      })
-    }
-  }, [])
 
   // Load data on component mount
   useEffect(() => {
     loadData()
   }, [])
 
-  // Play sound for new badge (only if audio is enabled and badge not played before)
-  const playBadgeSound = (badgeCode: string) => {
-    // CRITICAL: Only play if audio is enabled (user has interacted)
-    if (!audioEnabledRef.current || !audioContextRef.current) {
-      return
-    }
-
-    // CRITICAL: Don't play if already played in this session
-    if (soundPlayedRef.current.has(badgeCode)) {
-      return
-    }
-    soundPlayedRef.current.add(badgeCode)
-
-    try {
-      const audioContext = audioContextRef.current
-      
-      // CRITICAL: Resume AudioContext if suspended (required by Chrome autoplay policy)
-      if (audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-          // Play sound after resuming
-          playSoundInternal(audioContext)
-        }).catch(err => {
-          console.debug('Failed to resume AudioContext:', err)
-          return
-        })
-      } else {
-        // AudioContext is already running, play sound immediately
-        playSoundInternal(audioContext)
-      }
-    } catch (error) {
-      // Silent fallback - don't log errors for audio
-      console.debug('Audio playback failed:', error)
-    }
-  }
-
-  // Internal function to play the actual sound
-  const playSoundInternal = (audioContext: AudioContext) => {
-    try {
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-
-      // Pleasant chime sound
-      oscillator.frequency.value = 800
-      oscillator.type = 'sine'
-      
-      // Low volume (20-30%)
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime)
-      gainNode.gain.linearRampToValueAtTime(0.25, audioContext.currentTime + 0.01)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
-
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.3)
-    } catch (error) {
-      // Silent fallback
-      console.debug('Sound playback failed:', error)
-    }
-  }
-
-  // Show toast for new badge
-  const showBadgeToast = (badge: NewBadge) => {
-    toast.success(
-      `🎉 ¡Nueva insignia desbloqueada! Conseguiste: ${badge.name} ${badge.icon}`,
-      4000
-    )
-  }
-
   const loadData = async () => {
     try {
+      // CRITICAL: Check cache first
+      const now = Date.now()
+      if (gamificationCache.data && (now - gamificationCache.timestamp) < CACHE_DURATION) {
+        // Use cached data
+        setProfile(gamificationCache.data.profile)
+        setBadges(gamificationCache.data.badges)
+        setError(null)
+        return
+      }
+
       setLoading(true)
-      const [profileData, badgesResponse] = await Promise.all([
-        usersApi.getProfile(),
-        gamificationApi.getBadges()
-      ])
-      setProfile(profileData)
       
-      // CRITICAL: Get badges that have already been shown (from sessionStorage)
-      const shownBadges = getShownBadges()
+      // CRITICAL: Use consolidated endpoint for single request
+      const summary = await gamificationApi.getSummary()
       
-      // CRITICAL: Only process badges that are NEW (from backend) AND not shown before
-      if (badgesResponse.newBadges && badgesResponse.newBadges.length > 0) {
-        badgesResponse.newBadges.forEach(badge => {
-          // CRITICAL: Only show if this badge hasn't been shown before
-          if (shownBadges.has(badge.code)) {
-            return // Skip - already shown
-          }
-          
+      // Update cache
+      gamificationCache = {
+        data: {
+          profile: summary.profile,
+          badges: summary.badges,
+          newBadges: summary.newBadges
+        },
+        timestamp: Date.now()
+      }
+      
+      setProfile(summary.profile)
+      
+      // CRITICAL: Mark newly unlocked badges for animation only (notifications handled globally)
+      if (summary.newBadges && summary.newBadges.length > 0) {
+        summary.newBadges.forEach((badge: NewBadge) => {
           // Find the full badge info
-          const fullBadge = badgesResponse.badges.find(b => b.code === badge.code)
+          const fullBadge = summary.badges.find(b => b.code === badge.code)
           if (fullBadge) {
-            // Mark as shown in sessionStorage (persists across page refreshes)
-            markBadgeAsShown(badge.code)
-            
-            // Mark as newly unlocked for animation
+            // Mark as newly unlocked for animation (visual feedback only)
             setNewlyUnlockedBadgeIds(prev => new Set(prev).add(fullBadge.id))
-            
-            // Show toast
-            showBadgeToast(badge)
-            
-            // CRITICAL: Only play sound if audio is enabled (user has interacted)
-            // This prevents autoplay policy violations
-            playBadgeSound(badge.code)
             
             // Remove animation flag after animation completes
             setTimeout(() => {
@@ -196,14 +78,10 @@ export function Gamificacion() {
         })
       }
       
-      // CRITICAL: Don't process badges detected by frontend comparison on initial load
-      // This prevents showing toast/sound on page refresh
-      // Only backend's newBadges array is the source of truth
-      
-      setBadges(badgesResponse.badges)
+      setBadges(summary.badges)
       setError(null)
     } catch (error) {
-      const errorInfo = handleError(error, toast.error, 'Gamificacion.loadData')
+      const errorInfo = handleErrorSilently(error, 'Gamificacion.loadData')
       setError(errorInfo.userMessage)
     } finally {
       setLoading(false)
@@ -288,19 +166,9 @@ export function Gamificacion() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="bg-dark-card border-dark-border">
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Cargando gamificación...</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (error || !profile) {
+  // CRITICAL: Render immediately with skeletons, don't block UI
+  // Only show error if there's an actual error and no cached data
+  if (error && !profile && !badges.length) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <Card className="bg-dark-card border-dark-border">
@@ -314,7 +182,7 @@ export function Gamificacion() {
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Header */}
+      {/* Header - Always visible immediately */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2">
           <span className="gradient-text">Gamificación</span>
@@ -326,6 +194,24 @@ export function Gamificacion() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Nivel y Progreso */}
+        {loading && !profile ? (
+          <Card className="lg:col-span-2 bg-dark-card border-dark-border card-glow">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-neon-green" />
+                Tu Nivel
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div className="text-center">
+                  <div className="h-20 bg-dark-border/50 rounded-lg mb-2 animate-pulse" />
+                  <div className="h-6 w-32 bg-dark-border/50 rounded mx-auto mb-4 animate-pulse" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : profile ? (
         <Card className="lg:col-span-2 bg-dark-card border-dark-border card-glow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -339,29 +225,29 @@ export function Gamificacion() {
                 <div className="text-6xl font-bold text-neon-green mb-2">
                   Nivel {profile.level}
                 </div>
-                <div className="text-lg text-muted-foreground mb-4">
+                  <div className="text-lg text-muted-foreground mb-4">
                   {profile.points} puntos totales
-                </div>
-                
-                {/* Obtained badges under user name */}
-                {obtainedBadges.length > 0 && (
-                  <div className="flex flex-wrap justify-center gap-2 mt-4">
-                    {obtainedBadges.slice(0, 8).map((badge) => (
-                      <div
-                        key={badge.id}
-                        className="text-2xl transition-transform hover:scale-110"
-                        title={badge.name}
-                      >
-                        {badge.icon}
-                      </div>
-                    ))}
-                    {obtainedBadges.length > 8 && (
-                      <div className="text-sm text-muted-foreground flex items-center">
-                        +{obtainedBadges.length - 8} más
-                      </div>
-                    )}
                   </div>
-                )}
+                
+                  {/* Obtained badges under user name */}
+                  {obtainedBadges.length > 0 && (
+                    <div className="flex flex-wrap justify-center gap-2 mt-4">
+                      {obtainedBadges.slice(0, 8).map((badge) => (
+                        <div
+                          key={badge.id}
+                          className="text-2xl transition-transform hover:scale-110"
+                          title={badge.name}
+                        >
+                          {badge.icon}
+                        </div>
+                      ))}
+                      {obtainedBadges.length > 8 && (
+                        <div className="text-sm text-muted-foreground flex items-center">
+                          +{obtainedBadges.length - 8} más
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
               
               <div>
@@ -402,172 +288,210 @@ export function Gamificacion() {
             </div>
           </CardContent>
         </Card>
+        ) : null}
 
         {/* Resumen de Insignias Obtenidas */}
+        {loading && badges.length === 0 ? (
+          <Card className="bg-dark-card border-dark-border card-glow">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-neon-green" />
+                Insignias Obtenidas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="h-16 bg-dark-border/50 rounded-lg animate-pulse" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="bg-dark-card border-dark-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-neon-green" />
+                Insignias Obtenidas
+              </CardTitle>
+              <CardDescription>
+                {obtainedBadges.length} de {badges.length} obtenidas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {obtainedBadges.length === 0 ? (
+                <div className="text-center py-8">
+                  <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <p className="text-sm text-muted-foreground">
+                    Aún no obtuviste insignias, pero ya podés ver todo lo que podés lograr 🚀
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {obtainedBadges.map((badge) => (
+                    <div
+                      key={badge.id}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-neon-green/10 border border-neon-green/20"
+                    >
+                      <div className="text-2xl">{badge.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-neon-green">{badge.name}</div>
+                        <div className="text-xs text-muted-foreground line-clamp-1">{badge.description}</div>
+                      </div>
+                      <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Catálogo Completo de Insignias */}
+      {loading && badges.length === 0 ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map(cat => (
+            <Card key={cat} className="bg-dark-card border-dark-border card-glow">
+              <CardHeader>
+                <div className="h-6 w-32 bg-dark-border/50 rounded animate-pulse" />
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-32 bg-dark-border/50 rounded-lg animate-pulse" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
         <Card className="bg-dark-card border-dark-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Award className="h-5 w-5 text-neon-green" />
-              Insignias Obtenidas
+              Catálogo de Insignias
             </CardTitle>
             <CardDescription>
-              {obtainedBadges.length} de {badges.length} obtenidas
+              Todas las insignias disponibles. Cada aporte cuenta, incluso anónimo.
+              Seguí participando para desbloquearlas.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {obtainedBadges.length === 0 ? (
-              <div className="text-center py-8">
-                <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            {badges.length === 0 ? (
+              <div className="text-center py-12">
+                <Award className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <p className="text-muted-foreground mb-2 font-medium">
+                  Las insignias están en camino 🚀
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  Aún no obtuviste insignias, pero ya podés ver todo lo que podés lograr 🚀
+                  Seguí participando y pronto podrás ver todas las insignias disponibles.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {obtainedBadges.map((badge) => (
-                  <div
-                    key={badge.id}
-                    className="flex items-center gap-3 p-3 rounded-lg bg-neon-green/10 border border-neon-green/20"
-                  >
-                    <div className="text-2xl">{badge.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-neon-green">{badge.name}</div>
-                      <div className="text-xs text-muted-foreground line-clamp-1">{badge.description}</div>
+              <div className="space-y-8">
+                {Object.entries(badgesByCategory).map(([category, categoryBadges]) => (
+                  <div key={category}>
+                    <h3 className="text-lg font-semibold mb-4 text-foreground">
+                      {categoryNames[category] || category}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {categoryBadges.map((badge) => {
+                        // CRITICAL: Use obtained status from backend (source of truth)
+                        const isObtained = badge.obtained
+                        // CRITICAL: If progress is complete, badge should be obtained
+                        const isProgressComplete = badge.progress.required > 0 && badge.progress.current >= badge.progress.required
+                        // Final state: obtained OR progress complete
+                        const isUnlocked = isObtained || isProgressComplete
+                        // Check if this badge was just unlocked (for animation)
+                        const isNewlyUnlocked = newlyUnlockedBadgeIds.has(badge.id)
+                        
+                        const progressPercent = badge.progress.required > 0 
+                          ? Math.min(100, (badge.progress.current / badge.progress.required) * 100)
+                          : 0
+                        
+                        return (
+                          <div
+                            key={badge.id}
+                            className={`
+                              p-4 rounded-lg border transition-all relative
+                              ${isUnlocked
+                                ? 'bg-neon-green/10 border-neon-green/30 card-glow'
+                                : 'bg-dark-bg/50 border-dark-border opacity-60'
+                              }
+                              hover:opacity-100 hover:border-neon-green/50
+                              ${isNewlyUnlocked ? 'animate-badge-unlock' : ''}
+                            `}
+                            style={{
+                              animation: isNewlyUnlocked ? 'badgeUnlock 0.6s ease-out' : undefined
+                            }}
+                          >
+                            {/* Glow effect for newly unlocked badge */}
+                            {isNewlyUnlocked && (
+                              <div className="absolute inset-0 rounded-lg bg-neon-green/20 animate-pulse pointer-events-none" />
+                            )}
+                            <div className="flex items-start gap-3">
+                              <div className={`
+                                text-3xl transition-transform
+                                ${isUnlocked ? '' : 'grayscale opacity-50'}
+                              `}>
+                                {badge.icon}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h4 className={`
+                                    font-semibold text-sm
+                                    ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
+                                  `}>
+                                    {badge.name}
+                                  </h4>
+                                  {isUnlocked && (
+                                    <Star className="h-3 w-3 text-yellow-400 flex-shrink-0" />
+                                  )}
+                                  {!isUnlocked && (
+                                    <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                                  {badge.description}
+                                </p>
+                                <div className="mt-2">
+                                  <p className={`
+                                    text-xs font-medium
+                                    ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
+                                  `}>
+                                    {getProgressText(badge)}
+                                  </p>
+                                  {/* CRITICAL: Only show progress bar if NOT unlocked */}
+                                  {!isUnlocked && badge.progress.required > 0 && (
+                                    <div className="mt-2">
+                                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                                        <span>Progreso</span>
+                                        <span>{badge.progress.current} / {badge.progress.required}</span>
+                                      </div>
+                                      <div className="w-full bg-dark-bg rounded-full h-1.5 overflow-hidden">
+                                        <div
+                                          className="bg-neon-green h-full rounded-full transition-all duration-500"
+                                          style={{ width: `${progressPercent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                    <Star className="h-4 w-4 text-yellow-400 flex-shrink-0" />
                   </div>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
-      </div>
-
-      {/* Catálogo Completo de Insignias */}
-      <Card className="bg-dark-card border-dark-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Award className="h-5 w-5 text-neon-green" />
-            Catálogo de Insignias
-          </CardTitle>
-          <CardDescription>
-            Todas las insignias disponibles. Cada aporte cuenta, incluso anónimo.
-          Seguí participando para desbloquearlas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {badges.length === 0 ? (
-            <div className="text-center py-12">
-              <Award className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground mb-2 font-medium">
-                Las insignias están en camino 🚀
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Seguí participando y pronto podrás ver todas las insignias disponibles.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {Object.entries(badgesByCategory).map(([category, categoryBadges]) => (
-                <div key={category}>
-                  <h3 className="text-lg font-semibold mb-4 text-foreground">
-                    {categoryNames[category] || category}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {categoryBadges.map((badge) => {
-                      // CRITICAL: Use obtained status from backend (source of truth)
-                      const isObtained = badge.obtained
-                      // CRITICAL: If progress is complete, badge should be obtained
-                      const isProgressComplete = badge.progress.required > 0 && badge.progress.current >= badge.progress.required
-                      // Final state: obtained OR progress complete
-                      const isUnlocked = isObtained || isProgressComplete
-                      // Check if this badge was just unlocked (for animation)
-                      const isNewlyUnlocked = newlyUnlockedBadgeIds.has(badge.id)
-                      
-                      const progressPercent = badge.progress.required > 0 
-                        ? Math.min(100, (badge.progress.current / badge.progress.required) * 100)
-                        : 0
-                      
-                      return (
-                        <div
-                          key={badge.id}
-                          className={`
-                            p-4 rounded-lg border transition-all relative
-                            ${isUnlocked
-                              ? 'bg-neon-green/10 border-neon-green/30 card-glow'
-                              : 'bg-dark-bg/50 border-dark-border opacity-60'
-                            }
-                            hover:opacity-100 hover:border-neon-green/50
-                            ${isNewlyUnlocked ? 'animate-badge-unlock' : ''}
-                          `}
-                          style={{
-                            animation: isNewlyUnlocked ? 'badgeUnlock 0.6s ease-out' : undefined
-                          }}
-                        >
-                          {/* Glow effect for newly unlocked badge */}
-                          {isNewlyUnlocked && (
-                            <div className="absolute inset-0 rounded-lg bg-neon-green/20 animate-pulse pointer-events-none" />
-                          )}
-                          <div className="flex items-start gap-3">
-                            <div className={`
-                              text-3xl transition-transform
-                              ${isUnlocked ? '' : 'grayscale opacity-50'}
-                            `}>
-                              {badge.icon}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className={`
-                                  font-semibold text-sm
-                                  ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
-                                `}>
-                                  {badge.name}
-                                </h4>
-                                {isUnlocked && (
-                                  <Star className="h-3 w-3 text-yellow-400 flex-shrink-0" />
-                                )}
-                                {!isUnlocked && (
-                                  <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                                {badge.description}
-                              </p>
-                              <div className="mt-2">
-                                <p className={`
-                                  text-xs font-medium
-                                  ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
-                                `}>
-                                  {getProgressText(badge)}
-                                </p>
-                                {/* CRITICAL: Only show progress bar if NOT unlocked */}
-                                {!isUnlocked && badge.progress.required > 0 && (
-                                  <div className="mt-2">
-                                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                                      <span>Progreso</span>
-                                      <span>{badge.progress.current} / {badge.progress.required}</span>
-                                    </div>
-                                    <div className="w-full bg-dark-bg rounded-full h-1.5 overflow-hidden">
-                                      <div
-                                        className="bg-neon-green h-full rounded-full transition-all duration-500"
-                                        style={{ width: `${progressPercent}%` }}
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      )}
     </div>
   )
 }
