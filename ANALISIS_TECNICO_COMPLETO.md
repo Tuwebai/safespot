@@ -256,10 +256,15 @@ SafeSpot es una aplicación de reportes ciudadanos anónimos con una arquitectur
 
 ### 🔴 Crítico
 
-1. **Contadores desincronizados sin recuperación automática**
+1. **Contadores desincronizados sin recuperación automática** ✅ RESUELTO
    - **Ubicación**: `schema.sql` triggers líneas 166-225
    - **Descripción**: Si un trigger falla, `upvotes_count` o `comments_count` quedan incorrectos
-   - **Solución**: Agregar script de verificación/sincronización periódica
+   - **Solución implementada**: 
+     - Funciones SQL `sync_report_counters()`, `sync_user_counters()`, y `sync_all_counters()` creadas
+     - Script Node.js `server/src/scripts/syncCounters.js` para ejecutar sincronización
+     - Comando `npm run sync:counters` agregado al package.json
+     - Las funciones recalculan contadores desde datos reales (COUNT(*))
+     - Idempotente: puede ejecutarse múltiples veces sin problemas
 
 2. **Imágenes no se muestran en DetalleReporte**
    - **Ubicación**: `DetalleReporte.tsx` línea 716-730
@@ -438,11 +443,14 @@ SafeSpot es una aplicación de reportes ciudadanos anónimos con una arquitectur
    - **Impacto**: ALTO - Feature crítico que no funciona
    - **Archivo**: `src/pages/DetalleReporte.tsx` línea 716-730
 
-2. **Agregar script de sincronización de contadores**
+2. **Agregar script de sincronización de contadores** ✅ RESUELTO
    - **Tipo**: Backend + Script
    - **Esfuerzo**: 4-6 horas
    - **Impacto**: ALTO - Previne datos incorrectos
-   - **Archivo**: Nuevo script en `server/src/scripts/syncCounters.js`
+   - **Archivo**: 
+     - `database/migration_add_sync_counters_functions.sql` (funciones SQL)
+     - `server/src/scripts/syncCounters.js` (script Node.js)
+   - **Uso**: `npm run sync:counters` desde el directorio `server/`
 
 3. **Estandarizar uso de queryWithRLS vs Supabase**
    - **Tipo**: Backend

@@ -8,6 +8,7 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "migrate": "node src/scripts/migrate.js",
+    "sync:counters": "node src/scripts/syncCounters.js",
     "test-connection": "node test-connection.js",
     "test-db": "node test-direct-connection.js"
   },

@@ -116,11 +116,30 @@ router.get('/', async (req, res) => {
         const hasNextPage = pageNum < totalPages;
         const hasPrevPage = pageNum > 1;
         
-        // Map results to match Supabase format
+        // Map results to match Supabase format and normalize image_urls
         const enrichedReports = dataResult.rows.map(row => {
           const { is_favorite, is_flagged, ...report } = row;
+          
+          // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
+          let normalizedImageUrls = [];
+          if (report.image_urls) {
+            if (Array.isArray(report.image_urls)) {
+              normalizedImageUrls = report.image_urls;
+            } else if (typeof report.image_urls === 'string') {
+              try {
+                normalizedImageUrls = JSON.parse(report.image_urls);
+                if (!Array.isArray(normalizedImageUrls)) {
+                  normalizedImageUrls = [];
+                }
+              } catch (e) {
+                normalizedImageUrls = [];
+              }
+            }
+          }
+          
           return {
             ...report,
+            image_urls: normalizedImageUrls,
             is_favorite: is_favorite === true,
             is_flagged: is_flagged === true
           };
@@ -239,12 +258,32 @@ router.get('/', async (req, res) => {
       const favoriteIds = new Set(favoritesResult?.data?.map(f => f.report_id) || []);
       const flaggedIds = new Set(flagsResult?.data?.map(f => f.report_id) || []);
       
-      // Enrich reports
-      const enrichedReports = reports.map(report => ({
-        ...report,
-        is_favorite: favoriteIds.has(report.id),
-        is_flagged: flaggedIds.has(report.id)
-      }));
+      // Enrich reports and normalize image_urls
+      const enrichedReports = reports.map(report => {
+        // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
+        let normalizedImageUrls = [];
+        if (report.image_urls) {
+          if (Array.isArray(report.image_urls)) {
+            normalizedImageUrls = report.image_urls;
+          } else if (typeof report.image_urls === 'string') {
+            try {
+              normalizedImageUrls = JSON.parse(report.image_urls);
+              if (!Array.isArray(normalizedImageUrls)) {
+                normalizedImageUrls = [];
+              }
+            } catch (e) {
+              normalizedImageUrls = [];
+            }
+          }
+        }
+        
+        return {
+          ...report,
+          image_urls: normalizedImageUrls,
+          is_favorite: favoriteIds.has(report.id),
+          is_flagged: flaggedIds.has(report.id)
+        };
+      });
       
       return res.json({
         success: true,
@@ -260,9 +299,34 @@ router.get('/', async (req, res) => {
       });
     }
 
+    // Normalize image_urls for all reports in fallback case
+    const normalizedReports = (reports || []).map(report => {
+      // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
+      let normalizedImageUrls = [];
+      if (report.image_urls) {
+        if (Array.isArray(report.image_urls)) {
+          normalizedImageUrls = report.image_urls;
+        } else if (typeof report.image_urls === 'string') {
+          try {
+            normalizedImageUrls = JSON.parse(report.image_urls);
+            if (!Array.isArray(normalizedImageUrls)) {
+              normalizedImageUrls = [];
+            }
+          } catch (e) {
+            normalizedImageUrls = [];
+          }
+        }
+      }
+      
+      return {
+        ...report,
+        image_urls: normalizedImageUrls
+      };
+    });
+
     res.json({
       success: true,
-      data: reports || [],
+      data: normalizedReports,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -325,8 +389,26 @@ router.get('/:id', async (req, res) => {
           .maybeSingle()
       ]);
       
+      // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
+      let normalizedImageUrls = [];
+      if (report.image_urls) {
+        if (Array.isArray(report.image_urls)) {
+          normalizedImageUrls = report.image_urls;
+        } else if (typeof report.image_urls === 'string') {
+          try {
+            normalizedImageUrls = JSON.parse(report.image_urls);
+            if (!Array.isArray(normalizedImageUrls)) {
+              normalizedImageUrls = [];
+            }
+          } catch (e) {
+            normalizedImageUrls = [];
+          }
+        }
+      }
+      
       const enrichedReport = {
         ...report,
+        image_urls: normalizedImageUrls,
         is_favorite: !!favoriteResult.data,
         is_flagged: !!flagResult.data
       };
@@ -337,9 +419,31 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    // Normalize image_urls for non-authenticated requests too
+    let normalizedImageUrls = [];
+    if (report.image_urls) {
+      if (Array.isArray(report.image_urls)) {
+        normalizedImageUrls = report.image_urls;
+      } else if (typeof report.image_urls === 'string') {
+        try {
+          normalizedImageUrls = JSON.parse(report.image_urls);
+          if (!Array.isArray(normalizedImageUrls)) {
+            normalizedImageUrls = [];
+          }
+        } catch (e) {
+          normalizedImageUrls = [];
+        }
+      }
+    }
+
+    const normalizedReport = {
+      ...report,
+      image_urls: normalizedImageUrls
+    };
+
     res.json({
       success: true,
-      data: report
+      data: normalizedReport
     });
   } catch (err) {
     res.status(500).json({

@@ -135,7 +135,27 @@ export const reportsApi = {
    * Get a single report by ID
    */
   getById: async (id: string): Promise<Report> => {
-    return apiRequest<Report>(`/reports/${id}`);
+    const report = await apiRequest<Report>(`/reports/${id}`);
+    
+    // Normalize image_urls: ensure it's always an array
+    if (report) {
+      if (!report.image_urls) {
+        report.image_urls = [];
+      } else if (typeof report.image_urls === 'string') {
+        try {
+          report.image_urls = JSON.parse(report.image_urls);
+          if (!Array.isArray(report.image_urls)) {
+            report.image_urls = [];
+          }
+        } catch (e) {
+          report.image_urls = [];
+        }
+      } else if (!Array.isArray(report.image_urls)) {
+        report.image_urls = [];
+      }
+    }
+    
+    return report;
   },
 
   /**
