@@ -2,6 +2,7 @@ import express from 'express';
 import { queryWithRLS } from '../utils/rls.js';
 import { requireAnonymousId } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
+import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
@@ -15,11 +16,28 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     
+    // CRITICAL: Validate anonymousId is present and valid before using in queries
+    if (!anonymousId || typeof anonymousId !== 'string' || anonymousId.trim() === '') {
+      logError(new Error('Invalid anonymousId in /profile'), req);
+      return res.status(400).json({
+        error: 'Invalid anonymous ID',
+        message: 'Anonymous ID is required and must be a valid string'
+      });
+    }
+    
     logSuccess('Fetching user profile', { anonymousId });
     
     // Get or create user (ensures user exists in DB)
     logSuccess('Ensuring anonymous user exists', { anonymousId });
-    await queryWithRLS(anonymousId, 'SELECT get_or_create_anonymous_user($1::uuid)', [anonymousId]);
+    try {
+      await ensureAnonymousUser(anonymousId);
+    } catch (error) {
+      logError(error, req);
+      return res.status(500).json({
+        error: 'Failed to ensure anonymous user',
+        message: error.message
+      });
+    }
     
     // Get user stats
     logSuccess('Fetching user stats', { anonymousId });
@@ -36,7 +54,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
         level
       FROM anonymous_users
       WHERE anonymous_id = $1`,
-      [anonymousId]
+      [anonymousId] // Explicit array with exactly one element
     );
     
     if (userResult.rows.length === 0) {
@@ -61,7 +79,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
       WHERE anonymous_id = $1
       ORDER BY created_at DESC
       LIMIT 10`,
-      [anonymousId]
+      [anonymousId] // Explicit array with exactly one element
     );
     
     logSuccess('User profile fetched successfully', { 
