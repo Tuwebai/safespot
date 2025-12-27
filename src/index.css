@@ -108,6 +108,7 @@
 }
 
 @layer utilities {
+
   /* Neon Glow Effect */
   .neon-glow {
     position: relative;
@@ -125,7 +126,7 @@
     mask-composite: exclude;
     opacity: 0.3;
     filter: blur(8px);
-    transition: opacity 0.3s, filter 0.3s;
+    transition: opacity 200ms ease-out, filter 200ms ease-out;
   }
 
   .neon-glow:hover::before {
@@ -136,17 +137,12 @@
   /* Card Glow */
   .card-glow {
     position: relative;
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
   }
 
-  .card-glow::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #00ff88, transparent);
-    opacity: 0.5;
+  .card-glow:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(0, 255, 136, 0.1);
   }
 
   /* Gradient Text */
@@ -166,12 +162,10 @@
 
   /* Shimmer Effect */
   .shimmer {
-    background: linear-gradient(
-      90deg,
-      #1e293b 25%,
-      #334155 50%,
-      #1e293b 75%
-    );
+    background: linear-gradient(90deg,
+        #1e293b 25%,
+        #334155 50%,
+        #1e293b 75%);
     background-size: 200px 100%;
     animation: shimmer 1.5s infinite;
   }
@@ -183,10 +177,12 @@
       opacity: 0;
       transform: translate(-50%, -10px) scale(0.9);
     }
+
     50% {
       opacity: 1;
       transform: translate(-50%, -5px) scale(1.05);
     }
+
     100% {
       opacity: 1;
       transform: translate(-50%, 0) scale(1);
@@ -199,10 +195,12 @@
       opacity: 0;
       transform: translate(-50%, -20px) scale(0.8);
     }
+
     50% {
       opacity: 1;
       transform: translate(-50%, -10px) scale(1.1);
     }
+
     100% {
       opacity: 1;
       transform: translate(-50%, 0) scale(1);
@@ -214,10 +212,12 @@
       transform: scale(0.8);
       opacity: 0.5;
     }
+
     50% {
       transform: scale(1.05);
       opacity: 1;
     }
+
     100% {
       transform: scale(1);
       opacity: 1;
@@ -233,6 +233,7 @@
     0% {
       transform: translateX(-100%);
     }
+
     100% {
       transform: translateX(100%);
     }
@@ -260,4 +261,3 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 255, 136, 0.5);
 }
-

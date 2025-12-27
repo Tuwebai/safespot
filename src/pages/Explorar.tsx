@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
 import { MapPin, List, ThumbsUp, Calendar } from 'lucide-react'
 import type { Report } from '@/lib/api'
+import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
 export function Explorar() {
   const toast = useToast()
@@ -113,11 +114,11 @@ export function Explorar() {
       {viewMode === 'list' && (
         <>
           {loading ? (
-            <Card className="bg-dark-card border-dark-border">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">Cargando reportes...</p>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <ReportCardSkeleton key={i} />
+              ))}
+            </div>
           ) : error ? (
             <Card className="bg-dark-card border-dark-border">
               <CardContent className="py-12 text-center">

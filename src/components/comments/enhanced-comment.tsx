@@ -4,12 +4,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TipTapRenderer } from '@/components/ui/tiptap-renderer'
 import { useToast } from '@/components/ui/toast'
-import { 
-  MessageCircle, 
-  ThumbsUp, 
-  Pin, 
-  Edit, 
-  Trash2, 
+import {
+  MessageCircle,
+  ThumbsUp,
+  Pin,
+  Edit,
+  Trash2,
   Flag,
   MoreHorizontal,
   Copy,
@@ -148,22 +148,22 @@ export function EnhancedComment({
 
   const handleLike = async () => {
     if (isLiking) return // Prevent double clicks
-    
+
     // Guardar estado previo para revertir en caso de error
     const previousLiked = localLiked
     const previousCount = localCount
-    
+
     // Optimistic UI: actualizar estado inmediatamente
     const newLiked = !localLiked
     const newCount = newLiked ? localCount + 1 : Math.max(0, localCount - 1)
-    
+
     setLocalLiked(newLiked)
     setLocalCount(newCount)
     setIsLiking(true)
-    
+
     try {
       let result: { liked: boolean; upvotes_count: number } | undefined
-      
+
       if (previousLiked) {
         // Unlike
         result = await commentsApi.unlike(comment.id)
@@ -171,7 +171,7 @@ export function EnhancedComment({
         // Like
         result = await commentsApi.like(comment.id)
       }
-      
+
       // Validación defensiva: solo actualizar si result es válido
       if (result && typeof result.liked === 'boolean' && typeof result.upvotes_count === 'number') {
         setLocalLiked(result.liked)
@@ -193,14 +193,13 @@ export function EnhancedComment({
   }
 
   const isThread = comment.is_thread === true
-  
+
   return (
-    <Card className={`card-glow bg-dark-card transition-all duration-200 ${
-      isThread 
-        ? 'border-2 border-purple-500/50 hover:border-purple-500/80' 
-        : 'border-dark-border hover:border-neon-green/30'
-    }`}>
-      <CardContent className="p-4">
+    <Card className={`card-glow transition-all duration-200 ${isThread
+        ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
+        : 'border-dark-border hover:border-neon-green/30 bg-dark-card/60'
+      } ${replies.length > 0 ? 'border-l-4 border-l-neon-green/40' : ''}`}>
+      <CardContent className={replies.length > 0 ? "p-6" : "p-4"}>
         {/* Header Section */}
         <div className="flex items-start justify-between mb-3">
           {/* Left Side (User & Meta) */}
@@ -227,7 +226,7 @@ export function EnhancedComment({
                     💬 Hilo
                   </Badge>
                 )}
-                
+
                 {/* Pinned Badge */}
                 {comment.is_pinned && (
                   <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
@@ -235,14 +234,14 @@ export function EnhancedComment({
                     📌 Fijado
                   </Badge>
                 )}
-                
+
                 {/* Thread Type Badge */}
                 {comment.thread_type && (
                   <Badge className={getThreadTypeColor(comment.thread_type)}>
                     {getThreadTypeLabel(comment.thread_type)}
                   </Badge>
                 )}
-                
+
                 {/* Priority Badge */}
                 {comment.priority && (
                   <Badge className={getPriorityColor(comment.priority)}>
@@ -290,7 +289,7 @@ export function EnhancedComment({
                   className="fixed inset-0 z-10"
                   onClick={() => setIsContextMenuOpen(false)}
                 />
-                
+
                 {/* Menu */}
                 <div className="absolute right-0 top-8 z-20 w-48 bg-dark-card border border-dark-border rounded-lg shadow-lg py-1">
                   {/* General User Actions */}
@@ -492,10 +491,10 @@ export function EnhancedComment({
 
         {/* Replies (Nested) */}
         {replies.length > 0 && (
-          <div className="mt-3 ml-8 space-y-3">
+          <div className="mt-4 ml-6 pl-4 space-y-3 border-l border-foreground/10 relative">
             {replies.map((reply) => (
-              <div key={reply.id} className="flex items-start gap-2">
-                <div className="w-6 h-6 rounded-full bg-neon-green/20 text-neon-green flex items-center justify-center text-xs font-semibold">
+              <div key={reply.id} className="flex items-start gap-2 bg-dark-bg/30 p-3 rounded-lg">
+                <div className="w-6 h-6 rounded-full bg-neon-green/20 text-neon-green flex items-center justify-center text-xs font-semibold flex-shrink-0">
                   {getUserInitials(reply.anonymous_id)}
                 </div>
                 <div className="flex-1 min-w-0">

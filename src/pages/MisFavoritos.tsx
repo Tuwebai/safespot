@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MapPin, Eye, MessageCircle, Heart, AlertCircle } from 'lucide-react'
 import type { Report } from '@/lib/api'
+import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
@@ -83,11 +84,14 @@ export function MisFavoritos() {
   if (loading) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-green mx-auto mb-4"></div>
-            <p className="text-foreground/70">Cargando favoritos...</p>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold gradient-text mb-2">Mis Favoritos</h1>
+          <p className="text-foreground/70">Cargando...</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <ReportCardSkeleton key={i} />
+          ))}
         </div>
       </div>
     )

@@ -14,13 +14,13 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { STATUS_OPTIONS } from '@/lib/constants'
 import { EnhancedComment } from '@/components/comments/enhanced-comment'
 import { ThreadList } from '@/components/comments/thread-list'
-import { 
-  MapPin, 
-  Calendar, 
-  MessageCircle, 
-  ArrowLeft, 
-  Heart, 
-  Flag, 
+import {
+  MapPin,
+  Calendar,
+  MessageCircle,
+  ArrowLeft,
+  Heart,
+  Flag,
   Eye,
   Image as ImageIcon,
   Trash2,
@@ -30,6 +30,7 @@ import {
   X
 } from 'lucide-react'
 import type { Report, Comment } from '@/lib/api'
+import { ReportSkeleton } from '@/components/ui/skeletons'
 
 export function DetalleReporte() {
   const { id } = useParams<{ id: string }>()
@@ -83,7 +84,7 @@ export function DetalleReporte() {
 
   const loadReport = async () => {
     if (!id) return
-    
+
     try {
       setLoading(true)
       const data = await reportsApi.getById(id)
@@ -101,7 +102,7 @@ export function DetalleReporte() {
 
   const loadComments = async () => {
     if (!id) return
-    
+
     try {
       const data = await commentsApi.getByReportId(id)
       setComments(data)
@@ -113,7 +114,7 @@ export function DetalleReporte() {
 
   const checkSaved = async () => {
     if (!id || !report) return
-    
+
     try {
       // The is_favorite flag comes from the report data
       setIsSaved(report.is_favorite ?? false)
@@ -126,16 +127,16 @@ export function DetalleReporte() {
 
   const handleSave = async () => {
     if (!id || savingFavorite) return
-    
+
     try {
       setSavingFavorite(true)
       const result = await reportsApi.toggleFavorite(id)
-      
+
       // Validate result structure - explicit contract validation
       if (!result || typeof result !== 'object' || typeof result.is_favorite !== 'boolean') {
         throw new Error('Respuesta inválida del servidor: is_favorite debe ser un booleano')
       }
-      
+
       setIsSaved(result.is_favorite)
       // Update report state
       if (report) {
@@ -150,7 +151,7 @@ export function DetalleReporte() {
 
   const handleFlag = () => {
     if (!report) return
-    
+
     // Check if user is trying to flag their own report
     // This should be handled by backend, but we can prevent UI interaction
     setIsFlagDialogOpen(true)
@@ -158,22 +159,22 @@ export function DetalleReporte() {
 
   const handleFlagSubmit = async (reason: string) => {
     if (!id || flaggingReport) return
-    
+
     try {
       setFlaggingReport(true)
       await reportsApi.flag(id, reason)
       setIsFlagDialogOpen(false)
-      
+
       // Update report state
       if (report) {
         setReport({ ...report, is_flagged: true })
       }
-      
+
       // Show success message
       toast.success('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : ''
-      
+
       if (errorMessage.includes('own report')) {
         toast.warning('No puedes denunciar tu propio reporte')
       } else if (errorMessage.includes('already flagged')) {
@@ -188,7 +189,7 @@ export function DetalleReporte() {
 
   const handleDeleteReport = async () => {
     if (!id) return
-    
+
     try {
       setDeleting(true)
       await reportsApi.delete(id)
@@ -220,13 +221,13 @@ export function DetalleReporte() {
 
   const handleUpdateReport = async () => {
     if (!id || !report) return
-    
+
     // Validate fields
     if (!editTitle.trim()) {
       toast.error('El título es requerido')
       return
     }
-    
+
     if (!editDescription.trim()) {
       toast.error('La descripción es requerida')
       return
@@ -239,7 +240,7 @@ export function DetalleReporte() {
         description: editDescription.trim(),
         status: editStatus
       })
-      
+
       // Update local state
       setReport(updatedReport)
       setIsEditing(false)
@@ -260,7 +261,7 @@ export function DetalleReporte() {
         report_id: id,
         content: commentText.trim(),
       })
-      
+
       setCommentText('')
       await loadComments()
       await loadReport()
@@ -302,7 +303,7 @@ export function DetalleReporte() {
         content: replyText.trim(),
         parent_id: parentId,
       })
-      
+
       setReplyText('')
       setReplyingTo(null)
       await loadComments()
@@ -317,8 +318,8 @@ export function DetalleReporte() {
 
   const handleLikeChange = (commentId: string, liked: boolean, newCount: number) => {
     // Update local state immediately for better UX
-    setComments(prev => prev.map(c => 
-      c.id === commentId 
+    setComments(prev => prev.map(c =>
+      c.id === commentId
         ? { ...c, liked_by_me: liked, upvotes_count: newCount }
         : c
     ))
@@ -343,45 +344,45 @@ export function DetalleReporte() {
   const handleFlagComment = async (commentId: string) => {
     const comment = comments.find(c => c.id === commentId)
     if (!comment || flaggingCommentId === commentId) return
-    
+
     // Check if already flagged (frontend check)
     if (comment.is_flagged) {
       toast.warning('Ya has reportado este comentario')
       return
     }
-    
+
     // Check if user is trying to flag their own comment
     const currentAnonymousId = getAnonymousIdSafe()
     if (comment.anonymous_id === currentAnonymousId) {
       toast.warning('No puedes reportar tu propio comentario')
       return
     }
-    
+
     if (!confirm('¿Estás seguro de que quieres reportar este comentario como inapropiado?')) {
       return
     }
-    
+
     try {
       setFlaggingCommentId(commentId)
       await commentsApi.flag(commentId)
-      
+
       // Update local state immediately
-      setComments(prev => prev.map(c => 
-        c.id === commentId 
+      setComments(prev => prev.map(c =>
+        c.id === commentId
           ? { ...c, is_flagged: true }
           : c
       ))
-      
+
       toast.success('Comentario reportado correctamente. Gracias por ayudar a mantener la comunidad segura.')
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : ''
-      
+
       if (errorMessage.includes('own comment')) {
         toast.warning('No puedes reportar tu propio comentario')
       } else if (errorMessage.includes('already flagged')) {
         // Update local state to reflect already flagged
-        setComments(prev => prev.map(c => 
-          c.id === commentId 
+        setComments(prev => prev.map(c =>
+          c.id === commentId
             ? { ...c, is_flagged: true }
             : c
         ))
@@ -408,14 +409,14 @@ export function DetalleReporte() {
     try {
       setSubmittingEdit(true)
       const updatedComment = await commentsApi.update(commentId, editText.trim())
-      
+
       // Update local state immediately
-      setComments(prev => prev.map(c => 
-        c.id === commentId 
+      setComments(prev => prev.map(c =>
+        c.id === commentId
           ? { ...c, content: updatedComment.content, updated_at: updatedComment.updated_at }
           : c
       ))
-      
+
       setEditingCommentId(null)
       setEditText('')
     } catch (error) {
@@ -445,7 +446,7 @@ export function DetalleReporte() {
         content: threadText.trim(),
         is_thread: true
       })
-      
+
       setThreadText('')
       setCreatingThread(false)
       await loadComments()
@@ -490,11 +491,7 @@ export function DetalleReporte() {
   if (loading) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="bg-dark-card border-dark-border">
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Cargando reporte...</p>
-          </CardContent>
-        </Card>
+        <ReportSkeleton />
       </div>
     )
   }
@@ -606,7 +603,7 @@ export function DetalleReporte() {
               const currentAnonymousId = getAnonymousIdSafe()
               const isOwner = report.anonymous_id === currentAnonymousId
               const isFlagged = report.is_flagged ?? false
-              
+
               if (isOwner) {
                 return (
                   <>
@@ -662,7 +659,7 @@ export function DetalleReporte() {
                   </>
                 )
               }
-              
+
               if (isFlagged) {
                 return (
                   <span className="text-sm text-foreground/60" title="Ya has denunciado este reporte">
@@ -670,7 +667,7 @@ export function DetalleReporte() {
                   </span>
                 )
               }
-              
+
               return (
                 <Button
                   variant="ghost"
@@ -727,14 +724,14 @@ export function DetalleReporte() {
             let imageUrls: string[] = [];
             if (report.image_urls) {
               if (Array.isArray(report.image_urls)) {
-                imageUrls = report.image_urls.filter((url): url is string => 
+                imageUrls = report.image_urls.filter((url): url is string =>
                   typeof url === 'string' && url.length > 0
                 );
               } else if (typeof report.image_urls === 'string') {
                 try {
                   const parsed = JSON.parse(report.image_urls);
                   if (Array.isArray(parsed)) {
-                    imageUrls = parsed.filter((url): url is string => 
+                    imageUrls = parsed.filter((url): url is string =>
                       typeof url === 'string' && url.length > 0
                     );
                   }
@@ -744,13 +741,13 @@ export function DetalleReporte() {
                 }
               }
             }
-            
+
             return imageUrls.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {imageUrls.map((imageUrl, index) => {
                   const hasFailed = failedImageUrls.has(imageUrl)
                   const imageKey = `image-${imageUrl.substring(0, 50)}-${index}`
-                  
+
                   return (
                     <div
                       key={imageKey}
@@ -897,7 +894,7 @@ export function DetalleReporte() {
                   const currentAnonymousId = getAnonymousIdSafe()
                   const isCommentOwner = comment.anonymous_id === currentAnonymousId
                   const isCommentMod = false // Prepared for future mod system
-                  
+
                   return (
                     <div key={comment.id}>
                       <EnhancedComment
@@ -911,7 +908,7 @@ export function DetalleReporte() {
                         onFlag={handleFlagComment}
                         onLikeChange={handleLikeChange}
                       />
-                      
+
                       {/* Edit Editor (Inline) */}
                       {editingCommentId === comment.id && (
                         <Card className="mt-3 bg-dark-card border-dark-border">
@@ -929,7 +926,7 @@ export function DetalleReporte() {
                           </CardContent>
                         </Card>
                       )}
-                      
+
                       {/* Reply Editor (Inline) */}
                       {replyingTo === comment.id && (
                         <Card className="mt-3 ml-8 bg-dark-card border-dark-border">
@@ -959,9 +956,9 @@ export function DetalleReporte() {
 
         {/* Threads View */}
         {viewMode === 'threads' && (() => {
-                  const currentAnonymousId = getAnonymousIdSafe()
+          const currentAnonymousId = getAnonymousIdSafe()
           const isThreadMod = false // Prepared for future mod system
-          
+
           return (
             <ThreadList
               comments={comments}
