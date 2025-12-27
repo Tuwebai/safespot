@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
-import { EnhancedComment } from './enhanced-comment'
+import { CommentThread } from './comment-thread'
 import { Search, Plus } from 'lucide-react'
 import type { Comment } from '@/lib/api'
 
@@ -30,6 +30,12 @@ interface ThreadListProps {
   onThreadSubmit?: () => void
   onThreadCancel?: () => void
   submittingThread?: boolean
+  replyingTo?: string | null
+  replyText?: string
+  onReplyTextChange?: (text: string) => void
+  onReplySubmit?: (parentId: string) => void
+  onReplyCancel?: () => void
+  submittingReply?: boolean
 }
 
 type ThreadType = 'all' | 'investigation' | 'evidence' | 'coordination' | 'testimony'
@@ -56,7 +62,13 @@ export const ThreadList = memo(function ThreadList({
   onThreadTextChange,
   onThreadSubmit,
   onThreadCancel,
-  submittingThread = false
+  submittingThread = false,
+  replyingTo = null,
+  replyText = '',
+  onReplyTextChange,
+  onReplySubmit,
+  onReplyCancel,
+  submittingReply = false
 }: ThreadListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [threadType, setThreadType] = useState<ThreadType>('all')
@@ -93,13 +105,15 @@ export const ThreadList = memo(function ThreadList({
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       case 'oldest':
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      case 'most_replies':
+      case 'most_replies': {
         const aReplies = repliesMap.get(a.id)?.length || 0
         const bReplies = repliesMap.get(b.id)?.length || 0
         return bReplies - aReplies
-      case 'priority':
+      }
+      case 'priority': {
         // Por ahora, ordenar por upvotes
         return (b.upvotes_count || 0) - (a.upvotes_count || 0)
+      }
       default:
         return 0
     }
@@ -218,42 +232,40 @@ export const ThreadList = memo(function ThreadList({
             </CardContent>
           </Card>
         ) : (
-          filteredComments.map((comment) => (
-            <div key={comment.id}>
-              <EnhancedComment
+          filteredComments.map((comment) => {
+            const isThreadOwner = isOwner(comment.id)
+
+            return (
+              <CommentThread
+                key={comment.id}
                 comment={comment}
-                replies={repliesMap.get(comment.id) || []}
-                isOwner={isOwner(comment.id)}
-                isMod={isMod}
+                allComments={comments}
+                depth={0}
+                maxDepth={5}
                 onReply={onReply}
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onFlag={onFlag}
                 onLikeChange={onLikeChange}
+                isOwner={isThreadOwner}
+                isMod={isMod}
+                replyingTo={replyingTo}
+                replyText={replyText}
+                onReplyTextChange={onReplyTextChange}
+                onReplySubmit={onReplySubmit}
+                onReplyCancel={onReplyCancel}
+                submittingReply={submittingReply}
+                editingCommentId={editingCommentId}
+                editText={editText}
+                onEditTextChange={onEditTextChange}
+                onEditSubmit={onEditSubmit}
+                onEditCancel={onEditCancel}
+                submittingEdit={submittingEdit}
               />
-
-              {/* Edit Editor (Inline) */}
-              {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
-                <Card className="mt-3 bg-dark-card border-dark-border">
-                  <CardContent className="p-4">
-                    <RichTextEditor
-                      value={editText}
-                      onChange={onEditTextChange}
-                      onSubmit={() => onEditSubmit(comment.id)}
-                      disabled={submittingEdit}
-                      placeholder="Edita tu comentario..."
-                      hideHelp={true}
-                      showCancel={true}
-                      onCancel={onEditCancel}
-                    />
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>
   )
 })
-

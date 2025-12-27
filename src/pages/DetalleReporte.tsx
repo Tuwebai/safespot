@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { STATUS_OPTIONS } from '@/lib/constants'
-import { EnhancedComment } from '@/components/comments/enhanced-comment'
+import { CommentThread } from '@/components/comments/comment-thread'
 import { ThreadList } from '@/components/comments/thread-list'
 import {
   MapPin,
@@ -972,23 +972,25 @@ export function DetalleReporte() {
           </div>
         </div>
 
-        {/* Add Comment Card */}
-        <Card className="mb-6 bg-dark-card border-dark-border">
-          <CardHeader>
-            <CardTitle className="font-semibold">Agregar Comentario</CardTitle>
-            <CardDescription className="text-sm text-foreground/70">
-              Comparte información útil sobre este reporte con formato enriquecido
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RichTextEditor
-              value={commentText}
-              onChange={setCommentText}
-              onSubmit={handleCommentSubmit}
-              disabled={submittingComment}
-            />
-          </CardContent>
-        </Card>
+        {/* Add Comment Card - ONLY in comments view */}
+        {viewMode === 'comments' && (
+          <Card className="mb-6 bg-dark-card border-dark-border">
+            <CardHeader>
+              <CardTitle className="font-semibold">Agregar Comentario</CardTitle>
+              <CardDescription className="text-sm text-foreground/70">
+                Comparte información útil sobre este reporte con formato enriquecido
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RichTextEditor
+                value={commentText}
+                onChange={setCommentText}
+                onSubmit={handleCommentSubmit}
+                disabled={submittingComment}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Comments List */}
         {viewMode === 'comments' && (
@@ -1005,64 +1007,40 @@ export function DetalleReporte() {
               comments
                 .filter(c => !c.parent_id && !(c.is_thread === true)) // Solo comentarios top-level que NO son hilos
                 .map((comment) => {
-                  const commentReplies = comments.filter(c => c.parent_id === comment.id)
                   const currentAnonymousId = getAnonymousIdSafe()
                   const isCommentOwner = comment.anonymous_id === currentAnonymousId
                   const isCommentMod = false // Prepared for future mod system
 
                   return (
-                    <div key={comment.id}>
-                      <EnhancedComment
-                        comment={comment}
-                        replies={commentReplies}
-                        isOwner={isCommentOwner}
-                        isMod={isCommentMod}
-                        onReply={handleReply}
-                        onEdit={handleEdit}
-                        onDelete={handleDeleteComment}
-                        onFlag={handleFlagComment}
-                        onLikeChange={handleLikeChange}
-                      />
-
-                      {/* Edit Editor (Inline) */}
-                      {editingCommentId === comment.id && (
-                        <Card className="mt-3 bg-dark-card border-dark-border">
-                          <CardContent className="p-4">
-                            <RichTextEditor
-                              value={editText}
-                              onChange={setEditText}
-                              onSubmit={() => handleEditSubmit(comment.id)}
-                              disabled={submittingEdit}
-                              placeholder="Edita tu comentario..."
-                              hideHelp={true}
-                              showCancel={true}
-                              onCancel={handleEditCancel}
-                            />
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      {/* Reply Editor (Inline) */}
-                      {replyingTo === comment.id && (
-                        <Card className="mt-3 ml-8 bg-dark-card border-dark-border">
-                          <CardContent className="p-4">
-                            <RichTextEditor
-                              value={replyText}
-                              onChange={setReplyText}
-                              onSubmit={() => handleReplySubmit(comment.id)}
-                              disabled={submittingReply}
-                              placeholder="Escribe tu respuesta..."
-                              hideHelp={true}
-                              showCancel={true}
-                              onCancel={() => {
-                                setReplyingTo(null)
-                                setReplyText('')
-                              }}
-                            />
-                          </CardContent>
-                        </Card>
-                      )}
-                    </div>
+                    <CommentThread
+                      key={comment.id}
+                      comment={comment}
+                      allComments={comments}
+                      depth={0}
+                      maxDepth={5}
+                      onReply={handleReply}
+                      onEdit={handleEdit}
+                      onDelete={handleDeleteComment}
+                      onFlag={handleFlagComment}
+                      onLikeChange={handleLikeChange}
+                      isOwner={isCommentOwner}
+                      isMod={isCommentMod}
+                      replyingTo={replyingTo}
+                      replyText={replyText}
+                      onReplyTextChange={setReplyText}
+                      onReplySubmit={handleReplySubmit}
+                      onReplyCancel={() => {
+                        setReplyingTo(null)
+                        setReplyText('')
+                      }}
+                      submittingReply={submittingReply}
+                      editingCommentId={editingCommentId}
+                      editText={editText}
+                      onEditTextChange={setEditText}
+                      onEditSubmit={handleEditSubmit}
+                      onEditCancel={handleEditCancel}
+                      submittingEdit={submittingEdit}
+                    />
                   )
                 })
             )}
@@ -1100,6 +1078,15 @@ export function DetalleReporte() {
               onThreadSubmit={handleNewThreadSubmit}
               onThreadCancel={handleNewThreadCancel}
               submittingThread={submittingThread}
+              replyingTo={replyingTo}
+              replyText={replyText}
+              onReplyTextChange={setReplyText}
+              onReplySubmit={handleReplySubmit}
+              onReplyCancel={() => {
+                setReplyingTo(null)
+                setReplyText('')
+              }}
+              submittingReply={submittingReply}
             />
           )
         })()}

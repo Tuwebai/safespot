@@ -35,6 +35,7 @@ interface EnhancedCommentProps {
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
   onPin?: (commentId: string) => void
   onUnpin?: (commentId: string) => void
+  depth?: number
 }
 
 export const EnhancedComment = memo(function EnhancedComment({
@@ -48,7 +49,8 @@ export const EnhancedComment = memo(function EnhancedComment({
   onFlag,
   onLikeChange,
   onPin,
-  onUnpin
+  onUnpin,
+  depth = 0
 }: EnhancedCommentProps) {
   const toast = useToast()
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
@@ -194,18 +196,23 @@ export const EnhancedComment = memo(function EnhancedComment({
 
   const isThread = comment.is_thread === true
 
+  // Adjust visual styling based on depth
+  const avatarSize = depth === 0 ? 'w-10 h-10' : depth === 1 ? 'w-8 h-8' : 'w-7 h-7'
+  const cardPadding = depth === 0 ? 'p-6' : depth === 1 ? 'p-4' : 'p-3'
+  const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
+
   return (
-    <Card className={`card-glow transition-all duration-200 ${isThread
+    <Card className={`card-glow transition-all duration-200 ${textOpacity} ${isThread
       ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
       : 'border-dark-border hover:border-neon-green/30 bg-dark-card/60'
-      } ${replies.length > 0 ? 'border-l-4 border-l-neon-green/40' : ''}`}>
-      <CardContent className={replies.length > 0 ? "p-6" : "p-4"}>
+      }`}>
+      <CardContent className={cardPadding}>
         {/* Header Section */}
         <div className="flex items-start justify-between mb-3">
           {/* Left Side (User & Meta) */}
           <div className="flex items-start gap-3 flex-1">
             {/* Avatar */}
-            <div className="w-10 h-10 rounded-full bg-neon-green text-dark-bg flex items-center justify-center font-semibold hover:ring-2 hover:ring-neon-green/50 transition-all cursor-pointer">
+            <div className={`${avatarSize} rounded-full bg-neon-green text-dark-bg flex items-center justify-center ${depth === 0 ? 'font-semibold' : 'font-medium text-sm'} hover:ring-2 hover:ring-neon-green/50 transition-all cursor-pointer`}>
               {getUserInitials(comment.anonymous_id)}
             </div>
 
@@ -489,29 +496,7 @@ export const EnhancedComment = memo(function EnhancedComment({
           </div>
         </div>
 
-        {/* Replies (Nested) */}
-        {replies.length > 0 && (
-          <div className="mt-4 ml-6 pl-4 space-y-3 border-l border-foreground/10 relative">
-            {replies.map((reply) => (
-              <div key={reply.id} className="flex items-start gap-2 bg-dark-bg/30 p-3 rounded-lg">
-                <div className="w-6 h-6 rounded-full bg-neon-green/20 text-neon-green flex items-center justify-center text-xs font-semibold flex-shrink-0">
-                  {getUserInitials(reply.anonymous_id)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-foreground">Usuario Anónimo</span>
-                    <span className="text-xs text-foreground/50">
-                      {formatDate(reply.created_at)}
-                    </span>
-                  </div>
-                  <div className="text-xs text-foreground/80 leading-relaxed">
-                    <TipTapRenderer content={reply.content} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Replies are now handled by CommentThread component recursively */}
       </CardContent>
     </Card>
   )
