@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { reportsApi, commentsApi } from '@/lib/api'
 import { getAnonymousIdSafe } from '@/lib/identity'
@@ -255,17 +255,50 @@ export function DetalleReporte() {
   const handleCommentSubmit = async () => {
     if (!id || !commentText.trim() || submittingComment) return
 
+    // OPTIMISTIC UPDATE: Add comment immediately with pending state
+    const tempId = `temp-${Date.now()}`
+    const anonymousId = getAnonymousIdSafe()
+    const optimisticComment: Comment = {
+      id: tempId,
+      report_id: id,
+      anonymous_id: anonymousId,
+      content: commentText.trim(),
+      upvotes_count: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      liked_by_me: false,
+      is_flagged: false,
+    }
+
+    // Save state for rollback
+    const previousComments = [...comments]
+    const previousReport = report
+    const contentToSubmit = commentText.trim()
+
+    // Update UI immediately
+    setComments(prev => [...prev, optimisticComment])
+    setCommentText('')
+    if (report) {
+      setReport({ ...report, comments_count: report.comments_count + 1 })
+    }
+    setSubmittingComment(true)
+
     try {
-      setSubmittingComment(true)
-      await commentsApi.create({
+      // Call API in background
+      const createdComment = await commentsApi.create({
         report_id: id,
-        content: commentText.trim(),
+        content: contentToSubmit,
       })
 
-      setCommentText('')
-      await loadComments()
-      await loadReport()
+      // Replace temp comment with real one from server
+      setComments(prev => prev.map(c =>
+        c.id === tempId ? { ...createdComment, liked_by_me: false, is_flagged: false } : c
+      ))
     } catch (error) {
+      // ROLLBACK: Restore previous state on error
+      setComments(previousComments)
+      setReport(previousReport)
+      setCommentText(contentToSubmit) // Restore text so user can retry
       handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'DetalleReporte.handleCommentSubmit')
     } finally {
       setSubmittingComment(false)
@@ -296,19 +329,54 @@ export function DetalleReporte() {
       return
     }
 
+    // OPTIMISTIC UPDATE: Add reply immediately with pending state
+    const tempId = `temp-reply-${Date.now()}`
+    const anonymousId = getAnonymousIdSafe()
+    const optimisticReply: Comment = {
+      id: tempId,
+      report_id: id,
+      anonymous_id: anonymousId,
+      content: replyText.trim(),
+      upvotes_count: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      parent_id: parentId,
+      liked_by_me: false,
+      is_flagged: false,
+    }
+
+    // Save state for rollback
+    const previousComments = [...comments]
+    const previousReport = report
+    const contentToSubmit = replyText.trim()
+
+    // Update UI immediately
+    setComments(prev => [...prev, optimisticReply])
+    setReplyText('')
+    setReplyingTo(null)
+    if (report) {
+      setReport({ ...report, comments_count: report.comments_count + 1 })
+    }
+    setSubmittingReply(true)
+
     try {
-      setSubmittingReply(true)
-      await commentsApi.create({
+      // Call API in background
+      const createdReply = await commentsApi.create({
         report_id: id,
-        content: replyText.trim(),
+        content: contentToSubmit,
         parent_id: parentId,
       })
 
-      setReplyText('')
-      setReplyingTo(null)
-      await loadComments()
-      await loadReport()
+      // Replace temp reply with real one from server
+      setComments(prev => prev.map(c =>
+        c.id === tempId ? { ...createdReply, liked_by_me: false, is_flagged: false } : c
+      ))
     } catch (error) {
+      // ROLLBACK: Restore previous state on error
+      setComments(previousComments)
+      setReport(previousReport)
+      setReplyText(contentToSubmit)
+      setReplyingTo(parentId)
       const errorInfo = handleErrorWithMessage(error, 'No se pudo crear la respuesta', toast.error, 'DetalleReporte.handleReplySubmit')
       setError(errorInfo.userMessage)
     } finally {
@@ -316,24 +384,36 @@ export function DetalleReporte() {
     }
   }
 
-  const handleLikeChange = (commentId: string, liked: boolean, newCount: number) => {
+  const handleLikeChange = useCallback((commentId: string, liked: boolean, newCount: number) => {
     // Update local state immediately for better UX
     setComments(prev => prev.map(c =>
       c.id === commentId
         ? { ...c, liked_by_me: liked, upvotes_count: newCount }
         : c
     ))
-  }
+  }, [])
 
   const handleDeleteComment = async (commentId: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este comentario?') || deletingCommentId === commentId) return
 
+    // Save state for rollback
+    const previousComments = [...comments]
+    const previousReport = report
+
+    // OPTIMISTIC UPDATE: Remove comment immediately
+    setComments(prev => prev.filter(c => c.id !== commentId))
+    if (report) {
+      setReport({ ...report, comments_count: Math.max(0, report.comments_count - 1) })
+    }
+    setDeletingCommentId(commentId)
+
     try {
-      setDeletingCommentId(commentId)
       await commentsApi.delete(commentId)
-      await loadComments()
-      await loadReport()
+      // Success - state already updated optimistically
     } catch (error) {
+      // ROLLBACK: Restore previous state on error
+      setComments(previousComments)
+      setReport(previousReport)
       const errorInfo = handleErrorWithMessage(error, 'No se pudo eliminar el comentario', toast.error, 'DetalleReporte.handleDeleteComment')
       setError(errorInfo.userMessage)
     } finally {
@@ -439,19 +519,54 @@ export function DetalleReporte() {
   const handleNewThreadSubmit = async () => {
     if (!id || !threadText.trim() || submittingThread) return
 
+    // OPTIMISTIC UPDATE: Add thread immediately with pending state
+    const tempId = `temp-thread-${Date.now()}`
+    const anonymousId = getAnonymousIdSafe()
+    const optimisticThread: Comment = {
+      id: tempId,
+      report_id: id,
+      anonymous_id: anonymousId,
+      content: threadText.trim(),
+      upvotes_count: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_thread: true,
+      liked_by_me: false,
+      is_flagged: false,
+    }
+
+    // Save state for rollback
+    const previousComments = [...comments]
+    const previousReport = report
+    const contentToSubmit = threadText.trim()
+
+    // Update UI immediately
+    setComments(prev => [...prev, optimisticThread])
+    setThreadText('')
+    setCreatingThread(false)
+    if (report) {
+      setReport({ ...report, comments_count: report.comments_count + 1 })
+    }
+    setSubmittingThread(true)
+
     try {
-      setSubmittingThread(true)
-      await commentsApi.create({
+      // Call API in background
+      const createdThread = await commentsApi.create({
         report_id: id,
-        content: threadText.trim(),
+        content: contentToSubmit,
         is_thread: true
       })
 
-      setThreadText('')
-      setCreatingThread(false)
-      await loadComments()
-      await loadReport()
+      // Replace temp thread with real one from server
+      setComments(prev => prev.map(c =>
+        c.id === tempId ? { ...createdThread, liked_by_me: false, is_flagged: false } : c
+      ))
     } catch (error) {
+      // ROLLBACK: Restore previous state on error
+      setComments(previousComments)
+      setReport(previousReport)
+      setThreadText(contentToSubmit)
+      setCreatingThread(true)
       handleErrorWithMessage(error, 'Error al crear el hilo', toast.error, 'DetalleReporte.handleNewThreadSubmit')
     } finally {
       setSubmittingThread(false)

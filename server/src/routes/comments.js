@@ -4,6 +4,7 @@ import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
+import { queryWithRLS } from '../utils/rls.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
@@ -19,18 +20,18 @@ router.get('/:reportId', async (req, res) => {
     const { reportId } = req.params;
     const anonymousId = req.headers['x-anonymous-id'];
     const { page, limit } = req.query;
-    
+
     // Parse pagination parameters with defaults and validation
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
     const offset = (pageNum - 1) * limitNum;
-    
+
     // Build base query for counting total comments (without pagination)
     const countQuery = supabase
       .from('comments')
       .select('*', { count: 'exact', head: true })
       .eq('report_id', reportId);
-    
+
     // Build query for fetching comments (with pagination)
     let dataQuery = supabase
       .from('comments')
@@ -38,26 +39,24 @@ router.get('/:reportId', async (req, res) => {
       .eq('report_id', reportId)
       .order('created_at', { ascending: true })
       .range(offset, offset + limitNum - 1);
-    
+
     // Execute both queries in parallel
     const [{ count: totalItems, error: countError }, { data: comments, error: commentsError }] = await Promise.all([
       countQuery,
       dataQuery
     ]);
-    
+
     if (countError) {
       logError(countError, req);
       return res.status(500).json({
-        error: 'Failed to fetch comments',
-        message: countError.message
+        error: 'Failed to fetch comments'
       });
     }
 
     if (commentsError) {
       logError(commentsError, req);
       return res.status(500).json({
-        error: 'Failed to fetch comments',
-        message: commentsError.message
+        error: 'Failed to fetch comments'
       });
     }
 
@@ -82,33 +81,35 @@ router.get('/:reportId', async (req, res) => {
       });
     }
 
-    // If anonymous_id is provided, check which comments the user has liked and flagged
+    // If anonymous_id is provided, check which comments the user has liked and flagged using queryWithRLS
     let likedCommentIds = new Set();
     let flaggedCommentIds = new Set();
-    
+
     if (anonymousId) {
       const commentIds = comments.map(c => c.id);
-      
-      // Check likes
-      const { data: likes, error: likesError } = await supabase
-        .from('comment_likes')
-        .select('comment_id')
-        .eq('anonymous_id', anonymousId)
-        .in('comment_id', commentIds);
-      
-      if (!likesError && likes) {
-        likedCommentIds = new Set(likes.map(l => l.comment_id));
+
+      // Check likes using queryWithRLS for RLS enforcement
+      const likesResult = await queryWithRLS(
+        anonymousId,
+        `SELECT comment_id FROM comment_likes 
+         WHERE anonymous_id = $1 AND comment_id = ANY($2)`,
+        [anonymousId, commentIds]
+      );
+
+      if (likesResult.rows.length > 0) {
+        likedCommentIds = new Set(likesResult.rows.map(l => l.comment_id));
       }
-      
-      // Check flags
-      const { data: flags, error: flagsError } = await supabase
-        .from('comment_flags')
-        .select('comment_id')
-        .eq('anonymous_id', anonymousId)
-        .in('comment_id', commentIds);
-      
-      if (!flagsError && flags) {
-        flaggedCommentIds = new Set(flags.map(f => f.comment_id));
+
+      // Check flags using queryWithRLS for RLS enforcement
+      const flagsResult = await queryWithRLS(
+        anonymousId,
+        `SELECT comment_id FROM comment_flags 
+         WHERE anonymous_id = $1 AND comment_id = ANY($2)`,
+        [anonymousId, commentIds]
+      );
+
+      if (flagsResult.rows.length > 0) {
+        flaggedCommentIds = new Set(flagsResult.rows.map(f => f.comment_id));
       }
     }
 
@@ -135,8 +136,7 @@ router.get('/:reportId', async (req, res) => {
   } catch (err) {
     logError(err, req);
     res.status(500).json({
-      error: 'Unexpected server error',
-      message: err.message
+      error: 'Unexpected server error'
     });
   }
 });
@@ -149,53 +149,51 @@ router.get('/:reportId', async (req, res) => {
 router.post('/', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    
+
     // Validate request body
     validateComment(req.body);
-    
+
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
+
     // Verify report exists using Supabase
     const { data: reportCheck, error: reportError } = await supabase
       .from('reports')
       .select('id')
       .eq('id', req.body.report_id)
       .maybeSingle();
-    
+
     if (reportError) {
       logError(reportError, req);
       return res.status(500).json({
-        error: 'Failed to verify report',
-        message: reportError.message
+        error: 'Failed to verify report'
       });
     }
-    
+
     if (!reportCheck) {
       logError(new Error('Report not found'), req);
       return res.status(404).json({
         error: 'Report not found'
       });
     }
-    
+
     // Validate thread rules: if is_thread is true, parent_id must be null
     const isThread = req.body.is_thread === true;
     const hasParentId = req.body.parent_id !== undefined && req.body.parent_id !== null;
-    
+
     if (isThread && hasParentId) {
       return res.status(400).json({
         error: 'Threads cannot have a parent_id (threads must be top-level)'
       });
     }
-    
+
     // If parent_id is provided, verify it exists and belongs to the same report
     if (hasParentId) {
       const { data: parentComment, error: parentError } = await supabase
@@ -203,28 +201,27 @@ router.post('/', requireAnonymousId, async (req, res) => {
         .select('id, report_id')
         .eq('id', req.body.parent_id)
         .maybeSingle();
-      
+
       if (parentError) {
         logError(parentError, req);
         return res.status(500).json({
-          error: 'Failed to verify parent comment',
-          message: parentError.message
+          error: 'Failed to verify parent comment'
         });
       }
-      
+
       if (!parentComment) {
         return res.status(404).json({
           error: 'Parent comment not found'
         });
       }
-      
+
       if (parentComment.report_id !== req.body.report_id) {
         return res.status(400).json({
           error: 'Parent comment must belong to the same report'
         });
       }
     }
-    
+
     // Insert comment using Supabase client
     // Si el contenido es JSON válido, no hacer trim (preservar estructura)
     let content = req.body.content
@@ -235,40 +232,54 @@ router.post('/', requireAnonymousId, async (req, res) => {
       // No es JSON, hacer trim como antes (compatibilidad con contenido legacy)
       content = content.trim()
     }
-    
+
     const insertData = {
       report_id: req.body.report_id,
       anonymous_id: anonymousId,
       content: content,
       is_thread: isThread || false
     };
-    
+
     // Add parent_id if provided (for replies) - but not for threads
     if (hasParentId && !isThread) {
       insertData.parent_id = req.body.parent_id;
     }
-    
-    const { data, error: insertError } = await supabase
-      .from('comments')
-      .insert(insertData)
-      .select()
-      .single();
-    
-    if (insertError) {
-      logError(insertError, req);
+
+    // Insert comment using queryWithRLS for RLS enforcement
+    const insertQuery = `
+      INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
+    `;
+
+    const insertResult = await queryWithRLS(
+      anonymousId,
+      insertQuery,
+      [
+        insertData.report_id,
+        insertData.anonymous_id,
+        insertData.content,
+        insertData.is_thread,
+        insertData.parent_id || null
+      ]
+    );
+
+    if (insertResult.rows.length === 0) {
+      logError(new Error('Insert returned no rows'), req);
       return res.status(500).json({
-        error: 'Failed to create comment',
-        message: insertError.message
+        error: 'Failed to create comment'
       });
     }
-    
+
+    const data = insertResult.rows[0];
+
     // Evaluate badges (async, don't wait for response)
     // This will check if user should receive badges for creating comments
     evaluateBadges(anonymousId).catch(err => {
       logError(err, req);
       // Don't fail the request if badge evaluation fails
     });
-    
+
     res.status(201).json({
       success: true,
       data: data,
@@ -276,17 +287,16 @@ router.post('/', requireAnonymousId, async (req, res) => {
     });
   } catch (error) {
     logError(error, req);
-    
+
     if (error.message.startsWith('VALIDATION_ERROR')) {
       return res.status(400).json({
         error: 'Validation failed',
         message: error.message
       });
     }
-    
+
     res.status(500).json({
-      error: 'Failed to create comment',
-      message: error.message
+      error: 'Failed to create comment'
     });
   }
 });
@@ -301,7 +311,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Validate request body
     try {
       validateCommentUpdate(req.body);
@@ -314,29 +324,23 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
       }
       throw error;
     }
-    
-    // Check if comment exists and belongs to user
-    const { data: comment, error: checkError } = await supabase
-      .from('comments')
-      .select('id, anonymous_id, content')
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to check comment',
-        message: checkError.message
-      });
-    }
-    
-    if (!comment) {
+
+    // Check if comment exists and belongs to user using queryWithRLS
+    const checkResult = await queryWithRLS(
+      anonymousId,
+      `SELECT id, anonymous_id, content FROM comments 
+       WHERE id = $1 AND anonymous_id = $2`,
+      [id, anonymousId]
+    );
+
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Comment not found or you do not have permission to edit it'
       });
     }
-    
+
+    const comment = checkResult.rows[0];
+
     // Prepare content (preserve JSON structure if valid, otherwise trim)
     let content = req.body.content;
     try {
@@ -346,29 +350,32 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
       // No es JSON, hacer trim
       content = content.trim();
     }
-    
-    // Update comment
-    const { data: updatedComment, error: updateError } = await supabase
-      .from('comments')
-      .update({ 
-        content: content,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .select()
-      .single();
-    
-    if (updateError) {
-      logError(updateError, req);
+
+    // Update comment using queryWithRLS for RLS enforcement
+    const updateQuery = `
+      UPDATE comments 
+      SET content = $1, updated_at = $2 
+      WHERE id = $3 AND anonymous_id = $4
+      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
+    `;
+
+    const updateResult = await queryWithRLS(
+      anonymousId,
+      updateQuery,
+      [content, new Date().toISOString(), id, anonymousId]
+    );
+
+    if (updateResult.rows.length === 0) {
+      logError(new Error('Update returned no rows'), req);
       return res.status(500).json({
-        error: 'Failed to update comment',
-        message: updateError.message
+        error: 'Failed to update comment'
       });
     }
-    
+
+    const updatedComment = updateResult.rows[0];
+
     logSuccess(`Comment ${id} updated by ${anonymousId}`, req);
-    
+
     res.json({
       success: true,
       data: updatedComment,
@@ -376,17 +383,16 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     });
   } catch (error) {
     logError(error, req);
-    
+
     if (error.message.startsWith('VALIDATION_ERROR')) {
       return res.status(400).json({
         error: 'Validation failed',
         message: error.message
       });
     }
-    
+
     res.status(500).json({
-      error: 'Failed to update comment',
-      message: error.message
+      error: 'Failed to update comment'
     });
   }
 });
@@ -400,44 +406,35 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
-    // Check if comment exists and belongs to user
-    const { data: comment, error: checkError } = await supabase
-      .from('comments')
-      .select('anonymous_id')
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to check comment',
-        message: checkError.message
-      });
-    }
-    
-    if (!comment) {
+
+    // Check if comment exists and belongs to user using queryWithRLS
+    const checkResult = await queryWithRLS(
+      anonymousId,
+      `SELECT anonymous_id FROM comments 
+       WHERE id = $1 AND anonymous_id = $2`,
+      [id, anonymousId]
+    );
+
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Comment not found or you do not have permission to delete it'
       });
     }
-    
-    // Delete comment
-    const { error: deleteError } = await supabase
-      .from('comments')
-      .delete()
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId);
-    
-    if (deleteError) {
-      logError(deleteError, req);
+
+    // Delete comment using queryWithRLS for RLS enforcement
+    const deleteResult = await queryWithRLS(
+      anonymousId,
+      `DELETE FROM comments WHERE id = $1 AND anonymous_id = $2`,
+      [id, anonymousId]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      logError(new Error('Delete returned no rows'), req);
       return res.status(500).json({
-        error: 'Failed to delete comment',
-        message: deleteError.message
+        error: 'Failed to delete comment'
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Comment deleted successfully'
@@ -445,8 +442,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to delete comment',
-      message: error.message
+      error: 'Failed to delete comment'
     });
   }
 });
@@ -460,59 +456,72 @@ router.post('/:id/like', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Verify comment exists
     const { data: comment, error: commentError } = await supabase
       .from('comments')
       .select('id, upvotes_count')
       .eq('id', id)
       .maybeSingle();
-    
+
     if (commentError) {
       logError(commentError, req);
       return res.status(500).json({
-        error: 'Failed to verify comment',
-        message: commentError.message
+        error: 'Failed to verify comment'
       });
     }
-    
+
     if (!comment) {
       return res.status(404).json({
         error: 'Comment not found'
       });
     }
-    
+
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
-    // Try to insert like (will fail if already exists due to UNIQUE constraint)
-    const { data: like, error: likeError } = await supabase
-      .from('comment_likes')
-      .insert({
-        comment_id: id,
-        anonymous_id: anonymousId
-      })
-      .select()
-      .single();
-    
-    if (likeError) {
+
+    // Try to insert like using queryWithRLS for RLS enforcement
+    try {
+      const insertResult = await queryWithRLS(
+        anonymousId,
+        `INSERT INTO comment_likes (comment_id, anonymous_id)
+         VALUES ($1, $2)
+         RETURNING id`,
+        [id, anonymousId]
+      );
+
+      // Get updated count (trigger should have updated it)
+      const { data: updatedComment } = await supabase
+        .from('comments')
+        .select('upvotes_count')
+        .eq('id', id)
+        .single();
+
+      return res.json({
+        success: true,
+        data: {
+          liked: true,
+          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1
+        },
+        message: 'Comment liked successfully'
+      });
+    } catch (likeError) {
       // Check if it's a unique constraint violation (already liked)
-      if (likeError.code === '23505' || likeError.message.includes('unique')) {
+      if (likeError.code === '23505' || likeError.message?.includes('unique')) {
         // Already liked, return current count
         const { data: updatedComment } = await supabase
           .from('comments')
           .select('upvotes_count')
           .eq('id', id)
           .single();
-        
+
         return res.json({
           success: true,
           data: {
@@ -522,34 +531,16 @@ router.post('/:id/like', requireAnonymousId, async (req, res) => {
           message: 'Comment already liked'
         });
       }
-      
+
       logError(likeError, req);
       return res.status(500).json({
-        error: 'Failed to like comment',
-        message: likeError.message
+        error: 'Failed to like comment'
       });
     }
-    
-    // Get updated count (trigger should have updated it)
-    const { data: updatedComment } = await supabase
-      .from('comments')
-      .select('upvotes_count')
-      .eq('id', id)
-      .single();
-    
-    res.json({
-      success: true,
-      data: {
-        liked: true,
-        upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1
-      },
-      message: 'Comment liked successfully'
-    });
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to like comment',
-      message: error.message
+      error: 'Failed to like comment'
     });
   }
 });
@@ -563,50 +554,60 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Verify comment exists
     const { data: comment, error: commentError } = await supabase
       .from('comments')
       .select('id, upvotes_count')
       .eq('id', id)
       .maybeSingle();
-    
+
     if (commentError) {
       logError(commentError, req);
       return res.status(500).json({
-        error: 'Failed to verify comment',
-        message: commentError.message
+        error: 'Failed to verify comment'
       });
     }
-    
+
     if (!comment) {
       return res.status(404).json({
         error: 'Comment not found'
       });
     }
-    
-    // Delete the like
-    const { error: deleteError } = await supabase
-      .from('comment_likes')
-      .delete()
-      .eq('comment_id', id)
-      .eq('anonymous_id', anonymousId);
-    
-    if (deleteError) {
-      logError(deleteError, req);
-      return res.status(500).json({
-        error: 'Failed to unlike comment',
-        message: deleteError.message
+
+    // Delete the like using queryWithRLS for RLS enforcement
+    const deleteResult = await queryWithRLS(
+      anonymousId,
+      `DELETE FROM comment_likes 
+       WHERE comment_id = $1 AND anonymous_id = $2`,
+      [id, anonymousId]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      // Like not found, but don't fail - just return current state
+      const { data: updatedComment } = await supabase
+        .from('comments')
+        .select('upvotes_count')
+        .eq('id', id)
+        .single();
+
+      return res.json({
+        success: true,
+        data: {
+          liked: false,
+          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count
+        },
+        message: 'Like not found'
       });
     }
-    
+
     // Get updated count (trigger should have updated it)
     const { data: updatedComment } = await supabase
       .from('comments')
       .select('upvotes_count')
       .eq('id', id)
       .single();
-    
+
     res.json({
       success: true,
       data: {
@@ -618,8 +619,7 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to unlike comment',
-      message: error.message
+      error: 'Failed to unlike comment'
     });
   }
 });
@@ -635,7 +635,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
     const { id } = req.params;
     const anonymousId = req.anonymousId;
     const reason = req.body.reason || null;
-    
+
     // Validate reason if provided
     try {
       validateFlagReason(reason);
@@ -649,90 +649,79 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       }
       throw error;
     }
-    
+
     // Verify comment exists and get owner
     const { data: comment, error: commentError } = await supabase
       .from('comments')
       .select('id, anonymous_id')
       .eq('id', id)
       .maybeSingle();
-    
+
     if (commentError) {
       logError(commentError, req);
       return res.status(500).json({
-        error: 'Failed to verify comment',
-        message: commentError.message
+        error: 'Failed to verify comment'
       });
     }
-    
+
     if (!comment) {
       return res.status(404).json({
         error: 'Comment not found'
       });
     }
-    
+
     // Check if user is trying to flag their own comment
     if (comment.anonymous_id === anonymousId) {
       return res.status(403).json({
         error: 'You cannot flag your own comment'
       });
     }
-    
+
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
-    // Check if already flagged
-    const { data: existingFlag, error: checkError } = await supabase
-      .from('comment_flags')
-      .select('id')
-      .eq('anonymous_id', anonymousId)
-      .eq('comment_id', id)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to check flag status',
-        message: checkError.message
-      });
-    }
-    
-    if (existingFlag) {
+
+    // Check if already flagged using queryWithRLS for RLS enforcement
+    const checkResult = await queryWithRLS(
+      anonymousId,
+      `SELECT id FROM comment_flags 
+       WHERE anonymous_id = $1 AND comment_id = $2`,
+      [anonymousId, id]
+    );
+
+    if (checkResult.rows.length > 0) {
       return res.status(409).json({
         error: 'Comment already flagged by this user',
         message: 'You have already flagged this comment'
       });
     }
-    
-    // Create flag
-    const { data: newFlag, error: insertError } = await supabase
-      .from('comment_flags')
-      .insert({
-        anonymous_id: anonymousId,
-        comment_id: id,
-        reason: reason
-      })
-      .select()
-      .single();
-    
-    if (insertError) {
-      logError(insertError, req);
+
+    // Create flag using queryWithRLS for RLS enforcement
+    const insertResult = await queryWithRLS(
+      anonymousId,
+      `INSERT INTO comment_flags (anonymous_id, comment_id, reason)
+       VALUES ($1, $2, $3)
+       RETURNING id, anonymous_id, comment_id, reason, created_at`,
+      [anonymousId, id, reason]
+    );
+
+    if (insertResult.rows.length === 0) {
+      logError(new Error('Insert flag returned no rows'), req);
       return res.status(500).json({
-        error: 'Failed to flag comment',
-        message: insertError.message
+        error: 'Failed to flag comment'
       });
     }
-    
+
+    const newFlag = insertResult.rows[0];
+
     logSuccess(`Comment ${id} flagged by ${anonymousId}`, req);
-    
+
     res.status(201).json({
       success: true,
       data: {
@@ -744,8 +733,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to flag comment',
-      message: error.message
+      error: 'Failed to flag comment'
     });
   }
 });

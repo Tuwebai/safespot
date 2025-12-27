@@ -6,7 +6,7 @@ import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
-import supabase, { supabaseAdmin } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
 
@@ -20,12 +20,12 @@ router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
     const { search, category, zone, status, page, limit } = req.query;
-    
+
     // Parse pagination parameters with defaults and validation
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
     const offset = (pageNum - 1) * limitNum;
-    
+
     // OPTIMIZATION: If anonymous_id is provided, use optimized SQL query with JOINs
     // This eliminates N+1 queries by fetching reports, favorites, and flags in a single query
     if (anonymousId) {
@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
         const conditions = [];
         const params = [anonymousId]; // $1 = anonymousId
         let paramIndex = 2;
-        
+
         // Search filter
         if (search && typeof search === 'string' && search.trim()) {
           const searchTerm = search.trim();
@@ -49,30 +49,30 @@ router.get('/', async (req, res) => {
           params.push(searchTerm);
           paramIndex++;
         }
-        
+
         // Category filter
         if (category && typeof category === 'string' && category.trim() && category !== 'all') {
           conditions.push(`r.category = $${paramIndex}`);
           params.push(category.trim());
           paramIndex++;
         }
-        
+
         // Zone filter
         if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
           conditions.push(`r.zone = $${paramIndex}`);
           params.push(zone.trim());
           paramIndex++;
         }
-        
+
         // Status filter
         if (status && typeof status === 'string' && status.trim() && status !== 'all') {
           conditions.push(`r.status = $${paramIndex}`);
           params.push(status.trim());
           paramIndex++;
         }
-        
+
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-        
+
         // Build optimized SQL query with LEFT JOINs to get everything in one query
         // This replaces the previous approach of: 1 query for reports + 2 queries for favorites/flags
         const countQuery = `
@@ -80,12 +80,12 @@ router.get('/', async (req, res) => {
           FROM reports r
           ${whereClause}
         `;
-        
+
         // Add LIMIT and OFFSET parameters
         const limitParamIndex = paramIndex;
         const offsetParamIndex = paramIndex + 1;
         params.push(limitNum, offset);
-        
+
         // Build data query - use $1 for anonymousId in both JOINs (PostgreSQL allows reusing params)
         const dataQuery = `
           SELECT 
@@ -99,27 +99,27 @@ router.get('/', async (req, res) => {
           ORDER BY r.created_at DESC
           LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
         `;
-        
+
         // Note: PostgreSQL allows reusing $1 multiple times in the same query
         // The params array is: [anonymousId, ...filterParams, limitNum, offset]
         // $1 is used twice (in both JOINs) but only passed once - this is valid SQL
-        
+
         // Execute both queries in parallel
         // countQuery uses only filter params (no LIMIT/OFFSET), dataQuery uses all params
         const [countResult, dataResult] = await Promise.all([
           queryWithRLS('', countQuery, params.slice(0, paramIndex)),
           queryWithRLS('', dataQuery, params)
         ]);
-        
+
         const totalItems = parseInt(countResult.rows[0].total, 10);
         const totalPages = Math.ceil(totalItems / limitNum);
         const hasNextPage = pageNum < totalPages;
         const hasPrevPage = pageNum > 1;
-        
+
         // Map results to match Supabase format and normalize image_urls
         const enrichedReports = dataResult.rows.map(row => {
           const { is_favorite, is_flagged, ...report } = row;
-          
+
           // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
           let normalizedImageUrls = [];
           if (report.image_urls) {
@@ -136,7 +136,7 @@ router.get('/', async (req, res) => {
               }
             }
           }
-          
+
           return {
             ...report,
             image_urls: normalizedImageUrls,
@@ -144,7 +144,7 @@ router.get('/', async (req, res) => {
             is_flagged: is_flagged === true
           };
         });
-        
+
         return res.json({
           success: true,
           data: enrichedReports,
@@ -158,106 +158,95 @@ router.get('/', async (req, res) => {
           }
         });
       } catch (sqlError) {
-        // Fallback to Supabase approach if SQL query fails
+        // Fallback to queryWithRLS approach if optimized SQL query fails
         logError(sqlError, req);
-        // Continue to Supabase fallback below
+        // Continue to fallback below
       }
     }
-    
-    // Fallback: Use Supabase for cases without anonymousId or if SQL query fails
-    // Build base query for counting total items (without pagination)
-    let countQuery = supabase
-      .from('reports')
-      .select('*', { count: 'exact', head: true });
-    
-    // Build query for fetching data (with pagination)
-    let dataQuery = supabase
-      .from('reports')
-      .select('*');
-    
+
+    // Fallback: Use queryWithRLS for cases without anonymousId or if SQL query fails
+    // Build dynamic WHERE conditions
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
     // Apply search filter if provided
     if (search && typeof search === 'string' && search.trim()) {
       const searchTerm = search.trim();
-      // Search in title, description, category, address, and zone using OR conditions
-      // Supabase .or() syntax: 'column1.ilike.%term%,column2.ilike.%term%'
-      const searchFilter = `title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,zone.ilike.%${searchTerm}%`;
-      countQuery = countQuery.or(searchFilter);
-      dataQuery = dataQuery.or(searchFilter);
+      conditions.push(`(
+        title ILIKE '%' || $${paramIndex} || '%' OR 
+        description ILIKE '%' || $${paramIndex} || '%' OR 
+        category ILIKE '%' || $${paramIndex} || '%' OR 
+        address ILIKE '%' || $${paramIndex} || '%' OR 
+        zone ILIKE '%' || $${paramIndex} || '%'
+      )`);
+      params.push(searchTerm);
+      paramIndex++;
     }
-    
+
     // Apply category filter if provided
     if (category && typeof category === 'string' && category.trim() && category !== 'all') {
-      const categoryValue = category.trim();
-      countQuery = countQuery.eq('category', categoryValue);
-      dataQuery = dataQuery.eq('category', categoryValue);
+      conditions.push(`category = $${paramIndex}`);
+      params.push(category.trim());
+      paramIndex++;
     }
-    
+
     // Apply zone filter if provided
     if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
-      const zoneValue = zone.trim();
-      countQuery = countQuery.eq('zone', zoneValue);
-      dataQuery = dataQuery.eq('zone', zoneValue);
+      conditions.push(`zone = $${paramIndex}`);
+      params.push(zone.trim());
+      paramIndex++;
     }
-    
+
     // Apply status filter if provided
     if (status && typeof status === 'string' && status.trim() && status !== 'all') {
-      const statusValue = status.trim();
-      countQuery = countQuery.eq('status', statusValue);
-      dataQuery = dataQuery.eq('status', statusValue);
+      conditions.push(`status = $${paramIndex}`);
+      params.push(status.trim());
+      paramIndex++;
     }
-    
-    // Order by created_at descending (only for data query)
-    dataQuery = dataQuery.order('created_at', { ascending: false });
-    
-    // Apply pagination to data query
-    dataQuery = dataQuery.range(offset, offset + limitNum - 1);
-    
-    // Execute both queries in parallel
-    const [{ count: totalItems, error: countError }, { data: reports, error: dataError }] = await Promise.all([
-      countQuery,
-      dataQuery
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Execute count and data queries in parallel
+    const limitParamIndex = paramIndex;
+    const offsetParamIndex = paramIndex + 1;
+    const countParams = [...params];
+    const dataParams = [...params, limitNum, offset];
+
+    const [countResult, dataResult] = await Promise.all([
+      queryWithRLS(anonymousId || '', `SELECT COUNT(*) as total FROM reports ${whereClause}`, countParams),
+      queryWithRLS(anonymousId || '', `
+        SELECT * FROM reports ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+      `, dataParams)
     ]);
 
-    if (countError) {
-      return res.status(500).json({
-        error: 'Database query error',
-        message: countError.message
-      });
-    }
-
-    if (dataError) {
-      return res.status(500).json({
-        error: 'Database query error',
-        message: dataError.message
-      });
-    }
+    const totalItems = parseInt(countResult.rows[0].total, 10);
+    const reports = dataResult.rows;
 
     // Calculate pagination metadata
-    const totalPages = Math.ceil((totalItems || 0) / limitNum);
+    const totalPages = Math.ceil(totalItems / limitNum);
     const hasNextPage = pageNum < totalPages;
     const hasPrevPage = pageNum > 1;
 
-    // If anonymous_id is provided but SQL optimization failed, use original approach
-    if (anonymousId && reports && reports.length > 0) {
+    // If anonymous_id is provided, get favorites and flags
+    if (anonymousId && reports.length > 0) {
       const reportIds = reports.map(r => r.id);
-      
-      // Get favorites and flags in parallel (2 queries instead of N+1)
+
+      // Get favorites and flags in parallel using queryWithRLS
       const [favoritesResult, flagsResult] = await Promise.all([
-        supabase
-          .from('favorites')
-          .select('report_id')
-          .eq('anonymous_id', anonymousId)
-          .in('report_id', reportIds),
-        supabase
-          .from('report_flags')
-          .select('report_id')
-          .eq('anonymous_id', anonymousId)
-          .in('report_id', reportIds)
+        queryWithRLS(anonymousId, `
+          SELECT report_id FROM favorites WHERE anonymous_id = $1 AND report_id = ANY($2)
+        `, [anonymousId, reportIds]),
+        queryWithRLS(anonymousId, `
+          SELECT report_id FROM report_flags WHERE anonymous_id = $1 AND report_id = ANY($2)
+        `, [anonymousId, reportIds])
       ]);
-      
-      const favoriteIds = new Set(favoritesResult?.data?.map(f => f.report_id) || []);
-      const flaggedIds = new Set(flagsResult?.data?.map(f => f.report_id) || []);
-      
+
+      const favoriteIds = new Set(favoritesResult.rows.map(f => f.report_id));
+      const flaggedIds = new Set(flagsResult.rows.map(f => f.report_id));
+
       // Enrich reports and normalize image_urls
       const enrichedReports = reports.map(report => {
         // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
@@ -276,7 +265,7 @@ router.get('/', async (req, res) => {
             }
           }
         }
-        
+
         return {
           ...report,
           image_urls: normalizedImageUrls,
@@ -284,14 +273,14 @@ router.get('/', async (req, res) => {
           is_flagged: flaggedIds.has(report.id)
         };
       });
-      
+
       return res.json({
         success: true,
         data: enrichedReports,
         pagination: {
           page: pageNum,
           limit: limitNum,
-          totalItems: totalItems || 0,
+          totalItems,
           totalPages,
           hasNextPage,
           hasPrevPage
@@ -317,7 +306,7 @@ router.get('/', async (req, res) => {
           }
         }
       }
-      
+
       return {
         ...report,
         image_urls: normalizedImageUrls
@@ -352,43 +341,32 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'];
-    
-    const { data: report, error } = await supabase
-      .from('reports')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({
-          error: 'Report not found'
-        });
-      }
-      return res.status(500).json({
-        error: 'Failed to fetch report',
-        message: error.message
+    const anonymousId = req.headers['x-anonymous-id'] || '';
+
+    // Fetch report using queryWithRLS for RLS consistency
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT * FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Report not found'
       });
     }
+
+    const report = reportResult.rows[0];
 
     // If anonymous_id is provided, check favorite and flag status
     if (anonymousId) {
       const [favoriteResult, flagResult] = await Promise.all([
-        supabase
-          .from('favorites')
-          .select('id')
-          .eq('anonymous_id', anonymousId)
-          .eq('report_id', id)
-          .maybeSingle(),
-        supabase
-          .from('report_flags')
-          .select('id')
-          .eq('anonymous_id', anonymousId)
-          .eq('report_id', id)
-          .maybeSingle()
+        queryWithRLS(anonymousId, `
+          SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2 LIMIT 1
+        `, [anonymousId, id]),
+        queryWithRLS(anonymousId, `
+          SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2 LIMIT 1
+        `, [anonymousId, id])
       ]);
-      
+
       // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
       let normalizedImageUrls = [];
       if (report.image_urls) {
@@ -405,14 +383,14 @@ router.get('/:id', async (req, res) => {
           }
         }
       }
-      
+
       const enrichedReport = {
         ...report,
         image_urls: normalizedImageUrls,
-        is_favorite: !!favoriteResult.data,
-        is_flagged: !!flagResult.data
+        is_favorite: favoriteResult.rows.length > 0,
+        is_flagged: flagResult.rows.length > 0
       };
-      
+
       return res.json({
         success: true,
         data: enrichedReport
@@ -461,55 +439,43 @@ router.get('/:id', async (req, res) => {
 router.post('/', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    
+
     logSuccess('Creating report', { anonymousId, title: req.body.title });
-    
+
     // Validate request body
     validateReport(req.body);
-    
+
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
+
     // Check for duplicate report (same anonymous_id, category, zone, title within last 10 minutes)
     const title = req.body.title.trim();
     const category = req.body.category;
     const zone = req.body.zone;
-    
+
     // Calculate timestamp 10 minutes ago
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    
-    const { data: duplicateCheck, error: checkError } = await supabase
-      .from('reports')
-      .select('id')
-      .eq('anonymous_id', anonymousId)
-      .eq('category', category)
-      .eq('zone', zone)
-      .eq('title', title)
-      .gte('created_at', tenMinutesAgo)
-      .maybeSingle();
-    
-    if (checkError) {
-      return res.status(500).json({
-        error: 'Failed to check for duplicates',
-        message: checkError.message
-      });
-    }
-    
-    if (duplicateCheck) {
+
+    const duplicateResult = await queryWithRLS(anonymousId, `
+      SELECT id FROM reports
+      WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
+      LIMIT 1
+    `, [anonymousId, category, zone, title, tenMinutesAgo]);
+
+    if (duplicateResult.rows.length > 0) {
       return res.status(409).json({
         error: 'DUPLICATE_REPORT',
         message: 'Ya existe un reporte similar reciente'
       });
     }
-    
+
     // Parse and validate incident_date if provided
     let incidentDate = null;
     if (req.body.incident_date) {
@@ -524,56 +490,51 @@ router.post('/', requireAnonymousId, async (req, res) => {
     } else {
       incidentDate = new Date().toISOString();
     }
-    
-    // Insert report using Supabase (which respects RLS policies)
-    // The RLS policy will verify anonymous_id = current_anonymous_id()
-    const { data: newReport, error: insertError } = await supabase
-      .from('reports')
-      .insert({
-        anonymous_id: anonymousId,
-        title: req.body.title.trim(),
-        description: req.body.description.trim(),
-        category: req.body.category,
-        zone: req.body.zone,
-        address: req.body.address.trim(),
-        latitude: req.body.latitude || null,
-        longitude: req.body.longitude || null,
-        status: req.body.status || 'pendiente',
-        incident_date: incidentDate
-      })
-      .select()
-      .single();
-    
-    if (insertError) {
-      logError(insertError, req);
-      return res.status(500).json({
-        error: 'Failed to create report',
-        message: insertError.message
-      });
-    }
-    
-    if (!newReport) {
+
+    // Insert report using queryWithRLS for RLS consistency
+    const insertResult = await queryWithRLS(anonymousId, `
+      INSERT INTO reports (
+        anonymous_id, title, description, category, zone, address, 
+        latitude, longitude, status, incident_date
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *
+    `, [
+      anonymousId,
+      req.body.title.trim(),
+      req.body.description.trim(),
+      req.body.category,
+      req.body.zone,
+      req.body.address.trim(),
+      req.body.latitude || null,
+      req.body.longitude || null,
+      req.body.status || 'pendiente',
+      incidentDate
+    ]);
+
+    if (insertResult.rows.length === 0) {
       logError(new Error('Insert returned no data'), req);
       return res.status(500).json({
         error: 'Failed to create report',
         message: 'Insert operation returned no data'
       });
     }
-    
+
+    const newReport = insertResult.rows[0];
+
     const data = newReport;
-    
-    logSuccess('Report created', { 
+
+    logSuccess('Report created', {
       id: data.id,
-      anonymousId 
+      anonymousId
     });
-    
+
     // Evaluate badges (async, don't wait for response)
     // This will check if user should receive badges for creating reports
     evaluateBadges(anonymousId).catch(err => {
       logError(err, req);
       // Don't fail the request if badge evaluation fails
     });
-    
+
     res.status(201).json({
       success: true,
       data: data,
@@ -581,17 +542,16 @@ router.post('/', requireAnonymousId, async (req, res) => {
     });
   } catch (error) {
     logError(error, req);
-    
+
     if (error.message.startsWith('VALIDATION_ERROR')) {
       return res.status(400).json({
         error: 'Validation failed',
         message: error.message
       });
     }
-    
+
     res.status(500).json({
-      error: 'Failed to create report',
-      message: error.message
+      error: 'Failed to create report'
     });
   }
 });
@@ -605,84 +565,76 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Check if report exists and belongs to user
-    const { data: report, error: checkError } = await supabase
-      .from('reports')
-      .select('anonymous_id')
-      .eq('id', id)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report',
-        message: checkError.message
-      });
-    }
-    
-    if (!report) {
+    const checkResult = await queryWithRLS(anonymousId, `
+      SELECT anonymous_id FROM reports WHERE id = $1
+    `, [id]);
+
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Report not found'
       });
     }
-    
+
+    const report = checkResult.rows[0];
+
     if (report.anonymous_id !== anonymousId) {
       return res.status(403).json({
         error: 'Forbidden: You can only update your own reports'
       });
     }
-    
-    // Build update object dynamically
-    const updateData = {};
-    
+
+    // Build update SET clause dynamically
+    const updates = [];
+    const params = [id, anonymousId];
+    let paramIndex = 3;
+
     if (req.body.title !== undefined) {
-      updateData.title = req.body.title.trim();
+      updates.push(`title = $${paramIndex}`);
+      params.push(req.body.title.trim());
+      paramIndex++;
     }
-    
+
     if (req.body.description !== undefined) {
-      updateData.description = req.body.description.trim();
+      updates.push(`description = $${paramIndex}`);
+      params.push(req.body.description.trim());
+      paramIndex++;
     }
-    
+
     if (req.body.status !== undefined) {
-      updateData.status = req.body.status;
+      updates.push(`status = $${paramIndex}`);
+      params.push(req.body.status);
+      paramIndex++;
     }
-    
-    if (Object.keys(updateData).length === 0) {
+
+    if (updates.length === 0) {
       return res.status(400).json({
         error: 'No fields to update'
       });
     }
-    
+
     // Add updated_at timestamp
-    updateData.updated_at = new Date().toISOString();
-    
-    // Update report using Supabase (which respects RLS policies)
-    // The RLS policy will verify anonymous_id = current_anonymous_id()
-    const { data: updatedReport, error: updateError } = await supabase
-      .from('reports')
-      .update(updateData)
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .select()
-      .single();
-    
-    if (updateError) {
-      logError(updateError, req);
-      return res.status(500).json({
-        error: 'Failed to update report',
-        message: updateError.message
-      });
-    }
-    
-    if (!updatedReport) {
+    updates.push(`updated_at = $${paramIndex}`);
+    params.push(new Date().toISOString());
+
+    // Update report using queryWithRLS for RLS consistency
+    const updateResult = await queryWithRLS(anonymousId, `
+      UPDATE reports SET ${updates.join(', ')}
+      WHERE id = $1 AND anonymous_id = $2
+      RETURNING *
+    `, params);
+
+    if (updateResult.rows.length === 0) {
       return res.status(403).json({
         error: 'Forbidden: You can only update your own reports'
       });
     }
-    
+
+    const updatedReport = updateResult.rows[0];
+
     logSuccess('Report updated', { id, anonymousId });
-    
+
     res.json({
       success: true,
       data: updatedReport,
@@ -691,8 +643,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to update report',
-      message: error.message
+      error: 'Failed to update report'
     });
   }
 });
@@ -706,72 +657,39 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Verify report exists
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id')
-      .eq('id', id)
-      .maybeSingle();
-    
-    if (reportError) {
-      logError(reportError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report',
-        message: reportError.message
-      });
-    }
-    
-    if (!report) {
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Report not found'
       });
     }
-    
+
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
+
     // Check if favorite already exists
-    // Note: Using supabase.from() because favorites RLS policy allows current_anonymous_id() IS NULL
-    const { data: existingFavorite, error: checkError } = await supabase
-      .from('favorites')
-      .select('id')
-      .eq('anonymous_id', anonymousId)
-      .eq('report_id', id)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to check favorite status',
-        message: checkError.message
-      });
-    }
-    
-    if (existingFavorite) {
+    const checkResult = await queryWithRLS(anonymousId, `
+      SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2
+    `, [anonymousId, id]);
+
+    if (checkResult.rows.length > 0) {
       // Remove favorite (toggle off)
-      const { error: deleteError } = await supabase
-        .from('favorites')
-        .delete()
-        .eq('id', existingFavorite.id)
-        .eq('anonymous_id', anonymousId);
-      
-      if (deleteError) {
-        logError(deleteError, req);
-        return res.status(500).json({
-          error: 'Failed to remove favorite',
-          message: deleteError.message
-        });
-      }
-      
+      await queryWithRLS(anonymousId, `
+        DELETE FROM favorites WHERE id = $1 AND anonymous_id = $2
+      `, [checkResult.rows[0].id, anonymousId]);
+
       res.json({
         success: true,
         data: {
@@ -781,18 +699,21 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
       });
     } else {
       // Add favorite (toggle on)
-      const { data: newFavorite, error: insertError } = await supabase
-        .from('favorites')
-        .insert({
-          anonymous_id: anonymousId,
-          report_id: id
-        })
-        .select()
-        .single();
-      
-      if (insertError) {
+      try {
+        await queryWithRLS(anonymousId, `
+          INSERT INTO favorites (anonymous_id, report_id) VALUES ($1, $2)
+        `, [anonymousId, id]);
+
+        res.json({
+          success: true,
+          data: {
+            is_favorite: true
+          },
+          message: 'Favorite added successfully'
+        });
+      } catch (insertError) {
         // Check if it's a unique constraint violation (race condition)
-        if (insertError.code === '23505' || insertError.message.includes('unique') || insertError.message.includes('duplicate')) {
+        if (insertError.code === '23505' || insertError.message?.includes('unique') || insertError.message?.includes('duplicate')) {
           res.json({
             success: true,
             data: {
@@ -801,27 +722,14 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
             message: 'Already favorited'
           });
         } else {
-          logError(insertError, req);
-          return res.status(500).json({
-            error: 'Failed to add favorite',
-            message: insertError.message
-          });
+          throw insertError;
         }
-      } else {
-        res.json({
-          success: true,
-          data: {
-            is_favorite: true
-          },
-          message: 'Favorite added successfully'
-        });
       }
     }
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to toggle favorite',
-      message: error.message
+      error: 'Failed to toggle favorite'
     });
   }
 });
@@ -837,7 +745,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
     const { id } = req.params;
     const anonymousId = req.anonymousId;
     const reason = req.body.reason || null;
-    
+
     // Validate reason if provided
     try {
       validateFlagReason(reason);
@@ -851,96 +759,66 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       }
       throw error;
     }
-    
+
     // Verify report exists and get owner
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id, anonymous_id')
-      .eq('id', id)
-      .maybeSingle();
-    
-    if (reportError) {
-      logError(reportError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report',
-        message: reportError.message
-      });
-    }
-    
-    if (!report) {
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id, anonymous_id FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Report not found'
       });
     }
-    
+
+    const report = reportResult.rows[0];
+
     // Check if user is trying to flag their own report
     if (report.anonymous_id === anonymousId) {
       return res.status(403).json({
         error: 'You cannot flag your own report'
       });
     }
-    
+
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
-    // Check if already flagged using Supabase
-    const { data: existingFlag, error: checkError } = await supabase
-      .from('report_flags')
-      .select('id')
-      .eq('anonymous_id', anonymousId)
-      .eq('report_id', id)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to check for existing flag',
-        message: checkError.message
-      });
-    }
-    
-    if (existingFlag) {
+
+    // Check if already flagged
+    const checkResult = await queryWithRLS(anonymousId, `
+      SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2
+    `, [anonymousId, id]);
+
+    if (checkResult.rows.length > 0) {
       return res.status(409).json({
         error: 'Report already flagged by this user',
         message: 'You have already flagged this report'
       });
     }
-    
-    // Create flag using Supabase (which respects RLS policies)
-    const { data: newFlag, error: insertError } = await supabase
-      .from('report_flags')
-      .insert({
-        anonymous_id: anonymousId,
-        report_id: id,
-        reason: reason
-      })
-      .select('id, report_id, reason')
-      .single();
-    
-    if (insertError) {
-      logError(insertError, req);
-      return res.status(500).json({
-        error: 'Failed to flag report',
-        message: insertError.message
-      });
-    }
-    
-    if (!newFlag) {
+
+    // Create flag using queryWithRLS for RLS consistency
+    const insertResult = await queryWithRLS(anonymousId, `
+      INSERT INTO report_flags (anonymous_id, report_id, reason)
+      VALUES ($1, $2, $3)
+      RETURNING id, report_id, reason
+    `, [anonymousId, id, reason]);
+
+    if (insertResult.rows.length === 0) {
       logError(new Error('Insert returned no data'), req);
       return res.status(500).json({
         error: 'Failed to flag report',
         message: 'Insert operation returned no data'
       });
     }
-    
+
+    const newFlag = insertResult.rows[0];
+
     res.status(201).json({
       success: true,
       data: {
@@ -952,8 +830,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to flag report',
-      message: error.message
+      error: 'Failed to flag report'
     });
   }
 });
@@ -967,55 +844,31 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-    
+
     // Check if report exists and belongs to user
-    const { data: report, error: checkError } = await supabase
-      .from('reports')
-      .select('id, anonymous_id')
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .maybeSingle();
-    
-    if (checkError) {
-      logError(checkError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report',
-        message: checkError.message
-      });
-    }
-    
-    if (!report) {
+    const checkResult = await queryWithRLS(anonymousId, `
+      SELECT id, anonymous_id FROM reports WHERE id = $1 AND anonymous_id = $2
+    `, [id, anonymousId]);
+
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Report not found or you do not have permission to delete it'
       });
     }
-    
-    // Delete report using Supabase (which respects RLS policies)
-    // The RLS policy will verify anonymous_id = current_anonymous_id()
-    const { data: deletedReport, error: deleteError } = await supabase
-      .from('reports')
-      .delete()
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .select('id')
-      .single();
-    
-    if (deleteError) {
-      logError(deleteError, req);
-      return res.status(500).json({
-        error: 'Failed to delete report',
-        message: deleteError.message
-      });
-    }
-    
-    if (!deletedReport) {
+
+    // Delete report using queryWithRLS for RLS consistency
+    const deleteResult = await queryWithRLS(anonymousId, `
+      DELETE FROM reports WHERE id = $1 AND anonymous_id = $2 RETURNING id
+    `, [id, anonymousId]);
+
+    if (deleteResult.rows.length === 0) {
       return res.status(403).json({
         error: 'Forbidden: You can only delete your own reports'
       });
     }
-    
+
     logSuccess('Report deleted', { id, anonymousId });
-    
+
     res.json({
       success: true,
       message: 'Report deleted successfully'
@@ -1023,8 +876,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to delete report',
-      message: error.message
+      error: 'Failed to delete report'
     });
   }
 });
@@ -1063,25 +915,17 @@ router.post('/:id/images', requireAnonymousId, upload.array('images', 5), async 
     }
 
     // Verify report exists and belongs to user
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('id, anonymous_id')
-      .eq('id', id)
-      .maybeSingle();
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id, anonymous_id FROM reports WHERE id = $1
+    `, [id]);
 
-    if (reportError) {
-      logError(reportError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report',
-        message: reportError.message
-      });
-    }
-
-    if (!report) {
+    if (reportResult.rows.length === 0) {
       return res.status(404).json({
         error: 'Report not found'
       });
     }
+
+    const report = reportResult.rows[0];
 
     if (report.anonymous_id !== anonymousId) {
       return res.status(403).json({
@@ -1144,24 +988,10 @@ router.post('/:id/images', requireAnonymousId, upload.array('images', 5), async 
       });
     }
 
-    // Update report with image URLs (replace completely)
-    const { data: updatedReport, error: updateError } = await supabase
-      .from('reports')
-      .update({
-        image_urls: imageUrls
-      })
-      .eq('id', id)
-      .eq('anonymous_id', anonymousId)
-      .select()
-      .single();
-
-    if (updateError) {
-      logError(updateError, req);
-      return res.status(500).json({
-        error: 'Failed to update report with image URLs',
-        message: updateError.message
-      });
-    }
+    // Update report with image URLs using queryWithRLS for RLS consistency
+    await queryWithRLS(anonymousId, `
+      UPDATE reports SET image_urls = $1 WHERE id = $2 AND anonymous_id = $3
+    `, [JSON.stringify(imageUrls), id, anonymousId]);
 
     logSuccess('Images uploaded', { id, anonymousId, count: imageUrls.length });
 
@@ -1175,8 +1005,7 @@ router.post('/:id/images', requireAnonymousId, upload.array('images', 5), async 
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to upload images',
-      message: error.message
+      error: 'Failed to upload images'
     });
   }
 });

@@ -15,7 +15,7 @@ const router = express.Router();
 router.get('/profile', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    
+
     // CRITICAL: Validate anonymousId is present and valid before using in queries
     if (!anonymousId || typeof anonymousId !== 'string' || anonymousId.trim() === '') {
       logError(new Error('Invalid anonymousId in /profile'), req);
@@ -24,9 +24,9 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
         message: 'Anonymous ID is required and must be a valid string'
       });
     }
-    
+
     logSuccess('Fetching user profile', { anonymousId });
-    
+
     // Get or create user (ensures user exists in DB)
     logSuccess('Ensuring anonymous user exists', { anonymousId });
     try {
@@ -34,11 +34,10 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
-    
+
     // Get user stats
     logSuccess('Fetching user stats', { anonymousId });
     const userResult = await queryWithRLS(
@@ -56,14 +55,14 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
       WHERE anonymous_id = $1`,
       [anonymousId] // Explicit array with exactly one element
     );
-    
+
     if (userResult.rows.length === 0) {
       logError(new Error('User not found after creation'), req);
       return res.status(404).json({
         error: 'User not found'
       });
     }
-    
+
     // Get user's reports
     logSuccess('Fetching user reports', { anonymousId });
     const reportsResult = await queryWithRLS(
@@ -81,12 +80,12 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
       LIMIT 10`,
       [anonymousId] // Explicit array with exactly one element
     );
-    
-    logSuccess('User profile fetched successfully', { 
+
+    logSuccess('User profile fetched successfully', {
       anonymousId,
-      reportsCount: reportsResult.rows.length 
+      reportsCount: reportsResult.rows.length
     });
-    
+
     res.json({
       success: true,
       data: {
@@ -97,8 +96,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch user profile',
-      message: error.message
+      error: 'Failed to fetch user profile'
     });
   }
 });
@@ -118,14 +116,14 @@ router.get('/stats', async (req, res) => {
       supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true })
         .gt('last_active_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     ]);
-    
+
     if (totalReportsResult.error) throw totalReportsResult.error;
     if (resolvedReportsResult.error) throw resolvedReportsResult.error;
     if (totalUsersResult.error) throw totalUsersResult.error;
     if (activeUsersResult.error) throw activeUsersResult.error;
-    
+
     logSuccess('Global stats fetched');
-    
+
     res.json({
       success: true,
       data: {
@@ -138,8 +136,7 @@ router.get('/stats', async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch stats',
-      message: error.message
+      error: 'Failed to fetch stats'
     });
   }
 });
@@ -155,15 +152,14 @@ router.get('/category-stats', async (req, res) => {
     const { data: reports, error } = await supabase
       .from('reports')
       .select('category');
-    
+
     if (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to fetch category stats',
-        message: error.message
+        error: 'Failed to fetch category stats'
       });
     }
-    
+
     // Initialize category counts (official categories only)
     const validCategories = ['Celulares', 'Bicicletas', 'Motos', 'Autos', 'Laptops', 'Carteras'];
     const categoryCounts = {
@@ -174,7 +170,7 @@ router.get('/category-stats', async (req, res) => {
       'Laptops': 0,
       'Carteras': 0
     };
-    
+
     // Count reports by category (exact match - categories are now standardized)
     if (reports && Array.isArray(reports)) {
       reports.forEach((report) => {
@@ -184,9 +180,9 @@ router.get('/category-stats', async (req, res) => {
         }
       });
     }
-    
+
     logSuccess('Category stats fetched', { counts: categoryCounts });
-    
+
     res.json({
       success: true,
       data: categoryCounts
@@ -194,8 +190,7 @@ router.get('/category-stats', async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch category stats',
-      message: error.message
+      error: 'Failed to fetch category stats'
     });
   }
 });

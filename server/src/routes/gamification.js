@@ -33,8 +33,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
 
@@ -49,8 +48,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     if (badgesError) {
       logError(badgesError, req);
       return res.status(500).json({
-        error: 'Failed to fetch badges',
-        message: badgesError.message
+        error: 'Failed to fetch badges'
       });
     }
 
@@ -71,8 +69,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     if (obtainedError) {
       logError(obtainedError, req);
       return res.status(500).json({
-        error: 'Failed to fetch obtained badges',
-        message: obtainedError.message
+        error: 'Failed to fetch obtained badges'
       });
     }
 
@@ -166,7 +163,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     const { evaluateBadges } = await import('../utils/badgeEvaluation.js');
     const previouslyObtainedBadgeIds = new Set(obtainedBadgeIds); // Store previous state
     let newlyAwardedBadges = [];
-    
+
     try {
       await evaluateBadges(anonymousId);
       // Re-fetch obtained badges after evaluation
@@ -175,14 +172,14 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
         .from('user_badges')
         .select('badge_id, obtained_at')
         .eq('anonymous_id', anonymousId);
-      
+
       if (updatedObtainedBadges) {
         obtainedBadgeIds.clear();
         obtainedBadgesMap.clear();
         updatedObtainedBadges.forEach(b => {
           obtainedBadgeIds.add(b.badge_id);
           obtainedBadgesMap.set(b.badge_id, b.obtained_at);
-          
+
           // Detect newly awarded badges (not in previous state)
           if (!previouslyObtainedBadgeIds.has(b.badge_id)) {
             // Find badge info for the newly awarded badge
@@ -207,7 +204,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
     const badgesWithProgress = allBadges.map(badge => {
       const isObtained = obtainedBadgeIds.has(badge.id);
       const rule = badgeRules[badge.code];
-      
+
       let current = 0;
       let required = 0;
 
@@ -219,7 +216,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
       // CRITICAL: If current >= required, badge should be obtained
       // This is a safety check - evaluation above should have already awarded it
       const shouldBeObtained = current >= required && required > 0;
-      
+
       return {
         id: badge.id,
         code: badge.code,
@@ -238,8 +235,8 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
       };
     });
 
-    logSuccess('Gamification badges fetched', { 
-      anonymousId, 
+    logSuccess('Gamification badges fetched', {
+      anonymousId,
       totalBadges: badgesWithProgress.length,
       obtainedCount: obtainedBadgeIds.size,
       newlyAwarded: newlyAwardedBadges.length
@@ -253,8 +250,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch gamification badges',
-      message: error.message
+      error: 'Failed to fetch gamification badges'
     });
   }
 });
@@ -283,8 +279,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
 
@@ -358,20 +353,19 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     if (allBadgesResult.error) {
       logError(allBadgesResult.error, req);
       return res.status(500).json({
-        error: 'Failed to fetch badges',
-        message: allBadgesResult.error.message
+        error: 'Failed to fetch badges'
       });
     }
 
     const userStatsRow = userResult.rows[0];
-    
+
     // CRITICAL: Sync user points if they don't match obtained badges
     // This ensures points are correct, especially for users who obtained badges
     // before the points system was implemented
     const currentPoints = userStatsRow.points || 0;
     let syncedPoints = currentPoints;
     let syncedLevel = userStatsRow.level || 1;
-    
+
     try {
       const syncResult = await syncUserPointsIfNeeded(anonymousId, currentPoints);
       if (syncResult) {
@@ -399,7 +393,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       logError(error, req);
       // Continue with current values if sync fails
     }
-    
+
     const userStats = {
       ...userStatsRow,
       level: syncedLevel,
@@ -455,11 +449,11 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     // CRITICAL: Evaluate badges only if needed (lightweight check)
     const previouslyObtainedBadgeIds = new Set(obtainedBadgeIds);
     let newlyAwardedBadges = [];
-    
+
     try {
       const { evaluateBadges } = await import('../utils/badgeEvaluation.js');
       await evaluateBadges(anonymousId);
-      
+
       // Re-fetch obtained badges and user stats after evaluation
       const [updatedBadgesResult, updatedUserResult] = await Promise.all([
         clientToUse
@@ -472,7 +466,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
           [anonymousId]
         )
       ]);
-      
+
       const updatedObtainedBadges = updatedBadgesResult.data;
       if (updatedObtainedBadges) {
         obtainedBadgeIds.clear();
@@ -480,7 +474,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
         updatedObtainedBadges.forEach(b => {
           obtainedBadgeIds.add(b.badge_id);
           obtainedBadgesMap.set(b.badge_id, b.obtained_at);
-          
+
           if (!previouslyObtainedBadgeIds.has(b.badge_id)) {
             const badgeInfo = allBadges.find(badge => badge.id === b.badge_id);
             if (badgeInfo) {
@@ -494,7 +488,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
           }
         });
       }
-      
+
       // Update user stats if points/level changed
       if (updatedUserResult.rows.length > 0) {
         const updatedPoints = updatedUserResult.rows[0].points || 0;
@@ -511,7 +505,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     const badgesWithProgress = allBadges.map(badge => {
       const isObtained = obtainedBadgeIds.has(badge.id);
       const rule = badgeRules[badge.code];
-      
+
       let current = 0;
       let required = 0;
 
@@ -521,7 +515,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       }
 
       const shouldBeObtained = current >= required && required > 0;
-      
+
       return {
         id: badge.id,
         code: badge.code,
@@ -550,8 +544,8 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       total_votes: userStats.total_votes || 0
     };
 
-    logSuccess('Gamification summary fetched', { 
-      anonymousId, 
+    logSuccess('Gamification summary fetched', {
+      anonymousId,
       totalBadges: badgesWithProgress.length,
       obtainedCount: obtainedBadgeIds.size,
       newlyAwarded: newlyAwardedBadges.length
@@ -566,8 +560,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch gamification summary',
-      message: error.message
+      error: 'Failed to fetch gamification summary'
     });
   }
 });
@@ -596,8 +589,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+        error: 'Failed to ensure anonymous user'
       });
     }
 
@@ -700,7 +692,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
       `SELECT points, level FROM anonymous_users WHERE anonymous_id = $1`,
       [anonymousId]
     );
-    
+
     let currentPoints = 0;
     if (userPointsResult.rows.length > 0) {
       currentPoints = userPointsResult.rows[0].points || 0;
@@ -709,7 +701,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
     // Evaluate and award badges
     const newlyAwarded = [];
     let totalPointsToAdd = 0;
-    
+
     for (const badge of (allBadges || [])) {
       const rule = badgeRules[badge.code];
       if (!rule) continue;
@@ -731,15 +723,15 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
         if (!insertError) {
           obtainedBadgeIds.add(badge.id);
           newlyAwarded.push(badge.code);
-          
+
           // Add points from this badge
           const badgePoints = badge.points || 0;
           totalPointsToAdd += badgePoints;
-          
-          logSuccess('Badge awarded', { 
-            anonymousId, 
+
+          logSuccess('Badge awarded', {
+            anonymousId,
             badgeCode: badge.code,
-            points: badgePoints 
+            points: badgePoints
           });
         } else {
           logError(insertError, req);
@@ -751,7 +743,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
     if (totalPointsToAdd > 0) {
       const newPoints = currentPoints + totalPointsToAdd;
       const newLevel = calculateLevelFromPoints(newPoints);
-      
+
       try {
         await queryWithRLS(
           anonymousId,
@@ -760,7 +752,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
            WHERE anonymous_id = $3`,
           [newPoints, newLevel, anonymousId]
         );
-        
+
         logSuccess('User points and level updated', {
           anonymousId,
           pointsAdded: totalPointsToAdd,
@@ -781,8 +773,7 @@ router.post('/evaluate', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to evaluate badges',
-      message: error.message
+      error: 'Failed to evaluate badges'
     });
   }
 });

@@ -39,8 +39,7 @@ router.get('/all', async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch badges',
-      message: error.message
+      error: 'Failed to fetch badges'
     });
   }
 });
@@ -207,7 +206,7 @@ router.get('/progress', requireAnonymousId, async (req, res) => {
     const badgesWithProgress = allBadges.map(badge => {
       const isEarned = earnedCodes.has(badge.code);
       const rule = badgeRules[badge.code];
-      
+
       let current = 0;
       let required = 0;
       let progress = 0;
@@ -217,9 +216,9 @@ router.get('/progress', requireAnonymousId, async (req, res) => {
         current = stats[rule.target] || 0;
         required = rule.threshold;
         progress = Math.min(1, Math.max(0, current / required));
-        
+
         const remaining = Math.max(0, required - current);
-        
+
         if (isEarned) {
           progressText = '¡Obtuviste esta insignia!';
         } else if (current >= required) {
@@ -227,7 +226,7 @@ router.get('/progress', requireAnonymousId, async (req, res) => {
         } else {
           // Generate motivational text based on badge type
           if (badge.code === 'FIRST_REPORT') {
-            progressText = remaining === 1 
+            progressText = remaining === 1
               ? '¡Crea tu primer reporte para obtener esta insignia!'
               : `Te falta ${remaining} reporte para obtener esta insignia`;
           } else if (badge.code === 'ACTIVE_VOICE') {
@@ -286,8 +285,7 @@ router.get('/progress', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to fetch badge progress',
-      message: error.message
+      error: 'Failed to fetch badge progress'
     });
   }
 });

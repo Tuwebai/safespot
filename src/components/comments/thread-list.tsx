@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,7 +35,7 @@ interface ThreadListProps {
 type ThreadType = 'all' | 'investigation' | 'evidence' | 'coordination' | 'testimony'
 type SortOrder = 'newest' | 'oldest' | 'most_replies' | 'priority'
 
-export function ThreadList({
+export const ThreadList = memo(function ThreadList({
   comments,
   onNewThread,
   onReply,
@@ -65,7 +65,7 @@ export function ThreadList({
   // Filtrar solo hilos (is_thread = true y parent_id IS NULL)
   const threads = comments.filter(c => c.is_thread === true && !c.parent_id)
   const repliesMap = new Map<string, Comment[]>()
-  
+
   comments.forEach(comment => {
     if (comment.parent_id) {
       const parentId = comment.parent_id
@@ -109,7 +109,7 @@ export function ThreadList({
   const stats = {
     threads: filteredComments.length,
     participants: new Set(comments.map(c => c.anonymous_id)).size,
-    lastActivity: comments.length > 0 
+    lastActivity: comments.length > 0
       ? new Date(Math.max(...comments.map(c => new Date(c.created_at).getTime()))).toLocaleDateString('es-AR')
       : 'N/A'
   }
@@ -231,7 +231,7 @@ export function ThreadList({
                 onFlag={onFlag}
                 onLikeChange={onLikeChange}
               />
-              
+
               {/* Edit Editor (Inline) */}
               {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
                 <Card className="mt-3 bg-dark-card border-dark-border">
@@ -255,5 +255,5 @@ export function ThreadList({
       </div>
     </div>
   )
-}
+})
 

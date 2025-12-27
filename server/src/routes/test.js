@@ -12,9 +12,9 @@ router.get('/db', async (req, res) => {
   try {
     console.log('🔍 Intentando conectar a la base de datos...');
     const result = await pool.query('SELECT NOW(), version()');
-    
+
     logSuccess('Database connection successful');
-    
+
     res.json({
       success: true,
       message: 'Database connection successful',
@@ -25,18 +25,10 @@ router.get('/db', async (req, res) => {
     });
   } catch (error) {
     logError(error, req);
-    
+
     res.status(500).json({
       success: false,
-      error: 'Database connection failed',
-      message: error.message,
-      code: error.code,
-      details: {
-        code: error.code,
-        errno: error.errno,
-        syscall: error.syscall,
-        hostname: error.hostname
-      }
+      error: 'Database connection failed'
     });
   }
 });

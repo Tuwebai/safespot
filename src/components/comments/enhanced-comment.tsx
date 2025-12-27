@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,7 +37,7 @@ interface EnhancedCommentProps {
   onUnpin?: (commentId: string) => void
 }
 
-export function EnhancedComment({
+export const EnhancedComment = memo(function EnhancedComment({
   comment,
   replies = [],
   isOwner = false,
@@ -196,8 +196,8 @@ export function EnhancedComment({
 
   return (
     <Card className={`card-glow transition-all duration-200 ${isThread
-        ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
-        : 'border-dark-border hover:border-neon-green/30 bg-dark-card/60'
+      ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
+      : 'border-dark-border hover:border-neon-green/30 bg-dark-card/60'
       } ${replies.length > 0 ? 'border-l-4 border-l-neon-green/40' : ''}`}>
       <CardContent className={replies.length > 0 ? "p-6" : "p-4"}>
         {/* Header Section */}
@@ -515,4 +515,4 @@ export function EnhancedComment({
       </CardContent>
     </Card>
   )
-}
+})
