@@ -8,12 +8,7 @@
 
 ### 🟠 Importantes / Media Prioridad
 
-1. **Race conditions en operaciones concurrentes**
-   - Favoritos, flags y votes tienen protección (UNIQUE constraints)
-   - Pero el manejo de errores 409 puede no ser claro para el frontend
-   - **Impacto**: MEDIO
-
-2. **Detección offline / Retry logic**
+1. **Detección offline / Retry logic**
    - No hay detección de conexión offline
    - Si falla la red, el usuario ve error genérico
    - `api.ts` no tiene retry logic
@@ -34,26 +29,11 @@
    - **Tipo**: Full-stack
    - **Impacto**: ALTO para engagement
 
-6. **Code splitting por ruta**
-   - Todo el frontend se carga en el bundle inicial
-   - **Tipo**: Frontend
-   - **Impacto**: BAJO-MEDIO
-
 7. **Límite de tamaño total de uploads**
     - 5 imágenes x 10MB = 50MB por reporte
     - Sin límite total de request body
     - **Tipo**: Backend
 
-8. **Políticas de retención de Storage**
-    - Con muchos usuarios, Supabase Storage puede llenarse
-    - **Tipo**: Backend/Infraestructura
-
-9. **Limpieza de tabla gamification_stats**
-    - Tabla existe pero el código usa `anonymous_users` directamente
-    - **Estado**: Funciona, pero tabla sobra
-    - **Impacto**: BAJO
-
----
 
 ## ✅ Completado Recientemente
 
@@ -72,6 +52,24 @@
   - `apiRequestCached()` wrapper con TTL configurable
   - Invalidación automática en `triggerBadgeCheck()`
   - TTLs: Gamification 30s, Badges catalog 5min, Favorites 60s
+
+- **Manejo de Race Conditions** ✅ (Dic 2024)
+  - Votes, favorites y flags retornan 200 OK con `status: "already_exists"`
+  - Frontend puede distinguir acción exitosa vs ya aplicada
+  - No más errores falsos en double-clicks
+  - Optimistic UI más confiable
+
+- **Code Splitting por Ruta** ✅ (Dic 2024)
+  - Implementado con `React.lazy` y `Suspense`
+  - 8 chunks independientes para las páginas principales
+  - Reducción del bundle inicial y carga bajo demanda
+  - Fallback de loading con spinner consistente
+
+- **Política de Retención de Storage** ✅ (Dic 2024)
+  - Script programable en `server/src/scripts/cleanup-storage.js`
+  - Detecta imágenes huérfanas cotejando DB vs Storage
+  - Protege archivos nuevos (<24h) de borrado accidental
+  - Modos `dry-run` (seguro) y `execute` (borrado real)
 
 ---
 
@@ -109,4 +107,4 @@ La aplicación está en estado estable para lanzamiento. Los ítems pendientes s
 
 ### Problemas Críticos: 0 ❌
 ### Mejoras Importantes: 2
-### Nice to Have: 7
+### Nice to Have: 5

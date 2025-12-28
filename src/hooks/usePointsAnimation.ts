@@ -6,14 +6,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAnimatedNumber } from './useAnimatedNumber'
 
-interface PointsAnimationState {
-  points: number
-  level: number
-  levelProgress: number
-  pointsAdded: number | null
-  levelUp: boolean
-}
-
 interface UsePointsAnimationOptions {
   currentPoints: number
   currentLevel: number
@@ -61,11 +53,11 @@ export function usePointsAnimation({
   const isInitialMountRef = useRef(true)
   const [pointsAdded, setPointsAdded] = useState<number | null>(null)
   const [levelUp, setLevelUp] = useState(false)
-  const levelUpTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const levelUpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Animate points number
   const animatedPoints = useAnimatedNumber(currentPoints, { duration: animationDuration })
-  
+
   // Animate level number
   const animatedLevel = useAnimatedNumber(currentLevel, { duration: animationDuration })
 

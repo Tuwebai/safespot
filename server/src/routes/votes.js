@@ -206,10 +206,18 @@ router.post('/', requireAnonymousId, async (req, res) => {
     logError(error, req);
 
     // Handle unique constraint violation (duplicate vote)
+    // Return 200 OK instead of 409 - this is expected behavior for idempotent operations
     if (error.code === '23505') {
-      return res.status(409).json({
-        error: 'You have already voted on this item',
-        code: 'DUPLICATE_VOTE'
+      return res.status(200).json({
+        success: true,
+        data: {
+          // Vote already exists, return minimal data
+          anonymous_id: anonymousId,
+          report_id: report_id || null,
+          comment_id: comment_id || null
+        },
+        status: 'already_exists',
+        message: 'Already voted'
       });
     }
 

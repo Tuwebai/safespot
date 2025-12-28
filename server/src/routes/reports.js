@@ -720,12 +720,14 @@ router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
         });
       } catch (insertError) {
         // Check if it's a unique constraint violation (race condition)
+        // Return 200 OK with status field so frontend knows it's idempotent
         if (insertError.code === '23505' || insertError.message?.includes('unique') || insertError.message?.includes('duplicate')) {
-          res.json({
+          return res.status(200).json({
             success: true,
             data: {
               is_favorite: true
             },
+            status: 'already_exists',
             message: 'Already favorited'
           });
         } else {
@@ -798,14 +800,20 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
     }
 
     // Check if already flagged
+    // Return 200 OK instead of 409 - user's intent is satisfied (report is flagged)
     const checkResult = await queryWithRLS(anonymousId, `
       SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2
     `, [anonymousId, id]);
 
     if (checkResult.rows.length > 0) {
-      return res.status(409).json({
-        error: 'Report already flagged by this user',
-        message: 'You have already flagged this report'
+      return res.status(200).json({
+        success: true,
+        data: {
+          is_flagged: true,
+          flag_id: checkResult.rows[0].id
+        },
+        status: 'already_exists',
+        message: 'Already flagged'
       });
     }
 

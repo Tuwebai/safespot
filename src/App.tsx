@@ -1,13 +1,18 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
-import { Home } from '@/pages/Home'
-import { Reportes } from '@/pages/Reportes'
-import { CrearReporte } from '@/pages/CrearReporte'
-import { DetalleReporte } from '@/pages/DetalleReporte'
-import { Explorar } from '@/pages/Explorar'
-import { Gamificacion } from '@/pages/Gamificacion'
-import { Perfil } from '@/pages/Perfil'
-import { MisFavoritos } from '@/pages/MisFavoritos'
+import { RouteLoadingFallback } from '@/components/RouteLoadingFallback'
+
+// Lazy-loaded page components
+// Each page is loaded only when navigated to, reducing initial bundle size
+const Home = lazy(() => import('@/pages/Home').then(m => ({ default: m.Home })))
+const Reportes = lazy(() => import('@/pages/Reportes').then(m => ({ default: m.Reportes })))
+const CrearReporte = lazy(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })))
+const DetalleReporte = lazy(() => import('@/pages/DetalleReporte').then(m => ({ default: m.DetalleReporte })))
+const Explorar = lazy(() => import('@/pages/Explorar').then(m => ({ default: m.Explorar })))
+const Gamificacion = lazy(() => import('@/pages/Gamificacion').then(m => ({ default: m.Gamificacion })))
+const Perfil = lazy(() => import('@/pages/Perfil').then(m => ({ default: m.Perfil })))
+const MisFavoritos = lazy(() => import('@/pages/MisFavoritos').then(m => ({ default: m.MisFavoritos })))
 
 function App() {
   return (
@@ -18,20 +23,21 @@ function App() {
       }}
     >
       <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/reportes" element={<Reportes />} />
-          <Route path="/crear-reporte" element={<CrearReporte />} />
-          <Route path="/reporte/:id" element={<DetalleReporte />} />
-          <Route path="/explorar" element={<Explorar />} />
-          <Route path="/gamificacion" element={<Gamificacion />} />
-          <Route path="/perfil" element={<Perfil />} />
-          <Route path="/favoritos" element={<MisFavoritos />} />
-        </Routes>
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/reportes" element={<Reportes />} />
+            <Route path="/crear-reporte" element={<CrearReporte />} />
+            <Route path="/reporte/:id" element={<DetalleReporte />} />
+            <Route path="/explorar" element={<Explorar />} />
+            <Route path="/gamificacion" element={<Gamificacion />} />
+            <Route path="/perfil" element={<Perfil />} />
+            <Route path="/favoritos" element={<MisFavoritos />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </BrowserRouter>
   )
 }
 
 export default App
-
