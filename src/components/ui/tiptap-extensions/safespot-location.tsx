@@ -61,10 +61,10 @@ export const Location = Node.create<LocationOptions>({
     return ['span', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
       'data-type': 'safespot-location',
       class: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-blue-500/20 text-blue-400 border-blue-500/30',
-    }), [
-        ['span', { class: 'safespot-location-icon' }, '📍'],
-        ['span', { class: 'safespot-location-value' }, HTMLAttributes.value || ''],
-      ]]
+    }),
+      ['span', { class: 'safespot-location-icon' }, '📍'],
+      ['span', { class: 'safespot-location-value' }, HTMLAttributes.value || ''],
+    ]
   },
 
   addNodeView() {

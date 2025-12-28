@@ -140,10 +140,7 @@ router.get('/', async (req, res) => {
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
-            (SELECT COUNT(*) FROM comments c 
-             WHERE c.report_id = r.id 
-               AND c.is_thread = true 
-               AND c.parent_id IS NULL) AS threads_count
+            r.threads_count
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8
@@ -187,10 +184,7 @@ router.get('/', async (req, res) => {
           SELECT 
             r.*,
             ST_Distance(r.location, ul.point) AS distance_meters,
-            (SELECT COUNT(*) FROM comments c 
-             WHERE c.report_id = r.id 
-               AND c.is_thread = true 
-               AND c.parent_id IS NULL) AS threads_count
+            r.threads_count
           FROM reports r
           CROSS JOIN user_location ul
           WHERE 
@@ -414,13 +408,12 @@ router.get('/', async (req, res) => {
 
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
 
-      // Add threads_count subquery
+      // threads_count is now a denormalized column (no subquery needed)
       dataQuery = `
         SELECT 
           r.*,
           CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
-          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
-          (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged
         FROM reports r
         LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
         LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
@@ -461,8 +454,7 @@ router.get('/', async (req, res) => {
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
 
       dataQuery = `
-        SELECT r.*, 
-               (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+        SELECT r.*
         FROM reports r 
         ${whereClause}
         ${orderByClause}
@@ -541,11 +533,9 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     const anonymousId = req.headers['x-anonymous-id'] || '';
 
-    // Fetch report using queryWithRLS for RLS consistency
-    // ADDED: threads_count subquery - counts only root threads (is_thread=true AND parent_id IS NULL)
+    // threads_count is now a denormalized column (no subquery needed)
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT r.*, 
-             (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+      SELECT r.*
       FROM reports r WHERE r.id = $1
     `, [id]);
 

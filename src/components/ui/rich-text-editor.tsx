@@ -11,12 +11,12 @@ import { Button } from './button'
 import { Input } from './input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card'
 import { normalizeTipTapContent } from '@/lib/tiptap-content'
-import { 
-  Bold, 
-  Italic, 
-  Underline as UnderlineIcon, 
-  Strikethrough, 
-  Code, 
+import {
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Code,
   Quote,
   Hash,
   Type,
@@ -25,10 +25,7 @@ import {
   Lock,
   List,
   ListOrdered,
-  Image as ImageIcon,
-  Paperclip,
-  Eye,
-  Mic
+  Eye
 } from 'lucide-react'
 import { TipTapRenderer } from './tiptap-renderer'
 
@@ -120,7 +117,7 @@ export function RichTextEditor({
       // Normalizar contenido para soportar texto plano legacy
       const normalized = normalizeTipTapContent(value)
       const currentJson = editor.getJSON()
-      
+
       // Solo actualizar si es diferente para evitar loops infinitos
       if (JSON.stringify(currentJson) !== JSON.stringify(normalized)) {
         editor.commands.setContent(normalized)
@@ -161,7 +158,7 @@ export function RichTextEditor({
     }
 
     const text = inputModalText.trim()
-    
+
     switch (pendingTagType) {
       case 'ubicacion':
         editor.chain().focus().setLocation({ value: text }).run()
@@ -358,28 +355,6 @@ export function RichTextEditor({
           </Button>
         </div>
 
-        {/* Media */}
-        <div className="flex items-center gap-1 border-l border-dark-border pl-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            title="Insertar imagen"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            title="Adjuntar archivo"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-        </div>
-
         {/* Preview Toggle */}
         <div className="flex items-center gap-1 border-l border-dark-border pl-2 ml-auto">
           <Button
@@ -405,19 +380,9 @@ export function RichTextEditor({
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between">
-        {/* Left: Shortcuts (solo si no está oculto) */}
-        {!hideHelp && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>@</span>
-            <Paperclip className="h-3 w-3" />
-            <ImageIcon className="h-3 w-3" />
-            <Mic className="h-3 w-3" />
-          </div>
-        )}
-
-        {/* Right: Character Counter and Submit */}
-        <div className="flex items-center gap-3 ml-auto">
+      <div className="flex items-center justify-end">
+        {/* Character Counter and Buttons */}
+        <div className="flex items-center gap-3">
           {!hideHelp && (
             <span className="text-xs text-muted-foreground">
               {editor.storage.characterCount?.characters() || editor.getText().length}/{maxLength}
@@ -447,28 +412,15 @@ export function RichTextEditor({
         </div>
       </div>
 
-      {/* Help Text (solo si no está oculto) */}
-      {!hideHelp && (
-        <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-dark-border">
-          <div>
-            <strong>Atajos:</strong> Ctrl+B (negrita), Ctrl+I (cursiva), Ctrl+U (subrayado), Ctrl+` (código)
-          </div>
-          <div>
-            <strong>SafeSpot:</strong> Usa los botones especiales para insertar ubicaciones, objetos, usuarios, spoilers e información sensible
-          </div>
-          <div>
-            <strong>Formato:</strong> El contenido se guarda en formato JSON estructurado para máxima consistencia
-          </div>
-        </div>
-      )}
+
 
       {/* Modal de Entrada de Texto para SafeSpot Tags */}
       {isInputModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={handleInputModalCancel}
         >
-          <Card 
+          <Card
             className="w-full max-w-md bg-dark-card border-dark-border"
             onClick={(e) => e.stopPropagation()}
           >
