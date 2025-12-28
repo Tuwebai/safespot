@@ -62,12 +62,25 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
         try {
             setLoading(true)
             setError(null)
-            const data = await reportsApi.getById(reportId)
 
-            // Double-check: don't update state if report was deleted during fetch
-            if (isDeletedRef.current) return
+            // Check prefetch cache first for instant display
+            const { getCachedReport } = await import('@/lib/prefetch')
+            const cached = getCachedReport(reportId)
 
-            setReport(data)
+            if (cached) {
+                // Use cached data immediately
+                if (!isDeletedRef.current) {
+                    setReport(cached)
+                }
+            } else {
+                // No cache, fetch from API
+                const data = await reportsApi.getById(reportId)
+
+                // Double-check: don't update state if report was deleted during fetch
+                if (isDeletedRef.current) return
+
+                setReport(data)
+            }
         } catch (err) {
             // If deleted, silently ignore errors
             if (isDeletedRef.current) return

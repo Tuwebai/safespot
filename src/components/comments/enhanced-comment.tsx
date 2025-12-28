@@ -142,10 +142,15 @@ export const EnhancedComment = memo(function EnhancedComment({
     }
   }
 
-  const handleViewDirectLink = () => {
-    const url = `${window.location.origin}/comments/${comment.id}`
-    window.open(url, '_blank')
-    setIsContextMenuOpen(false)
+  const handleViewDirectLink = async () => {
+    const url = `${window.location.href}#comment-${comment.id}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success('Enlace copiado')
+      setIsContextMenuOpen(false)
+    } catch (error) {
+      toast.error('No se pudo copiar el enlace')
+    }
   }
 
   const handleLike = async () => {

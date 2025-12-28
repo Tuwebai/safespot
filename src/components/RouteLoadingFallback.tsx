@@ -1,17 +1,92 @@
 /**
  * Loading fallback for lazy-loaded routes
- * Shows a centered spinner while the route component loads
+ * Uses content-aware skeleton instead of blocking spinner
+ * This keeps the layout visible and reduces perceived loading time
  */
+
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export function RouteLoadingFallback() {
     return (
-        <div className="flex min-h-[60vh] items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-                {/* Spinner */}
-                <div className="h-12 w-12 animate-spin rounded-full border-4 border-dark-border border-t-neon-green" />
+        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 animate-pulse">
+            {/* Header skeleton */}
+            <div className="mb-8">
+                <Skeleton height={40} width="50%" className="mb-2" />
+                <Skeleton height={20} width="30%" />
+            </div>
 
-                {/* Loading text */}
-                <p className="text-sm text-muted-foreground">Cargando...</p>
+            {/* Content grid skeleton */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3].map((i) => (
+                    <Card key={i} className="bg-dark-card border-dark-border">
+                        <CardHeader>
+                            <Skeleton height={24} width="80%" className="mb-2" />
+                            <Skeleton height={16} width="60%" />
+                        </CardHeader>
+                        <CardContent>
+                            <Skeleton height={14} width="100%" className="mb-2" />
+                            <Skeleton height={14} width="90%" className="mb-4" />
+                            <div className="flex items-center justify-between">
+                                <Skeleton height={14} width={80} />
+                                <Skeleton height={32} width={100} radius="0.375rem" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+/**
+ * Minimal fallback for detail pages (single item view)
+ */
+export function DetailLoadingFallback() {
+    return (
+        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            {/* Back button skeleton */}
+            <Skeleton height={36} width={100} className="mb-6" radius="0.375rem" />
+
+            {/* Header section */}
+            <div className="mb-8">
+                <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                        <Skeleton height={32} width="60%" className="mb-2" />
+                        <div className="flex items-center gap-2">
+                            <Skeleton height={24} width={80} radius="9999px" />
+                            <Skeleton height={24} width={100} radius="9999px" />
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Skeleton height={36} width={36} radius="0.375rem" />
+                        <Skeleton height={36} width={36} radius="0.375rem" />
+                    </div>
+                </div>
+            </div>
+
+            {/* Description card */}
+            <Card className="bg-dark-card border-dark-border mb-6">
+                <CardHeader>
+                    <Skeleton height={20} width={120} />
+                </CardHeader>
+                <CardContent>
+                    <Skeleton height={14} width="100%" className="mb-2" />
+                    <Skeleton height={14} width="95%" className="mb-2" />
+                    <Skeleton height={14} width="80%" />
+                </CardContent>
+            </Card>
+
+            {/* Meta grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[1, 2, 3, 4].map((i) => (
+                    <Card key={i} className="bg-dark-card border-dark-border">
+                        <CardContent className="p-4 text-center">
+                            <Skeleton height={32} width={48} className="mx-auto mb-2" />
+                            <Skeleton height={14} width={60} className="mx-auto" />
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
         </div>
     )

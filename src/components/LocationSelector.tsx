@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { MapPin, Search, AlertCircle, X } from 'lucide-react'
@@ -26,40 +26,51 @@ interface NominatimResult {
 
 export function LocationSelector({ value, onChange, error }: LocationSelectorProps) {
   const toast = useToast()
-  const [searchQuery, setSearchQuery] = useState('')
+  // Init search query from prop to ensure sync on mount
+  const [searchQuery, setSearchQuery] = useState(value.location_name || '')
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [hasConfirmedSelection, setHasConfirmedSelection] = useState(false)
+
+  // ✅ Derived state: Source of Truth is the props (controlled component)
+  // This eliminates the desync bugs by definition
+  const isConfirmed = !!(value.location_name && value.latitude && value.longitude)
+
+  // Ref to track if the update was internal (blocking the echo from prop update)
+  const isInternalChangeRef = useRef(false)
 
   // Use only search hook
   const { isSearching, results, error: searchError, isRateLimited } = useLocationSearch(searchQuery)
 
-  // ... (existing sync effect) ...
-
-  // ... (render part) ...
-
-
-
-  // Sync ONLY when parent resets (e.g., form reset) - detect by checking if value is empty
+  // Sync effect with COMPLETE dependencies
   useEffect(() => {
-    if (!value.location_name && !value.latitude && !value.longitude) {
-      // Parent cleared the form
-      setSearchQuery('')
-      setHasConfirmedSelection(false)
-    } else if (value.location_name && value.latitude && value.longitude && !hasConfirmedSelection) {
-      // Parent set initial value (e.g., editing existing report)
-      setSearchQuery(value.location_name)
-      setHasConfirmedSelection(true)
+    // If we just triggered the change internally, skip this sync to preserve cursor/state
+    if (isInternalChangeRef.current) {
+      isInternalChangeRef.current = false
+      return
     }
-  }, [value.location_name, value.latitude, value.longitude])
+
+    // Case 1: External valid value (Initial load or programmatic set)
+    if (isConfirmed) {
+      if (searchQuery !== value.location_name) {
+        setSearchQuery(value.location_name)
+      }
+    }
+    // Case 2: Parent cleared the form
+    else if (!value.location_name && !value.latitude && !value.longitude) {
+      if (searchQuery !== '') {
+        setSearchQuery('')
+      }
+    }
+    // Note: We intentionally don't sync if properities are partial/invalid, keeping user input
+  }, [value.location_name, value.latitude, value.longitude, isConfirmed, searchQuery])
 
   const handleInputChange = (newValue: string) => {
     setSearchQuery(newValue)
     setShowSuggestions(true)
 
     // CRITICAL: If user edits after confirming, INVALIDATE the selection
-    if (hasConfirmedSelection) {
-      setHasConfirmedSelection(false)
-      // Clear parent's location data
+    if (isConfirmed) {
+      isInternalChangeRef.current = true
+      // Clear parent's location data but keep user text
       onChange({
         location_name: '',
         latitude: undefined,
@@ -86,17 +97,18 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       location_source: 'geocoded'
     }
 
-    // CRITICAL: Mark as confirmed
-    setHasConfirmedSelection(true)
-    onChange(location)
+    // Update local state first for immediate feedback
     setSearchQuery(suggestion.display_name)
     setShowSuggestions(false)
+
+    // Update parent
+    onChange(location)
   }
 
   const handleClearSelection = () => {
     setSearchQuery('')
-    setHasConfirmedSelection(false)
     setShowSuggestions(false)
+    // No need for ref flag here as we want both to be empty
     onChange({
       location_name: '',
       latitude: undefined,
@@ -121,9 +133,9 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
               setTimeout(() => setShowSuggestions(false), 200)
             }}
             placeholder="Ej: Av. Colón 1200, Córdoba"
-            className={`pl-10 h-12 text-lg ${error ? 'border-destructive' : ''} ${hasConfirmedSelection ? 'pr-10 border-neon-green/50 bg-neon-green/5' : ''}`}
+            className={`pl-10 h-12 text-lg ${error ? 'border-destructive' : ''} ${isConfirmed ? 'pr-10 border-neon-green/50 bg-neon-green/5' : ''}`}
           />
-          {hasConfirmedSelection && searchQuery && (
+          {isConfirmed && searchQuery && (
             <button
               type="button"
               onClick={handleClearSelection}
@@ -135,7 +147,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         </div>
 
         {/* Suggestions dropdown */}
-        {showSuggestions && results.length > 0 && !hasConfirmedSelection && (
+        {showSuggestions && results.length > 0 && !isConfirmed && (
           <div className="absolute z-10 w-full mt-1 bg-dark-card border border-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
             {results.map((suggestion, index) => (
               <button
@@ -156,7 +168,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         )}
 
         {/* Search loading indicator */}
-        {isSearching && !hasConfirmedSelection && (
+        {isSearching && !isConfirmed && (
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
             <div className="animate-spin h-5 w-5 border-2 border-neon-green border-t-transparent rounded-full"></div>
           </div>
@@ -184,7 +196,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       </p>
 
       {/* Location Source Badge */}
-      {value.location_source && value.location_name && hasConfirmedSelection && (
+      {value.location_source && value.location_name && isConfirmed && (
         <div className="flex items-center gap-2">
           <span
             className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${value.location_source === 'geocoded'

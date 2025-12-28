@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -44,6 +44,7 @@ export type CreateReportFormData = z.infer<typeof createReportSchema>
 // ============================================
 
 export function useCreateReportForm() {
+    const createdUrlsRef = useRef<string[]>([])
     const navigate = useNavigate()
     const toast = useToast()
     const { createReport, isLoading: isSubmittingReport, error: submitError } = useCreateReport()
@@ -96,7 +97,9 @@ export function useCreateReportForm() {
                 continue
             }
             newFiles.push(file)
-            newPreviews.push(URL.createObjectURL(file))
+            const url = URL.createObjectURL(file)
+            createdUrlsRef.current.push(url)
+            newPreviews.push(url)
         }
 
         setImageFiles(prev => [...prev, ...newFiles].slice(0, 5))
@@ -111,20 +114,20 @@ export function useCreateReportForm() {
         })
         setImagePreviews(prev => {
             const newPreviews = [...prev]
-            try { URL.revokeObjectURL(newPreviews[index]) } catch { }
+            // Cleanup deferred to unmount via ref
             newPreviews.splice(index, 1)
             return newPreviews
         })
     }, [])
 
-    // Clean up previews effect
+    // Clean up previews effect - Runs only on unmount
     useEffect(() => {
         return () => {
-            imagePreviews.forEach(url => {
+            createdUrlsRef.current.forEach(url => {
                 try { URL.revokeObjectURL(url) } catch { }
             })
         }
-    }, [imagePreviews])
+    }, [])
 
     // ============================================
     // SUBMIT LOGIC

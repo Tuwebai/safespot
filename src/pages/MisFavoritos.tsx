@@ -9,6 +9,7 @@ import { MapPin, GitBranch, MessageCircle, Heart, AlertCircle } from 'lucide-rea
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { FavoriteButton } from '@/components/FavoriteButton'
+import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
@@ -191,7 +192,12 @@ export function MisFavoritos() {
             return (
               <Card
                 key={report.id}
-                className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden"
+                className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
+                onMouseEnter={() => {
+                  prefetchRouteChunk('DetalleReporte')
+                  prefetchReport(report.id)
+                }}
+                onClick={() => navigate(`/reporte/${report.id}`)}
               >
                 {/* Image Section (Top) */}
                 {hasImage && (

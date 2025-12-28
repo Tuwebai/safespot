@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
 import { User, TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
@@ -203,7 +204,12 @@ export function Perfil() {
               ) : (
                 <div className="space-y-4">
                   {userReports.map((report) => (
-                    <Link key={report.id} to={`/reporte/${report.id}`}>
+                    <PrefetchLink
+                      key={report.id}
+                      to={`/reporte/${report.id}`}
+                      prefetchRoute="DetalleReporte"
+                      prefetchReportId={report.id}
+                    >
                       <div className="p-4 rounded-lg bg-dark-bg border border-dark-border hover:border-neon-green/50 transition-colors">
                         <div className="flex items-start justify-between mb-2">
                           <h3 className="font-semibold line-clamp-1">{report.title}</h3>
@@ -223,7 +229,7 @@ export function Perfil() {
                           </div>
                         </div>
                       </div>
-                    </Link>
+                    </PrefetchLink>
                   ))}
                 </div>
               )}

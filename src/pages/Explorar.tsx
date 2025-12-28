@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { reportsApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +8,7 @@ import { handleError } from '@/lib/errorHandler'
 import { MapPin, List, ThumbsUp, Calendar } from 'lucide-react'
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
+import { PrefetchLink } from '@/components/PrefetchLink'
 
 export function Explorar() {
   const toast = useToast()
@@ -137,7 +137,12 @@ export function Explorar() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
               {reports.map((report) => (
-                <Link key={report.id} to={`/reporte/${report.id}`}>
+                <PrefetchLink
+                  key={report.id}
+                  to={`/reporte/${report.id}`}
+                  prefetchRoute="DetalleReporte"
+                  prefetchReportId={report.id}
+                >
                   <Card className="bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors cursor-pointer card-glow h-full">
                     <CardHeader>
                       <div className="flex items-start justify-between mb-2">
@@ -170,7 +175,7 @@ export function Explorar() {
                       </div>
                     </CardContent>
                   </Card>
-                </Link>
+                </PrefetchLink>
               ))}
             </div>
           )}

@@ -1,20 +1,25 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
-import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
+import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag } from 'lucide-react'
-import type { Report } from '@/lib/api'
+import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { FavoriteButton } from '@/components/FavoriteButton'
+import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
+import { useReportsQuery } from '@/hooks/queries'
+import { useDebounce } from '@/hooks/useDebounce'
+import { queryKeys } from '@/lib/queryKeys'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -71,56 +76,49 @@ const formatDate = (dateString: string) => {
 export function Reportes() {
   const navigate = useNavigate()
   const toast = useToast()
-  const [reports, setReports] = useState<Report[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+
+  // Filter state
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedZone, setSelectedZone] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+
+  // Flag dialog state
   const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
   const [flaggingReportId, setFlaggingReportId] = useState<string | null>(null)
   const [flaggingReports, setFlaggingReports] = useState<Set<string>>(new Set())
 
-  const loadReports = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const filters: any = {}
-      if (selectedCategory !== 'all') filters.category = selectedCategory
-      if (selectedZone !== 'all') filters.zone = selectedZone
-      if (selectedStatus !== 'all') filters.status = selectedStatus
-      if (searchTerm.trim()) filters.search = searchTerm.trim()
+  // Debounce search term to avoid excessive API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 500)
 
-      const data = await reportsApi.getAll(filters)
-      setReports(data)
-    } catch (error) {
-      const errorInfo = handleError(error, toast.error, 'Reportes.loadReports')
-      setError(errorInfo.userMessage)
-      setReports([])
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedCategory, selectedZone, selectedStatus, searchTerm, toast])
+  // Build filters object (memoized to prevent unnecessary query refetches)
+  const filters = useMemo<ReportFilters | undefined>(() => {
+    const f: ReportFilters = {}
+    if (selectedCategory !== 'all') f.category = selectedCategory
+    if (selectedZone !== 'all') f.zone = selectedZone
+    if (selectedStatus !== 'all') f.status = selectedStatus
+    if (debouncedSearchTerm.trim()) f.search = debouncedSearchTerm.trim()
+    return Object.keys(f).length > 0 ? f : undefined
+  }, [selectedCategory, selectedZone, selectedStatus, debouncedSearchTerm])
 
-  // Debounced search and filters
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      loadReports()
-    }, searchTerm ? 500 : 0)
-
-    return () => clearTimeout(timeoutId)
-  }, [searchTerm, selectedCategory, selectedZone, selectedStatus, loadReports])
+  // React Query - cached, deduplicated, background refetch
+  const { data: reports = [], isLoading: loading, error: queryError, refetch } = useReportsQuery(filters)
 
   // ============================================
   // HANDLERS (memoized with useCallback)
   // ============================================
 
+  // Error message from query
+  const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
+
   const handleFavoriteUpdate = useCallback((reportId: string, newState: boolean) => {
-    setReports(prev => prev.map(r =>
-      r.id === reportId ? { ...r, is_favorite: newState } : r
-    ))
-  }, [])
+    // Optimistically update cache
+    queryClient.setQueryData<Report[]>(
+      queryKeys.reports.list(filters),
+      (old) => old?.map(r => r.id === reportId ? { ...r, is_favorite: newState } : r)
+    )
+  }, [queryClient, filters])
 
   const handleFlag = useCallback((e: React.MouseEvent, reportId: string) => {
     e.preventDefault()
@@ -175,15 +173,21 @@ export function Reportes() {
     // Marcar como en proceso
     setFlaggingReports(prev => new Set(prev).add(reportId))
 
-    // Optimistic update: actualizar UI inmediatamente
-    setReports(prev => prev.map(r => {
-      if (r.id !== reportId) return r
-      return {
-        ...r,
-        is_flagged: true,
-        flags_count: (r.flags_count ?? 0) + 1
-      }
-    }))
+    // Save previous state for rollback
+    const previousReports = queryClient.getQueryData<Report[]>(queryKeys.reports.list(filters))
+
+    // Optimistic update: actualizar cache inmediatamente
+    queryClient.setQueryData<Report[]>(
+      queryKeys.reports.list(filters),
+      (old) => old?.map(r => {
+        if (r.id !== reportId) return r
+        return {
+          ...r,
+          is_flagged: true,
+          flags_count: (r.flags_count ?? 0) + 1
+        }
+      })
+    )
 
     try {
       await reportsApi.flag(reportId, reason.trim())
@@ -193,14 +197,9 @@ export function Reportes() {
       setFlaggingReportId(null)
     } catch (error) {
       // Revertir optimistic update en caso de error
-      setReports(prev => prev.map(r => {
-        if (r.id !== reportId) return r
-        return {
-          ...r,
-          is_flagged: false,
-          flags_count: Math.max(0, (r.flags_count ?? 0) - 1)
-        }
-      }))
+      if (previousReports) {
+        queryClient.setQueryData(queryKeys.reports.list(filters), previousReports)
+      }
 
       const errorMessage = error instanceof Error ? error.message : ''
 
@@ -219,7 +218,18 @@ export function Reportes() {
         return newSet
       })
     }
-  }, [flaggingReportId, reports, toast])
+  }, [flaggingReportId, reports, toast, queryClient, filters])
+
+  // Optimization: Stable handlers for list items
+  const handleCardHover = useCallback((reportId: string) => {
+    prefetchRouteChunk('DetalleReporte')
+    prefetchReport(reportId)
+  }, [])
+
+  const handleCardClick = useCallback((reportId: string, e?: React.MouseEvent) => {
+    if (e) e.preventDefault()
+    navigate(`/reporte/${reportId}`)
+  }, [navigate])
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -311,7 +321,7 @@ export function Reportes() {
           <Card className="bg-dark-card border-dark-border">
             <CardContent className="py-12 text-center">
               <p className="text-destructive mb-4">{error}</p>
-              <Button onClick={() => loadReports()} variant="outline">
+              <Button onClick={() => refetch()} variant="outline">
                 Reintentar
               </Button>
             </CardContent>
@@ -350,7 +360,9 @@ export function Reportes() {
                 return (
                   <Card
                     key={report.id}
-                    className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden"
+                    className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
+                    onMouseEnter={() => handleCardHover(report.id)}
+                    onClick={() => handleCardClick(report.id)}
                   >
                     {/* 2.2 Image Section (Top) - Optimized */}
                     {hasImage && (
@@ -421,10 +433,7 @@ export function Reportes() {
                           variant="outline"
                           size="sm"
                           className="border-neon-green text-neon-green hover:bg-neon-green/10"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            navigate(`/reporte/${report.id}`)
-                          }}
+                          onClick={(e) => handleCardClick(report.id, e)}
                         >
                           Ver Detalles
                         </Button>

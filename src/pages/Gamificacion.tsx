@@ -1,79 +1,60 @@
-import { useState, useEffect, useMemo } from 'react'
-import { gamificationApi } from '@/lib/api'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { handleErrorSilently } from '@/lib/errorHandler'
 import { Award, Trophy, Star, Lock } from 'lucide-react'
 import type { GamificationBadge, NewBadge } from '@/lib/api'
 import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
 import { getPointsToNextLevel } from '@/lib/levelCalculation'
 import { FeedbackState } from '@/components/ui/feedback-state'
-
-// NOTE: Caching is now handled globally in api.ts via apiRequestCached
-// No local cache needed here anymore
+import { useGamificationSummaryQuery } from '@/hooks/queries'
 
 export function Gamificacion() {
-  const [profile, setProfile] = useState<{ level: number; points: number; total_reports: number; total_comments: number; total_votes: number } | null>(null)
-  const [badges, setBadges] = useState<GamificationBadge[]>([])
-  const [loading, setLoading] = useState(true) // CRITICAL: Start as true to show skeleton immediately
-  const [error, setError] = useState<string | null>(null)
+  // React Query - cached, deduplicated
+  const { data: summary, isLoading: loading, error: queryError, refetch } = useGamificationSummaryQuery()
+
+  // Extract data from query result
+  const profile = summary?.profile ?? null
+  const badges = summary?.badges ?? []
+
+  // Animation state for newly unlocked badges
   const [newlyUnlockedBadgeIds, setNewlyUnlockedBadgeIds] = useState<Set<string>>(new Set())
   const [latestNewBadge, setLatestNewBadge] = useState<NewBadge | null>(null)
 
-  // Load data on component mount
+  // Handle new badges when data changes
   useEffect(() => {
-    loadData()
-  }, [])
+    if (summary?.newBadges && summary.newBadges.length > 0) {
+      // Store the latest new badge for points feedback
+      const latestBadge = summary.newBadges[summary.newBadges.length - 1]
+      setLatestNewBadge(latestBadge)
 
-  const loadData = async () => {
-    try {
-      setLoading(true)
+      // Clear after animation duration
+      setTimeout(() => {
+        setLatestNewBadge(null)
+      }, 2000)
 
-      // Uses global cache from api.ts (30s TTL)
-      const summary = await gamificationApi.getSummary()
+      summary.newBadges.forEach((badge: NewBadge) => {
+        // Find the full badge info
+        const fullBadge = summary.badges.find(b => b.code === badge.code)
+        if (fullBadge) {
+          // Mark as newly unlocked for animation (visual feedback only)
+          setNewlyUnlockedBadgeIds(prev => new Set(prev).add(fullBadge.id))
 
-      setProfile(summary.profile)
-
-      // CRITICAL: Mark newly unlocked badges for animation only (notifications handled globally)
-      if (summary.newBadges && summary.newBadges.length > 0) {
-        // Store the latest new badge for points feedback
-        const latestBadge = summary.newBadges[summary.newBadges.length - 1]
-        setLatestNewBadge(latestBadge)
-
-        // Clear after animation duration
-        setTimeout(() => {
-          setLatestNewBadge(null)
-        }, 2000)
-
-        summary.newBadges.forEach((badge: NewBadge) => {
-          // Find the full badge info
-          const fullBadge = summary.badges.find(b => b.code === badge.code)
-          if (fullBadge) {
-            // Mark as newly unlocked for animation (visual feedback only)
-            setNewlyUnlockedBadgeIds(prev => new Set(prev).add(fullBadge.id))
-
-            // Remove animation flag after animation completes
-            setTimeout(() => {
-              setNewlyUnlockedBadgeIds(prev => {
-                const next = new Set(prev)
-                next.delete(fullBadge.id)
-                return next
-              })
-            }, 1000)
-          }
-        })
-      }
-
-      setBadges(summary.badges)
-      setError(null)
-    } catch (error) {
-      const errorInfo = handleErrorSilently(error, 'Gamificacion.loadData')
-      setError(errorInfo.userMessage)
-    } finally {
-      setLoading(false)
+          // Remove animation flag after animation completes
+          setTimeout(() => {
+            setNewlyUnlockedBadgeIds(prev => {
+              const next = new Set(prev)
+              next.delete(fullBadge.id)
+              return next
+            })
+          }, 1000)
+        }
+      })
     }
-  }
+  }, [summary?.newBadges, summary?.badges])
+
+  // Error message from query
+  const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
 
   // Use animated points and level
   const {
@@ -197,7 +178,7 @@ export function Gamificacion() {
           state="error"
           title="No pudimos cargar tu progreso"
           description={error}
-          action={<Button onClick={loadData}>Reintentar</Button>}
+          action={<Button onClick={() => refetch()}>Reintentar</Button>}
         />
       </div>
     )

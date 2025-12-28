@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { EnhancedComment } from './enhanced-comment'
@@ -75,8 +75,16 @@ export const CommentThread = memo(function CommentThread({
     // Calculate indentation and visual adjustments based on depth
     const indentClass = depth > 0 ? `ml-${Math.min(depth * 6, 18)}` : ''
 
-    // Determine if we should show "Show more replies" button instead of rendering deeply nested comments
-    const shouldCollapse = depth >= maxDepth && replies.length > 0
+    // State for handling deep threads expansion
+    const [isExpanded, setIsExpanded] = useState(false)
+
+    // Determine if comments are too deep and should be hidden by default
+    const isDeepThread = depth >= maxDepth && replies.length > 0
+
+    // Show replies if:
+    // 1. Not deep (standard behavior)
+    // 2. OR Deep but user expanded explicitly
+    const shouldShowReplies = replies.length > 0 && (!isDeepThread || isExpanded)
 
     return (
         <div className={`${indentClass} ${depth > 0 ? 'mt-3' : ''}`}>
@@ -160,7 +168,7 @@ export const CommentThread = memo(function CommentThread({
             </div>
 
             {/* Recursive Rendering of Replies */}
-            {!shouldCollapse && replies.length > 0 && (
+            {shouldShowReplies && (
                 <div className="space-y-3 mt-3">
                     {replies.map((reply) => {
                         return (
@@ -197,11 +205,19 @@ export const CommentThread = memo(function CommentThread({
                 </div>
             )}
 
-            {/* Collapsed state for very deep threads */}
-            {shouldCollapse && (
-                <div className="ml-6 mt-2">
-                    <button className="text-xs text-neon-green hover:underline">
-                        Ver {replies.length} {replies.length === 1 ? 'respuesta más' : 'respuestas más'}
+            {/* Collapsed state for very deep threads - Toggle Button */}
+            {isDeepThread && (
+                <div className={`ml-6 mt-2 ${isExpanded ? 'mb-4' : ''}`}>
+                    <button
+                        type="button"
+                        onClick={() => setIsExpanded(prev => !prev)}
+                        className="text-xs text-neon-green hover:underline focus:outline-none focus:ring-1 focus:ring-neon-green rounded px-1 transition-colors"
+                        aria-expanded={isExpanded}
+                    >
+                        {isExpanded
+                            ? 'Ocultar respuestas'
+                            : `Ver ${replies.length} ${replies.length === 1 ? 'respuesta más' : 'respuestas más'}`
+                        }
                     </button>
                 </div>
             )}

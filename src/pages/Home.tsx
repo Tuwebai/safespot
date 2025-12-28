@@ -1,53 +1,17 @@
-import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle, Clock } from 'lucide-react'
-import { usersApi } from '@/lib/api'
-import { handleErrorSilently } from '@/lib/errorHandler'
-import type { GlobalStats, CategoryStats } from '@/lib/api'
+import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
 
 export function Home() {
-  const [stats, setStats] = useState<GlobalStats | null>(null)
-  const [categoryStats, setCategoryStats] = useState<CategoryStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  // React Query - cached, deduplicated
+  const { data: stats, isLoading: statsLoading } = useGlobalStatsQuery()
+  const { data: categoryStats, isLoading: categoryLoading } = useCategoryStatsQuery()
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      try {
-        // Fetch both in parallel - single network roundtrip timing
-        const [statsData, categoryData] = await Promise.all([
-          usersApi.getStats(),
-          usersApi.getCategoryStats()
-        ])
-        setStats(statsData)
-        setCategoryStats(categoryData)
-      } catch (error) {
-        // Both failed or one failed - set defaults for both
-        handleErrorSilently(error, 'Home.loadData')
-        setStats({
-          total_reports: 0,
-          resolved_reports: 0,
-          total_users: 0,
-          active_users_month: 0
-        })
-        setCategoryStats({
-          Celulares: 0,
-          Bicicletas: 0,
-          Motos: 0,
-          Autos: 0,
-          Laptops: 0,
-          Carteras: 0
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadData()
-  }, [])
+  const loading = statsLoading || categoryLoading
 
   const statsDisplay = [
     {
