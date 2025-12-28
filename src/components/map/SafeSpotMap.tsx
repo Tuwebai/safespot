@@ -111,12 +111,28 @@ export function SafeSpotMap({ reports, className, onSearchArea }: SafeSpotMapPro
     const highlightedId = useMapStore(s => s.highlightedReportId)
 
     // Filter out reports with invalid coordinates to prevent crashes
-    const validReports = reports.filter(r =>
-        typeof r.latitude === 'number' &&
-        typeof r.longitude === 'number' &&
-        !isNaN(r.latitude) && // Ensure not NaN
-        !isNaN(r.longitude)
-    )
+    // Generic debug logging
+    // console.log('SafeSpotMap: Raw Reports', reports)
+
+    // Robust parsing of coordinates to ensure valid numbers
+    const validReports = reports
+        .map(r => ({
+            ...r,
+            latitude: Number(r.latitude),
+            longitude: Number(r.longitude)
+        }))
+        .filter(r => {
+            const isValid =
+                !isNaN(r.latitude) &&
+                !isNaN(r.longitude) &&
+                r.latitude !== 0 &&
+                r.longitude !== 0
+
+            // if (!isValid) console.warn('Invalid coords for report:', r.id)
+            return isValid
+        })
+
+    // console.log('SafeSpotMap: Valid & Parsed Reports', validReports)
 
     return (
         <div className={`relative w-full h-full min-h-[500px] rounded-xl overflow-hidden bg-slate-100 z-0 ${className}`}>
