@@ -47,7 +47,12 @@ Para evitar que un atacante o un bot rompa la plataforma al salir a público:
   - Toast con ahorro mostrado al usuario
   - Ver: `src/lib/imageCompression.ts`
 
-- [ ] Notificaciones Push: Crucial para Argentina. Avisar al usuario: "¡Nuevo reporte a 500m de tu ubicación!". Esto dispara la retención y utilidad de la app.
+- ✅ **Notificaciones Push por Proximidad**: Implementado.
+  - Web Push API con VAPID
+  - PostGIS `find_nearby_subscribers()` para queries espaciales
+  - Anti-spam: 15min cooldown, 10/día límite
+  - Service Worker + `usePushNotifications` hook
+  - ⚠️ **PENDIENTE**: Generar VAPID keys y ejecutar migración
 
 
 ## 4. ⚖️ Legal y Confidencialidad

@@ -831,10 +831,18 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
     });
 
     // Evaluate badges (async, don't wait for response)
-    // This will check if user should receive badges for creating reports
     evaluateBadges(anonymousId).catch(err => {
       logError(err, req);
-      // Don't fail the request if badge evaluation fails
+    });
+
+    // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
+    // Import dynamically to avoid circular dependencies
+    import('./push.js').then(({ notifyNearbyUsers }) => {
+      notifyNearbyUsers(data).catch(err => {
+        logError(err, { context: 'notifyNearbyUsers' });
+      });
+    }).catch(() => {
+      // Push module not available, ignore
     });
 
     res.status(201).json({
