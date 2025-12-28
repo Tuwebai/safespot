@@ -45,12 +45,24 @@ function getHeaders(): HeadersInit {
 }
 
 /**
- * API Request wrapper with error handling and logging
+ * Helper to pause execution
+ */
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * API Request wrapper with error handling, offline detection and retries
  */
 async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retries = 3,
+  backoff = 500
 ): Promise<T> {
+  // 1. Check offline status immediately
+  if (!navigator.onLine) {
+    throw new Error('Sin conexión. Revisá tu internet.');
+  }
+
   const url = `${API_BASE_URL}${endpoint}`;
 
   try {
@@ -62,17 +74,41 @@ async function apiRequest<T>(
       },
     });
 
+    // Parse JSON safely
     const data = await response.json().catch(() => ({
       error: 'Unknown error',
       message: `HTTP ${response.status}: ${response.statusText}`,
     }));
 
+    // 2. Handle HTTP errors
     if (!response.ok) {
+      // Logic to decide if we should retry
+      // Retry on 502, 503, 504 (Server errors)
+      const shouldRetry = [502, 503, 504].includes(response.status);
+
+      if (shouldRetry && retries > 0) {
+        console.warn(`Request failed with ${response.status}. Retrying in ${backoff}ms... (${retries} attempts left)`);
+        await wait(backoff);
+        return apiRequest<T>(endpoint, options, retries - 1, backoff * 2);
+      }
+
+      // If not retriable or no retries left, throw error
       throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
     }
 
     return data.data || data;
-  } catch (error) {
+
+  } catch (error: any) {
+    // 3. Handle Network Errors (fetch failed)
+    const isNetworkError = error.name === 'TypeError' || error.message === 'Failed to fetch';
+
+    if (isNetworkError && retries > 0) {
+      console.warn(`Network error. Retrying in ${backoff}ms... (${retries} attempts left)`);
+      await wait(backoff);
+      return apiRequest<T>(endpoint, options, retries - 1, backoff * 2);
+    }
+
+    // Pass through if not retriable
     throw error;
   }
 }

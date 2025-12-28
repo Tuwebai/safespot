@@ -6,15 +6,6 @@
 
 ## 📋 Resumen de Pendientes
 
-### 🟠 Importantes / Media Prioridad
-
-1. **Detección offline / Retry logic**
-   - No hay detección de conexión offline
-   - Si falla la red, el usuario ve error genérico
-   - `api.ts` no tiene retry logic
-   - **Tipo**: Frontend
-   - **Impacto**: MEDIO
-
 ### 🟡 Nice to Have / Baja Prioridad
 
 4. **Mapa interactivo (Leaflet/Mapbox)**
@@ -29,7 +20,7 @@
    - **Tipo**: Full-stack
    - **Impacto**: ALTO para engagement
 
-7. **Límite de tamaño total de uploads**
+6. **Límite de tamaño total de uploads**
     - 5 imágenes x 10MB = 50MB por reporte
     - Sin límite total de request body
     - **Tipo**: Backend
@@ -71,6 +62,12 @@
   - Protege archivos nuevos (<24h) de borrado accidental
   - Modos `dry-run` (seguro) y `execute` (borrado real)
 
+- **Resiliencia de Red y Retry Logic** ✅ (Dic 2024)
+  - `api.ts` ahora reintenta automáticamente (3 veces) ante errores de red y 5xx
+  - `useNetworkStatus` hook para detectar estado offline
+  - Banner global (`NetworkStatusIndicator`) alerta al usuario sin conexión
+  - UX mejorada: Evita disparar requests si no hay internet
+
 ---
 
 ## ⚠️ Edge Cases No Contemplados
@@ -106,5 +103,6 @@
 La aplicación está en estado estable para lanzamiento. Los ítems pendientes son mejoras, no bloqueos críticos.
 
 ### Problemas Críticos: 0 ❌
-### Mejoras Importantes: 2
+### Problemas Críticos: 0 ❌
+### Mejoras Importantes: 1
 ### Nice to Have: 5
