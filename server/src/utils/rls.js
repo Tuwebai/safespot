@@ -7,25 +7,34 @@ import pool from '../config/database.js';
 export async function queryWithRLS(anonymousId, queryText, params = []) {
   const client = await pool.connect();
   try {
-    // CRITICAL: Validate params array - ensure no undefined/null values
+    // CRITICAL: Validate params array
     if (!Array.isArray(params)) {
       throw new Error('Params must be an array');
     }
-    
-    // CRITICAL: Filter out any undefined/null values and validate
-    const cleanParams = params.filter(p => p !== undefined && p !== null);
-    if (cleanParams.length !== params.length) {
-      throw new Error('Params array contains undefined or null values');
+
+    // CRITICAL: Only reject undefined - null is VALID for nullable SQL columns (e.g., parent_id)
+    // undefined = JavaScript concept, doesn't exist in SQL
+    // null = Valid SQL value for nullable columns
+    const hasUndefined = params.some(p => p === undefined);
+    if (hasUndefined) {
+      const undefinedIndices = params
+        .map((p, i) => p === undefined ? i : -1)
+        .filter(i => i !== -1);
+      console.error('[RLS ERROR] Undefined params at indices:', undefinedIndices);
+      throw new Error(`Params array contains undefined values at indices: ${undefinedIndices.join(', ')}`);
     }
-    
+
+    // Use params directly (null values are valid)
+    const cleanParams = params;
+
     // CRITICAL: Count UNIQUE placeholders in query and validate against params
     // PostgreSQL allows reusing the same parameter ($1) multiple times
     const placeholderMatches = queryText.match(/\$\d+/g) || [];
     const uniquePlaceholders = new Set(placeholderMatches);
-    const maxPlaceholderIndex = placeholderMatches.length > 0 
+    const maxPlaceholderIndex = placeholderMatches.length > 0
       ? Math.max(...placeholderMatches.map(m => parseInt(m.replace('$', ''))))
       : 0;
-    
+
     // CRITICAL: Params must match the highest placeholder index
     // If query has $1, $2, $3, we need at least 3 params (even if $1 is used twice)
     if (maxPlaceholderIndex > 0 && cleanParams.length < maxPlaceholderIndex) {
@@ -40,7 +49,7 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       }
       throw error;
     }
-    
+
     // CRITICAL: If query has no placeholders, params must be empty
     if (maxPlaceholderIndex === 0 && cleanParams.length > 0) {
       const error = new Error(
@@ -53,7 +62,7 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       }
       throw error;
     }
-    
+
     // CRITICAL FIX: Set anonymous_id using safe literal interpolation
     // We CANNOT use $1 here because it conflicts with $1 in the main query
     // Since anonymousId is a validated UUID that we control, we can safely interpolate it
@@ -74,7 +83,7 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       // The current_anonymous_id() function will return NULL for empty strings
       await client.query("SET LOCAL app.anonymous_id = ''");
     }
-    
+
     // Execute the actual query with its own parameters
     // Now $1, $2, etc. in the main query work correctly because SET LOCAL doesn't use parameters
     const result = await client.query(queryText, cleanParams);
@@ -99,7 +108,7 @@ export async function transactionWithRLS(anonymousId, callback) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
+
     // Set anonymous_id in session for RLS policies
     // CRITICAL FIX: Use literal interpolation, not parameters, to avoid conflict with main query
     if (anonymousId && anonymousId.trim() !== '') {
@@ -114,10 +123,10 @@ export async function transactionWithRLS(anonymousId, callback) {
     } else {
       await client.query("SET LOCAL app.anonymous_id = ''");
     }
-    
+
     // Execute callback
     const result = await callback(client);
-    
+
     await client.query('COMMIT');
     return result;
   } catch (error) {

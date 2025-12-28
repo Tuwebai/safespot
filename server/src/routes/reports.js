@@ -87,11 +87,13 @@ router.get('/', async (req, res) => {
         params.push(limitNum, offset);
 
         // Build data query - use $1 for anonymousId in both JOINs (PostgreSQL allows reusing params)
+        // ADDED: threads_count subquery - counts only root threads (is_thread=true AND parent_id IS NULL)
         const dataQuery = `
           SELECT 
             r.*,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
-            CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged
+            CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
+            (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
           FROM reports r
           LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
           LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
@@ -216,8 +218,10 @@ router.get('/', async (req, res) => {
     const [countResult, dataResult] = await Promise.all([
       queryWithRLS(anonymousId || '', `SELECT COUNT(*) as total FROM reports ${whereClause}`, countParams),
       queryWithRLS(anonymousId || '', `
-        SELECT * FROM reports ${whereClause}
-        ORDER BY created_at DESC
+        SELECT r.*, 
+               (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+        FROM reports r ${whereClause}
+        ORDER BY r.created_at DESC
         LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
       `, dataParams)
     ]);
@@ -344,8 +348,11 @@ router.get('/:id', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'] || '';
 
     // Fetch report using queryWithRLS for RLS consistency
+    // ADDED: threads_count subquery - counts only root threads (is_thread=true AND parent_id IS NULL)
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT * FROM reports WHERE id = $1
+      SELECT r.*, 
+             (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+      FROM reports r WHERE r.id = $1
     `, [id]);
 
     if (reportResult.rows.length === 0) {

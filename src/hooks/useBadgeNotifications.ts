@@ -14,6 +14,22 @@ import type { NewBadge } from '@/lib/api'
 const NOTIFIED_BADGES_KEY = 'safespot_notified_badges'
 const CHECK_INTERVAL = 15000 // Check every 15 seconds (less aggressive)
 
+// Global callback for immediate badge checks (can be called from anywhere)
+let globalBadgeCheckCallback: (() => void) | null = null
+
+/**
+ * Trigger an immediate badge check from anywhere in the app
+ * Call this after actions that may award badges (create report, comment, etc.)
+ */
+export function triggerBadgeCheck() {
+  if (globalBadgeCheckCallback) {
+    // Small delay to let backend process the action
+    setTimeout(() => {
+      globalBadgeCheckCallback?.()
+    }, 1500)
+  }
+}
+
 // Get notified badges from localStorage
 function getNotifiedBadges(): Set<string> {
   try {
@@ -78,7 +94,7 @@ function playSoundInternal(audioContext: AudioContext) {
     // Pleasant chime sound
     oscillator.frequency.value = 800
     oscillator.type = 'sine'
-    
+
     // Low volume (20-30%)
     gainNode.gain.setValueAtTime(0, audioContext.currentTime)
     gainNode.gain.linearRampToValueAtTime(0.25, audioContext.currentTime + 0.01)
@@ -99,7 +115,7 @@ function playSoundInternal(audioContext: AudioContext) {
 export function useBadgeNotifications() {
   const toast = useToast()
   const notifiedBadgesRef = useRef<Set<string>>(getNotifiedBadges())
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isCheckingRef = useRef(false)
 
   const checkForNewBadges = useCallback(async () => {
@@ -109,24 +125,24 @@ export function useBadgeNotifications() {
 
     try {
       const summary = await gamificationApi.getSummary()
-      
+
       if (summary.newBadges && summary.newBadges.length > 0) {
         const notified = notifiedBadgesRef.current
-        
+
         summary.newBadges.forEach((badge: NewBadge) => {
           // Only notify if not already notified
           if (!notified.has(badge.code)) {
             // Mark as notified immediately to prevent duplicates
             markBadgeAsNotified(badge.code)
             notified.add(badge.code)
-            
+
             // Show toast notification with points
             const pointsText = badge.points ? `+${badge.points} pts` : ''
             toast.success(
               `🎉 ¡Nueva insignia desbloqueada!\n${badge.name} ${badge.icon} ${pointsText}`,
               5000
             )
-            
+
             // Play sound (only if audio is enabled)
             playBadgeSound()
           }
@@ -141,6 +157,9 @@ export function useBadgeNotifications() {
   }, [toast])
 
   useEffect(() => {
+    // Register global callback for immediate checks from other components
+    globalBadgeCheckCallback = checkForNewBadges
+
     // Initial check after a short delay (allow page to load first)
     const initialTimeout = setTimeout(() => {
       checkForNewBadges()
@@ -152,6 +171,7 @@ export function useBadgeNotifications() {
     }, CHECK_INTERVAL)
 
     return () => {
+      globalBadgeCheckCallback = null
       clearTimeout(initialTimeout)
       if (intervalRef.current) {
         clearInterval(intervalRef.current)

@@ -15,7 +15,7 @@ function getHeaders(): HeadersInit {
   // Use ensureAnonymousId to guarantee we have a valid ID
   // This will regenerate if corrupted and never throw
   const anonymousId = ensureAnonymousId();
-  
+
   // Validate before sending (should always pass, but double-check)
   try {
     validateAnonymousId(anonymousId);
@@ -27,7 +27,7 @@ function getHeaders(): HeadersInit {
       'X-Anonymous-Id': newId,
     };
   }
-  
+
   return {
     'Content-Type': 'application/json',
     'X-Anonymous-Id': anonymousId,
@@ -42,7 +42,7 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -84,6 +84,7 @@ export interface Report {
   status: 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado';
   upvotes_count: number;
   comments_count: number;
+  threads_count?: number; // Count of root threads (is_thread=true AND parent_id IS NULL)
   flags_count?: number; // Total number of flags on this report
   created_at: string;
   updated_at: string;
@@ -136,7 +137,7 @@ export const reportsApi = {
    */
   getById: async (id: string): Promise<Report> => {
     const report = await apiRequest<Report>(`/reports/${id}`);
-    
+
     // Normalize image_urls: ensure it's always an array
     if (report) {
       if (!report.image_urls) {
@@ -154,7 +155,7 @@ export const reportsApi = {
         report.image_urls = [];
       }
     }
-    
+
     return report;
   },
 

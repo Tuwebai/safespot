@@ -233,17 +233,20 @@ router.post('/', requireAnonymousId, async (req, res) => {
       content = content.trim()
     }
 
-    const insertData = {
-      report_id: req.body.report_id,
-      anonymous_id: anonymousId,
-      content: content,
-      is_thread: isThread || false
-    };
-
-    // Add parent_id if provided (for replies) - but not for threads
-    if (hasParentId && !isThread) {
-      insertData.parent_id = req.body.parent_id;
+    // CRITICAL: Validate required fields before INSERT
+    if (!req.body.report_id || !anonymousId || !content) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        details: {
+          report_id: !!req.body.report_id,
+          anonymous_id: !!anonymousId,
+          content: !!content
+        }
+      });
     }
+
+    // CRITICAL: Normalize parent_id - must be explicit null, never undefined
+    const parentId = (hasParentId && !isThread) ? req.body.parent_id : null;
 
     // Insert comment using queryWithRLS for RLS enforcement
     const insertQuery = `
@@ -252,16 +255,24 @@ router.post('/', requireAnonymousId, async (req, res) => {
       RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
     `;
 
+    // CRITICAL: Ensure all params are defined (no undefined values)
+    const insertParams = [
+      req.body.report_id,    // $1
+      anonymousId,           // $2
+      content,               // $3
+      isThread || false,     // $4
+      parentId               // $5 - explicitly null if not provided
+    ];
+
+    // Development mode: log params for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[CREATE COMMENT] Params:', insertParams);
+    }
+
     const insertResult = await queryWithRLS(
       anonymousId,
       insertQuery,
-      [
-        insertData.report_id,
-        insertData.anonymous_id,
-        insertData.content,
-        insertData.is_thread,
-        insertData.parent_id || null
-      ]
+      insertParams
     );
 
     if (insertResult.rows.length === 0) {
@@ -288,6 +299,14 @@ router.post('/', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
 
+    // Log SQL error details for debugging (PostgreSQL error codes)
+    if (error.code) {
+      console.error('[SQL Error] Code:', error.code);
+      console.error('[SQL Error] Detail:', error.detail);
+      console.error('[SQL Error] Hint:', error.hint);
+      console.error('[SQL Error] Column:', error.column);
+    }
+
     if (error.message.startsWith('VALIDATION_ERROR')) {
       return res.status(400).json({
         error: 'Validation failed',
@@ -295,8 +314,14 @@ router.post('/', requireAnonymousId, async (req, res) => {
       });
     }
 
+    // Return more specific error in development mode
     res.status(500).json({
-      error: 'Failed to create comment'
+      error: 'Failed to create comment',
+      ...(process.env.NODE_ENV === 'development' && {
+        details: error.message,
+        code: error.code,
+        hint: error.hint
+      })
     });
   }
 });

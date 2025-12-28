@@ -4,6 +4,7 @@ import { reportsApi, commentsApi } from '@/lib/api'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleError, handleErrorWithMessage, handleErrorSilently } from '@/lib/errorHandler'
+import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,7 @@ import {
   ArrowLeft,
   Heart,
   Flag,
-  Eye,
+  GitBranch,
   Image as ImageIcon,
   Trash2,
   AlertTriangle,
@@ -253,7 +254,18 @@ export function DetalleReporte() {
   }
 
   const handleCommentSubmit = async () => {
-    if (!id || !commentText.trim() || submittingComment) return
+    // CRITICAL: Validate before submission
+    if (!id) {
+      toast.error('ID de reporte no válido')
+      return
+    }
+
+    if (!commentText.trim()) {
+      toast.error('El comentario no puede estar vacío')
+      return
+    }
+
+    if (submittingComment) return
 
     // OPTIMISTIC UPDATE: Add comment immediately with pending state
     const tempId = `temp-${Date.now()}`
@@ -284,7 +296,7 @@ export function DetalleReporte() {
     setSubmittingComment(true)
 
     try {
-      // Call API in background
+      // Call API in background - ensure no undefined fields
       const createdComment = await commentsApi.create({
         report_id: id,
         content: contentToSubmit,
@@ -294,12 +306,29 @@ export function DetalleReporte() {
       setComments(prev => prev.map(c =>
         c.id === tempId ? { ...createdComment, liked_by_me: false, is_flagged: false } : c
       ))
+
+      // Trigger immediate badge check (creating comments awards badges)
+      triggerBadgeCheck()
     } catch (error) {
       // ROLLBACK: Restore previous state on error
       setComments(previousComments)
       setReport(previousReport)
       setCommentText(contentToSubmit) // Restore text so user can retry
-      handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'DetalleReporte.handleCommentSubmit')
+
+      const errorMessage = error instanceof Error ? error.message : ''
+
+      // Show specific error messages based on error type
+      if (errorMessage.includes('Report not found')) {
+        toast.error('El reporte no existe o fue eliminado')
+      } else if (errorMessage.includes('Parent comment not found')) {
+        toast.error('El comentario al que intentas responder no existe')
+      } else if (errorMessage.includes('Validation failed')) {
+        toast.error('El comentario no cumple con los requisitos mínimos')
+      } else if (errorMessage.includes('same report')) {
+        toast.error('El comentario debe pertenecer al mismo reporte')
+      } else {
+        handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'DetalleReporte.handleCommentSubmit')
+      }
     } finally {
       setSubmittingComment(false)
     }
@@ -371,6 +400,9 @@ export function DetalleReporte() {
       setComments(prev => prev.map(c =>
         c.id === tempId ? { ...createdReply, liked_by_me: false, is_flagged: false } : c
       ))
+
+      // Trigger immediate badge check (creating replies awards badges)
+      triggerBadgeCheck()
     } catch (error) {
       // ROLLBACK: Restore previous state on error
       setComments(previousComments)
@@ -923,24 +955,24 @@ export function DetalleReporte() {
           </div>
         </Card>
 
-        {/* Card 2 (Views) */}
+        {/* Card 2 (Hilos - root threads only) */}
         <Card className="p-4 bg-dark-card border-dark-border">
           <div className="flex items-center gap-3">
-            <Eye className="h-5 w-5 text-blue-400" />
+            <GitBranch className="h-5 w-5 text-blue-400" />
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Visualizaciones</div>
-              <div className="font-medium text-foreground">{report.upvotes_count}</div>
+              <div className="text-sm text-muted-foreground mb-1">Hilos</div>
+              <div className="font-medium text-foreground">{report.threads_count ?? 0}</div>
             </div>
           </div>
         </Card>
 
-        {/* Card 3 (Comments) */}
+        {/* Card 3 (Comentarios - all comments including replies) */}
         <Card className="p-4 bg-dark-card border-dark-border">
           <div className="flex items-center gap-3">
             <MessageCircle className="h-5 w-5 text-green-400" />
             <div>
               <div className="text-sm text-muted-foreground mb-1">Comentarios</div>
-              <div className="font-medium text-foreground">{report.comments_count}</div>
+              <div className="font-medium text-foreground">{comments.length}</div>
             </div>
           </div>
         </Card>

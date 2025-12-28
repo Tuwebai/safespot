@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, Eye, MessageCircle, Heart, Flag } from 'lucide-react'
+import { Search, MapPin, Filter, GitBranch, MessageCircle, Heart, Flag } from 'lucide-react'
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
@@ -488,11 +488,11 @@ export function Reportes() {
                       <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
                         <span>{formatDate(report.created_at)}</span>
                         <div className="flex items-center space-x-4">
-                          <div className="flex items-center gap-1">
-                            <Eye className="h-4 w-4" />
-                            <span>{report.upvotes_count}</span>
+                          <div className="flex items-center gap-1" title="Hilos">
+                            <GitBranch className="h-4 w-4" />
+                            <span>{report.threads_count ?? 0}</span>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1" title="Comentarios">
                             <MessageCircle className="h-4 w-4" />
                             <span>{report.comments_count}</span>
                           </div>

@@ -16,6 +16,7 @@ import { reportsApi } from '@/lib/api'
 import { ALL_CATEGORIES } from '@/lib/constants'
 import { determineZone, isValidZone } from '@/lib/zone-utils'
 import { handleErrorSilently } from '@/lib/errorHandler'
+import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { AlertCircle, Upload, X } from 'lucide-react'
 
 // Zod schema
@@ -322,6 +323,9 @@ export function CrearReporte() {
       // Clear the refs as well
       previousPreviewsRef.current = []
       currentPreviewsRef.current = []
+
+      // Trigger immediate badge check (creating reports awards badges)
+      triggerBadgeCheck()
     } catch (error) {
       // Error handled by useCreateReport hook
     }
