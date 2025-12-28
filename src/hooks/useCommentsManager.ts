@@ -323,6 +323,57 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         }
     }, [reportId, state.replyText, state.submitting, state.comments, onCommentCountChange, toast])
 
+    const submitThread = useCallback(async () => {
+        if (!reportId || !state.threadText.trim() || state.submitting) return
+
+        const tempId = `temp-thread-${Date.now()}`
+        const anonymousId = getAnonymousIdSafe()
+        const contentToSubmit = state.threadText.trim()
+
+        // Optimistic update
+        const optimisticThread: Comment = {
+            id: tempId,
+            report_id: reportId,
+            anonymous_id: anonymousId,
+            content: contentToSubmit,
+            upvotes_count: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            liked_by_me: false,
+            is_flagged: false,
+            is_thread: true,
+        }
+
+        dispatch({ type: 'ADD_COMMENT', payload: optimisticThread })
+        dispatch({ type: 'SET_THREAD_TEXT', payload: '' })
+        dispatch({ type: 'START_SUBMIT', payload: { operation: 'thread' } })
+        onCommentCountChange?.(1)
+
+        try {
+            const createdThread = await commentsApi.create({
+                report_id: reportId,
+                content: contentToSubmit,
+                is_thread: true,
+            })
+
+            dispatch({
+                type: 'REPLACE_COMMENT',
+                payload: { tempId, comment: { ...createdThread, liked_by_me: false, is_flagged: false } }
+            })
+            dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'thread' })
+            triggerBadgeCheck()
+            toast.success('Hilo creado correctamente')
+        } catch (error) {
+            // Rollback
+            dispatch({ type: 'REMOVE_COMMENT', payload: tempId })
+            dispatch({ type: 'SET_THREAD_TEXT', payload: contentToSubmit })
+            onCommentCountChange?.(-1)
+
+            handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')
+            dispatch({ type: 'END_SUBMIT' })
+        }
+    }, [reportId, state.threadText, state.submitting, onCommentCountChange, toast])
+
     const submitEdit = useCallback(async (commentId: string) => {
         if (!state.editText.trim() || state.submitting) return
 
@@ -539,6 +590,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         loadMore,
         submitComment,
         submitReply,
+        submitThread,
         submitEdit,
         deleteComment,
         flagComment,

@@ -47,8 +47,15 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
     // ============================================
 
     const loadReport = useCallback(async () => {
+        // Guard: if no reportId, immediately resolve loading with error
+        if (!reportId) {
+            setLoading(false)
+            setError('ID de reporte no válido')
+            return
+        }
         // Guard: never fetch a deleted report
-        if (!reportId || isDeletedRef.current) {
+        if (isDeletedRef.current) {
+            setLoading(false)
             return
         }
 
@@ -68,9 +75,8 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
             const errorInfo = handleError(err, toast.error, 'useReportDetail.loadReport')
             setError(errorInfo.userMessage)
         } finally {
-            if (!isDeletedRef.current) {
-                setLoading(false)
-            }
+            // CRITICAL: ALWAYS resolve loading state, regardless of deletion
+            setLoading(false)
         }
     }, [reportId, toast])
 
@@ -88,8 +94,9 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
 
     // Effect: Load report (respects isDeleted)
     useEffect(() => {
-        // Skip if no reportId or if this report was deleted
+        // FAILSAFE: If no reportId or deleted, ensure loading resolves immediately
         if (!reportId || isDeletedRef.current) {
+            setLoading(false)
             return
         }
 

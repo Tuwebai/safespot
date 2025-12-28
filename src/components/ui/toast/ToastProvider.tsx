@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react'
 import { ToastContainer } from './ToastContainer'
 import type { Toast, ToastContextValue, ToastType } from './types'
 
@@ -19,7 +19,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
     (message: string, type: ToastType, duration?: number) => {
       // Prevenir duplicados: si ya existe un toast idéntico creado en los últimos 500ms, no agregarlo
       const now = Date.now()
-      
+
       setToasts((prev) => {
         const isDuplicate = prev.some(
           (toast) =>
@@ -75,15 +75,23 @@ export function ToastProvider({ children }: ToastProviderProps) {
     [addToast]
   )
 
-  const value: ToastContextValue = {
-    toasts,
-    addToast,
-    removeToast,
-    success,
-    error,
-    info,
-    warning,
-  }
+  // CRITICAL: Memoize context value to prevent cascade re-renders
+  // Functions are stable (useCallback with []), so only include them
+  // toasts is passed through but doesn't trigger value recreation
+  const value = useMemo<ToastContextValue>(
+    () => ({
+      toasts,
+      addToast,
+      removeToast,
+      success,
+      error,
+      info,
+      warning,
+    }),
+    // Only functions - they're stable via useCallback
+    // toasts changes trigger ToastContainer re-render, not the whole tree
+    [addToast, removeToast, success, error, info, warning]
+  )
 
   return (
     <ToastContext.Provider value={value}>

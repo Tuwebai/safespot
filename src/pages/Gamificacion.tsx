@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { gamificationApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { Award, Trophy, Star, Lock } from 'lucide-react'
 import type { GamificationBadge, NewBadge } from '@/lib/api'
 import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
 import { getPointsToNextLevel } from '@/lib/levelCalculation'
+import { FeedbackState } from '@/components/ui/feedback-state'
 
 // NOTE: Caching is now handled globally in api.ts via apiRequestCached
 // No local cache needed here anymore
@@ -14,7 +16,7 @@ import { getPointsToNextLevel } from '@/lib/levelCalculation'
 export function Gamificacion() {
   const [profile, setProfile] = useState<{ level: number; points: number; total_reports: number; total_comments: number; total_votes: number } | null>(null)
   const [badges, setBadges] = useState<GamificationBadge[]>([])
-  const [loading, setLoading] = useState(false) // CRITICAL: Start as false for immediate render
+  const [loading, setLoading] = useState(true) // CRITICAL: Start as true to show skeleton immediately
   const [error, setError] = useState<string | null>(null)
   const [newlyUnlockedBadgeIds, setNewlyUnlockedBadgeIds] = useState<Set<string>>(new Set())
   const [latestNewBadge, setLatestNewBadge] = useState<NewBadge | null>(null)
@@ -191,11 +193,12 @@ export function Gamificacion() {
   if (error && !profile && !badges.length) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="bg-dark-card border-dark-border">
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">{error || 'Error al cargar gamificación'}</p>
-          </CardContent>
-        </Card>
+        <FeedbackState
+          state="error"
+          title="No pudimos cargar tu progreso"
+          description={error}
+          action={<Button onClick={loadData}>Reintentar</Button>}
+        />
       </div>
     )
   }

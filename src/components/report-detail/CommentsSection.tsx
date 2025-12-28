@@ -48,6 +48,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
         loadMore,
         submitComment,
         submitReply,
+        submitThread,
         submitEdit,
         deleteComment,
         flagComment,
@@ -239,11 +240,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                     creatingThread={creatingThread}
                     threadText={threadText}
                     onThreadTextChange={setThreadText}
-                    onThreadSubmit={() => {
-                        // Thread submit handler
-                        if (!threadText.trim() || submitting) return
-                        // The manager handles thread creation
-                    }}
+                    onThreadSubmit={submitThread}
                     onThreadCancel={cancelThread}
                     submittingThread={submitting === 'thread'}
                     replyingTo={replyingTo}
