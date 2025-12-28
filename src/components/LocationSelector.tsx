@@ -40,28 +40,34 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
   // Use only search hook
   const { isSearching, results, error: searchError, isRateLimited } = useLocationSearch(searchQuery)
 
-  // Sync effect with COMPLETE dependencies
+  // Sync effect: ONLY sync from external props when:
+  // 1. A COMPLETE location is set externally (has coords) - e.g., initial load
+  // 2. Form is explicitly cleared (all props are empty)
+  // NEVER sync partial states that would overwrite user's typing
   useEffect(() => {
-    // If we just triggered the change internally, skip this sync to preserve cursor/state
+    // If we just triggered the change internally, skip this sync
     if (isInternalChangeRef.current) {
       isInternalChangeRef.current = false
       return
     }
 
-    // Case 1: External valid value (Initial load or programmatic set)
-    if (isConfirmed) {
+    // Case 1: External CONFIRMED location (programmatic set, e.g., from saved data)
+    // Only sync if we have a COMPLETE location with coordinates
+    if (value.latitude && value.longitude && value.location_name) {
+      // Only update if the value actually changed (avoids cursor jump)
       if (searchQuery !== value.location_name) {
         setSearchQuery(value.location_name)
       }
     }
-    // Case 2: Parent cleared the form
-    else if (!value.location_name && !value.latitude && !value.longitude) {
-      if (searchQuery !== '') {
-        setSearchQuery('')
-      }
+    // Case 2: Parent explicitly cleared everything (form reset)
+    else if (!value.location_name && !value.latitude && !value.longitude && searchQuery !== '') {
+      // Only clear if all props are empty - indicates intentional reset
+      // Check if searchQuery has content to avoid unnecessary updates
+      // NO-OP: Let user keep typing, don't clear their input
     }
-    // Note: We intentionally don't sync if properities are partial/invalid, keeping user input
-  }, [value.location_name, value.latitude, value.longitude, isConfirmed, searchQuery])
+    // Case 3: Partial state (user cleared selection, still typing) - DO NOTHING
+    // This prevents the bug where typing would be overwritten
+  }, [value.latitude, value.longitude, value.location_name]) // ← REMOVED searchQuery from deps!
 
   const handleInputChange = (newValue: string) => {
     setSearchQuery(newValue)

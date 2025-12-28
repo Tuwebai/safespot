@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
 import { getMarkerIcon } from '@/lib/map-utils'
@@ -48,16 +48,26 @@ const RecenterButton = () => {
     )
 }
 
-const SearchAreaButton = ({ onClick, visible }: { onClick: () => void, visible: boolean }) => {
-    if (!visible) return null
+const SearchAreaButton = ({ onClick, visible, loading }: { onClick: () => void, visible: boolean, loading?: boolean }) => {
+    if (!visible && !loading) return null
     return (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] animate-in fade-in slide-in-from-top-4">
             <Button
                 onClick={onClick}
+                disabled={loading}
                 className="rounded-full shadow-xl bg-white text-black hover:bg-gray-50 border border-gray-200 px-6 font-semibold"
             >
-                <Search className="w-4 h-4 mr-2" />
-                Buscar en esta zona
+                {loading ? (
+                    <>
+                        <span className="animate-spin mr-2">⏳</span>
+                        Buscando...
+                    </>
+                ) : (
+                    <>
+                        <Search className="w-4 h-4 mr-2" />
+                        Buscar en esta zona
+                    </>
+                )}
             </Button>
         </div>
     )
@@ -68,8 +78,6 @@ function MapEvents() {
     const setMapBounds = useMapStore(s => s.setMapBounds)
 
     useMapEvents({
-        dragend: () => setShowSearchAreaButton(true),
-        zoomend: () => setShowSearchAreaButton(true),
         moveend: (e) => {
             const bounds = e.target.getBounds()
             setMapBounds({
@@ -78,10 +86,13 @@ function MapEvents() {
                 north: bounds.getNorth(),
                 east: bounds.getEast()
             })
+            setShowSearchAreaButton(true)
         }
     })
     return null
 }
+
+// ... MapSync ...
 
 function MapSync({ reports }: { reports: Report[] }) {
     const map = useMap()
@@ -104,9 +115,10 @@ interface SafeSpotMapProps {
     className?: string
     onSearchArea?: () => void
     initialFocus?: { focusReportId: string, lat: number, lng: number } | null
+    isSearching?: boolean
 }
 
-export function SafeSpotMap({ reports, className, onSearchArea, initialFocus }: SafeSpotMapProps) {
+export function SafeSpotMap({ reports, className, onSearchArea, initialFocus, isSearching }: SafeSpotMapProps) {
     const defaultCenter: [number, number] = initialFocus
         ? [initialFocus.lat, initialFocus.lng]
         : [-34.6037, -58.3816]
@@ -139,16 +151,21 @@ export function SafeSpotMap({ reports, className, onSearchArea, initialFocus }: 
 
 
 
+
     return (
-        <div className={`relative w-full h-full min-h-[500px] rounded-xl overflow-hidden bg-slate-100 z-0 ${className}`}>
+        <div className={`relative w-full h-full min-h-[500px] bg-slate-100 z-0 ${className}`}>
             <MapContainer
                 center={defaultCenter}
                 zoom={defaultZoom}
                 scrollWheelZoom={true}
+                touchZoom={true}
+                doubleClickZoom={true}
                 zoomControl={false}
+                dragging={true}
                 className="w-full h-full"
                 style={{ height: '100%', width: '100%' }}
             >
+                <ZoomControl position="bottomright" />
                 <MapEvents />
                 <MapSync reports={reports} />
                 <TileLayer
@@ -195,7 +212,11 @@ export function SafeSpotMap({ reports, className, onSearchArea, initialFocus }: 
                 </MarkerClusterGroup>
 
                 <RecenterButton />
-                <SearchAreaButton onClick={() => onSearchArea && onSearchArea()} visible={showSearchButton} />
+                <SearchAreaButton
+                    onClick={() => onSearchArea && onSearchArea()}
+                    visible={showSearchButton}
+                    loading={isSearching}
+                />
             </MapContainer>
         </div>
     )

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Helmet } from 'react-helmet-async'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
@@ -9,6 +10,7 @@ import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export function Explorar() {
   const toast = useToast()
@@ -17,9 +19,10 @@ export function Explorar() {
   const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
   const [searchParams] = useSearchParams()
   const setShowSearchAreaButton = useMapStore(s => s.setShowSearchAreaButton)
+  const mapBounds = useMapStore(s => s.mapBounds)
   const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
-
   const [reports, setReports] = useState<Report[]>([])
+  const [isSearching, setIsSearching] = useState(false)
 
   // Sync URL -> Store
   useEffect(() => {
@@ -40,13 +43,43 @@ export function Explorar() {
       setReports(data)
     } catch (error) {
       const errorInfo = handleError(error, toast.error, 'Explorar.loadReports')
-      // Error handling via Toast, map remains visible (empty)
       console.error(errorInfo)
+    }
+  }
+
+  const handleSearchArea = async () => {
+    if (!mapBounds) {
+      loadReports()
+      setShowSearchAreaButton(false)
+      return
+    }
+
+    try {
+      setIsSearching(true)
+      const data = await reportsApi.getReportsInBounds(
+        mapBounds.north,
+        mapBounds.south,
+        mapBounds.east,
+        mapBounds.west
+      )
+      setReports(data)
+      setShowSearchAreaButton(false)
+      toast.success(`Zona actualizada: ${data.length} reportes encontrados`)
+    } catch (error) {
+      handleError(error, toast.error, 'Explorar.bounds')
+    } finally {
+      setIsSearching(false)
     }
   }
 
   return (
     <MapLayout>
+      <Helmet>
+        <title>Explorar Reportes – SafeSpot</title>
+        <meta name="description" content="Explora el mapa interactivo de reportes de seguridad en tu ciudad. Mantente informado sobre las zonas de riesgo." />
+        <meta property="og:title" content="Explorar Reportes – SafeSpot" />
+        <meta property="og:description" content="Explora el mapa interactivo de reportes de seguridad en tu ciudad. Mantente informado sobre las zonas de riesgo." />
+      </Helmet>
       {/* Navigation Controls Overlay */}
       <div className="absolute top-4 left-4 z-[500] flex gap-2">
         <Button
@@ -59,14 +92,14 @@ export function Explorar() {
         </Button>
       </div>
 
-      <SafeSpotMap
-        reports={reports}
-        onSearchArea={() => {
-          loadReports()
-          setShowSearchAreaButton(false)
-        }}
-        initialFocus={initialFocus}
-      />
+      <ErrorBoundary fallbackTitle="Error al cargar el mapa" onReset={() => loadReports()}>
+        <SafeSpotMap
+          reports={reports}
+          onSearchArea={handleSearchArea}
+          initialFocus={initialFocus}
+          isSearching={isSearching}
+        />
+      </ErrorBoundary>
     </MapLayout>
   )
 }

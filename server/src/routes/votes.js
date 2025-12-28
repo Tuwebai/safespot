@@ -7,6 +7,7 @@ import { validate as uuidValidate } from 'uuid';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
+import { voteLimiter } from '../utils/rateLimiter.js';
 
 const router = express.Router();
 
@@ -15,8 +16,9 @@ const router = express.Router();
  * Create a vote (upvote) on a report or comment
  * Requires: X-Anonymous-Id header
  * Body: { report_id: UUID } OR { comment_id: UUID }
+ * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/', requireAnonymousId, async (req, res) => {
+router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     const { report_id, comment_id } = req.body;
@@ -249,8 +251,9 @@ router.post('/', requireAnonymousId, async (req, res) => {
  * Remove a vote (unvote) from a report or comment
  * Requires: X-Anonymous-Id header
  * Body: { report_id: UUID } OR { comment_id: UUID }
+ * Rate limited: 30 per minute, 200 per hour
  */
-router.delete('/', requireAnonymousId, async (req, res) => {
+router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     const { report_id, comment_id } = req.body;

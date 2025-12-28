@@ -6,15 +6,19 @@ import App from './App.tsx'
 import './index.css'
 import { initializeIdentity } from './lib/identity'
 
+import { HelmetProvider } from 'react-helmet-async'
+
 // Initialize anonymous identity BEFORE rendering app
 try {
   initializeIdentity();
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
+      <HelmetProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </HelmetProvider>
     </React.StrictMode>,
   );
 } catch (error) {

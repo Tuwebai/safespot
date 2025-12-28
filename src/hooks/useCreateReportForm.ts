@@ -10,6 +10,7 @@ import { reportsApi } from '@/lib/api'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useNavigate } from 'react-router-dom'
+import { compressImage, formatFileSize } from '@/lib/imageCompression'
 
 // ============================================
 // SCHEMA DEFINITION
@@ -53,6 +54,8 @@ export function useCreateReportForm() {
     const [imageFiles, setImageFiles] = useState<File[]>([])
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
     const [isUploadingImages, setIsUploadingImages] = useState(false)
+    const [isCompressing, setIsCompressing] = useState(false)
+    const [compressionProgress, setCompressionProgress] = useState<string>('')
 
     // Form Initialization
     const form = useForm<CreateReportFormData>({
@@ -82,28 +85,65 @@ export function useCreateReportForm() {
         setValue('incidentDate', date, { shouldValidate: true })
     }, [setValue])
 
-    // Image Handlers (Extracted)
+    // Image Handlers with COMPRESSION
     const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files
         if (!files) return
 
-        const newFiles: File[] = []
+        const filesToProcess = Array.from(files).slice(0, 5 - imageFiles.length)
+        if (filesToProcess.length === 0) return
+
+        setIsCompressing(true)
+        const compressedFiles: File[] = []
         const newPreviews: string[] = []
 
-        for (let i = 0; i < Math.min(files.length, 5 - imageFiles.length); i++) {
-            const file = files[i]
-            if (file.size > 10 * 1024 * 1024) {
-                toast.warning(`La imagen ${file.name} es demasiado grande. Máximo 10MB.`)
+        for (let i = 0; i < filesToProcess.length; i++) {
+            const file = filesToProcess[i]
+
+            // Skip files over 15MB (safety limit)
+            if (file.size > 15 * 1024 * 1024) {
+                toast.warning(`${file.name} es demasiado grande (máx 15MB)`)
                 continue
             }
-            newFiles.push(file)
-            const url = URL.createObjectURL(file)
-            createdUrlsRef.current.push(url)
-            newPreviews.push(url)
+
+            setCompressionProgress(`Optimizando ${i + 1}/${filesToProcess.length}...`)
+
+            try {
+                // Compress image before storing
+                const result = await compressImage(file, (progress) => {
+                    setCompressionProgress(
+                        `Optimizando ${file.name}: ${Math.round(progress)}%`
+                    )
+                })
+
+                compressedFiles.push(result.file)
+
+                // Create preview from compressed file
+                const url = URL.createObjectURL(result.file)
+                createdUrlsRef.current.push(url)
+                newPreviews.push(url)
+
+                // Show savings toast for large compressions
+                const savingsPercent = (1 - result.compressionRatio) * 100
+                if (savingsPercent > 50) {
+                    toast.success(
+                        `${file.name}: ${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)} (-${savingsPercent.toFixed(0)}%)`
+                    )
+                }
+            } catch (error) {
+                handleErrorSilently(error, 'imageCompression')
+                // Fallback: use original
+                compressedFiles.push(file)
+                const url = URL.createObjectURL(file)
+                createdUrlsRef.current.push(url)
+                newPreviews.push(url)
+            }
         }
 
-        setImageFiles(prev => [...prev, ...newFiles].slice(0, 5))
+        setImageFiles(prev => [...prev, ...compressedFiles].slice(0, 5))
         setImagePreviews(prev => [...prev, ...newPreviews].slice(0, 5))
+        setIsCompressing(false)
+        setCompressionProgress('')
     }, [imageFiles.length, toast])
 
     const handleRemoveImage = useCallback((index: number) => {
@@ -181,6 +221,8 @@ export function useCreateReportForm() {
         imageFiles,
         imagePreviews,
         isSubmitting: isSubmittingReport || isUploadingImages,
+        isCompressing,
+        compressionProgress,
         submitError,
 
         // Actions

@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { Helmet } from 'react-helmet-async'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
@@ -233,6 +234,12 @@ export function Reportes() {
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <Helmet>
+        <title>Lista de Reportes – SafeSpot</title>
+        <meta name="description" content="Consulta la lista completa de incidentes reportados por la comunidad. Filtra por categoría y zona." />
+        <meta property="og:title" content="Lista de Reportes – SafeSpot" />
+        <meta property="og:description" content="Consulta la lista completa de incidentes reportados por la comunidad. Filtra por categoría y zona." />
+      </Helmet>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2">

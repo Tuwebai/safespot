@@ -7,12 +7,12 @@ const { Pool } = pg;
 
 // Create connection pool
 // Supabase (direct connection or pooler) always requires SSL
-const isSupabase = process.env.DATABASE_URL?.includes('supabase.co') || 
-                   process.env.DATABASE_URL?.includes('pooler.supabase.com');
+const isSupabase = process.env.DATABASE_URL?.includes('supabase.co') ||
+  process.env.DATABASE_URL?.includes('pooler.supabase.com');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: isSupabase || process.env.NODE_ENV === 'production' 
-    ? { rejectUnauthorized: false } 
+  ssl: isSupabase || process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
     : false,
   max: 20,
   idleTimeoutMillis: 30000,
@@ -36,16 +36,30 @@ async function testConnection() {
       console.error('❌ DATABASE_URL no está definido en server/.env');
       return;
     }
-    
+
     // Esperar un poco antes de intentar conectar
     // Esto da tiempo a que el sistema resuelva el DNS
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     console.log('🔍 Testing database connection...');
     const result = await pool.query('SELECT NOW()');
     console.log('✅ Database connection test successful');
     console.log('   Database time:', result.rows[0].now);
-    
+
+    // Ensure rate_limits table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rate_limits (
+        key TEXT PRIMARY KEY,
+        hits_minute INTEGER DEFAULT 0,
+        hits_hour INTEGER DEFAULT 0,
+        reset_minute TIMESTAMP WITH TIME ZONE NOT NULL,
+        reset_hour TIMESTAMP WITH TIME ZONE NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_hour ON rate_limits(reset_hour);
+    `);
+    console.log('✅ Rate limiting table prepared');
+
     // Test if tables exist
     const tablesCheck = await pool.query(`
       SELECT table_name 
@@ -54,7 +68,7 @@ async function testConnection() {
       AND table_name IN ('anonymous_users', 'reports', 'comments', 'votes')
       ORDER BY table_name
     `);
-    
+
     if (tablesCheck.rows.length === 0) {
       console.warn('⚠️  No se encontraron tablas. Ejecuta database/schema.sql');
     } else {
@@ -71,7 +85,7 @@ async function testConnection() {
       console.error('❌ Database connection test failed:');
       console.error('   Error:', error.message);
       console.error('   Code:', error.code);
-      
+
       if (error.code === 'ECONNREFUSED') {
         console.error('   → Conexión rechazada');
         console.error('   → Verifica que la base de datos esté accesible');
@@ -87,7 +101,7 @@ async function testConnection() {
         console.error('   → Verifica que la base de datos esté accesible');
         console.error('   → Para Supabase, verifica que el proyecto esté activo');
       }
-      
+
       console.error('\n⚠️  El servidor continuará, pero las operaciones pueden fallar.');
       console.error('   Verifica tu archivo server/.env\n');
     }

@@ -14,6 +14,7 @@ export enum ErrorType {
   VALIDATION = 'VALIDATION',
   UNAUTHORIZED = 'UNAUTHORIZED',
   NOT_FOUND = 'NOT_FOUND',
+  RATE_LIMIT = 'RATE_LIMIT',
   UNEXPECTED = 'UNEXPECTED'
 }
 
@@ -68,6 +69,9 @@ function classifyError(error: unknown): ErrorType {
     if (status === 404) {
       return ErrorType.NOT_FOUND
     }
+    if (status === 429) {
+      return ErrorType.RATE_LIMIT
+    }
     if (status >= 400 && status < 500) {
       return ErrorType.VALIDATION
     }
@@ -92,6 +96,9 @@ function classifyError(error: unknown): ErrorType {
   if (message.includes('500') || message.includes('server error') || message.includes('internal error')) {
     return ErrorType.BACKEND
   }
+  if (message.includes('429') || message.includes('rate limit') || message.includes('too many requests')) {
+    return ErrorType.RATE_LIMIT
+  }
 
   return ErrorType.UNEXPECTED
 }
@@ -103,23 +110,26 @@ function getUserMessage(errorType: ErrorType, originalMessage: string): string {
   switch (errorType) {
     case ErrorType.NETWORK:
       return 'Error de conexión. Por favor, verifica tu conexión a internet e intenta nuevamente.'
-    
+
     case ErrorType.UNAUTHORIZED:
       return 'No tienes permisos para realizar esta acción.'
-    
+
     case ErrorType.NOT_FOUND:
       return 'El recurso solicitado no fue encontrado.'
-    
+
     case ErrorType.VALIDATION:
       // Try to extract meaningful validation message
       if (originalMessage && originalMessage.length < 100) {
         return originalMessage
       }
       return 'Los datos proporcionados no son válidos. Por favor, verifica e intenta nuevamente.'
-    
+
     case ErrorType.BACKEND:
       return 'Error del servidor. Por favor, intenta nuevamente más tarde.'
-    
+
+    case ErrorType.RATE_LIMIT:
+      return originalMessage || 'Estás realizando demasiadas peticiones. Por favor, espera un momento.'
+
     case ErrorType.UNEXPECTED:
     default:
       return 'Ocurrió un error inesperado. Por favor, intenta nuevamente.'
@@ -211,7 +221,7 @@ export function handleErrorWithMessage(
   context?: string
 ): ErrorInfo {
   const errorInfo = processError(error, context)
-  
+
   // Override user message
   const finalErrorInfo: ErrorInfo = {
     ...errorInfo,

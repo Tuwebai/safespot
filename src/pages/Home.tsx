@@ -5,6 +5,7 @@ import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle, Clock } from 'luci
 import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
+import { Helmet } from 'react-helmet-async'
 
 export function Home() {
   // React Query - cached, deduplicated
@@ -84,6 +85,13 @@ export function Home() {
 
   return (
     <div className="min-h-screen bg-dark-bg">
+      <Helmet>
+        <title>SafeSpot – Mapa Colaborativo de Seguridad</title>
+        <meta name="description" content="Reporta y visualiza incidentes de seguridad en tu zona. SafeSpot te ayuda a moverte más seguro por la ciudad." />
+        <meta property="og:title" content="SafeSpot – Mapa Colaborativo de Seguridad" />
+        <meta property="og:description" content="Reporta y visualiza incidentes de seguridad en tu zona. SafeSpot te ayuda a moverte más seguro por la ciudad." />
+        <meta property="og:type" content="website" />
+      </Helmet>
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-dark-bg via-dark-card to-dark-bg py-24">
         {/* Pattern Overlay */}

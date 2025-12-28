@@ -93,7 +93,9 @@ async function apiRequest<T>(
       }
 
       // If not retriable or no retries left, throw error
-      throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
+      const error = new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
+      (error as any).status = response.status;
+      throw error;
     }
 
     return data.data || data;
@@ -171,6 +173,10 @@ export interface Report {
   image_urls?: string[]; // Array of public image URLs from Supabase Storage
   is_favorite?: boolean; // If the current user has favorited this report
   is_flagged?: boolean; // If the current user has flagged this report
+  // National-scale location fields (from Georef API)
+  province?: string;  // e.g., "Buenos Aires", "Córdoba"
+  locality?: string;  // e.g., "La Plata", "Córdoba Capital"
+  department?: string; // e.g., "La Plata", "Capital"
 }
 
 export interface CreateReportData {
@@ -209,6 +215,14 @@ export const reportsApi = {
     }
     const query = params.toString();
     return apiRequest<Report[]>(`/reports${query ? `?${query}` : ''}`);
+  },
+
+  /**
+   * Get reports within a specific bounding box
+   * format: north, south, east, west
+   */
+  getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
+    return apiRequest<Report[]>(`/reports?bounds=${north},${south},${east},${west}`);
   },
 
   /**

@@ -4,10 +4,12 @@ import { requireAnonymousId, validateReport, validateFlagReason } from '../utils
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, createReportLimiter, favoriteLimiter, imageUploadLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
+import { reverseGeocode } from '../utils/georef.js';
 
 const router = express.Router();
 
@@ -30,10 +32,59 @@ import { encodeCursor, decodeCursor } from '../utils/cursor.js';
 router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
-    const { search, category, zone, status, lat, lng, radius, limit, cursor } = req.query;
+    const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
     // Parse limit
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
+    const { bounds } = req.query;
+
+    // ============================================
+    // BOUNDS FEED: "Buscar en esta zona"
+    // ============================================
+    if (bounds) {
+      const parts = bounds.split(',').map(Number);
+      if (parts.length !== 4 || parts.some(isNaN)) {
+        return res.status(400).json({
+          error: 'Bounds inválidos',
+          details: 'Formato esperado: north,south,east,west'
+        });
+      }
+
+      const [north, south, east, west] = parts;
+
+      // Basic validation
+      if (north < south || east < west) {
+        // This check might fail near dateline, but assuming standard viewport for now
+        // For simple checks:
+      }
+
+      const boundsQuery = `
+        SELECT 
+          r.id, r.title, r.category, r.status, r.latitude, r.longitude, r.created_at, r.is_hidden, r.anonymous_id
+        FROM reports r
+        WHERE 
+          r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+          AND r.location IS NOT NULL
+          AND r.is_hidden = false
+        ORDER BY r.created_at DESC
+        LIMIT 100
+      `;
+      // ST_MakeEnvelope(xmin, ymin, xmax, ymax, srid) -> (west, south, east, north)
+
+      const boundsParams = [west, south, east, north];
+
+      const result = await queryWithRLS(anonymousId || '', boundsQuery, boundsParams);
+
+      // Filter visibility if needed (though is_hidden checked, shadow ban might need check)
+      // For performance on map, checking individual trust score for 100 items might be slow.
+      // We'll rely on r.is_hidden being correct (updated by triggers/cron).
+
+      return res.json({
+        success: true,
+        data: result.rows,
+        meta: { feedType: 'bounds', count: result.rows.length }
+      });
+    }
 
     // ============================================
     // GEOGRAPHIC FEED: "Cerca de Mí"
@@ -309,6 +360,13 @@ router.get('/', async (req, res) => {
       if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
         conds.push(`r.zone = $${idx}`);
         vals.push(zone.trim());
+        idx++;
+      }
+
+      // NEW: Province filter for national-scale filtering
+      if (province && typeof province === 'string' && province.trim()) {
+        conds.push(`r.province = $${idx}`);
+        vals.push(province.trim());
         idx++;
       }
 
@@ -627,7 +685,7 @@ router.get('/:id', async (req, res) => {
  * Create a new report
  * Requires: X-Anonymous-Id header
  */
-router.post('/', requireAnonymousId, async (req, res) => {
+router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
 
@@ -700,25 +758,59 @@ router.post('/', requireAnonymousId, async (req, res) => {
       // Fail open: Default to visible if check fails to avoid blocking valid users
     }
 
+    // Context for logging suspicious content
+    const sanitizeContext = { anonymousId, ip: req.ip };
+
+    // SECURITY: Sanitize all user input BEFORE database insert
+    const sanitizedTitle = sanitizeText(req.body.title, 'report.title', sanitizeContext);
+    const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
+    const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext);
+    const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext);
+
+    // GEOLOCATION: Get province/locality from Georef API (Argentina)
+    let province = null;
+    let locality = null;
+    let department = null;
+
+    if (req.body.latitude && req.body.longitude) {
+      try {
+        const geoData = await reverseGeocode(
+          parseFloat(req.body.latitude),
+          parseFloat(req.body.longitude)
+        );
+        province = geoData.province;
+        locality = geoData.locality;
+        department = geoData.department;
+        logSuccess('Georef resolved', { province, locality });
+      } catch (geoError) {
+        // Non-blocking: continue without province data
+        logError(geoError, { context: 'georef.reverseGeocode' });
+      }
+    }
+
     // Insert report using queryWithRLS for RLS consistency
     const insertResult = await queryWithRLS(anonymousId, `
       INSERT INTO reports (
         anonymous_id, title, description, category, zone, address, 
-        latitude, longitude, status, incident_date, is_hidden
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        latitude, longitude, status, incident_date, is_hidden,
+        province, locality, department
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `, [
       anonymousId,
-      req.body.title.trim(),
-      req.body.description.trim(),
-      req.body.category,
-      req.body.zone,
-      req.body.address.trim(),
+      sanitizedTitle,
+      sanitizedDescription,
+      req.body.category,  // Validated against whitelist, no sanitization needed
+      sanitizedZone,
+      sanitizedAddress,
       req.body.latitude || null,
       req.body.longitude || null,
       req.body.status || 'pendiente',
       incidentDate,
-      isHidden // New param
+      isHidden,
+      province,
+      locality,
+      department
     ]);
 
     if (insertResult.rows.length === 0) {
@@ -800,21 +892,26 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     const params = [id, anonymousId];
     let paramIndex = 3;
 
+    // Context for logging suspicious content
+    const sanitizeContext = { anonymousId, ip: req.ip };
+
     if (req.body.title !== undefined) {
       updates.push(`title = $${paramIndex}`);
-      params.push(req.body.title.trim());
+      // SECURITY: Sanitize before database update
+      params.push(sanitizeText(req.body.title, 'report.title', sanitizeContext));
       paramIndex++;
     }
 
     if (req.body.description !== undefined) {
       updates.push(`description = $${paramIndex}`);
-      params.push(req.body.description.trim());
+      // SECURITY: Sanitize before database update
+      params.push(sanitizeContent(req.body.description, 'report.description', sanitizeContext));
       paramIndex++;
     }
 
     if (req.body.status !== undefined) {
       updates.push(`status = $${paramIndex}`);
-      params.push(req.body.status);
+      params.push(req.body.status);  // Status is validated against enum, no sanitization needed
       paramIndex++;
     }
 
@@ -862,8 +959,9 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
  * POST /api/reports/:id/favorite
  * Toggle favorite status for a report
  * Requires: X-Anonymous-Id header
+ * Rate limited: 20 per minute, 100 per hour
  */
-router.post('/:id/favorite', requireAnonymousId, async (req, res) => {
+router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -1104,6 +1202,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * Upload images for a report
  * Requires: X-Anonymous-Id header
  * Accepts: multipart/form-data with image files
+ * Rate limited: 5 per minute, 20 per hour
  */
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1120,7 +1219,7 @@ const upload = multer({
   },
 });
 
-router.post('/:id/images', requireAnonymousId, upload.array('images', 5), async (req, res) => {
+router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array('images', 5), async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;

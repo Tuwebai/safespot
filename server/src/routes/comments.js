@@ -2,11 +2,12 @@ import express from 'express';
 import { requireAnonymousId, validateComment, validateCommentUpdate, validateFlagReason } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, createCommentLimiter, likeLimiter } from '../utils/rateLimiter.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
+import { sanitizeContent, sanitizeText } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -147,7 +148,7 @@ router.get('/:reportId', async (req, res) => {
  * Create a new comment
  * Requires: X-Anonymous-Id header
  */
-router.post('/', requireAnonymousId, async (req, res) => {
+router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
 
@@ -234,6 +235,13 @@ router.post('/', requireAnonymousId, async (req, res) => {
       content = content.trim()
     }
 
+    // Context for logging suspicious content
+    const sanitizeContext = { anonymousId, ip: req.ip };
+
+    // SECURITY: Sanitize content BEFORE database insert
+    // This handles both plain text and JSON-structured comments
+    content = sanitizeContent(content, 'comment.content', sanitizeContext);
+
     // CRITICAL: Validate required fields before INSERT
     if (!req.body.report_id || !anonymousId || !content) {
       return res.status(400).json({
@@ -275,7 +283,7 @@ router.post('/', requireAnonymousId, async (req, res) => {
     const insertParams = [
       req.body.report_id,    // $1
       anonymousId,           // $2
-      content,               // $3
+      content,               // $3 - Already sanitized above
       isThread || false,     // $4
       parentId,              // $5
       isHidden               // $6
@@ -393,6 +401,12 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
       content = content.trim();
     }
 
+    // Context for logging suspicious content
+    const sanitizeContext = { anonymousId, ip: req.ip };
+
+    // SECURITY: Sanitize content BEFORE database update
+    content = sanitizeContent(content, 'comment.content', sanitizeContext);
+
     // Update comment using queryWithRLS for RLS enforcement
     const updateQuery = `
       UPDATE comments 
@@ -404,7 +418,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     const updateResult = await queryWithRLS(
       anonymousId,
       updateQuery,
-      [content, new Date().toISOString(), id, anonymousId]
+      [content, new Date().toISOString(), id, anonymousId]  // content is sanitized
     );
 
     if (updateResult.rows.length === 0) {
@@ -493,8 +507,9 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * POST /api/comments/:id/like
  * Like a comment
  * Requires: X-Anonymous-Id header
+ * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/:id/like', requireAnonymousId, async (req, res) => {
+router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -604,8 +619,9 @@ router.post('/:id/like', requireAnonymousId, async (req, res) => {
  * DELETE /api/comments/:id/like
  * Unlike a comment
  * Requires: X-Anonymous-Id header
+ * Rate limited: 30 per minute, 200 per hour
  */
-router.delete('/:id/like', requireAnonymousId, async (req, res) => {
+router.delete('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
