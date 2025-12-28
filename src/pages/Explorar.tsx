@@ -1,213 +1,69 @@
 import { useState, useEffect } from 'react'
 import { reportsApi } from '@/lib/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
-import { MapPin, List, ThumbsUp, Calendar } from 'lucide-react'
 import type { Report } from '@/lib/api'
-import { ReportCardSkeleton } from '@/components/ui/skeletons'
-import { PrefetchLink } from '@/components/PrefetchLink'
+import { SafeSpotMap } from '@/components/map/SafeSpotMap'
+import { MapLayout } from '@/layouts/MapLayout'
+import { useMapStore } from '@/lib/store/useMapStore'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { List } from 'lucide-react'
 
 export function Explorar() {
   const toast = useToast()
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('list')
-  const [reports, setReports] = useState<Report[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const setShowSearchAreaButton = useMapStore(s => s.setShowSearchAreaButton)
+  const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
 
+  const [reports, setReports] = useState<Report[]>([])
+
+  // Sync URL -> Store
+  useEffect(() => {
+    const reportId = searchParams.get('reportId')
+    if (reportId) {
+      setSelectedReportId(reportId)
+    }
+  }, [searchParams, setSelectedReportId])
+
+  // Initial Load
   useEffect(() => {
     loadReports()
   }, [])
 
   const loadReports = async () => {
     try {
-      setLoading(true)
-      setError(null)
       const data = await reportsApi.getAll()
       setReports(data)
     } catch (error) {
       const errorInfo = handleError(error, toast.error, 'Explorar.loadReports')
-      setError(errorInfo.userMessage)
-      setReports([]) // Clear reports on error
-    } finally {
-      setLoading(false)
+      // Error handling via Toast, map remains visible (empty)
+      console.error(errorInfo)
     }
-  }
-
-  const getStatusBadgeVariant = (status: Report['status']) => {
-    switch (status) {
-      case 'pendiente':
-        return 'outline'
-      case 'en_proceso':
-        return 'secondary'
-      case 'resuelto':
-        return 'default'
-      case 'cerrado':
-        return 'secondary'
-      default:
-        return 'outline'
-    }
-  }
-
-  const stats = {
-    total: reports.length,
-    pendientes: reports.filter(r => r.status === 'pendiente').length,
-    en_proceso: reports.filter(r => r.status === 'en_proceso').length,
-    resueltos: reports.filter(r => r.status === 'resuelto').length,
   }
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">
-              <span className="gradient-text">Explorar</span>
-            </h1>
-            <p className="text-muted-foreground">
-              Explora todos los reportes en tu ciudad
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-            >
-              <List className="h-4 w-4 mr-2" />
-              Lista
-            </Button>
-            <Button
-              variant={viewMode === 'map' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('map')}
-            >
-              <MapPin className="h-4 w-4 mr-2" />
-              Mapa
-            </Button>
-          </div>
-        </div>
+    <MapLayout>
+      {/* Navigation Controls Overlay */}
+      <div className="absolute top-4 left-4 z-[500] flex gap-2">
+        <Button
+          onClick={() => navigate('/reportes')}
+          variant="secondary"
+          className="shadow-lg bg-white/90 backdrop-blur hover:bg-white text-dark-bg border border-gray-200"
+        >
+          <List className="h-4 w-4 mr-2" />
+          Ver Lista
+        </Button>
       </div>
 
-      {/* Vista Mapa (Mock) */}
-      {viewMode === 'map' && (
-        <Card className="bg-dark-card border-dark-border mb-6">
-          <CardContent className="p-12 text-center">
-            <MapPin className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-xl font-semibold mb-2">Vista de Mapa</h3>
-            <p className="text-muted-foreground mb-4">
-              La integración del mapa se implementará en una fase posterior
-            </p>
-            <div className="bg-dark-bg border border-dark-border rounded-lg p-8 min-h-[400px] flex items-center justify-center">
-              <p className="text-muted-foreground">
-                Mapa interactivo con {reports.length} reportes
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Vista Lista */}
-      {viewMode === 'list' && (
-        <>
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <ReportCardSkeleton key={i} />
-              ))}
-            </div>
-          ) : error ? (
-            <Card className="bg-dark-card border-dark-border">
-              <CardContent className="py-12 text-center">
-                <p className="text-destructive mb-4">{error}</p>
-                <Button onClick={loadReports} variant="outline">
-                  Reintentar
-                </Button>
-              </CardContent>
-            </Card>
-          ) : reports.length === 0 ? (
-            <Card className="bg-dark-card border-dark-border">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">No hay reportes disponibles</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {reports.map((report) => (
-                <PrefetchLink
-                  key={report.id}
-                  to={`/reporte/${report.id}`}
-                  prefetchRoute="DetalleReporte"
-                  prefetchReportId={report.id}
-                >
-                  <Card className="bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors cursor-pointer card-glow h-full">
-                    <CardHeader>
-                      <div className="flex items-start justify-between mb-2">
-                        <CardTitle className="text-xl line-clamp-2">{report.title}</CardTitle>
-                        <Badge variant={getStatusBadgeVariant(report.status)}>
-                          {report.status}
-                        </Badge>
-                      </div>
-                      <CardDescription className="line-clamp-2">
-                        {report.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex items-center text-sm text-muted-foreground">
-                          <MapPin className="h-4 w-4 mr-2" />
-                          {report.zone} - {report.address}
-                        </div>
-                        <div className="flex items-center text-sm text-muted-foreground">
-                          <Calendar className="h-4 w-4 mr-2" />
-                          {new Date(report.created_at).toLocaleDateString('es-AR')}
-                        </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-dark-border">
-                          <div className="flex items-center text-sm text-muted-foreground">
-                            <ThumbsUp className="h-4 w-4 mr-1" />
-                            {report.upvotes_count}
-                          </div>
-                          <Badge variant="outline">{report.category}</Badge>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </PrefetchLink>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Estadísticas */}
-      <Card className="bg-dark-card border-dark-border">
-        <CardHeader>
-          <CardTitle>Estadísticas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-neon-green">{stats.total}</div>
-              <div className="text-sm text-muted-foreground">Total Reportes</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-neon-green">{stats.pendientes}</div>
-              <div className="text-sm text-muted-foreground">Pendientes</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-neon-green">{stats.en_proceso}</div>
-              <div className="text-sm text-muted-foreground">En Proceso</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-neon-green">{stats.resueltos}</div>
-              <div className="text-sm text-muted-foreground">Resueltos</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      <SafeSpotMap
+        reports={reports}
+        onSearchArea={() => {
+          loadReports()
+          setShowSearchAreaButton(false)
+        }}
+      />
+    </MapLayout>
   )
 }

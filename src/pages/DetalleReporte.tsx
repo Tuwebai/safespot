@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportSkeleton } from '@/components/ui/skeletons'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, MapPin } from 'lucide-react'
 
 // Hooks
 import { useReportDetail } from '@/hooks/useReportDetail'
@@ -177,19 +177,30 @@ export function DetalleReporte() {
           {!editor.isEditing && <ReportHeader report={report} />}
 
           {/* Right: Actions */}
-          <ReportActions
-            report={report}
-            isFavorite={reportDetail.isFavorite}
-            isEditing={editor.isEditing}
-            updating={editor.updating}
-            disabled={isBusy}
-            onFavoriteToggle={handleFavoriteToggle}
-            onStartEdit={editor.startEditing}
-            onSaveEdit={editor.saveChanges}
-            onCancelEdit={editor.cancelEditing}
-            onFlag={flagManager.openFlagDialog}
-            onDelete={flagManager.openDeleteDialog}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              title="Ver en el mapa"
+              onClick={() => navigate(`/explorar?reportId=${report.id}`)}
+              disabled={isBusy}
+            >
+              <MapPin className="h-4 w-4" />
+            </Button>
+            <ReportActions
+              report={report}
+              isFavorite={reportDetail.isFavorite}
+              isEditing={editor.isEditing}
+              updating={editor.updating}
+              disabled={isBusy}
+              onFavoriteToggle={handleFavoriteToggle}
+              onStartEdit={editor.startEditing}
+              onSaveEdit={editor.saveChanges}
+              onCancelEdit={editor.cancelEditing}
+              onFlag={flagManager.openFlagDialog}
+              onDelete={flagManager.openDeleteDialog}
+            />
+          </div>
         </div>
       </div>
 
