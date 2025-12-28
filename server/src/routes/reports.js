@@ -16,285 +16,215 @@ const router = express.Router();
  * Query params: search, category, zone, status, page, limit
  * Optional: includes is_favorite and is_flagged if X-Anonymous-Id header is present
  */
+import { encodeCursor, decodeCursor } from '../utils/cursor.js';
+
+// ... other imports
+
+/**
+ * GET /api/reports
+ * List all reports with optional filters and pagination
+ * Uses Cursor-based pagination (created_at DESC, id DESC) for infinite scroll performance
+ * Query params: search, category, zone, status, limit, cursor
+ */
 router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
-    const { search, category, zone, status, page, limit } = req.query;
+    const { search, category, zone, status, limit, cursor } = req.query;
 
-    // Parse pagination parameters with defaults and validation
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    // Parse limit
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
-    const offset = (pageNum - 1) * limitNum;
 
-    // OPTIMIZATION: If anonymous_id is provided, use optimized SQL query with JOINs
-    // This eliminates N+1 queries by fetching reports, favorites, and flags in a single query
-    if (anonymousId) {
-      try {
-        // Build WHERE conditions dynamically
-        const conditions = [];
-        const params = [anonymousId]; // $1 = anonymousId
-        let paramIndex = 2;
+    // Parse cursor if present
+    const decodedCursor = cursor ? decodeCursor(cursor) : null;
+    let cursorDate = null;
+    let cursorId = null;
 
-        // Search filter
-        if (search && typeof search === 'string' && search.trim()) {
-          const searchTerm = search.trim();
-          // Use concatenation for ILIKE pattern matching (correct SQL syntax)
-          conditions.push(`(
-            r.title ILIKE '%' || $${paramIndex} || '%' OR 
-            r.description ILIKE '%' || $${paramIndex} || '%' OR 
-            r.category ILIKE '%' || $${paramIndex} || '%' OR 
-            r.address ILIKE '%' || $${paramIndex} || '%' OR 
-            r.zone ILIKE '%' || $${paramIndex} || '%'
-          )`);
-          params.push(searchTerm);
-          paramIndex++;
-        }
-
-        // Category filter
-        if (category && typeof category === 'string' && category.trim() && category !== 'all') {
-          conditions.push(`r.category = $${paramIndex}`);
-          params.push(category.trim());
-          paramIndex++;
-        }
-
-        // Zone filter
-        if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
-          conditions.push(`r.zone = $${paramIndex}`);
-          params.push(zone.trim());
-          paramIndex++;
-        }
-
-        // Status filter
-        if (status && typeof status === 'string' && status.trim() && status !== 'all') {
-          conditions.push(`r.status = $${paramIndex}`);
-          params.push(status.trim());
-          paramIndex++;
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-        // Build optimized SQL query with LEFT JOINs to get everything in one query
-        // This replaces the previous approach of: 1 query for reports + 2 queries for favorites/flags
-        const countQuery = `
-          SELECT COUNT(*) as total
-          FROM reports r
-          ${whereClause}
-        `;
-
-        // Add LIMIT and OFFSET parameters
-        const limitParamIndex = paramIndex;
-        const offsetParamIndex = paramIndex + 1;
-        params.push(limitNum, offset);
-
-        // Build data query - use $1 for anonymousId in both JOINs (PostgreSQL allows reusing params)
-        // ADDED: threads_count subquery - counts only root threads (is_thread=true AND parent_id IS NULL)
-        const dataQuery = `
-          SELECT 
-            r.*,
-            CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
-            CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
-            (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
-          FROM reports r
-          LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
-          LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
-          ${whereClause}
-          ORDER BY r.created_at DESC
-          LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
-        `;
-
-        // Note: PostgreSQL allows reusing $1 multiple times in the same query
-        // The params array is: [anonymousId, ...filterParams, limitNum, offset]
-        // $1 is used twice (in both JOINs) but only passed once - this is valid SQL
-
-        // Execute both queries in parallel
-        // countQuery uses only filter params (no LIMIT/OFFSET), dataQuery uses all params
-        const [countResult, dataResult] = await Promise.all([
-          queryWithRLS('', countQuery, params.slice(0, paramIndex)),
-          queryWithRLS('', dataQuery, params)
-        ]);
-
-        const totalItems = parseInt(countResult.rows[0].total, 10);
-        const totalPages = Math.ceil(totalItems / limitNum);
-        const hasNextPage = pageNum < totalPages;
-        const hasPrevPage = pageNum > 1;
-
-        // Map results to match Supabase format and normalize image_urls
-        const enrichedReports = dataResult.rows.map(row => {
-          const { is_favorite, is_flagged, ...report } = row;
-
-          // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
-          let normalizedImageUrls = [];
-          if (report.image_urls) {
-            if (Array.isArray(report.image_urls)) {
-              normalizedImageUrls = report.image_urls;
-            } else if (typeof report.image_urls === 'string') {
-              try {
-                normalizedImageUrls = JSON.parse(report.image_urls);
-                if (!Array.isArray(normalizedImageUrls)) {
-                  normalizedImageUrls = [];
-                }
-              } catch (e) {
-                normalizedImageUrls = [];
-              }
-            }
-          }
-
-          return {
-            ...report,
-            image_urls: normalizedImageUrls,
-            is_favorite: is_favorite === true,
-            is_flagged: is_flagged === true
-          };
-        });
-
-        return res.json({
-          success: true,
-          data: enrichedReports,
-          pagination: {
-            page: pageNum,
-            limit: limitNum,
-            totalItems,
-            totalPages,
-            hasNextPage,
-            hasPrevPage
-          }
-        });
-      } catch (sqlError) {
-        // Fallback to queryWithRLS approach if optimized SQL query fails
-        logError(sqlError, req);
-        // Continue to fallback below
-      }
+    if (decodedCursor && decodedCursor.c && decodedCursor.i) {
+      cursorDate = decodedCursor.c;
+      cursorId = decodedCursor.i;
     }
 
-    // Fallback: Use queryWithRLS for cases without anonymousId or if SQL query fails
-    // Build dynamic WHERE conditions
+    // Build WHERE conditions
     const conditions = [];
-    const params = [];
-    let paramIndex = 1;
+    // We add param index offset based on whether we are in the authenticated flow or not.
+    // Ideally we build the query text and params array together to avoid index confusion.
+    // Let's build a shared WHERE clause builder approach.
 
-    // Apply search filter if provided
-    if (search && typeof search === 'string' && search.trim()) {
-      const searchTerm = search.trim();
-      conditions.push(`(
-        title ILIKE '%' || $${paramIndex} || '%' OR 
-        description ILIKE '%' || $${paramIndex} || '%' OR 
-        category ILIKE '%' || $${paramIndex} || '%' OR 
-        address ILIKE '%' || $${paramIndex} || '%' OR 
-        zone ILIKE '%' || $${paramIndex} || '%'
-      )`);
-      params.push(searchTerm);
-      paramIndex++;
+    const buildFilters = (startIndex) => {
+      const conds = [];
+      const vals = [];
+      let idx = startIndex;
+
+      if (search && typeof search === 'string' && search.trim()) {
+        const searchTerm = search.trim();
+        conds.push(`(
+          r.title ILIKE '%' || $${idx} || '%' OR 
+          r.description ILIKE '%' || $${idx} || '%' OR 
+          r.category ILIKE '%' || $${idx} || '%' OR 
+          r.address ILIKE '%' || $${idx} || '%' OR 
+          r.zone ILIKE '%' || $${idx} || '%'
+        )`);
+        vals.push(searchTerm);
+        idx++;
+      }
+
+      if (category && typeof category === 'string' && category.trim() && category !== 'all') {
+        conds.push(`r.category = $${idx}`);
+        vals.push(category.trim());
+        idx++;
+      }
+
+      if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
+        conds.push(`r.zone = $${idx}`);
+        vals.push(zone.trim());
+        idx++;
+      }
+
+      if (status && typeof status === 'string' && status.trim() && status !== 'all') {
+        conds.push(`r.status = $${idx}`);
+        vals.push(status.trim());
+        idx++;
+      }
+
+      return { conds, vals, nextIdx: idx };
+    };
+
+    // Calculate total count (Optional/Legacy compatibility)
+    // We keep total count for now but fetching it is heavy.
+    // Ideally this should be a separate endpoint or cached.
+    let totalItems = 0;
+
+    // ----------- 1. FETCH TOTAL COUNT (Legacy) -----------
+    const countFilter = buildFilters(1); // Start params at $1 (or $2 if anonymous_id used separately)
+    // Note: buildFilters starts at given index.
+
+    // Adjust logic: Anonymous ID flow uses $1 as anonymousId. Fallback uses params directly.
+
+    let countQuery = '';
+    let countParams = [];
+
+    if (anonymousId) {
+      // Authenticated flow: anonymousId is $1. Filters start at $2.
+      const f = buildFilters(2);
+      const wherePart = f.conds.length > 0 ? `WHERE ${f.conds.join(' AND ')}` : '';
+      countQuery = `SELECT COUNT(*) as total FROM reports r ${wherePart}`;
+      countParams = [anonymousId, ...f.vals];
+      // Note: We pass anonymousId but don't use it in WHERE?
+      // Wait, original query used implicit filter? No, original query only used anonymousId for JOINs.
+      // So checking count doesn't really depend on anonymousId unless we filter by it.
+      // The params array structure for queryWithRLS needs to match.
+      // If we don't use anonymousId in the query text, we shouldn't pass it if strict?
+      // Actually queryWithRLS just takes params. If placeholders match, it's fine.
+      // But queryWithRLS sets app.anonymous_id separately.
+
+      // Let's strip anonymousId from params for the Count query since it doesn't use it in WHERE
+      // Unless we are filtering by owner? No.
+      // So standard buildFilters(1) works for count query, we just execute it via queryWithRLS(anonymousId, ...)
+      const cf = buildFilters(1);
+      const cWhere = cf.conds.length > 0 ? `WHERE ${cf.conds.join(' AND ')}` : '';
+      countQuery = `SELECT COUNT(*) as total FROM reports r ${cWhere}`;
+      countParams = cf.vals;
+    } else {
+      const cf = buildFilters(1);
+      const cWhere = cf.conds.length > 0 ? `WHERE ${cf.conds.join(' AND ')}` : '';
+      countQuery = `SELECT COUNT(*) as total FROM reports r ${cWhere}`;
+      countParams = cf.vals;
     }
 
-    // Apply category filter if provided
-    if (category && typeof category === 'string' && category.trim() && category !== 'all') {
-      conditions.push(`category = $${paramIndex}`);
-      params.push(category.trim());
-      paramIndex++;
-    }
+    const countResult = await queryWithRLS(anonymousId || '', countQuery, countParams);
+    totalItems = parseInt(countResult.rows[0].total, 10);
 
-    // Apply zone filter if provided
-    if (zone && typeof zone === 'string' && zone.trim() && zone !== 'all') {
-      conditions.push(`zone = $${paramIndex}`);
-      params.push(zone.trim());
-      paramIndex++;
-    }
+    // ----------- 2. FETCH DATA WITH CURSOR -----------
 
-    // Apply status filter if provided
-    if (status && typeof status === 'string' && status.trim() && status !== 'all') {
-      conditions.push(`status = $${paramIndex}`);
-      params.push(status.trim());
-      paramIndex++;
-    }
+    // We need to fetch limit + 1 to know if there is a next page
+    const fetchLimit = limitNum + 1;
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    let dataQuery = '';
+    let dataParams = [];
 
-    // Execute count and data queries in parallel
-    const limitParamIndex = paramIndex;
-    const offsetParamIndex = paramIndex + 1;
-    const countParams = [...params];
-    const dataParams = [...params, limitNum, offset];
+    if (anonymousId) {
+      // Authenticated flow: Join with favorites/flags
+      // $1 = anonymousId
+      // Filters start at $2
+      const f = buildFilters(2);
+      let whereConds = [...f.conds];
+      let queryParams = [anonymousId, ...f.vals];
+      let pIdx = f.nextIdx;
 
-    const [countResult, dataResult] = await Promise.all([
-      queryWithRLS(anonymousId || '', `SELECT COUNT(*) as total FROM reports ${whereClause}`, countParams),
-      queryWithRLS(anonymousId || '', `
+      // Add Cursor condition
+      if (cursorDate && cursorId) {
+        whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
+        queryParams.push(cursorDate, cursorId);
+        pIdx += 2;
+      }
+
+      const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
+
+      // Add threads_count subquery
+      dataQuery = `
+        SELECT 
+          r.*,
+          CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
+          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
+          (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
+        FROM reports r
+        LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
+        LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
+        ${whereClause}
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT $${pIdx}
+      `;
+      queryParams.push(fetchLimit);
+
+      dataParams = queryParams;
+    } else {
+      // Public flow
+      const f = buildFilters(1);
+      let whereConds = [...f.conds];
+      let queryParams = [...f.vals];
+      let pIdx = f.nextIdx;
+
+      // Add Cursor condition
+      if (cursorDate && cursorId) {
+        whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
+        queryParams.push(cursorDate, cursorId);
+        pIdx += 2;
+      }
+
+      const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
+
+      dataQuery = `
         SELECT r.*, 
                (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
-        FROM reports r ${whereClause}
-        ORDER BY r.created_at DESC
-        LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
-      `, dataParams)
-    ]);
+        FROM reports r 
+        ${whereClause}
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT $${pIdx}
+      `;
+      queryParams.push(fetchLimit);
 
-    const totalItems = parseInt(countResult.rows[0].total, 10);
-    const reports = dataResult.rows;
+      dataParams = queryParams;
+    }
 
-    // Calculate pagination metadata
-    const totalPages = Math.ceil(totalItems / limitNum);
-    const hasNextPage = pageNum < totalPages;
-    const hasPrevPage = pageNum > 1;
+    const dataResult = await queryWithRLS(anonymousId || '', dataQuery, dataParams);
+    const rawReports = dataResult.rows;
 
-    // If anonymous_id is provided, get favorites and flags
-    if (anonymousId && reports.length > 0) {
-      const reportIds = reports.map(r => r.id);
+    // Check for next page
+    const hasNextPage = rawReports.length > limitNum;
+    const reports = hasNextPage ? rawReports.slice(0, limitNum) : rawReports;
 
-      // Get favorites and flags in parallel using queryWithRLS
-      const [favoritesResult, flagsResult] = await Promise.all([
-        queryWithRLS(anonymousId, `
-          SELECT report_id FROM favorites WHERE anonymous_id = $1 AND report_id = ANY($2)
-        `, [anonymousId, reportIds]),
-        queryWithRLS(anonymousId, `
-          SELECT report_id FROM report_flags WHERE anonymous_id = $1 AND report_id = ANY($2)
-        `, [anonymousId, reportIds])
-      ]);
-
-      const favoriteIds = new Set(favoritesResult.rows.map(f => f.report_id));
-      const flaggedIds = new Set(flagsResult.rows.map(f => f.report_id));
-
-      // Enrich reports and normalize image_urls
-      const enrichedReports = reports.map(report => {
-        // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
-        let normalizedImageUrls = [];
-        if (report.image_urls) {
-          if (Array.isArray(report.image_urls)) {
-            normalizedImageUrls = report.image_urls;
-          } else if (typeof report.image_urls === 'string') {
-            try {
-              normalizedImageUrls = JSON.parse(report.image_urls);
-              if (!Array.isArray(normalizedImageUrls)) {
-                normalizedImageUrls = [];
-              }
-            } catch (e) {
-              normalizedImageUrls = [];
-            }
-          }
-        }
-
-        return {
-          ...report,
-          image_urls: normalizedImageUrls,
-          is_favorite: favoriteIds.has(report.id),
-          is_flagged: flaggedIds.has(report.id)
-        };
-      });
-
-      return res.json({
-        success: true,
-        data: enrichedReports,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          totalItems,
-          totalPages,
-          hasNextPage,
-          hasPrevPage
-        }
+    // Generate next cursor
+    let nextCursor = null;
+    if (hasNextPage && reports.length > 0) {
+      const lastReport = reports[reports.length - 1];
+      nextCursor = encodeCursor({
+        c: lastReport.created_at, // timestamp
+        i: lastReport.id          // uuid for ties
       });
     }
 
-    // Normalize image_urls for all reports in fallback case
-    const normalizedReports = (reports || []).map(report => {
-      // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
+    // Process results (image formatting)
+    const processedReports = reports.map(report => {
       let normalizedImageUrls = [];
       if (report.image_urls) {
         if (Array.isArray(report.image_urls)) {
@@ -302,34 +232,31 @@ router.get('/', async (req, res) => {
         } else if (typeof report.image_urls === 'string') {
           try {
             normalizedImageUrls = JSON.parse(report.image_urls);
-            if (!Array.isArray(normalizedImageUrls)) {
-              normalizedImageUrls = [];
-            }
-          } catch (e) {
-            normalizedImageUrls = [];
-          }
+            if (!Array.isArray(normalizedImageUrls)) normalizedImageUrls = [];
+          } catch (e) { normalizedImageUrls = []; }
         }
       }
 
       return {
         ...report,
-        image_urls: normalizedImageUrls
+        image_urls: normalizedImageUrls,
+        is_favorite: report.is_favorite === true, // Only present in auth flow logic but safe to access
+        is_flagged: report.is_flagged === true
       };
     });
 
     res.json({
       success: true,
-      data: normalizedReports,
+      data: processedReports,
       pagination: {
-        page: pageNum,
-        limit: limitNum,
-        totalItems: totalItems || 0,
-        totalPages,
+        nextCursor,
         hasNextPage,
-        hasPrevPage
+        totalItems // Legacy support
       }
     });
+
   } catch (err) {
+    logError(err, req);
     res.status(500).json({
       error: 'Unexpected server error',
       message: err.message
