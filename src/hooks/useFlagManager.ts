@@ -21,11 +21,12 @@ interface FlagManagerState {
 
 interface UseFlagManagerProps {
     reportId: string | undefined
+    onBeforeDelete?: () => void
     onReportFlagged?: () => void
     onReportDeleted?: () => void
 }
 
-export function useFlagManager({ reportId, onReportFlagged, onReportDeleted }: UseFlagManagerProps) {
+export function useFlagManager({ reportId, onBeforeDelete, onReportFlagged, onReportDeleted }: UseFlagManagerProps) {
     const toast = useToast()
 
     const [state, setState] = useState<FlagManagerState>({
@@ -85,6 +86,10 @@ export function useFlagManager({ reportId, onReportFlagged, onReportDeleted }: U
     const deleteReport = useCallback(async () => {
         if (!reportId || state.deletingReport) return
 
+        // CRITICAL: Call onBeforeDelete FIRST, before ANY state changes
+        // This prevents re-renders that could trigger loadReport()
+        onBeforeDelete?.()
+
         setState(prev => ({ ...prev, deletingReport: true }))
 
         try {
@@ -95,7 +100,7 @@ export function useFlagManager({ reportId, onReportFlagged, onReportDeleted }: U
             handleErrorWithMessage(error, 'Error al eliminar el reporte', toast.error, 'useFlagManager.deleteReport')
             setState(prev => ({ ...prev, deletingReport: false }))
         }
-    }, [reportId, state.deletingReport, onReportDeleted, toast])
+    }, [reportId, state.deletingReport, onBeforeDelete, onReportDeleted, toast])
 
     return {
         // State

@@ -69,12 +69,18 @@ export function DetalleReporte() {
 
   const flagManager = useFlagManager({
     reportId: id,
+    onBeforeDelete: () => {
+      // Mark as deleted BEFORE the API call to prevent any refetch attempts
+      reportDetail.markAsDeleted()
+    },
     onReportFlagged: () => {
       if (reportDetail.report) {
         reportDetail.updateReport({ ...reportDetail.report, is_flagged: true })
       }
     },
-    onReportDeleted: () => navigate('/'),
+    onReportDeleted: () => {
+      navigate('/')
+    },
   })
 
   // Local comments count for optimistic updates
@@ -91,6 +97,14 @@ export function DetalleReporte() {
   const handleCommentCountChange = useCallback((delta: number) => {
     setCommentsCount(prev => Math.max(0, prev + delta))
   }, [])
+
+  // ============================================
+  // DELETED STATE - prevent any child rendering/fetching
+  // ============================================
+
+  if (reportDetail.isDeleted) {
+    return null // Component will unmount after navigation
+  }
 
   // ============================================
   // LOADING STATE

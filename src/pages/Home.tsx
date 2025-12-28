@@ -12,50 +12,42 @@ export function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null)
   const [categoryStats, setCategoryStats] = useState<CategoryStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [categoriesLoading, setCategoriesLoading] = useState(true)
 
   useEffect(() => {
-    loadStats()
-    loadCategoryStats()
+    const loadData = async () => {
+      setLoading(true)
+      try {
+        // Fetch both in parallel - single network roundtrip timing
+        const [statsData, categoryData] = await Promise.all([
+          usersApi.getStats(),
+          usersApi.getCategoryStats()
+        ])
+        setStats(statsData)
+        setCategoryStats(categoryData)
+      } catch (error) {
+        // Both failed or one failed - set defaults for both
+        handleErrorSilently(error, 'Home.loadData')
+        setStats({
+          total_reports: 0,
+          resolved_reports: 0,
+          total_users: 0,
+          active_users_month: 0
+        })
+        setCategoryStats({
+          Celulares: 0,
+          Bicicletas: 0,
+          Motos: 0,
+          Autos: 0,
+          Laptops: 0,
+          Carteras: 0
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
   }, [])
-
-  const loadStats = async () => {
-    try {
-      const statsData = await usersApi.getStats()
-      setStats(statsData)
-    } catch (error) {
-      // Set default stats if API fails (non-critical, log but don't show to user)
-      handleErrorSilently(error, 'Home.loadStats')
-      setStats({
-        total_reports: 0,
-        resolved_reports: 0,
-        total_users: 0,
-        active_users_month: 0
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadCategoryStats = async () => {
-    try {
-      const statsData = await usersApi.getCategoryStats()
-      setCategoryStats(statsData)
-    } catch (error) {
-      // Set default category stats if API fails (non-critical, log but don't show to user)
-      handleErrorSilently(error, 'Home.loadCategoryStats')
-      setCategoryStats({
-        Celulares: 0,
-        Bicicletas: 0,
-        Motos: 0,
-        Autos: 0,
-        Laptops: 0,
-        Carteras: 0
-      })
-    } finally {
-      setCategoriesLoading(false)
-    }
-  }
 
   const statsDisplay = [
     {
@@ -108,7 +100,7 @@ export function Home() {
   ]
 
   const getCategoryCount = (categoryName: string): string => {
-    if (categoriesLoading) return '...'
+    if (loading) return '...'
     if (!categoryStats) return '0'
     const count = categoryStats[categoryName as keyof CategoryStats] || 0
     return count.toString()
