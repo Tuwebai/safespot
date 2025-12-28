@@ -39,7 +39,7 @@ function normalizeImageUrls(imageUrls: unknown): string[] {
     try {
       const parsed = JSON.parse(imageUrls)
       if (Array.isArray(parsed)) {
-        return parsed.filter((url): url is string =>
+        return parsed.filter((url: any): url is string =>
           typeof url === 'string' && url.length > 0
         )
       }
@@ -182,7 +182,13 @@ export function DetalleReporte() {
               variant="outline"
               size="icon"
               title="Ver en el mapa"
-              onClick={() => navigate(`/explorar?reportId=${report.id}`)}
+              onClick={() => navigate(`/explorar?reportId=${report.id}`, {
+                state: {
+                  focusReportId: report.id,
+                  lat: report.latitude,
+                  lng: report.longitude
+                }
+              })}
               disabled={isBusy}
             >
               <MapPin className="h-4 w-4" />

@@ -6,13 +6,15 @@ import type { Report } from '@/lib/api'
 import { SafeSpotMap } from '@/components/map/SafeSpotMap'
 import { MapLayout } from '@/layouts/MapLayout'
 import { useMapStore } from '@/lib/store/useMapStore'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
 
 export function Explorar() {
   const toast = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+  const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
   const [searchParams] = useSearchParams()
   const setShowSearchAreaButton = useMapStore(s => s.setShowSearchAreaButton)
   const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
@@ -63,6 +65,7 @@ export function Explorar() {
           loadReports()
           setShowSearchAreaButton(false)
         }}
+        initialFocus={initialFocus}
       />
     </MapLayout>
   )

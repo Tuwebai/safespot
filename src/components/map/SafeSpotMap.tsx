@@ -103,16 +103,21 @@ interface SafeSpotMapProps {
     reports: Report[]
     className?: string
     onSearchArea?: () => void
+    initialFocus?: { focusReportId: string, lat: number, lng: number } | null
 }
 
-export function SafeSpotMap({ reports, className, onSearchArea }: SafeSpotMapProps) {
-    const defaultCenter: [number, number] = [-34.6037, -58.3816]
+export function SafeSpotMap({ reports, className, onSearchArea, initialFocus }: SafeSpotMapProps) {
+    const defaultCenter: [number, number] = initialFocus
+        ? [initialFocus.lat, initialFocus.lng]
+        : [-34.6037, -58.3816]
+
+    const defaultZoom = initialFocus ? 16 : 13
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
     const highlightedId = useMapStore(s => s.highlightedReportId)
 
     // Filter out reports with invalid coordinates to prevent crashes
     // Generic debug logging
-    // console.log('SafeSpotMap: Raw Reports', reports)
+
 
     // Robust parsing of coordinates to ensure valid numbers
     const validReports = reports
@@ -128,17 +133,17 @@ export function SafeSpotMap({ reports, className, onSearchArea }: SafeSpotMapPro
                 r.latitude !== 0 &&
                 r.longitude !== 0
 
-            // if (!isValid) console.warn('Invalid coords for report:', r.id)
+
             return isValid
         })
 
-    // console.log('SafeSpotMap: Valid & Parsed Reports', validReports)
+
 
     return (
         <div className={`relative w-full h-full min-h-[500px] rounded-xl overflow-hidden bg-slate-100 z-0 ${className}`}>
             <MapContainer
                 center={defaultCenter}
-                zoom={13}
+                zoom={defaultZoom}
                 scrollWheelZoom={true}
                 zoomControl={false}
                 className="w-full h-full"
