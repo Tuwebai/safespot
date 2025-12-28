@@ -1,125 +1,65 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
+import { handleErrorWithMessage } from '@/lib/errorHandler'
 
-interface UseFavoriteOptions {
-    onToggle?: (reportId: string, isFavorite: boolean) => void
-    onError?: (reportId: string, error: Error) => void
+interface UseFavoriteProps {
+    reportId: string
+    initialState?: boolean
+    onToggle?: (newState: boolean) => void
 }
 
-/**
- * useFavorite Hook
- * 
- * Provides race-condition-safe favorite toggling with:
- * - Per-report mutex (prevents spam clicks)
- * - Optimistic updates with revert on error
- * - Consistent behavior across all views
- * 
- * Usage:
- * const { toggleFavorite, isToggling, getState } = useFavorite({
- *   onToggle: (id, isFav) => updateLocalState(id, isFav)
- * })
- */
-export function useFavorite(options: UseFavoriteOptions = {}) {
+interface UseFavoriteReturn {
+    isFavorite: boolean
+    isLoading: boolean
+    toggleFavorite: (e?: React.MouseEvent) => Promise<void>
+}
+
+export function useFavorite({ reportId, initialState = false, onToggle }: UseFavoriteProps): UseFavoriteReturn {
+    const [isFavorite, setIsFavorite] = useState(initialState)
+    const [isLoading, setIsLoading] = useState(false)
     const toast = useToast()
-    const { onToggle, onError } = options
 
-    // Track toggling state per report ID
-    const [togglingSet, setTogglingSet] = useState<Set<string>>(new Set())
+    const toggleFavorite = useCallback(async (e?: React.MouseEvent) => {
+        e?.preventDefault()
+        e?.stopPropagation()
 
-    // Mutex map to prevent concurrent requests per report
-    const mutexRef = useRef<Map<string, boolean>>(new Map())
+        if (isLoading) return
 
-    /**
-     * Check if a specific report is currently being toggled
-     */
-    const isToggling = useCallback((reportId: string): boolean => {
-        return togglingSet.has(reportId)
-    }, [togglingSet])
+        // Optimistic update
+        const previousState = isFavorite
+        const newState = !previousState
 
-    /**
-     * Toggle favorite status for a report
-     * Returns the new favorite state or null if request was blocked
-     */
-    const toggleFavorite = useCallback(async (
-        reportId: string,
-        currentIsFavorite: boolean
-    ): Promise<boolean | null> => {
-        // Mutex check: prevent concurrent requests for same report
-        if (mutexRef.current.get(reportId)) {
-            return null
-        }
-
-        // Acquire mutex
-        mutexRef.current.set(reportId, true)
-        setTogglingSet(prev => new Set(prev).add(reportId))
-
-        const previousState = currentIsFavorite
-        const optimisticState = !currentIsFavorite
-
-        // Optimistic update callback
-        onToggle?.(reportId, optimisticState)
+        setIsFavorite(newState)
+        setIsLoading(true)
+        onToggle?.(newState)
 
         try {
             const result = await reportsApi.toggleFavorite(reportId)
 
-            // Validate server response
-            if (!result || typeof result.is_favorite !== 'boolean') {
+            // Validate contract
+            if (!result || typeof result !== 'object' || typeof result.is_favorite !== 'boolean') {
                 throw new Error('Respuesta inválida del servidor')
             }
 
-            const serverState = result.is_favorite
-
-            // If server state differs from optimistic, update
-            if (serverState !== optimisticState) {
-                onToggle?.(reportId, serverState)
+            // Sync with server state (should match optimistic state usually)
+            if (result.is_favorite !== newState) {
+                setIsFavorite(result.is_favorite)
+                onToggle?.(result.is_favorite)
             }
-
-            return serverState
-
         } catch (error) {
-            // Revert optimistic update
-            onToggle?.(reportId, previousState)
-
-            const errorMessage = error instanceof Error ? error.message : 'Error al actualizar favorito'
-            toast.error(errorMessage)
-
-            onError?.(reportId, error instanceof Error ? error : new Error(errorMessage))
-
-            return null
-
+            // Revert on error
+            setIsFavorite(previousState)
+            onToggle?.(previousState)
+            handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'useFavorite.toggleFavorite')
         } finally {
-            // Release mutex
-            mutexRef.current.delete(reportId)
-            setTogglingSet(prev => {
-                const next = new Set(prev)
-                next.delete(reportId)
-                return next
-            })
+            setIsLoading(false)
         }
-    }, [onToggle, onError, toast])
-
-    /**
-     * Get the current toggling set (for components that need the full set)
-     */
-    const getTogglingSet = useCallback((): Set<string> => {
-        return togglingSet
-    }, [togglingSet])
+    }, [reportId, isFavorite, isLoading, onToggle, toast])
 
     return {
-        toggleFavorite,
-        isToggling,
-        getTogglingSet
+        isFavorite,
+        isLoading,
+        toggleFavorite
     }
-}
-
-/**
- * FavoriteButton Component Props
- * Use this interface when creating a FavoriteButton component
- */
-export interface FavoriteButtonProps {
-    reportId: string
-    isFavorite: boolean
-    isToggling: boolean
-    onToggle: (e: React.MouseEvent) => void
 }

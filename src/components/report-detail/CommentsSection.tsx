@@ -14,6 +14,7 @@ import { MessageCircle } from 'lucide-react'
 
 interface CommentsSectionProps {
     reportId: string
+    totalCount: number
     onCommentCountChange: (delta: number) => void
 }
 
@@ -21,7 +22,7 @@ interface CommentsSectionProps {
 // COMPONENT
 // ============================================
 
-export function CommentsSection({ reportId, onCommentCountChange }: CommentsSectionProps) {
+export function CommentsSection({ reportId, totalCount, onCommentCountChange }: CommentsSectionProps) {
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
 
     const commentsManager = useCommentsManager({
@@ -40,7 +41,11 @@ export function CommentsSection({ reportId, onCommentCountChange }: CommentsSect
         creatingThread,
         submitting,
         isProcessing,
+        hasMore,
+        isLoading,
+        isLoadingMore,
         loadComments,
+        loadMore,
         submitComment,
         submitReply,
         submitEdit,
@@ -133,7 +138,11 @@ export function CommentsSection({ reportId, onCommentCountChange }: CommentsSect
             {/* Comments List */}
             {viewMode === 'comments' && (
                 <div className="space-y-4">
-                    {comments.length === 0 ? (
+                    {isLoading && comments.length === 0 ? (
+                        <div className="py-12 text-center text-muted-foreground">
+                            Cargando comentarios...
+                        </div>
+                    ) : comments.length === 0 ? (
                         <Card className="bg-dark-card border-dark-border">
                             <CardContent className="py-12 text-center">
                                 <MessageCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -142,40 +151,66 @@ export function CommentsSection({ reportId, onCommentCountChange }: CommentsSect
                             </CardContent>
                         </Card>
                     ) : (
-                        comments
-                            .filter(c => !c.parent_id && !(c.is_thread === true)) // Solo comentarios top-level que NO son hilos
-                            .map((comment) => {
-                                const isCommentOwner = comment.anonymous_id === currentAnonymousId
+                        <>
+                            {comments
+                                .filter(c => !c.parent_id && !(c.is_thread === true))
+                                .map((comment) => {
+                                    const isCommentOwner = comment.anonymous_id === currentAnonymousId
 
-                                return (
-                                    <CommentThread
-                                        key={comment.id}
-                                        comment={comment}
-                                        allComments={comments}
-                                        depth={0}
-                                        maxDepth={5}
-                                        onReply={startReply}
-                                        onEdit={startEdit}
-                                        onDelete={handleDeleteComment}
-                                        onFlag={handleFlagComment}
-                                        onLikeChange={handleLikeChange}
-                                        isOwner={isCommentOwner}
-                                        isMod={isCommentMod}
-                                        replyingTo={replyingTo}
-                                        replyText={replyText}
-                                        onReplyTextChange={setReplyText}
-                                        onReplySubmit={submitReply}
-                                        onReplyCancel={cancelReply}
-                                        submittingReply={submitting === 'reply' && isProcessing(comment.id)}
-                                        editingCommentId={editingId}
-                                        editText={editText}
-                                        onEditTextChange={setEditText}
-                                        onEditSubmit={submitEdit}
-                                        onEditCancel={cancelEdit}
-                                        submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
-                                    />
-                                )
-                            })
+                                    return (
+                                        <CommentThread
+                                            key={comment.id}
+                                            comment={comment}
+                                            allComments={comments}
+                                            depth={0}
+                                            maxDepth={5}
+                                            onReply={startReply}
+                                            onEdit={startEdit}
+                                            onDelete={handleDeleteComment}
+                                            onFlag={handleFlagComment}
+                                            onLikeChange={handleLikeChange}
+                                            isOwner={isCommentOwner}
+                                            isMod={isCommentMod}
+                                            replyingTo={replyingTo}
+                                            replyText={replyText}
+                                            onReplyTextChange={setReplyText}
+                                            onReplySubmit={submitReply}
+                                            onReplyCancel={cancelReply}
+                                            submittingReply={submitting === 'reply' && isProcessing(comment.id)}
+                                            editingCommentId={editingId}
+                                            editText={editText}
+                                            onEditTextChange={setEditText}
+                                            onEditSubmit={submitEdit}
+                                            onEditCancel={cancelEdit}
+                                            submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
+                                        />
+                                    )
+                                })}
+
+                            {/* Load More Button & Counter */}
+                            {hasMore && (
+                                <div className="mt-6 space-y-3">
+                                    <div className="text-center text-xs text-muted-foreground">
+                                        Mostrando {comments.length} de {Math.max(comments.length, totalCount)} comentarios
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        className="w-full h-12 text-base font-medium border-dashed border-dark-border hover:border-neon-green hover:text-neon-green hover:bg-neon-green/5 transition-all"
+                                        onClick={() => loadMore()}
+                                        disabled={isLoadingMore}
+                                    >
+                                        {isLoadingMore ? (
+                                            <div className="flex items-center gap-2">
+                                                <div className="animate-spin h-5 w-5 border-2 border-current border-t-transparent rounded-full" />
+                                                <span>Cargando...</span>
+                                            </div>
+                                        ) : (
+                                            'Cargar más comentarios'
+                                        )}
+                                    </Button>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             )}

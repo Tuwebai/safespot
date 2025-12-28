@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { MapPin, GitBranch, MessageCircle, Heart, AlertCircle } from 'lucide-react'
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
-import { useFavorite } from '@/hooks/useFavorite'
+import { FavoriteButton } from '@/components/FavoriteButton'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
@@ -17,22 +17,13 @@ export function MisFavoritos() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Favorite hook with callback to update local state
+  // Update local state when a favorite is toggled (removed)
   const handleFavoriteToggle = useCallback((reportId: string, isFavorite: boolean) => {
     if (!isFavorite) {
-      // If unfavorited, remove from list
+      // If unfavorited, remove from list immediately
       setReports(prev => prev.filter(r => r.id !== reportId))
-    } else {
-      // If favorited (shouldn't happen in this view, but defensive)
-      setReports(prev => prev.map(r =>
-        r.id === reportId ? { ...r, is_favorite: isFavorite } : r
-      ))
     }
   }, [])
-
-  const { toggleFavorite, isToggling } = useFavorite({
-    onToggle: handleFavoriteToggle
-  })
 
   useEffect(() => {
     loadFavorites()
@@ -277,24 +268,11 @@ export function MisFavoritos() {
                       Ver Detalles
                     </Button>
                     <div className="flex items-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          toggleFavorite(report.id, true) // All items here are favorited
-                        }}
-                        disabled={isToggling(report.id)}
-                        className="text-red-400 hover:text-red-300"
-                        title={isToggling(report.id) ? 'Quitando...' : 'Quitar de favoritos'}
-                      >
-                        {isToggling(report.id) ? (
-                          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                        ) : (
-                          <Heart className="h-5 w-5 fill-current" />
-                        )}
-                      </Button>
+                      <FavoriteButton
+                        reportId={report.id}
+                        isFavorite={true}
+                        onToggle={(newState) => handleFavoriteToggle(report.id, newState)}
+                      />
                     </div>
                   </div>
                 </CardContent>

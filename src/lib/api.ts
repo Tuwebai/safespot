@@ -355,13 +355,28 @@ export interface CreateCommentData {
   is_thread?: boolean; // Para crear un nuevo hilo (debe ser false si parent_id está presente)
 }
 
+export interface PaginatedComments {
+  comments: Comment[];
+  nextCursor: string | null;
+}
+
 export const commentsApi = {
   /**
-   * Get all comments for a report
+   * Get all comments for a report with cursor-based pagination
    * Includes liked_by_me flag if X-Anonymous-Id header is present
    */
-  getByReportId: async (reportId: string): Promise<Comment[]> => {
-    return apiRequest<Comment[]>(`/comments/${reportId}`);
+  getByReportId: async (reportId: string, limit = 20, cursor?: string): Promise<PaginatedComments> => {
+    const params = new URLSearchParams();
+    params.append('limit', String(limit));
+    if (cursor) params.append('cursor', cursor);
+
+    const response = await apiRequest<Comment[] | PaginatedComments>(`/comments/${reportId}?${params.toString()}`);
+
+    // Handle backward compatibility (if backend returns raw array)
+    if (Array.isArray(response)) {
+      return { comments: response, nextCursor: null };
+    }
+    return response;
   },
 
   /**

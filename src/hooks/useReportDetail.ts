@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
-import { handleError, handleErrorWithMessage } from '@/lib/errorHandler'
+import { handleError } from '@/lib/errorHandler'
 import type { Report } from '@/lib/api'
 
 // ============================================
@@ -18,8 +18,6 @@ interface UseReportDetailReturn {
     error: string | null
     isDeleted: boolean
     isFavorite: boolean
-    savingFavorite: boolean
-    toggleFavorite: () => Promise<void>
     updateReport: (updated: Report) => void
     markAsDeleted: () => void
     refetch: () => Promise<void>
@@ -35,7 +33,6 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
     const [report, setReport] = useState<Report | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const [savingFavorite, setSavingFavorite] = useState(false)
     const [isDeleted, setIsDeleted] = useState(false)
 
     // Refs for synchronous access in callbacks
@@ -103,27 +100,6 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
     // ACTIONS
     // ============================================
 
-    const toggleFavorite = useCallback(async () => {
-        if (!reportId || savingFavorite || isDeletedRef.current) return
-
-        try {
-            setSavingFavorite(true)
-            const result = await reportsApi.toggleFavorite(reportId)
-
-            if (!result || typeof result !== 'object' || typeof result.is_favorite !== 'boolean') {
-                throw new Error('Respuesta inválida del servidor: is_favorite debe ser un booleano')
-            }
-
-            if (!isDeletedRef.current) {
-                setReport(prev => prev ? { ...prev, is_favorite: result.is_favorite } : null)
-            }
-        } catch (err) {
-            handleErrorWithMessage(err, 'Error al guardar en favoritos', toast.error, 'useReportDetail.toggleFavorite')
-        } finally {
-            setSavingFavorite(false)
-        }
-    }, [reportId, savingFavorite, toast])
-
     const updateReport = useCallback((updated: Report) => {
         if (!isDeletedRef.current) {
             setReport(updated)
@@ -151,8 +127,6 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
         error,
         isDeleted,
         isFavorite,
-        savingFavorite,
-        toggleFavorite,
         updateReport,
         markAsDeleted,
         refetch,

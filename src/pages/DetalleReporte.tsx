@@ -144,6 +144,19 @@ export function DetalleReporte() {
   // MAIN RENDER
   // ============================================
 
+  // Handler for favorite toggle
+  const handleFavoriteToggle = useCallback((newState: boolean) => {
+    if (reportDetail.report) {
+      reportDetail.updateReport({ ...reportDetail.report, is_favorite: newState })
+    }
+  }, [reportDetail.report, reportDetail.updateReport])
+
+  // Calculate unified busy state to prevent conflicting actions
+  const isBusy =
+    editor.updating ||
+    flagManager.deletingReport ||
+    flagManager.flaggingReport
+
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       {/* Back Button */}
@@ -151,6 +164,7 @@ export function DetalleReporte() {
         variant="ghost"
         onClick={() => navigate(-1)}
         className="mb-6"
+        disabled={isBusy}
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
         Volver
@@ -166,10 +180,10 @@ export function DetalleReporte() {
           <ReportActions
             report={report}
             isFavorite={reportDetail.isFavorite}
-            savingFavorite={reportDetail.savingFavorite}
             isEditing={editor.isEditing}
             updating={editor.updating}
-            onFavorite={reportDetail.toggleFavorite}
+            disabled={isBusy}
+            onFavoriteToggle={handleFavoriteToggle}
             onStartEdit={editor.startEditing}
             onSaveEdit={editor.saveChanges}
             onCancelEdit={editor.cancelEditing}
@@ -191,6 +205,7 @@ export function DetalleReporte() {
       {/* Comments Section */}
       <CommentsSection
         reportId={id!}
+        totalCount={commentsCount}
         onCommentCountChange={handleCommentCountChange}
       />
 

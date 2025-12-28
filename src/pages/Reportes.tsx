@@ -10,10 +10,63 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, GitBranch, MessageCircle, Heart, Flag } from 'lucide-react'
+import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag } from 'lucide-react'
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { OptimizedImage } from '@/components/OptimizedImage'
+import { FavoriteButton } from '@/components/FavoriteButton'
+
+// ============================================
+// PURE HELPER FUNCTIONS (outside component - no re-creation)
+// ============================================
+
+const getStatusColor = (status: Report['status']) => {
+  switch (status) {
+    case 'pendiente':
+      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+    case 'en_proceso':
+      return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    case 'resuelto':
+      return 'bg-green-500/20 text-green-400 border-green-500/30'
+    case 'cerrado':
+      return 'bg-red-500/20 text-red-400 border-red-500/30'
+    default:
+      return ''
+  }
+}
+
+const STATUS_LABELS: Record<Report['status'], string> = {
+  'pendiente': 'Buscando',
+  'en_proceso': 'En Proceso',
+  'resuelto': 'Recuperado',
+  'cerrado': 'Expirado'
+}
+
+const getStatusLabel = (status: Report['status']) => STATUS_LABELS[status] || status
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'Robo de Bicicleta': 'bg-red-500',
+  'Robo de Vehículo': 'bg-orange-500',
+  'Robo de Objetos Personales': 'bg-purple-500',
+  'Pérdida de Objetos': 'bg-blue-500',
+  'Encontrado': 'bg-green-500',
+  'Otros': 'bg-gray-500'
+}
+
+const getCategoryColor = (category: string) => CATEGORY_COLORS[category] || 'bg-gray-500'
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString)
+  return date.toLocaleDateString('es-AR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function Reportes() {
   const navigate = useNavigate()
@@ -28,7 +81,6 @@ export function Reportes() {
   const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
   const [flaggingReportId, setFlaggingReportId] = useState<string | null>(null)
   const [flaggingReports, setFlaggingReports] = useState<Set<string>>(new Set())
-  const [togglingFavorites, setTogglingFavorites] = useState<Set<string>>(new Set())
 
   const loadReports = useCallback(async () => {
     try {
@@ -45,7 +97,7 @@ export function Reportes() {
     } catch (error) {
       const errorInfo = handleError(error, toast.error, 'Reportes.loadReports')
       setError(errorInfo.userMessage)
-      setReports([]) // Clear reports on error
+      setReports([])
     } finally {
       setLoading(false)
     }
@@ -60,156 +112,17 @@ export function Reportes() {
     return () => clearTimeout(timeoutId)
   }, [searchTerm, selectedCategory, selectedZone, selectedStatus, loadReports])
 
-  const getStatusColor = (status: Report['status']) => {
-    switch (status) {
-      case 'pendiente':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-      case 'en_proceso':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-      case 'resuelto':
-        return 'bg-green-500/20 text-green-400 border-green-500/30'
-      case 'cerrado':
-        return 'bg-red-500/20 text-red-400 border-red-500/30'
-      default:
-        return ''
-    }
-  }
+  // ============================================
+  // HANDLERS (memoized with useCallback)
+  // ============================================
 
-  const getStatusLabel = (status: Report['status']) => {
-    const labelMap: Record<Report['status'], string> = {
-      'pendiente': 'Buscando',
-      'en_proceso': 'En Proceso',
-      'resuelto': 'Recuperado',
-      'cerrado': 'Expirado'
-    }
-    return labelMap[status] || status
-  }
+  const handleFavoriteUpdate = useCallback((reportId: string, newState: boolean) => {
+    setReports(prev => prev.map(r =>
+      r.id === reportId ? { ...r, is_favorite: newState } : r
+    ))
+  }, [])
 
-  const getCategoryColor = (category: string) => {
-    const colorMap: Record<string, string> = {
-      'Robo de Bicicleta': 'bg-red-500',
-      'Robo de Vehículo': 'bg-orange-500',
-      'Robo de Objetos Personales': 'bg-purple-500',
-      'Pérdida de Objetos': 'bg-blue-500',
-      'Encontrado': 'bg-green-500',
-      'Otros': 'bg-gray-500'
-    }
-    return colorMap[category] || 'bg-gray-500'
-  }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('es-AR', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
-  }
-
-  const handleSave = async (e: React.MouseEvent, reportId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    // Prevent multiple simultaneous toggles
-    if (togglingFavorites.has(reportId)) {
-      return
-    }
-
-    // Find the report to get current state
-    const currentReport = reports.find(r => r && r.id === reportId)
-    if (!currentReport) {
-      toast.error('No se pudo encontrar el reporte')
-      return
-    }
-
-    // Store previous state for potential revert
-    const previousFavoriteState = currentReport.is_favorite ?? false
-    const newFavoriteState = !previousFavoriteState
-
-    // Mark as toggling
-    setTogglingFavorites(prev => new Set(prev).add(reportId))
-
-    // Optimistic update: update UI immediately with defensive checks
-    setReports(prev => {
-      return prev
-        .filter(r => r != null && r.id != null) // Filter out any invalid reports first
-        .map(r => {
-          if (r.id !== reportId) return r
-
-          // Ensure we have a valid report object before spreading
-          if (!r || typeof r !== 'object') return r
-
-          // Return updated report with all properties preserved
-          return {
-            ...r,
-            is_favorite: newFavoriteState
-          }
-        })
-    })
-
-    try {
-      const result = await reportsApi.toggleFavorite(reportId)
-
-      // Validate result structure - explicit contract validation
-      if (!result || typeof result !== 'object') {
-        throw new Error('Respuesta inválida del servidor: resultado no es un objeto')
-      }
-
-      // Validate that is_favorite is a boolean (explicit contract)
-      if (typeof result.is_favorite !== 'boolean') {
-        throw new Error('Respuesta inválida del servidor: is_favorite debe ser un booleano')
-      }
-
-      const serverFavoriteState = result.is_favorite
-
-      // Update with actual server response - defensive update
-      setReports(prev => {
-        return prev
-          .filter(r => r != null && r.id != null) // Filter out any invalid reports
-          .map(r => {
-            if (r.id !== reportId) return r
-
-            // Ensure we have a valid report object
-            if (!r || typeof r !== 'object') return r
-
-            // Return updated report with server state
-            return {
-              ...r,
-              is_favorite: serverFavoriteState
-            }
-          })
-      })
-    } catch (error) {
-      // Revert optimistic update on error - defensive revert
-      setReports(prev => {
-        return prev
-          .filter(r => r != null && r.id != null) // Filter out any invalid reports
-          .map(r => {
-            if (r.id !== reportId) return r
-
-            // Ensure we have a valid report object
-            if (!r || typeof r !== 'object') return r
-
-            // Revert to previous state
-            return {
-              ...r,
-              is_favorite: previousFavoriteState
-            }
-          })
-      })
-
-      handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'Reportes.handleToggleFavorite')
-    } finally {
-      // Remove from toggling set
-      setTogglingFavorites(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(reportId)
-        return newSet
-      })
-    }
-  }
-
-  const handleFlag = (e: React.MouseEvent, reportId: string) => {
+  const handleFlag = useCallback((e: React.MouseEvent, reportId: string) => {
     e.preventDefault()
     e.stopPropagation()
 
@@ -237,9 +150,9 @@ export function Reportes() {
     // Abrir modal
     setFlaggingReportId(reportId)
     setIsFlagDialogOpen(true)
-  }
+  }, [reports, flaggingReports])
 
-  const handleFlagSubmit = async (reason: string) => {
+  const handleFlagSubmit = useCallback(async (reason: string) => {
     if (!flaggingReportId) return
 
     const reportId = flaggingReportId
@@ -306,7 +219,7 @@ export function Reportes() {
         return newSet
       })
     }
-  }
+  }, [flaggingReportId, reports, toast])
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -517,29 +430,13 @@ export function Reportes() {
                         </Button>
                         <div className="flex items-center space-x-2">
                           {(() => {
-                            // Defensive check: ensure report exists and has required properties
-                            if (!report || !report.id) {
-                              return null
-                            }
-
-                            const isFavorite = report.is_favorite ?? false
-                            const isToggling = togglingFavorites.has(report.id)
-
+                            if (!report || !report.id) return null
                             return (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => handleSave(e, report.id)}
-                                disabled={isToggling}
-                                className={isFavorite ? 'text-red-400 hover:text-red-300' : ''}
-                                title={isToggling ? 'Guardando...' : (isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos')}
-                              >
-                                {isToggling ? (
-                                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                ) : (
-                                  <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
-                                )}
-                              </Button>
+                              <FavoriteButton
+                                reportId={report.id}
+                                isFavorite={report.is_favorite ?? false}
+                                onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
+                              />
                             )
                           })()}
                           {(() => {

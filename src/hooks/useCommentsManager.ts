@@ -27,10 +27,20 @@ interface CommentsState {
     // Network states
     submitting: 'comment' | 'reply' | 'edit' | 'thread' | 'delete' | 'flag' | 'like' | null
     processingId: string | null // ID of item being processed
+
+    // Pagination
+    nextCursor: string | null
+    hasMore: boolean
+    isLoading: boolean
+    isLoadingMore: boolean
 }
 
 type CommentsAction =
-    | { type: 'SET_COMMENTS'; payload: Comment[] }
+    | { type: 'SET_COMMENTS'; payload: { comments: Comment[]; nextCursor: string | null } }
+    | { type: 'APPEND_COMMENTS'; payload: { comments: Comment[]; nextCursor: string | null } }
+    | { type: 'START_LOADING' }
+    | { type: 'START_LOADING_MORE' }
+    | { type: 'END_LOADING' }
     | { type: 'ADD_COMMENT'; payload: Comment }
     | { type: 'UPDATE_COMMENT'; payload: { id: string; updates: Partial<Comment> } }
     | { type: 'REMOVE_COMMENT'; payload: string }
@@ -66,12 +76,43 @@ const initialState: CommentsState = {
     creatingThread: false,
     submitting: null,
     processingId: null,
+    nextCursor: null,
+    hasMore: false,
+    isLoading: true,
+    isLoadingMore: false,
 }
 
 function commentsReducer(state: CommentsState, action: CommentsAction): CommentsState {
     switch (action.type) {
         case 'SET_COMMENTS':
-            return { ...state, comments: action.payload }
+            return {
+                ...state,
+                comments: action.payload.comments,
+                nextCursor: action.payload.nextCursor,
+                hasMore: !!action.payload.nextCursor,
+                isLoading: false
+            }
+
+        case 'APPEND_COMMENTS':
+            // Deduplicate just in case
+            const newIds = new Set(action.payload.comments.map(c => c.id))
+            const cleanPrevComments = state.comments.filter(c => !newIds.has(c.id))
+            return {
+                ...state,
+                comments: [...cleanPrevComments, ...action.payload.comments],
+                nextCursor: action.payload.nextCursor,
+                hasMore: !!action.payload.nextCursor,
+                isLoadingMore: false
+            }
+
+        case 'START_LOADING':
+            return { ...state, isLoading: true }
+
+        case 'START_LOADING_MORE':
+            return { ...state, isLoadingMore: true }
+
+        case 'END_LOADING':
+            return { ...state, isLoading: false, isLoadingMore: false }
 
         case 'ADD_COMMENT':
             return { ...state, comments: [...state.comments, action.payload] }
@@ -163,20 +204,47 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     // DATA LOADING
     // ============================================
 
-    const loadComments = useCallback(async () => {
+    const loadComments = useCallback(async (cursor?: string) => {
         if (!reportId) return
 
+        const isLoadMore = !!cursor
+
+        if (isLoadMore) {
+            dispatch({ type: 'START_LOADING_MORE' })
+        } else {
+            dispatch({ type: 'START_LOADING' })
+        }
+
         try {
-            const data = await commentsApi.getByReportId(reportId)
-            dispatch({ type: 'SET_COMMENTS', payload: data })
+            const data = await commentsApi.getByReportId(reportId, 20, cursor)
+
+            if (isLoadMore) {
+                dispatch({ type: 'APPEND_COMMENTS', payload: data })
+            } else {
+                dispatch({ type: 'SET_COMMENTS', payload: data })
+            }
         } catch (error) {
             handleErrorWithMessage(error, 'Error al cargar comentarios', toast.error, 'useCommentsManager.loadComments')
+            dispatch({ type: 'END_LOADING' })
         }
     }, [reportId, toast])
 
     // ============================================
     // COMMENT OPERATIONS
     // ============================================
+
+    // ... existing submit methods ...
+
+    // (Code skipped for brevity, keeping submitComment etc)
+    // I need to be careful with replace range. 
+    // The previous tool call will replace lines up to 478.
+    // I should create a separate tool call if I can't match exactly.
+    // The prompt shows I have access to replacing massive chunks.
+
+    // BUT, I prefer replacing just loadComments first.
+
+    // Then replace the return object.
+
 
     const submitComment = useCallback(async () => {
         if (!reportId || !state.commentText.trim() || state.submitting) return
@@ -441,6 +509,12 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const isSubmitting = state.submitting !== null
     const isProcessing = useCallback((id: string) => state.processingId === id, [state.processingId])
 
+    const loadMore = useCallback(() => {
+        if (state.hasMore && state.nextCursor && !state.isLoadingMore) {
+            loadComments(state.nextCursor)
+        }
+    }, [state.hasMore, state.nextCursor, state.isLoadingMore, loadComments])
+
     return {
         // State
         comments: state.comments,
@@ -455,8 +529,14 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         isSubmitting,
         isProcessing,
 
+        // Pagination
+        hasMore: state.hasMore,
+        isLoading: state.isLoading,
+        isLoadingMore: state.isLoadingMore,
+
         // Actions
         loadComments,
+        loadMore,
         submitComment,
         submitReply,
         submitEdit,
