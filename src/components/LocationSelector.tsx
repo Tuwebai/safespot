@@ -10,6 +10,7 @@ export interface LocationData {
   location_name: string
   latitude?: number
   longitude?: number
+  location_source?: 'gps' | 'geocoded' | 'manual' | 'estimated'
 }
 
 interface LocationSelectorProps {
@@ -39,8 +40,10 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [lastRequestTime, setLastRequestTime] = useState(0)
 
   const debouncedQuery = useDebounce(searchQuery, 300)
+  const MIN_REQUEST_INTERVAL = 1000 // Rate limit: max 1 request per second
 
   // Search addresses using Nominatim - RESTRICTED TO ARGENTINA
   useEffect(() => {
@@ -49,94 +52,121 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       return
     }
 
-    setIsLoading(true)
-    // CRITICAL: Restrict to Argentina only (countrycodes=ar)
-    // Also prioritize results near user's current location if available
-    const params = new URLSearchParams({
-      format: 'json',
-      q: debouncedQuery,
-      limit: '5',
-      countrycodes: 'ar', // Only Argentina
-      addressdetails: '1'
-    })
-    
-    // If user has coordinates, add them to prioritize nearby results
-    if (value.latitude && value.longitude) {
-      params.append('lat', value.latitude.toString())
-      params.append('lon', value.longitude.toString())
+    // Rate limiting check
+    const now = Date.now()
+    const timeSinceLastRequest = now - lastRequestTime
+
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      // Wait before making request
+      const timeout = setTimeout(() => {
+        performSearch()
+      }, MIN_REQUEST_INTERVAL - timeSinceLastRequest)
+
+      return () => clearTimeout(timeout)
     }
 
-    fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: {
-        'User-Agent': 'SafeSpot App'
+    // Make request immediately
+    performSearch()
+
+    function performSearch() {
+      setIsLoading(true)
+      setLastRequestTime(Date.now())
+
+      // AbortController for cancelling previous requests
+      const abortController = new AbortController()
+
+      // CRITICAL: Restrict to Argentina only (countrycodes=ar)
+      const params = new URLSearchParams({
+        format: 'json',
+        q: debouncedQuery,
+        limit: '5',
+        countrycodes: 'ar',
+        addressdetails: '1'
+      })
+
+      // If user has coordinates, add them to prioritize nearby results
+      if (value.latitude && value.longitude) {
+        params.append('lat', value.latitude.toString())
+        params.append('lon', value.longitude.toString())
       }
-    })
-      .then(res => res.json())
-      .then((data: NominatimResult[]) => {
-        // CRITICAL: Filter to ensure only Argentina results (extra safety)
-        // Nominatim with countrycodes=ar should only return Argentina, but we double-check
-        const argentinaResults = data
-          .filter(result => {
-            const displayName = result.display_name.toLowerCase()
-            
-            // Check for Argentina indicators
-            const isArgentina = 
-              displayName.includes('argentina') ||
-              displayName.includes('buenos aires') ||
-              displayName.includes('caba') ||
-              displayName.includes('córdoba') ||
-              displayName.includes('rosario') ||
-              displayName.includes('mendoza') ||
-              displayName.includes('tucumán') ||
-              displayName.includes('salta') ||
-              displayName.includes('santa fe') ||
-              displayName.includes('la plata') ||
-              displayName.includes('mar del plata') ||
-              displayName.includes('bariloche') ||
-              displayName.includes('ushuaia') ||
-              displayName.includes('neuquén') ||
-              displayName.includes('comodoro rivadavia') ||
-              // Common Argentina provinces/cities
-              displayName.includes('provincia de') ||
-              // Trust countrycodes parameter - if it's in the results, it's likely Argentina
-              true
-            
-            // Exclude obvious non-Argentina results
-            const isNotArgentina = 
-              displayName.includes(', chile') ||
-              displayName.includes(', uruguay') ||
-              displayName.includes(', paraguay') ||
-              displayName.includes(', brasil') ||
-              displayName.includes(', brazil') ||
-              displayName.includes(', colombia') ||
-              displayName.includes(', méxico') ||
-              displayName.includes(', mexico') ||
-              displayName.includes(', españa') ||
-              displayName.includes(', spain')
-            
-            return isArgentina && !isNotArgentina
-          })
-          .map(result => ({
-            ...result,
-            // CRITICAL: Normalize display_name to show only relevant parts
-            display_name: normalizeSearchResult(result.display_name)
-          }))
-        
-        setSuggestions(argentinaResults)
-        setShowSuggestions(true)
+
+      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        signal: abortController.signal,
+        headers: {
+          'User-Agent': 'SafeSpot App'
+        }
       })
-      .catch((error) => {
-        console.debug('Nominatim search error:', error)
-        setSuggestions([])
-      })
-      .finally(() => setIsLoading(false))
-  }, [debouncedQuery, value.latitude, value.longitude])
+        .then(res => res.json())
+        .then((data: NominatimResult[]) => {
+          // Filter to ensure only Argentina results
+          const argentinaResults = data
+            .filter(result => {
+              const displayName = result.display_name.toLowerCase()
+
+              // Check for Argentina indicators
+              const isArgentina =
+                displayName.includes('argentina') ||
+                displayName.includes('buenos aires') ||
+                displayName.includes('caba') ||
+                displayName.includes('córdoba') ||
+                displayName.includes('rosario') ||
+                displayName.includes('mendoza') ||
+                displayName.includes('tucumán') ||
+                displayName.includes('salta') ||
+                displayName.includes('santa fe') ||
+                displayName.includes('la plata') ||
+                displayName.includes('mar del plata') ||
+                displayName.includes('bariloche') ||
+                displayName.includes('ushuaia') ||
+                displayName.includes('neuquén') ||
+                displayName.includes('comodoro rivadavia') ||
+                displayName.includes('provincia de') ||
+                true
+
+              // Exclude obvious non-Argentina results
+              const isNotArgentina =
+                displayName.includes(', chile') ||
+                displayName.includes(', uruguay') ||
+                displayName.includes(', paraguay') ||
+                displayName.includes(', brasil') ||
+                displayName.includes(', brazil') ||
+                displayName.includes(', colombia') ||
+                displayName.includes(', méxico') ||
+                displayName.includes(', mexico') ||
+                displayName.includes(', españa') ||
+                displayName.includes(', spain')
+
+              return isArgentina && !isNotArgentina
+            })
+            .map(result => ({
+              ...result,
+              display_name: normalizeSearchResult(result.display_name)
+            }))
+
+          setSuggestions(argentinaResults)
+          setShowSuggestions(true)
+        })
+        .catch((error) => {
+          if (error.name === 'AbortError') {
+            // Request was cancelled, this is expected
+            return
+          }
+          console.debug('Nominatim search error:', error)
+          setSuggestions([])
+        })
+        .finally(() => setIsLoading(false))
+
+      // Cleanup: abort request if component unmounts or query changes
+      return () => abortController.abort()
+    }
+  }, [debouncedQuery, value.latitude, value.longitude, lastRequestTime, MIN_REQUEST_INTERVAL])
 
   const handleSelectSuggestion = (suggestion: NominatimResult) => {
     const location: LocationData = {
       location_name: suggestion.display_name,
       latitude: parseFloat(suggestion.lat),
-      longitude: parseFloat(suggestion.lon)
+      longitude: parseFloat(suggestion.lon),
+      location_source: 'geocoded' // From Nominatim autocomplete
     }
     onChange(location)
     setSearchQuery(suggestion.display_name)
@@ -150,7 +180,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
     }
 
     setIsLoading(true)
-    
+
     // CRITICAL: Configure geolocation with proper options
     const geolocationOptions: PositionOptions = {
       enableHighAccuracy: true, // Use GPS if available
@@ -162,10 +192,10 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       async (position) => {
         const lat = position.coords.latitude
         const lon = position.coords.longitude
-        
+
         // CRITICAL: Try to get a normalized, human-readable address from coordinates
         let locationName = ''
-        
+
         try {
           // Reverse geocode to get address name
           const response = await fetch(
@@ -176,7 +206,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
               }
             }
           )
-          
+
           if (response.ok) {
             const data = await response.json()
             // CRITICAL: Normalize address to show only relevant parts
@@ -186,17 +216,18 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           // Non-critical: if reverse geocoding fails, log but don't show error
           console.debug('Reverse geocoding failed:', error)
         }
-        
+
         // CRITICAL: If we couldn't get a normalized address, use a generic message
         // Don't show raw coordinates to the user
         if (!locationName || locationName.trim().length === 0) {
           locationName = 'Ubicación actual'
         }
-        
+
         const location: LocationData = {
           location_name: locationName,
           latitude: lat,
-          longitude: lon
+          longitude: lon,
+          location_source: 'gps' // From device GPS
         }
         onChange(location)
         setSearchQuery(locationName)
@@ -205,7 +236,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       (error) => {
         // CRITICAL: Show clear, human-friendly error messages
         let errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
-        
+
         // Log detailed error for debugging
         console.debug('Geolocation error:', {
           code: error.code,
@@ -214,7 +245,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           POSITION_UNAVAILABLE: error.POSITION_UNAVAILABLE,
           TIMEOUT: error.TIMEOUT
         })
-        
+
         switch (error.code) {
           case error.PERMISSION_DENIED:
             errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
@@ -228,7 +259,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           default:
             errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
         }
-        
+
         toast.error(errorMessage)
         setIsLoading(false)
       },
@@ -297,6 +328,25 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         <br />
         Ejemplos: "Palermo, Buenos Aires" o "Av. Corrientes 1200, CABA"
       </p>
+
+      {/* Location Source Badge */}
+      {value.location_source && value.location_name && (
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${value.location_source === 'gps'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+              : value.location_source === 'geocoded'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : value.location_source === 'manual'
+                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                  : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+            }`}>
+            {value.location_source === 'gps' && '📍 GPS Preciso'}
+            {value.location_source === 'geocoded' && '🗺️ Geolocalizado'}
+            {value.location_source === 'manual' && '✏️ Ingreso Manual'}
+            {value.location_source === 'estimated' && '⚠️ Ubicación Estimada'}
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="text-sm text-destructive mt-1">{error}</div>

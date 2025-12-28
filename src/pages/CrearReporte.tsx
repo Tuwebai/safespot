@@ -191,7 +191,7 @@ export function CrearReporte() {
       // If coordinates are available, use them
       // If not, try to determine zone from location name only
       let zone: string | null = null
-      
+
       if (data.location.latitude && data.location.longitude) {
         // Has coordinates - use them to determine zone
         zone = await determineZone(data.location)
@@ -203,7 +203,7 @@ export function CrearReporte() {
           latitude: undefined,
           longitude: undefined
         })
-        
+
         // If zone cannot be determined from name, try to get coordinates from Nominatim
         if (!zone || !isValidZone(zone)) {
           try {
@@ -215,7 +215,7 @@ export function CrearReporte() {
                 }
               }
             )
-            
+
             if (response.ok) {
               const results = await response.json()
               if (results.length > 0) {
@@ -226,7 +226,7 @@ export function CrearReporte() {
                   longitude: parseFloat(result.lon)
                 }
                 zone = await determineZone(locationWithCoords)
-                
+
                 // Update form with coordinates if found
                 if (locationWithCoords.latitude && locationWithCoords.longitude) {
                   setValue('location', locationWithCoords)
@@ -238,8 +238,8 @@ export function CrearReporte() {
           }
         }
       }
-      
-      // If still no zone, use a default or show helpful error
+
+      // If still no zone, use a default with warning to user
       if (!zone || !isValidZone(zone)) {
         // Try to extract zone from location name as last resort
         const locationLower = data.location.location_name.toLowerCase()
@@ -254,9 +254,21 @@ export function CrearReporte() {
         } else if (locationLower.includes('oeste') || locationLower.includes('west')) {
           zone = 'Oeste'
         } else {
-          // Default to Centro if cannot determine
+          // Default to Centro but WARN the user
           zone = 'Centro'
-          console.debug('Could not determine zone, defaulting to Centro')
+          // Show warning toast
+          toast.warning(
+            'No pudimos determinar la zona automáticamente. Se usará "Centro" como predeterminado. Verificá que la ubicación sea correcta.'
+          )
+
+          // Update location_source to 'estimated' to indicate this is not precise
+          const updatedLocation: LocationData = {
+            ...data.location,
+            location_source: 'estimated'
+          }
+          setValue('location', updatedLocation)
+
+          console.debug('Could not determine zone, defaulting to Centro with user warning')
         }
       }
 
