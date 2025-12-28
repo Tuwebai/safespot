@@ -400,13 +400,14 @@ export const commentsApi = {
    * Returns updated like status and count
    */
   like: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number }> => {
-    const response = await apiRequest<{ data: { liked: boolean; upvotes_count: number } }>(
+    // apiRequest already extracts data.data, so response is the final object
+    const response = await apiRequest<{ liked: boolean; upvotes_count: number }>(
       `/comments/${commentId}/like`,
       {
         method: 'POST',
       }
     );
-    return response.data;
+    return response;
   },
 
   /**
@@ -414,13 +415,14 @@ export const commentsApi = {
    * Returns updated like status and count
    */
   unlike: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number }> => {
-    const response = await apiRequest<{ data: { liked: boolean; upvotes_count: number } }>(
+    // apiRequest already extracts data.data, so response is the final object
+    const response = await apiRequest<{ liked: boolean; upvotes_count: number }>(
       `/comments/${commentId}/like`,
       {
         method: 'DELETE',
       }
     );
-    return response.data;
+    return response;
   },
 
   /**

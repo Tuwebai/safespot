@@ -1,0 +1,9 @@
+// Barrel export for report-detail components
+export { ReportHeader } from './ReportHeader'
+export { ReportActions } from './ReportActions'
+export { ReportDescription } from './ReportDescription'
+export { ReportImages } from './ReportImages'
+export { ReportMeta } from './ReportMeta'
+export { CommentsSection } from './CommentsSection'
+export { DeleteReportDialog } from './DeleteReportDialog'
+export { FlagReportDialog } from './FlagReportDialog'

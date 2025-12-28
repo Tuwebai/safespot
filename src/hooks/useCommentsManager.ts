@@ -325,26 +325,46 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     }, [state.comments, state.submitting, toast])
 
     const toggleLike = useCallback(async (commentId: string) => {
-        if (state.submitting) return
+        // Guard: prevent spam clicks (silent - this is expected behavior)
+        if (state.submitting === 'like' && state.processingId === commentId) {
+            return
+        }
 
+        // Guard: validate comment exists
         const comment = state.comments.find(c => c.id === commentId)
-        if (!comment) return
+        if (!comment) {
+            console.warn(`[useCommentsManager.toggleLike] Comment ${commentId} not found in state`)
+            return
+        }
+
+        // Save current state for rollback
+        const wasLiked = comment.liked_by_me ?? false
+        const previousCount = comment.upvotes_count ?? 0
 
         // Optimistic update
-        const wasLiked = comment.liked_by_me
         dispatch({
             type: 'UPDATE_COMMENT',
             payload: {
                 id: commentId,
                 updates: {
                     liked_by_me: !wasLiked,
-                    upvotes_count: comment.upvotes_count + (wasLiked ? -1 : 1)
+                    upvotes_count: previousCount + (wasLiked ? -1 : 1)
                 }
             }
         })
+        dispatch({ type: 'START_SUBMIT', payload: { operation: 'like', id: commentId } })
 
         try {
             const result = await commentsApi.like(commentId)
+
+            // Guard: validate API response structure
+            if (!result || typeof result.liked !== 'boolean' || typeof result.upvotes_count !== 'number') {
+                console.warn('[useCommentsManager.toggleLike] Invalid API response:', result)
+                // Keep optimistic state if response is invalid but request succeeded
+                dispatch({ type: 'END_SUBMIT' })
+                return
+            }
+
             dispatch({
                 type: 'UPDATE_COMMENT',
                 payload: {
@@ -353,17 +373,19 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
                 }
             })
         } catch (error) {
-            // Rollback
+            // Rollback to previous state
             dispatch({
                 type: 'UPDATE_COMMENT',
                 payload: {
                     id: commentId,
-                    updates: { liked_by_me: wasLiked, upvotes_count: comment.upvotes_count }
+                    updates: { liked_by_me: wasLiked, upvotes_count: previousCount }
                 }
             })
             handleErrorWithMessage(error, 'Error al dar like', toast.error, 'useCommentsManager.toggleLike')
+        } finally {
+            dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.comments, state.submitting, toast])
+    }, [state.comments, state.submitting, state.processingId, toast])
 
     // ============================================
     // ACTION CREATORS (for UI)
