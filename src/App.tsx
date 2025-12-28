@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
-import { RouteLoadingFallback } from '@/components/RouteLoadingFallback'
+import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteLoadingFallback'
 
 // Lazy-loaded page components
 // Each page is loaded only when navigated to, reducing initial bundle size
@@ -28,7 +28,14 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/reportes" element={<Reportes />} />
             <Route path="/crear-reporte" element={<CrearReporte />} />
-            <Route path="/reporte/:id" element={<DetalleReporte />} />
+            <Route
+              path="/reporte/:id"
+              element={
+                <Suspense fallback={<DetailLoadingFallback />}>
+                  <DetalleReporte />
+                </Suspense>
+              }
+            />
             <Route path="/explorar" element={<Explorar />} />
             <Route path="/gamificacion" element={<Gamificacion />} />
             <Route path="/perfil" element={<Perfil />} />

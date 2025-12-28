@@ -14,11 +14,11 @@ La aplicación SafeSpot es una SPA funcional con arquitectura sólida pero con *
 
 | Dimensión | Puntuación | Notas |
 |-----------|------------|-------|
-| **Estabilidad** | 8/10 | Bugs críticos resueltos, algunos edge cases |
-| **Performance Real** | 7/10 | API responses rápidas, código moderadamente optimizado |
-| **Performance Percibida** | 6/10 | Skeletons implementados, pero navigation lenta |
-| **UX/Feedback** | 6/10 | Inconsistencias en feedback, estados invisibles |
-| **Arquitectura** | 7/10 | Hooks bien separados, algunos patrones subóptimos |
+| **Estabilidad** | 9/10 | Bugs críticos resueltos, validaciones robustas |
+| **Performance Real** | 8/10 | API responses rápidas, caching activo (React Query) |
+| **Performance Percibida** | 8/10 | Prefetching, skeletons específicos y optimización de renders |
+| **UX/Feedback** | 8/10 | Feedback visual consistente, manejo de errores y estados vacíos |
+| **Arquitectura** | 8/10 | React Query integrado, hooks limpios y componentes separados |
 
 ### Principales Riesgos
 1. **Percepción de lentitud:** Navegación entre páginas se siente pesada
@@ -101,20 +101,22 @@ La implementación de **Prefetching** mejora significativamente la percepción:
 **Antes:** Click → Spinner → 500-800ms → Contenido  
 **Ahora:** Hover → Prefetch → Click → Contenido inmediato
 
-### 3.3 Skeleton Mismatch (CLS Potencial)
+### 3.3 ✅ Skeleton Mismatch (CORREGIDO)
 
-📍 **Ubicación:** `RouteLoadingFallback.tsx` vs páginas reales
+📍 **Ubicación:** `App.tsx`
 
-⚠️ **Problema:** El skeleton genérico muestra grid de 3 columnas, pero algunas páginas tienen layouts diferentes (ej: DetalleReporte es single-column)
+✅ **Estado:** RESUELTO (28/12/2024)
+**Solución:** Se implementó `DetailLoadingFallback` para la ruta de detalle, eliminando el CLS por mismatch de layout.
 
-✅ **Recomendación:** Crear skeletons específicos por tipo de página:
 ```tsx
-// Usar DetailLoadingFallback para rutas de detalle
-<Route path="/reporte/:id" element={
-  <Suspense fallback={<DetailLoadingFallback />}>
-    <DetalleReporte />
-  </Suspense>
-}/>
+<Route 
+  path="/reporte/:id" 
+  element={
+    <Suspense fallback={<DetailLoadingFallback />}>
+      <DetalleReporte />
+    </Suspense>
+  } 
+/>
 ```
 
 ### 3.4 ✅ Re-renders en Cards de Reportes (OPTIMIZADO)
@@ -157,17 +159,11 @@ const handleHover = useCallback((id: string) => {
 
 ### 4.2 Estados Invisibles
 
-#### ❌ RichTextEditor sin feedback de vacío
+#### ✅ RichTextEditor sin feedback de vacío (CORREGIDO)
+**Solución:** Se implementó un mensaje "Escribe algo para poder enviar" visible cuando el contenido es vacío.
 ```tsx
-// ACTUAL - Botón enviar deshabilitado pero sin explicación
-disabled={disabled || !editor.getText().trim()}
-```
-
-#### ✅ Recomendado
-```tsx
-// Mostrar hint cuando está vacío
-{!editor.getText().trim() && (
-  <span className="text-xs text-muted-foreground">
+{onSubmit && !disabled && !editor.getText().trim() && (
+  <span className="text-xs text-muted-foreground animate-pulse">
     Escribe algo para poder enviar
   </span>
 )}
@@ -309,7 +305,7 @@ const submitComment = useCallback(async () => {
 2. ✅ **Skeletons semánticos** - YA IMPLEMENTADO
 3. ✅ **Optimistic updates** - YA IMPLEMENTADO
 4. ⏳ **Image blur placeholders** - Pendiente
-5. ⏳ **Stale-while-revalidate** - Considerar React Query
+5. ✅ **Stale-while-revalidate** - Implementado con React Query
 
 ---
 
@@ -357,15 +353,15 @@ ANTES DE CADA PR:
 |---|-------|---------|--------|--------|
 | 4 | ~~Integrar NetworkStatusIndicator~~ ✅ LISTO | Medio - UX offline | Bajo | DONE |
 | 5 | ~~Refactorizar cleanup de image previews~~ ✅ LISTO | Medio - Memory leak | Bajo | DONE |
-| 6 | Agregar hint a RichTextEditor vacío | Bajo - UX | Nulo | 15min |
-| 7 | Crear DetailLoadingFallback específico | Bajo - CLS | Bajo | 30min |
+| 6 | ~~Agregar hint a RichTextEditor vacío~~ ✅ LISTO | Bajo - UX | Nulo | DONE |
+| 7 | ~~Crear DetailLoadingFallback específico~~ ✅ LISTO | Bajo - CLS | Bajo | DONE |
 
 ### 🟢 Baja Prioridad / Largo Plazo
 
 | # | Tarea | Impacto | Riesgo | Tiempo |
 |---|-------|---------|--------|--------|
 | 8 | Implementar blur placeholders en imágenes | Medio - Percepción | Bajo | 2h |
-| 9 | Considerar React Query para cache | Alto - DX | Alto | 4h+ |
+| 9 | ~~Considerar React Query para cache~~ ✅ LISTO | Alto - DX | Alto | DONE |
 | 10 | Integrar mapa en Explorar | Medio - Feature | Medio | 8h+ |
 
 ---

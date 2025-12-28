@@ -380,7 +380,16 @@ export function RichTextEditor({
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        {/* Feedback Hint - Improved UX */}
+        <div>
+          {onSubmit && !disabled && !editor.getText().trim() && (
+            <span className="text-xs text-muted-foreground animate-pulse">
+              Escribe algo para poder enviar
+            </span>
+          )}
+        </div>
+
         {/* Character Counter and Buttons */}
         <div className="flex items-center gap-3">
           {!hideHelp && (
