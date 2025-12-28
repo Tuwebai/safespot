@@ -98,8 +98,24 @@ export function DetalleReporte() {
     setCommentsCount(prev => Math.max(0, prev + delta))
   }, [])
 
+  // Handler for favorite toggle - MUST be before any returns (Rules of Hooks)
+  const handleFavoriteToggle = useCallback((newState: boolean) => {
+    if (reportDetail.report) {
+      reportDetail.updateReport({ ...reportDetail.report, is_favorite: newState })
+    }
+  }, [reportDetail.report, reportDetail.updateReport])
+
+  // Derived state - safe to compute before returns
+  const isBusy =
+    editor.updating ||
+    flagManager.deletingReport ||
+    flagManager.flaggingReport
+
+  const report = reportDetail.report
+  const imageUrls = report ? normalizeImageUrls(report.image_urls) : []
+
   // ============================================
-  // DELETED STATE - prevent any child rendering/fetching
+  // CONDITIONAL RETURNS (after all hooks)
   // ============================================
 
   if (reportDetail.isDeleted) {
@@ -122,7 +138,7 @@ export function DetalleReporte() {
   // ERROR STATE
   // ============================================
 
-  if (reportDetail.error || !reportDetail.report) {
+  if (reportDetail.error || !report) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <Card className="bg-dark-card border-dark-border">
@@ -137,25 +153,9 @@ export function DetalleReporte() {
     )
   }
 
-  const { report } = reportDetail
-  const imageUrls = normalizeImageUrls(report.image_urls)
-
   // ============================================
   // MAIN RENDER
   // ============================================
-
-  // Handler for favorite toggle
-  const handleFavoriteToggle = useCallback((newState: boolean) => {
-    if (reportDetail.report) {
-      reportDetail.updateReport({ ...reportDetail.report, is_favorite: newState })
-    }
-  }, [reportDetail.report, reportDetail.updateReport])
-
-  // Calculate unified busy state to prevent conflicting actions
-  const isBusy =
-    editor.updating ||
-    flagManager.deletingReport ||
-    flagManager.flaggingReport
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
