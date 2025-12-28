@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { requireAnonymousId, validateReport, validateFlagReason } from '../utils/validation.js';
+import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
@@ -29,10 +30,243 @@ import { encodeCursor, decodeCursor } from '../utils/cursor.js';
 router.get('/', async (req, res) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
-    const { search, category, zone, status, limit, cursor } = req.query;
+    const { search, category, zone, status, lat, lng, radius, limit, cursor } = req.query;
 
     // Parse limit
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
+
+    // ============================================
+    // GEOGRAPHIC FEED: "Cerca de Mí"
+    // ============================================
+    const isGeoFeed = lat && lng;
+
+    if (isGeoFeed) {
+      // Validate coordinates
+      const userLat = parseFloat(lat);
+      const userLng = parseFloat(lng);
+
+      if (isNaN(userLat) || isNaN(userLng)) {
+        return res.status(400).json({
+          error: 'Coordenadas inválidas',
+          details: 'lat y lng deben ser números válidos'
+        });
+      }
+
+      if (userLat < -90 || userLat > 90 || userLng < -180 || userLng > 180) {
+        return res.status(400).json({
+          error: 'Coordenadas fuera de rango',
+          details: 'lat debe estar entre -90 y 90, lng entre -180 y 180'
+        });
+      }
+
+      // Parse radius (default 5km = 5000m)
+      const radiusMeters = radius ? parseInt(radius, 10) : 5000;
+
+      if (radiusMeters < 100 || radiusMeters > 50000) {
+        return res.status(400).json({
+          error: 'Radio inválido',
+          details: 'El radio debe estar entre 100m y 50km'
+        });
+      }
+
+      // Parse cursor for geographic feed
+      const decodedCursor = cursor ? decodeCursor(cursor) : null;
+      let cursorDistance = null;
+      let cursorDate = null;
+      let cursorId = null;
+
+      if (decodedCursor && decodedCursor.d && decodedCursor.c && decodedCursor.i) {
+        cursorDistance = decodedCursor.d; // distance
+        cursorDate = decodedCursor.c;     // created_at
+        cursorId = decodedCursor.i;       // id
+      }
+
+      const fetchLimit = limitNum + 1;
+
+      // Build filters for geographic feed
+      const buildGeoFilters = (startIdx) => {
+        const conds = [];
+        const vals = [];
+        let idx = startIdx;
+
+        if (search && typeof search === 'string' && search.trim()) {
+          const searchTerm = search.trim();
+          conds.push(`(
+            r.title % $${idx} OR 
+            r.description % $${idx} OR 
+            r.category % $${idx} OR 
+            r.address % $${idx} OR 
+            r.zone % $${idx}
+          )`);
+          vals.push(searchTerm);
+          idx++;
+        }
+
+        if (category && category !== 'all') {
+          conds.push(`r.category = $${idx}`);
+          vals.push(category.trim());
+          idx++;
+        }
+
+        if (zone && zone !== 'all') {
+          conds.push(`r.zone = $${idx}`);
+          vals.push(zone.trim());
+          idx++;
+        }
+
+        if (status && status !== 'all') {
+          conds.push(`r.status = $${idx}`);
+          vals.push(status.trim());
+          idx++;
+        }
+
+        return { conds, vals, nextIdx: idx };
+      };
+
+      let dataQuery = '';
+      let dataParams = [];
+
+      if (anonymousId) {
+        // Authenticated flow with favorites/flags
+        const f = buildGeoFilters(9); // $1-$8 reserved
+        const additionalWhere = f.conds.length > 0 ? `AND ${f.conds.join(' AND ')}` : '';
+
+        dataQuery = `
+          WITH user_location AS (
+            SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS point
+          )
+          SELECT 
+            r.*,
+            ST_Distance(r.location, ul.point) AS distance_meters,
+            CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
+            CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
+            (SELECT COUNT(*) FROM comments c 
+             WHERE c.report_id = r.id 
+               AND c.is_thread = true 
+               AND c.parent_id IS NULL) AS threads_count
+          FROM reports r
+          CROSS JOIN user_location ul
+          LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8
+          LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8
+          WHERE 
+            ST_DWithin(r.location, ul.point, $3)
+            AND r.location IS NOT NULL
+            ${additionalWhere}
+            AND (
+              $4::DECIMAL IS NULL OR
+              (
+                ST_Distance(r.location, ul.point) > $4 OR
+                (ST_Distance(r.location, ul.point) = $4 AND r.created_at < $5) OR
+                (ST_Distance(r.location, ul.point) = $4 AND r.created_at = $5 AND r.id < $6)
+              )
+            )
+          ORDER BY distance_meters ASC, r.created_at DESC, r.id DESC
+          LIMIT $7
+        `;
+
+        dataParams = [
+          userLat,           // $1
+          userLng,           // $2
+          radiusMeters,      // $3
+          cursorDistance,    // $4
+          cursorDate,        // $5
+          cursorId,          // $6
+          fetchLimit,        // $7
+          anonymousId,       // $8
+          ...f.vals          // $9+
+        ];
+      } else {
+        // Public flow
+        const f = buildGeoFilters(8);
+        const additionalWhere = f.conds.length > 0 ? `AND ${f.conds.join(' AND ')}` : '';
+
+        dataQuery = `
+          WITH user_location AS (
+            SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS point
+          )
+          SELECT 
+            r.*,
+            ST_Distance(r.location, ul.point) AS distance_meters,
+            (SELECT COUNT(*) FROM comments c 
+             WHERE c.report_id = r.id 
+               AND c.is_thread = true 
+               AND c.parent_id IS NULL) AS threads_count
+          FROM reports r
+          CROSS JOIN user_location ul
+          WHERE 
+            ST_DWithin(r.location, ul.point, $3)
+            AND r.location IS NOT NULL
+            ${additionalWhere}
+            AND (
+              $4::DECIMAL IS NULL OR
+              (
+                ST_Distance(r.location, ul.point) > $4 OR
+                (ST_Distance(r.location, ul.point) = $4 AND r.created_at < $5) OR
+                (ST_Distance(r.location, ul.point) = $4 AND r.created_at = $5 AND r.id < $6)
+              )
+            )
+          ORDER BY distance_meters ASC, r.created_at DESC, r.id DESC
+          LIMIT $7
+        `;
+
+        dataParams = [
+          userLat,
+          userLng,
+          radiusMeters,
+          cursorDistance,
+          cursorDate,
+          cursorId,
+          fetchLimit,
+          ...f.vals
+        ];
+      }
+
+      const dataResult = await queryWithRLS(anonymousId || '', dataQuery, dataParams);
+      const rawReports = dataResult.rows;
+
+      // Pagination logic
+      const hasNextPage = rawReports.length > limitNum;
+      const reports = hasNextPage ? rawReports.slice(0, limitNum) : rawReports;
+
+      let nextCursor = null;
+      if (hasNextPage) {
+        const lastItem = reports[reports.length - 1];
+        nextCursor = encodeCursor({
+          d: lastItem.distance_meters,  // distance
+          c: lastItem.created_at,       // created_at
+          i: lastItem.id                // id
+        });
+      }
+
+      // Filter by Trust Score visibility
+      const visibleReports = [];
+      for (const report of reports) {
+        const isVisible = await checkContentVisibility(report.anonymous_id, 'report');
+        if (isVisible) {
+          visibleReports.push(report);
+        }
+      }
+
+      logSuccess('GET /api/reports (geographic)', anonymousId);
+
+      return res.json({
+        items: visibleReports,
+        pagination: {
+          hasMore: hasNextPage,
+          nextCursor,
+          limit: limitNum
+        },
+        meta: {
+          feedType: 'geographic',
+          userLocation: { lat: userLat, lng: userLng },
+          radius: radiusMeters
+        }
+      });
+    }
+
+    // ============================================
+    // CHRONOLOGICAL FEED (Fallback)
+    // ============================================
 
     // Parse cursor if present
     const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -54,15 +288,19 @@ router.get('/', async (req, res) => {
       const conds = [];
       const vals = [];
       let idx = startIndex;
+      let searchIdx = null; // Track search param index for sorting
 
       if (search && typeof search === 'string' && search.trim()) {
         const searchTerm = search.trim();
+        searchIdx = idx; // Capture index
+        // Uses pg_trgm '%' operator for fuzzy matching (requires index)
+        // Default threshold is usually 0.3
         conds.push(`(
-          r.title ILIKE '%' || $${idx} || '%' OR 
-          r.description ILIKE '%' || $${idx} || '%' OR 
-          r.category ILIKE '%' || $${idx} || '%' OR 
-          r.address ILIKE '%' || $${idx} || '%' OR 
-          r.zone ILIKE '%' || $${idx} || '%'
+          r.title % $${idx} OR 
+          r.description % $${idx} OR 
+          r.category % $${idx} OR 
+          r.address % $${idx} OR 
+          r.zone % $${idx}
         )`);
         vals.push(searchTerm);
         idx++;
@@ -86,7 +324,7 @@ router.get('/', async (req, res) => {
         idx++;
       }
 
-      return { conds, vals, nextIdx: idx };
+      return { conds, vals, nextIdx: idx, searchIdx };
     };
 
     // Calculate total count (Optional/Legacy compatibility)
@@ -151,11 +389,27 @@ router.get('/', async (req, res) => {
       let queryParams = [anonymousId, ...f.vals];
       let pIdx = f.nextIdx;
 
-      // Add Cursor condition
-      if (cursorDate && cursorId) {
-        whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
-        queryParams.push(cursorDate, cursorId);
-        pIdx += 2;
+      // Determine Sort Order: Relevance (Similarity) vs Date
+      let orderByClause = 'ORDER BY r.created_at DESC, r.id DESC';
+
+      if (f.searchIdx) {
+        // Search active: Sort by similarity DESC
+        // We use similarity() function provided by pg_trgm
+        orderByClause = `ORDER BY GREATEST(
+          similarity(r.title, $${f.searchIdx}),
+          similarity(r.description, $${f.searchIdx}),
+          similarity(r.category, $${f.searchIdx}),
+          similarity(r.zone, $${f.searchIdx}),
+          similarity(r.address, $${f.searchIdx})
+        ) DESC, r.created_at DESC`;
+      } else {
+        // No search: Date sort + Cursor
+        // Add Cursor condition ONLY if not searching (since cursor relies on date sort)
+        if (cursorDate && cursorId) {
+          whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
+          queryParams.push(cursorDate, cursorId);
+          pIdx += 2;
+        }
       }
 
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
@@ -171,7 +425,7 @@ router.get('/', async (req, res) => {
         LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
         LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
         ${whereClause}
-        ORDER BY r.created_at DESC, r.id DESC
+        ${orderByClause}
         LIMIT $${pIdx}
       `;
       queryParams.push(fetchLimit);
@@ -184,11 +438,24 @@ router.get('/', async (req, res) => {
       let queryParams = [...f.vals];
       let pIdx = f.nextIdx;
 
-      // Add Cursor condition
-      if (cursorDate && cursorId) {
-        whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
-        queryParams.push(cursorDate, cursorId);
-        pIdx += 2;
+      // Determine Sort Order
+      let orderByClause = 'ORDER BY r.created_at DESC, r.id DESC';
+
+      if (f.searchIdx) {
+        orderByClause = `ORDER BY GREATEST(
+          similarity(r.title, $${f.searchIdx}),
+          similarity(r.description, $${f.searchIdx}),
+          similarity(r.category, $${f.searchIdx}),
+          similarity(r.zone, $${f.searchIdx}),
+          similarity(r.address, $${f.searchIdx})
+        ) DESC, r.created_at DESC`;
+      } else {
+        // Add Cursor condition
+        if (cursorDate && cursorId) {
+          whereConds.push(`(r.created_at < $${pIdx} OR (r.created_at = $${pIdx} AND r.id < $${pIdx + 1}))`);
+          queryParams.push(cursorDate, cursorId);
+          pIdx += 2;
+        }
       }
 
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
@@ -198,7 +465,7 @@ router.get('/', async (req, res) => {
                (SELECT COUNT(*) FROM comments c WHERE c.report_id = r.id AND c.is_thread = true AND c.parent_id IS NULL) as threads_count
         FROM reports r 
         ${whereClause}
-        ORDER BY r.created_at DESC, r.id DESC
+        ${orderByClause}
         LIMIT $${pIdx}
       `;
       queryParams.push(fetchLimit);
@@ -425,12 +692,30 @@ router.post('/', requireAnonymousId, async (req, res) => {
       incidentDate = new Date().toISOString();
     }
 
+    // ... other imports
+
+    // Check for Duplicate Report (same block)
+    // ...
+
+    // NEW: Check Trust Score & Shadow Ban Status
+    let isHidden = false;
+    try {
+      const visibility = await checkContentVisibility(anonymousId);
+      if (visibility.isHidden) {
+        isHidden = true;
+        logSuccess('Shadow ban applied', { anonymousId, action: visibility.moderationAction });
+      }
+    } catch (checkError) {
+      logError(checkError, req);
+      // Fail open: Default to visible if check fails to avoid blocking valid users
+    }
+
     // Insert report using queryWithRLS for RLS consistency
     const insertResult = await queryWithRLS(anonymousId, `
       INSERT INTO reports (
         anonymous_id, title, description, category, zone, address, 
-        latitude, longitude, status, incident_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        latitude, longitude, status, incident_date, is_hidden
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `, [
       anonymousId,
@@ -442,7 +727,8 @@ router.post('/', requireAnonymousId, async (req, res) => {
       req.body.latitude || null,
       req.body.longitude || null,
       req.body.status || 'pendiente',
-      incidentDate
+      incidentDate,
+      isHidden // New param
     ]);
 
     if (insertResult.rows.length === 0) {

@@ -3,12 +3,16 @@ import { Footer } from './Footer'
 import { ToastProvider } from '@/components/ui/toast'
 import { BadgeNotificationManager } from '@/components/BadgeNotificationManager'
 import { NetworkStatusIndicator } from '@/components/NetworkStatusIndicator'
+import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 
 interface LayoutProps {
   children: React.ReactNode
 }
 
 export function Layout({ children }: LayoutProps) {
+  // Enable deterministic scroll restoration
+  useScrollRestoration()
+
   return (
     <ToastProvider>
       <BadgeNotificationManager />

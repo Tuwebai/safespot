@@ -19,15 +19,15 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       objeto: 'bg-green-500/20 text-green-400 border-green-500/30',
       usuario: 'bg-purple-500/20 text-purple-400 border-purple-500/30'
     }
-    
+
     const icons = {
       ubicacion: MapPin,
       objeto: Type,
       usuario: AtSign
     }
-    
+
     const Icon = icons[type]
-    
+
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${styles[type]}`}>
         <Icon className="w-3 h-3" />
@@ -41,42 +41,42 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     const tags: Array<{ index: number, type: string, value: string }> = []
     let processed = text
     let offset = 0
-    
+
     // Procesar #ubicacion[value]
     processed = processed.replace(/#ubicacion\[([^\]]+)\]/g, (match, value, index) => {
       tags.push({ index: index + offset, type: 'ubicacion', value })
       offset += match.length - `SAFESPOT_${tags.length - 1}`.length
       return `SAFESPOT_${tags.length - 1}`
     })
-    
+
     // Procesar #objeto[value]
     processed = processed.replace(/#objeto\[([^\]]+)\]/g, (match, value, index) => {
       tags.push({ index: index + offset, type: 'objeto', value })
       offset += match.length - `SAFESPOT_${tags.length - 1}`.length
       return `SAFESPOT_${tags.length - 1}`
     })
-    
+
     // Procesar #usuario[value]
     processed = processed.replace(/#usuario\[([^\]]+)\]/g, (match, value, index) => {
       tags.push({ index: index + offset, type: 'usuario', value })
       offset += match.length - `SAFESPOT_${tags.length - 1}`.length
       return `SAFESPOT_${tags.length - 1}`
     })
-    
+
     // Procesar ||spoiler||
     processed = processed.replace(/\|\|([^|]+)\|\|/g, (match, value, index) => {
       tags.push({ index: index + offset, type: 'spoiler', value })
       offset += match.length - `SAFESPOT_${tags.length - 1}`.length
       return `SAFESPOT_${tags.length - 1}`
     })
-    
+
     // Procesar ||SENSIBLE: ...||
     processed = processed.replace(/\|\|SENSIBLE:\s*([^|]+)\|\|/g, (match, value, index) => {
       tags.push({ index: index + offset, type: 'sensible', value })
       offset += match.length - `SAFESPOT_${tags.length - 1}`.length
       return `SAFESPOT_${tags.length - 1}`
     })
-    
+
     return { processed, tags }
   }
 
@@ -95,7 +95,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         if (match.index > lastIndex) {
           parts.push(children.substring(lastIndex, match.index))
         }
-        
+
         const tag = tagMap.get(match[0])
         if (tag) {
           if (tag.type === 'spoiler') {
@@ -112,25 +112,25 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
             )
           } else {
             parts.push(
-              <SafeSpotTag 
-                key={match.index} 
-                type={tag.type as 'ubicacion' | 'objeto' | 'usuario'} 
-                value={tag.value} 
+              <SafeSpotTag
+                key={match.index}
+                type={tag.type as 'ubicacion' | 'objeto' | 'usuario'}
+                value={tag.value}
               />
             )
           }
         }
-        
+
         lastIndex = regex.lastIndex
       }
-      
+
       if (lastIndex < children.length) {
         parts.push(children.substring(lastIndex))
       }
-      
+
       return <p className="mb-2 last:mb-0">{parts.length > 0 ? parts : children}</p>
     }
-    
+
     return <p className="mb-2 last:mb-0">{children}</p>
   }
 
@@ -139,11 +139,12 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: Paragraph,
+          p: ({ children }) => <Paragraph>{children}</Paragraph>,
           strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
-          code: ({ inline, children }) => 
-            inline ? (
+          code: ({ className: codeClassName, children }) => {
+            const isInline = !codeClassName
+            return isInline ? (
               <code className="px-1.5 py-0.5 bg-dark-bg border border-dark-border rounded text-sm font-mono text-neon-green">
                 {children}
               </code>
@@ -151,7 +152,8 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
               <pre className="block p-3 bg-dark-bg border border-dark-border rounded text-sm font-mono overflow-x-auto">
                 <code>{children}</code>
               </pre>
-            ),
+            )
+          },
           ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1 ml-4">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1 ml-4">{children}</ol>,
           li: ({ children }) => <li className="text-foreground/80">{children}</li>,

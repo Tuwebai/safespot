@@ -1,5 +1,4 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { AtSign } from 'lucide-react'
 
 export interface UserOptions {
   HTMLAttributes: Record<string, any>
@@ -60,9 +59,9 @@ export const User = Node.create<UserOptions>({
       'data-type': 'safespot-user',
       class: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-purple-500/20 text-purple-400 border-purple-500/30',
     }), [
-      ['span', { class: 'safespot-user-icon' }, '@'],
-      ['span', { class: 'safespot-user-value' }, HTMLAttributes.value || ''],
-    ]]
+        ['span', { class: 'safespot-user-icon' }, '@'],
+        ['span', { class: 'safespot-user-value' }, HTMLAttributes.value || ''],
+      ]]
   },
 
   addNodeView() {

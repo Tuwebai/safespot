@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
-import { MapPin, Search, Navigation } from 'lucide-react'
-import { useDebounce } from '@/hooks/useDebounce'
-import { normalizeAddress, normalizeSearchResult } from '@/lib/address-utils'
+import { MapPin, Search, Navigation, AlertCircle, X } from 'lucide-react'
+import { useLocationSearch } from '@/hooks/useLocationSearch'
+import { useGeolocation } from '@/hooks/useGeolocation'
 
 export interface LocationData {
   location_name: string
@@ -23,248 +23,158 @@ interface NominatimResult {
   display_name: string
   lat: string
   lon: string
-  address?: {
-    road?: string
-    house_number?: string
-    suburb?: string
-    neighbourhood?: string
-    city?: string
-    state?: string
-    [key: string]: string | undefined
-  }
 }
 
 export function LocationSelector({ value, onChange, error }: LocationSelectorProps) {
   const toast = useToast()
-  const [searchQuery, setSearchQuery] = useState(value.location_name || '')
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [lastRequestTime, setLastRequestTime] = useState(0)
+  const [hasConfirmedSelection, setHasConfirmedSelection] = useState(false)
 
-  const debouncedQuery = useDebounce(searchQuery, 300)
-  const MIN_REQUEST_INTERVAL = 1000 // Rate limit: max 1 request per second
+  // Separate states for search and GPS
+  const { isSearching, results, error: searchError } = useLocationSearch(searchQuery)
+  const { isLocating, getCurrentLocation, cleanup } = useGeolocation({
+    timeout: 10000,
+    enableHighAccuracy: true
+  })
 
-  // Search addresses using Nominatim - RESTRICTED TO ARGENTINA
+  // Sync ONLY when parent resets (e.g., form reset) - detect by checking if value is empty
   useEffect(() => {
-    if (!debouncedQuery || debouncedQuery.length < 3) {
-      setSuggestions([])
+    if (!value.location_name && !value.latitude && !value.longitude) {
+      // Parent cleared the form
+      setSearchQuery('')
+      setHasConfirmedSelection(false)
+    } else if (value.location_name && value.latitude && value.longitude && !hasConfirmedSelection) {
+      // Parent set initial value (e.g., editing existing report)
+      setSearchQuery(value.location_name)
+      setHasConfirmedSelection(true)
+    }
+  }, [value.location_name, value.latitude, value.longitude])
+
+  // Cleanup geolocation on unmount
+  useEffect(() => {
+    return () => {
+      cleanup()
+    }
+  }, [])
+
+  const handleInputChange = (newValue: string) => {
+    setSearchQuery(newValue)
+    setShowSuggestions(true)
+
+    // CRITICAL: If user edits after confirming, INVALIDATE the selection
+    if (hasConfirmedSelection) {
+      setHasConfirmedSelection(false)
+      // Clear parent's location data
+      onChange({
+        location_name: '',
+        latitude: undefined,
+        longitude: undefined,
+        location_source: undefined
+      })
+    }
+  }
+
+  const handleSelectSuggestion = (suggestion: NominatimResult) => {
+    const lat = parseFloat(suggestion.lat)
+    const lon = parseFloat(suggestion.lon)
+
+    // CRITICAL: Always save with coordinates
+    if (isNaN(lat) || isNaN(lon)) {
+      toast.error('Ubicación inválida. Por favor, selecciona otra.')
       return
     }
 
-    // Rate limiting check
-    const now = Date.now()
-    const timeSinceLastRequest = now - lastRequestTime
-
-    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
-      // Wait before making request
-      const timeout = setTimeout(() => {
-        performSearch()
-      }, MIN_REQUEST_INTERVAL - timeSinceLastRequest)
-
-      return () => clearTimeout(timeout)
-    }
-
-    // Make request immediately
-    performSearch()
-
-    function performSearch() {
-      setIsLoading(true)
-      setLastRequestTime(Date.now())
-
-      // AbortController for cancelling previous requests
-      const abortController = new AbortController()
-
-      // CRITICAL: Restrict to Argentina only (countrycodes=ar)
-      const params = new URLSearchParams({
-        format: 'json',
-        q: debouncedQuery,
-        limit: '5',
-        countrycodes: 'ar',
-        addressdetails: '1'
-      })
-
-      // If user has coordinates, add them to prioritize nearby results
-      if (value.latitude && value.longitude) {
-        params.append('lat', value.latitude.toString())
-        params.append('lon', value.longitude.toString())
-      }
-
-      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-        signal: abortController.signal,
-        headers: {
-          'User-Agent': 'SafeSpot App'
-        }
-      })
-        .then(res => res.json())
-        .then((data: NominatimResult[]) => {
-          // Filter to ensure only Argentina results
-          const argentinaResults = data
-            .filter(result => {
-              const displayName = result.display_name.toLowerCase()
-
-              // Check for Argentina indicators
-              const isArgentina =
-                displayName.includes('argentina') ||
-                displayName.includes('buenos aires') ||
-                displayName.includes('caba') ||
-                displayName.includes('córdoba') ||
-                displayName.includes('rosario') ||
-                displayName.includes('mendoza') ||
-                displayName.includes('tucumán') ||
-                displayName.includes('salta') ||
-                displayName.includes('santa fe') ||
-                displayName.includes('la plata') ||
-                displayName.includes('mar del plata') ||
-                displayName.includes('bariloche') ||
-                displayName.includes('ushuaia') ||
-                displayName.includes('neuquén') ||
-                displayName.includes('comodoro rivadavia') ||
-                displayName.includes('provincia de') ||
-                true
-
-              // Exclude obvious non-Argentina results
-              const isNotArgentina =
-                displayName.includes(', chile') ||
-                displayName.includes(', uruguay') ||
-                displayName.includes(', paraguay') ||
-                displayName.includes(', brasil') ||
-                displayName.includes(', brazil') ||
-                displayName.includes(', colombia') ||
-                displayName.includes(', méxico') ||
-                displayName.includes(', mexico') ||
-                displayName.includes(', españa') ||
-                displayName.includes(', spain')
-
-              return isArgentina && !isNotArgentina
-            })
-            .map(result => ({
-              ...result,
-              display_name: normalizeSearchResult(result.display_name)
-            }))
-
-          setSuggestions(argentinaResults)
-          setShowSuggestions(true)
-        })
-        .catch((error) => {
-          if (error.name === 'AbortError') {
-            // Request was cancelled, this is expected
-            return
-          }
-          console.debug('Nominatim search error:', error)
-          setSuggestions([])
-        })
-        .finally(() => setIsLoading(false))
-
-      // Cleanup: abort request if component unmounts or query changes
-      return () => abortController.abort()
-    }
-  }, [debouncedQuery, value.latitude, value.longitude, lastRequestTime, MIN_REQUEST_INTERVAL])
-
-  const handleSelectSuggestion = (suggestion: NominatimResult) => {
     const location: LocationData = {
       location_name: suggestion.display_name,
-      latitude: parseFloat(suggestion.lat),
-      longitude: parseFloat(suggestion.lon),
-      location_source: 'geocoded' // From Nominatim autocomplete
+      latitude: lat,
+      longitude: lon,
+      location_source: 'geocoded'
     }
+
+    // CRITICAL: Mark as confirmed
+    setHasConfirmedSelection(true)
     onChange(location)
     setSearchQuery(suggestion.display_name)
     setShowSuggestions(false)
   }
 
-  const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      toast.warning('Geolocalización no está disponible en tu navegador')
-      return
-    }
+  const handleClearSelection = () => {
+    setSearchQuery('')
+    setHasConfirmedSelection(false)
+    setShowSuggestions(false)
+    onChange({
+      location_name: '',
+      latitude: undefined,
+      longitude: undefined,
+      location_source: undefined
+    })
+  }
 
-    setIsLoading(true)
+  const handleUseCurrentLocation = async () => {
+    try {
+      const coords = await getCurrentLocation()
 
-    // CRITICAL: Configure geolocation with proper options
-    const geolocationOptions: PositionOptions = {
-      enableHighAccuracy: true, // Use GPS if available
-      timeout: 15000, // 15 seconds timeout
-      maximumAge: 60000 // Accept cached position up to 1 minute old
-    }
+      if (!coords) {
+        toast.error('No se pudo obtener la ubicación')
+        return
+      }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude
-        const lon = position.coords.longitude
+      const { latitude, longitude } = coords
+      let locationName = ''
 
-        // CRITICAL: Try to get a normalized, human-readable address from coordinates
-        let locationName = ''
+      // Reverse geocoding using backend proxy
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+        const url = new URL(`${API_BASE_URL}/geocode/reverse`)
+        url.searchParams.set('lat', latitude.toString())
+        url.searchParams.set('lon', longitude.toString())
 
-        try {
-          // Reverse geocode to get address name
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&countrycodes=ar`,
-            {
-              headers: {
-                'User-Agent': 'SafeSpot App'
-              }
-            }
-          )
-
-          if (response.ok) {
-            const data = await response.json()
-            // CRITICAL: Normalize address to show only relevant parts
-            locationName = normalizeAddress(data)
+        const response = await fetch(url.toString(), {
+          headers: {
+            'Content-Type': 'application/json'
           }
-        } catch (error) {
-          // Non-critical: if reverse geocoding fails, log but don't show error
-          console.debug('Reverse geocoding failed:', error)
-        }
-
-        // CRITICAL: If we couldn't get a normalized address, use a generic message
-        // Don't show raw coordinates to the user
-        if (!locationName || locationName.trim().length === 0) {
-          locationName = 'Ubicación actual'
-        }
-
-        const location: LocationData = {
-          location_name: locationName,
-          latitude: lat,
-          longitude: lon,
-          location_source: 'gps' // From device GPS
-        }
-        onChange(location)
-        setSearchQuery(locationName)
-        setIsLoading(false)
-      },
-      (error) => {
-        // CRITICAL: Show clear, human-friendly error messages
-        let errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
-
-        // Log detailed error for debugging
-        console.debug('Geolocation error:', {
-          code: error.code,
-          message: error.message,
-          PERMISSION_DENIED: error.PERMISSION_DENIED,
-          POSITION_UNAVAILABLE: error.POSITION_UNAVAILABLE,
-          TIMEOUT: error.TIMEOUT
         })
 
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
-            break
-          case error.POSITION_UNAVAILABLE:
-            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
-            break
-          case error.TIMEOUT:
-            errorMessage = 'La ubicación tardó demasiado. Probá ingresarla manualmente.'
-            break
-          default:
-            errorMessage = 'No pudimos obtener tu ubicación. Probá ingresarla manualmente.'
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data) {
+            locationName = result.data.display_name || ''
+          }
         }
+      } catch (err) {
+        console.error('Reverse geocoding failed:', err)
+      }
 
-        toast.error(errorMessage)
-        setIsLoading(false)
-      },
-      geolocationOptions
-    )
+      if (!locationName || locationName.trim().length === 0) {
+        locationName = 'Ubicación actual'
+      }
+
+      // CRITICAL: Always save with coordinates
+      const location: LocationData = {
+        location_name: locationName,
+        latitude,
+        longitude,
+        location_source: 'gps'
+      }
+
+      setHasConfirmedSelection(true)
+      onChange(location)
+      setSearchQuery(locationName)
+
+    } catch (err: any) {
+      let errorMessage = 'No pudimos obtener tu ubicación.'
+
+      if (err?.code === 1) {
+        errorMessage = 'Permiso denegado. Habilitá la ubicación en tu navegador.'
+      } else if (err?.code === 2) {
+        errorMessage = 'Ubicación no disponible. Verificá tu conexión GPS.'
+      } else if (err?.code === 3 || err?.isTimeout) {
+        errorMessage = 'Se agotó el tiempo de espera. Probá de nuevo.'
+      }
+
+      toast.error(errorMessage)
+    }
   }
 
   return (
@@ -275,20 +185,31 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           <Input
             type="text"
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setShowSuggestions(true)
-            }}
+            onChange={(e) => handleInputChange(e.target.value)}
             onFocus={() => setShowSuggestions(true)}
+            onBlur={() => {
+              // Delay to allow click on suggestion
+              setTimeout(() => setShowSuggestions(false), 200)
+            }}
             placeholder="Busca una dirección..."
-            className={`pl-10 ${error ? 'border-destructive' : ''}`}
+            className={`pl-10 ${error ? 'border-destructive' : ''} ${hasConfirmedSelection ? 'pr-10' : ''}`}
+            disabled={isLocating}
           />
+          {hasConfirmedSelection && searchQuery && (
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-foreground/50 hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Suggestions dropdown */}
-        {showSuggestions && suggestions.length > 0 && (
+        {showSuggestions && results.length > 0 && !hasConfirmedSelection && (
           <div className="absolute z-10 w-full mt-1 bg-dark-card border border-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {suggestions.map((suggestion, index) => (
+            {results.map((suggestion, index) => (
               <button
                 key={index}
                 type="button"
@@ -296,7 +217,7 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
                 className="w-full text-left px-4 py-2 hover:bg-neon-green/10 transition-colors border-b border-dark-border last:border-b-0"
               >
                 <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-neon-green" />
+                  <MapPin className="h-4 w-4 text-neon-green flex-shrink-0" />
                   <span className="text-sm text-foreground">{suggestion.display_name}</span>
                 </div>
               </button>
@@ -304,22 +225,31 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
           </div>
         )}
 
-        {isLoading && (
+        {/* Search loading indicator */}
+        {isSearching && !hasConfirmedSelection && (
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
             <div className="animate-spin h-4 w-4 border-2 border-neon-green border-t-transparent rounded-full"></div>
           </div>
         )}
       </div>
 
+      {/* Search error */}
+      {searchError && (
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" />
+          <span>{searchError}</span>
+        </div>
+      )}
+
       <Button
         type="button"
         variant="outline"
         onClick={handleUseCurrentLocation}
-        disabled={isLoading}
+        disabled={isLocating || isSearching}
         className="w-full"
       >
-        <Navigation className="h-4 w-4 mr-2" />
-        {isLoading ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}
+        <Navigation className={`h-4 w-4 mr-2 ${isLocating ? 'animate-pulse' : ''}`} />
+        {isLocating ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}
       </Button>
 
       {/* Helper text */}
@@ -330,16 +260,18 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
       </p>
 
       {/* Location Source Badge */}
-      {value.location_source && value.location_name && (
+      {value.location_source && value.location_name && hasConfirmedSelection && (
         <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${value.location_source === 'gps'
+          <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${value.location_source === 'gps'
               ? 'bg-green-500/20 text-green-400 border border-green-500/30'
               : value.location_source === 'geocoded'
                 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                 : value.location_source === 'manual'
                   ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
                   : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-            }`}>
+              }`}
+          >
             {value.location_source === 'gps' && '📍 GPS Preciso'}
             {value.location_source === 'geocoded' && '🗺️ Geolocalizado'}
             {value.location_source === 'manual' && '✏️ Ingreso Manual'}
@@ -348,10 +280,13 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
         </div>
       )}
 
+      {/* Validation error */}
       {error && (
-        <div className="text-sm text-destructive mt-1">{error}</div>
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" />
+          <span>{error}</span>
+        </div>
       )}
     </div>
   )
 }
-

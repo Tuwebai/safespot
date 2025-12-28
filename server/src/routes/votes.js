@@ -5,6 +5,7 @@ import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import { validate as uuidValidate } from 'uuid';
 import { queryWithRLS } from '../utils/rls.js';
+import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
@@ -139,19 +140,35 @@ router.post('/', requireAnonymousId, async (req, res) => {
       });
     }
 
+    // Check if vote already exists (same block)
+    // ...
+
+    // NEW: Check Trust Score & Shadow Ban Status
+    let isHidden = false;
+    try {
+      const visibility = await checkContentVisibility(anonymousId);
+      if (visibility.isHidden) {
+        isHidden = true;
+        logSuccess('Shadow ban applied to vote', { anonymousId, action: visibility.moderationAction });
+      }
+    } catch (checkError) {
+      logError(checkError, req);
+      // Fail open
+    }
+
     // Insert vote using queryWithRLS for RLS enforcement
     logSuccess('Inserting vote', { anonymousId });
 
     const insertQuery = `
-      INSERT INTO votes (anonymous_id, report_id, comment_id)
-      VALUES ($1, $2, $3)
+      INSERT INTO votes (anonymous_id, report_id, comment_id, is_hidden)
+      VALUES ($1, $2, $3, $4)
       RETURNING id, anonymous_id, report_id, comment_id, created_at
     `;
 
     const insertResult = await queryWithRLS(
       anonymousId,
       insertQuery,
-      [anonymousId, report_id || null, comment_id || null]
+      [anonymousId, report_id || null, comment_id || null, isHidden]
     );
 
     if (insertResult.rows.length === 0) {

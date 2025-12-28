@@ -1,5 +1,4 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { Type } from 'lucide-react'
 
 export interface ObjectOptions {
   HTMLAttributes: Record<string, any>
@@ -60,9 +59,9 @@ export const Object = Node.create<ObjectOptions>({
       'data-type': 'safespot-object',
       class: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-green-500/20 text-green-400 border-green-500/30',
     }), [
-      ['span', { class: 'safespot-object-icon' }, '📦'],
-      ['span', { class: 'safespot-object-value' }, HTMLAttributes.value || ''],
-    ]]
+        ['span', { class: 'safespot-object-icon' }, '📦'],
+        ['span', { class: 'safespot-object-value' }, HTMLAttributes.value || ''],
+      ]]
   },
 
   addNodeView() {

@@ -69,6 +69,7 @@ import favoritesRouter from './routes/favorites.js';
 import badgesRouter from './routes/badges.js';
 import gamificationRouter from './routes/gamification.js';
 import testRouter from './routes/test.js';
+import geocodeRouter from './routes/geocode.js';
 
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
@@ -78,6 +79,7 @@ app.use('/api/favorites', favoritesRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/gamification', gamificationRouter);
 app.use('/api/test', testRouter);
+app.use('/api/geocode', geocodeRouter);
 
 // ============================================
 // ERROR HANDLING
@@ -94,7 +96,7 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  
+
   res.status(err.status || 500).json({
     error: err.message || 'Internal Server Error',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
@@ -107,7 +109,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, async () => {
   console.log('🚀 SafeSpot Backend - Port', PORT);
-  
+
   // Check if DATABASE_URL is set
   if (!process.env.DATABASE_URL) {
     console.error('❌ ERROR: DATABASE_URL not found in environment variables');

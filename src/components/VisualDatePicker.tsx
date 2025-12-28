@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Calendar, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Clock, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface VisualDatePickerProps {
   value: string // ISO string
@@ -154,8 +154,8 @@ export function VisualDatePicker({ value, onChange, error }: VisualDatePickerPro
                           ${isSelected
                             ? 'bg-neon-green text-dark-bg font-bold'
                             : isToday
-                            ? 'bg-neon-green/20 text-neon-green'
-                            : 'text-foreground hover:bg-neon-green/10'
+                              ? 'bg-neon-green/20 text-neon-green'
+                              : 'text-foreground hover:bg-neon-green/10'
                           }
                         `}
                       >

@@ -182,67 +182,36 @@ export function CrearReporte() {
 
   const onSubmit = async (data: CreateReportFormData) => {
     try {
-      // Validate location name
+      // CRITICAL: Validate location name
       if (!data.location.location_name || data.location.location_name.trim().length === 0) {
         toast.error('Debes ingresar una ubicación válida')
         return
       }
 
-      // CRITICAL: More flexible validation
-      // If coordinates are available, use them
-      // If not, try to determine zone from location name only
-      let zone: string | null = null
-
-      if (data.location.latitude && data.location.longitude) {
-        // Has coordinates - use them to determine zone
-        zone = await determineZone(data.location)
-      } else {
-        // No coordinates - try to determine zone from location name
-        // This allows users to enter "Palermo, Buenos Aires" without coordinates
-        zone = await determineZone({
-          location_name: data.location.location_name,
-          latitude: undefined,
-          longitude: undefined
-        })
-
-        // If zone cannot be determined from name, try to get coordinates from Nominatim
-        if (!zone || !isValidZone(zone)) {
-          try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(data.location.location_name)}&limit=1&countrycodes=ar`,
-              {
-                headers: {
-                  'User-Agent': 'SafeSpot App'
-                }
-              }
-            )
-
-            if (response.ok) {
-              const results = await response.json()
-              if (results.length > 0) {
-                const result = results[0]
-                const locationWithCoords: LocationData = {
-                  location_name: data.location.location_name,
-                  latitude: parseFloat(result.lat),
-                  longitude: parseFloat(result.lon)
-                }
-                zone = await determineZone(locationWithCoords)
-
-                // Update form with coordinates if found
-                if (locationWithCoords.latitude && locationWithCoords.longitude) {
-                  setValue('location', locationWithCoords)
-                }
-              }
-            }
-          } catch (error) {
-            console.debug('Failed to geocode location name:', error)
-          }
-        }
+      // CRITICAL: Require coordinates - prevent invalid locations
+      if (!data.location.latitude || !data.location.longitude) {
+        toast.error('Por favor, selecciona una ubicación del listado o usa tu ubicación actual. No podemos procesar ubicaciones sin coordenadas.')
+        return
       }
 
-      // If still no zone, use a default with warning to user
+      // Validate coordinates are valid numbers
+      if (
+        isNaN(data.location.latitude) ||
+        isNaN(data.location.longitude) ||
+        data.location.latitude < -90 ||
+        data.location.latitude > 90 ||
+        data.location.longitude < -180 ||
+        data.location.longitude > 180
+      ) {
+        toast.error('Las coordenadas de la ubicación son inválidas. Por favor, selecciona otra ubicación.')
+        return
+      }
+
+      // Determine zone from coordinates
+      let zone: string | null = await determineZone(data.location)
+
+      // If zone cannot be determined, use fallback logic
       if (!zone || !isValidZone(zone)) {
-        // Try to extract zone from location name as last resort
         const locationLower = data.location.location_name.toLowerCase()
         if (locationLower.includes('centro') || locationLower.includes('microcentro') || locationLower.includes('caba')) {
           zone = 'Centro'

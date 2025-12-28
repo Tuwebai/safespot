@@ -12,17 +12,15 @@
 *   **Descripción**: Se modificaron las políticas RLS (Row Level Security) para rechazar cualquier escritura (INSERT/UPDATE/DELETE) que no tenga un `anonymous_id` explícito en la sesión.
 *   **Impacto**: Elimina la posibilidad de que una mala configuración del backend o un acceso directo a la DB permita modificar datos ajenos al aprovechar un ID nulo.
 
----
-
-## 🛠️ Mejoras Incrementales (Optimizando lo existente)
-
-### 1. Sistema de Moderación Comunitaria "Trust Score"
+### 🛡️ Sistema de Moderación "Trust Score"
 *   **Tipo**: Backend / Producto
-*   **Impacto**: ALTO (Calidad de contenido)
-*   **Complejidad**: MEDIA
-*   **Propuesta**: Implementar un puntaje oculto de reputación para IDs anónimos basado en la calidad de sus aportes (votos recibidos vs. flags recibidos). No es público.
-*   **Problema**: Actualmente, un troll puede crear reportes falsos infinitos hasta que se le banea manualmente.
-*   **Beneficio**: Permite "Shadow Banning" o revisión prioritaria para usuarios con bajo *Trust Score*, depurando el feed sin fricción manual.
+*   **Estado**: Implementado (Fases 1, 2 y 3)
+*   **Descripción**: Sistema de reputación oculto. Calcula score basado en actividad (votos pos/neg, reportes aceptados/borrados).
+*   **Funcionalidad**:
+    *   **Cálculo**: Fórmula en PL/PGSQL que se actualiza en tiempo real.
+    *   **Enforcement**: Middleware que aplica **Shadow Ban** automático si el score es bajo (contenido invisible públicamente).
+    *   **Caching**: Caché en memoria para evitar latencia en cada request.
+*   **Impacto**: Permite la autoevaluación y limpieza automática de trolls sin intervención manual constante.
 
 ### ⚡ Paginación por Cursor (Cursor-based Pagination)
 *   **Tipo**: Backend / Performance
@@ -30,23 +28,30 @@
 *   **Descripción**: Se reemplazó el ineficiente `OFFSET/LIMIT` por un sistema de cursor (`created_at` + `id`) codificado en Base64.
 *   **Impacto**: Tiempo de respuesta constante ($O(1)$) independientemente del tamaño de la tabla (vs $O(N)$ anterior). Fundamental para feeds infinitos.
 
-### 3. Full text Search con `pg_trgm`
+### 🔍 Full text Search con `pg_trgm`
 *   **Tipo**: Base de Datos
-*   **Impacto**: ALTO (Usabilidad)
-*   **Complejidad**: BAJA
-*   **Propuesta**: Reemplazar `ILIKE` por índices GIN trigram en PostgreSQL.
-*   **Problema**: La búsqueda actual es lenta y no tolera errores tipográficos ("bicicleta" vs "biccleta").
-*   **Beneficio**: Búsquedas instantáneas y "Fuzzy Search" (encontrar resultados aunque el usuario escriba mal). Indispensable para móviles.
+*   **Estado**: Implementado (Extension `pg_trgm` + GIN Indexes)
+*   **Descripción**: Se reemplazó el operador `ILIKE` por el operador de similitud `%` basado en trigramas.
+*   **Funcionalidad**:
+    *   **Fuzzy Search**: Tolera errores tipográficos (ej. encuentra "bicicleta" si buscas "biccleta").
+    *   **Ranking**: Ordena resultados por relevancia (`similarity`) usando `GREATEST(similarity(title), similarity(description)...)` cuando hay un término de búsqueda.
+    *   **Performance**: Utiliza índices `GIN (gin_trgm_ops)` en columnas clave (`title`, `description`, `address`, `zone`, `category`).
+*   **Impacto**: Búsquedas instantáneas y mucho más "inteligentes" para el usuario final.
 
-### 4. Feed "Cerca de Mí" (Geospatial Indexing)
-*   **Tipo**: Full-stack
-*   **Impacto**: ALTO (Engagement)
-*   **Complejidad**: MEDIA
-*   **Propuesta**: Usar índices PostGIS para ordenar el feed por distancia (`ST_Distance`) en lugar de cronológicamente.
-*   **Problema**: El usuario ve reportes de zonas que no le interesan.
-*   **Beneficio**: Hiper-relevancia. El usuario ve lo que pasa a su alrededor, aumentando la probabilidad de que comente o vote.
+### � Feed "Cerca de Mí" (Geospatial Indexing)
+*   **Tipo**: Full-stack (PostGIS + Backend)
+*   **Estado**: Implementado (Extension PostGIS + GIST Index + Endpoint)
+*   **Descripción**: Feed geográfico que ordena reportes por distancia al usuario usando PostGIS.
+*   **Funcionalidad**:
+    *   **PostGIS**: Columna `location GEOGRAPHY(POINT, 4326)` con índice GIST para queries espaciales eficientes.
+    *   **Query Optimizada**: Usa `ST_DWithin` para filtrar por radio (aprovecha índice) + `ST_Distance` para ordenar por distancia ASC.
+    *   **API**: `GET /api/reports?lat=X&lng=Y&radius=5000` (radio en metros, default 5km, máx 50km).
+    *   **Cursor Pagination**: Compatible con paginación por cursor usando `(distance, created_at, id)`.
+    *   **Fallback**: Si no se envían coordenadas, usa feed cronológico automáticamente.
+*   **Impacto**: Hiper-relevancia. El usuario ve reportes cercanos, aumentando engagement y utilidad de la plataforma.
 
 ---
+
 
 ## ✨ Nuevas Funcionalidades (Features)
 

@@ -5,6 +5,7 @@ import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter } from '../utils/rateLimiter.js';
 import { evaluateBadges } from '../utils/badgeEvaluation.js';
 import { queryWithRLS } from '../utils/rls.js';
+import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 
 const router = express.Router();
@@ -245,13 +246,28 @@ router.post('/', requireAnonymousId, async (req, res) => {
       });
     }
 
+    // ... other imports
+
     // CRITICAL: Normalize parent_id - must be explicit null, never undefined
     const parentId = (hasParentId && !isThread) ? req.body.parent_id : null;
 
+    // NEW: Check Trust Score & Shadow Ban Status
+    let isHidden = false;
+    try {
+      const visibility = await checkContentVisibility(anonymousId);
+      if (visibility.isHidden) {
+        isHidden = true;
+        logSuccess('Shadow ban applied to comment', { anonymousId, action: visibility.moderationAction });
+      }
+    } catch (checkError) {
+      logError(checkError, req);
+      // Fail open
+    }
+
     // Insert comment using queryWithRLS for RLS enforcement
     const insertQuery = `
-      INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
     `;
 
@@ -261,7 +277,8 @@ router.post('/', requireAnonymousId, async (req, res) => {
       anonymousId,           // $2
       content,               // $3
       isThread || false,     // $4
-      parentId               // $5 - explicitly null if not provided
+      parentId,              // $5
+      isHidden               // $6
     ];
 
     // Development mode: log params for debugging
@@ -512,14 +529,27 @@ router.post('/:id/like', requireAnonymousId, async (req, res) => {
       });
     }
 
+    // NEW: Check Trust Score & Shadow Ban Status
+    let isHidden = false;
+    try {
+      const visibility = await checkContentVisibility(anonymousId);
+      if (visibility.isHidden) {
+        isHidden = true;
+        logSuccess('Shadow ban applied to comment like', { anonymousId, action: visibility.moderationAction });
+      }
+    } catch (checkError) {
+      logError(checkError, req);
+      // Fail open
+    }
+
     // Try to insert like using queryWithRLS for RLS enforcement
     try {
       const insertResult = await queryWithRLS(
         anonymousId,
-        `INSERT INTO comment_likes (comment_id, anonymous_id)
-         VALUES ($1, $2)
+        `INSERT INTO comment_likes (comment_id, anonymous_id, is_hidden)
+         VALUES ($1, $2, $3)
          RETURNING id`,
-        [id, anonymousId]
+        [id, anonymousId, isHidden]
       );
 
       // Get updated count (trigger should have updated it)

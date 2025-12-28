@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Search, MapPin, Filter, GitBranch, MessageCircle, Heart, Flag } from 'lucide-react'
 import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
+import { OptimizedImage } from '@/components/OptimizedImage'
 
 export function Reportes() {
   const navigate = useNavigate()
@@ -438,16 +439,18 @@ export function Reportes() {
                     key={report.id}
                     className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden"
                   >
-                    {/* 2.2 Image Section (Top) */}
+                    {/* 2.2 Image Section (Top) - Optimized */}
                     {hasImage && (
-                      <div className="relative h-48 w-full overflow-hidden rounded-t-lg">
-                        <img
+                      <div className="relative overflow-hidden rounded-t-lg">
+                        <OptimizedImage
                           src={imageUrls[0]}
                           alt={report.title}
-                          className="w-full h-full object-cover"
+                          aspectRatio={16 / 9}
+                          priority={false}
+                          className="w-full"
                         />
                         {/* Overlays (Top Right) */}
-                        <div className="absolute top-2 right-2 flex gap-2">
+                        <div className="absolute top-2 right-2 flex gap-2 z-10">
                           <Badge className={getStatusColor(report.status)}>
                             {getStatusLabel(report.status)}
                           </Badge>
