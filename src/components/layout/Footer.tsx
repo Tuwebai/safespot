@@ -16,12 +16,12 @@ export function Footer() {
               </div>
               <div className="text-xl font-bold gradient-text">SafeSpot</div>
             </div>
-            
+
             {/* Description */}
             <p className="text-foreground/70 mb-4 max-w-md">
               Plataforma colaborativa para reportar robos y recuperar objetos robados junto con tu comunidad.
             </p>
-            
+
             {/* Social Icons */}
             <div className="flex items-center space-x-4">
               <a
@@ -90,39 +90,23 @@ export function Footer() {
 
           {/* Support Column */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4">Soporte</h3>
+            <h3 className="font-semibold text-foreground mb-4">Legal</h3>
             <ul className="space-y-2">
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/terminos"
                   className="text-foreground/70 hover:text-neon-green transition-colors"
                 >
-                  Centro de Ayuda
-                </a>
+                  Términos y Condiciones
+                </Link>
               </li>
               <li>
-                <a
-                  href="#"
-                  className="text-foreground/70 hover:text-neon-green transition-colors"
-                >
-                  Términos de Uso
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#"
+                <Link
+                  to="/privacidad"
                   className="text-foreground/70 hover:text-neon-green transition-colors"
                 >
                   Política de Privacidad
-                </a>
-              </li>
-              <li>
-                <a
-                  href="mailto:contacto@safespot.com"
-                  className="text-foreground/70 hover:text-neon-green transition-colors"
-                >
-                  Contacto
-                </a>
+                </Link>
               </li>
             </ul>
           </div>

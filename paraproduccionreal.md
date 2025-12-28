@@ -56,10 +56,22 @@ Para evitar que un atacante o un bot rompa la plataforma al salir a público:
 
 
 ## 4. ⚖️ Legal y Confidencialidad
-Al manejar datos sensibles sobre seguridad urbana:
-- [ ] Términos y Condiciones: Texto legal que aclare que la app es informativa y no reemplaza a la denuncia policial oficial.
-- [ ] Privacidad de Identidad: Aunque es anónima, debemos asegurar que no haya filtraciones de los `anonymous_id` que puedan rastrear a un usuario.
-- [ ] Botón de Denuncia Policial: Un acceso directo a números de emergencia (911) o links a denuncias digitales de cada provincia.
+
+- ✅ **Términos y Condiciones**: Implementado.
+  - Página `/terminos` con 5 secciones legales
+  - Naturaleza del servicio, limitación de responsabilidad, uso adecuado
+  - Jurisdicción Argentina
+
+- ✅ **Política de Privacidad**: Implementado.
+  - Página `/privacidad` con explicación de anonymous_id
+  - No terceros, no tracking, no datos personales
+
+- ✅ **Botón de Emergencia/Policía**: Implementado.
+  - `EmergencyModal` con 911, 101, 107
+  - Links provinciales configurables
+  - Disclaimer claro
+
+- ✅ **Footer Legal**: Links actualizados a /terminos y /privacidadgitales de cada provincia.
 
 
 ## 5. 🧪 Calidad de Código (Deuda Técnica)
@@ -78,8 +90,9 @@ Al manejar datos sensibles sobre seguridad urbana:
 | Geolocalización Dinámica (Georef API) | ✅ Completo |
 | Filtrado por Provincia | ✅ Completo |
 | Compresión de imágenes al subir | ✅ Completo |
-| Notificaciones Push por proximidad | ⏳ Pendiente |
-| Sección Legal (T&C y Botón 911) | ⏳ Pendiente |
+| Notificaciones Push por proximidad | ✅ Completo (falta VAPID + migración) |
+| Sección Legal (T&C y Privacidad) | ✅ Completo |
+| Botón Emergencia 911 | ✅ Completo |
 | Aumento de Cobertura de Tests | ⏳ Pendiente |
 
-**Veredicto**: 🚀 **Backend 100% listo para producción.** Todas las migraciones ejecutadas.
+**Veredicto**: 🚀 **Plataforma lista para producción.** Solo falta ejecutar migraciones pendientes y generar VAPID keys.

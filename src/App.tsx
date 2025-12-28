@@ -13,6 +13,8 @@ const Explorar = lazy(() => import('@/pages/Explorar').then(m => ({ default: m.E
 const Gamificacion = lazy(() => import('@/pages/Gamificacion').then(m => ({ default: m.Gamificacion })))
 const Perfil = lazy(() => import('@/pages/Perfil').then(m => ({ default: m.Perfil })))
 const MisFavoritos = lazy(() => import('@/pages/MisFavoritos').then(m => ({ default: m.MisFavoritos })))
+const TerminosPage = lazy(() => import('@/pages/TerminosPage'))
+const PrivacidadPage = lazy(() => import('@/pages/PrivacidadPage'))
 
 function App() {
   return (
@@ -40,6 +42,8 @@ function App() {
             <Route path="/gamificacion" element={<Gamificacion />} />
             <Route path="/perfil" element={<Perfil />} />
             <Route path="/favoritos" element={<MisFavoritos />} />
+            <Route path="/terminos" element={<TerminosPage />} />
+            <Route path="/privacidad" element={<PrivacidadPage />} />
           </Routes>
         </Suspense>
       </Layout>
