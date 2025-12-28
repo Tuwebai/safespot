@@ -13,13 +13,7 @@
    - Pero el manejo de errores 409 puede no ser claro para el frontend
    - **Impacto**: MEDIO
 
-2. **Caché de datos frecuentes**
-   - Cada request de perfil/estadísticas hace queries frescas
-   - No hay caché intermedio para datos que cambian poco
-   - **Tipo**: Frontend/Backend
-   - **Impacto**: MEDIO
-
-3. **Detección offline / Retry logic**
+2. **Detección offline / Retry logic**
    - No hay detección de conexión offline
    - Si falla la red, el usuario ve error genérico
    - `api.ts` no tiene retry logic
@@ -40,26 +34,21 @@
    - **Tipo**: Full-stack
    - **Impacto**: ALTO para engagement
 
-6. **Auditoría de cambios**
-   - No hay tabla de auditoría para cambios críticos
-   - Dificulta debugging y cumplimiento
-   - **Tipo**: Backend/Database
-
-7. **Code splitting por ruta**
+6. **Code splitting por ruta**
    - Todo el frontend se carga en el bundle inicial
    - **Tipo**: Frontend
    - **Impacto**: BAJO-MEDIO
 
-8. **Límite de tamaño total de uploads**
+7. **Límite de tamaño total de uploads**
     - 5 imágenes x 10MB = 50MB por reporte
     - Sin límite total de request body
     - **Tipo**: Backend
 
-9. **Políticas de retención de Storage**
+8. **Políticas de retención de Storage**
     - Con muchos usuarios, Supabase Storage puede llenarse
     - **Tipo**: Backend/Infraestructura
 
-10. **Limpieza de tabla gamification_stats**
+9. **Limpieza de tabla gamification_stats**
     - Tabla existe pero el código usa `anonymous_users` directamente
     - **Estado**: Funciona, pero tabla sobra
     - **Impacto**: BAJO
@@ -77,6 +66,12 @@
 - **Contadores de Hilos vs Comentarios** ✅ (Dic 2024)
   - Backend: `threads_count` y `replies_count` calculados correctamente
   - Frontend: Actualización en tiempo real con counters del backend
+
+- **Sistema de Caché Frontend** ✅ (Dic 2024)
+  - Utilidad genérica en `src/lib/cache.ts`
+  - `apiRequestCached()` wrapper con TTL configurable
+  - Invalidación automática en `triggerBadgeCheck()`
+  - TTLs: Gamification 30s, Badges catalog 5min, Favorites 60s
 
 ---
 
@@ -113,5 +108,5 @@
 La aplicación está en estado estable para lanzamiento. Los ítems pendientes son mejoras, no bloqueos críticos.
 
 ### Problemas Críticos: 0 ❌
-### Mejoras Importantes: 3
+### Mejoras Importantes: 2
 ### Nice to Have: 7

@@ -3,9 +3,19 @@
  * All requests include X-Anonymous-Id header
  */
 
-import { getAnonymousIdSafe, ensureAnonymousId, validateAnonymousId } from './identity';
+import { ensureAnonymousId, validateAnonymousId } from './identity';
+import { getCached, setCache } from './cache';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+// ============================================
+// CACHE TTL CONSTANTS (in milliseconds)
+// ============================================
+export const CACHE_TTL = {
+  GAMIFICATION_SUMMARY: 30 * 1000,   // 30 seconds - profile + badges
+  BADGES_CATALOG: 5 * 60 * 1000,     // 5 minutes - static catalog
+  FAVORITES: 60 * 1000,               // 60 seconds - user's favorites list
+} as const;
 
 /**
  * Get headers with anonymous_id
@@ -65,6 +75,39 @@ async function apiRequest<T>(
   } catch (error) {
     throw error;
   }
+}
+
+/**
+ * API Request with caching support
+ * Only caches GET requests. Returns cached data if available and not expired.
+ * @param endpoint - API endpoint
+ * @param options - Fetch options
+ * @param ttlMs - Cache TTL in milliseconds (undefined = no cache)
+ */
+async function apiRequestCached<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  ttlMs?: number
+): Promise<T> {
+  // Only cache GET requests
+  const isGet = !options.method || options.method === 'GET';
+
+  if (isGet && ttlMs) {
+    const cached = getCached<T>(endpoint);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // Make actual request
+  const data = await apiRequest<T>(endpoint, options);
+
+  // Cache the response
+  if (isGet && ttlMs) {
+    setCache(endpoint, data, ttlMs);
+  }
+
+  return data;
 }
 
 // ============================================
@@ -566,9 +609,14 @@ export const gamificationApi = {
 
   /**
    * Get complete gamification summary (profile + badges) in a single optimized request
+   * CACHED: 30 seconds TTL - invalidated after user actions
    */
   getSummary: async (): Promise<GamificationSummaryResponse> => {
-    const response = await apiRequest<GamificationSummaryResponse>('/gamification/summary');
+    const response = await apiRequestCached<GamificationSummaryResponse>(
+      '/gamification/summary',
+      {},
+      CACHE_TTL.GAMIFICATION_SUMMARY
+    );
     return {
       profile: response.profile,
       badges: response.badges || [],

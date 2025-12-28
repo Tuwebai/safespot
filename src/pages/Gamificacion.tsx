@@ -6,18 +6,10 @@ import { Award, Trophy, Star, Lock } from 'lucide-react'
 import type { GamificationBadge, NewBadge } from '@/lib/api'
 import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
-import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
+import { getPointsToNextLevel } from '@/lib/levelCalculation'
 
-// Simple in-memory cache (cleared on page refresh)
-let gamificationCache: {
-  data: { profile: any; badges: GamificationBadge[]; newBadges?: NewBadge[] } | null;
-  timestamp: number;
-} = {
-  data: null,
-  timestamp: 0
-};
-
-const CACHE_DURATION = 30000; // 30 seconds
+// NOTE: Caching is now handled globally in api.ts via apiRequestCached
+// No local cache needed here anymore
 
 export function Gamificacion() {
   const [profile, setProfile] = useState<{ level: number; points: number; total_reports: number; total_comments: number; total_votes: number } | null>(null)
@@ -34,51 +26,31 @@ export function Gamificacion() {
 
   const loadData = async () => {
     try {
-      // CRITICAL: Check cache first
-      const now = Date.now()
-      if (gamificationCache.data && (now - gamificationCache.timestamp) < CACHE_DURATION) {
-        // Use cached data
-        setProfile(gamificationCache.data.profile)
-        setBadges(gamificationCache.data.badges)
-        setError(null)
-        return
-      }
-
       setLoading(true)
-      
-      // CRITICAL: Use consolidated endpoint for single request
+
+      // Uses global cache from api.ts (30s TTL)
       const summary = await gamificationApi.getSummary()
-      
-      // Update cache
-      gamificationCache = {
-        data: {
-          profile: summary.profile,
-          badges: summary.badges,
-          newBadges: summary.newBadges
-        },
-        timestamp: Date.now()
-      }
-      
+
       setProfile(summary.profile)
-      
+
       // CRITICAL: Mark newly unlocked badges for animation only (notifications handled globally)
       if (summary.newBadges && summary.newBadges.length > 0) {
         // Store the latest new badge for points feedback
         const latestBadge = summary.newBadges[summary.newBadges.length - 1]
         setLatestNewBadge(latestBadge)
-        
+
         // Clear after animation duration
         setTimeout(() => {
           setLatestNewBadge(null)
         }, 2000)
-        
+
         summary.newBadges.forEach((badge: NewBadge) => {
           // Find the full badge info
           const fullBadge = summary.badges.find(b => b.code === badge.code)
           if (fullBadge) {
             // Mark as newly unlocked for animation (visual feedback only)
             setNewlyUnlockedBadgeIds(prev => new Set(prev).add(fullBadge.id))
-            
+
             // Remove animation flag after animation completes
             setTimeout(() => {
               setNewlyUnlockedBadgeIds(prev => {
@@ -90,7 +62,7 @@ export function Gamificacion() {
           }
         })
       }
-      
+
       setBadges(summary.badges)
       setError(null)
     } catch (error) {
@@ -123,7 +95,7 @@ export function Gamificacion() {
         icon: latestNewBadge.icon
       }
     }
-    
+
     // Fallback: find badge with matching points
     if (profile && pointsAdded && badges.length > 0) {
       const obtainedBadges = badges.filter(b => b.obtained)
@@ -139,7 +111,7 @@ export function Gamificacion() {
   }, [profile, pointsAdded, badges, latestNewBadge])
 
   // Calculate points to next level using utility function
-  const pointsToNextLevel = profile 
+  const pointsToNextLevel = profile
     ? getPointsToNextLevel(profile.points || 0, profile.level || 1)
     : 0
 
@@ -184,9 +156,9 @@ export function Gamificacion() {
 
     // Badge not obtained - show motivational text
     const remaining = Math.max(0, badge.progress.required - badge.progress.current)
-    
+
     if (badge.code === 'FIRST_REPORT') {
-      return remaining === 1 
+      return remaining === 1
         ? '¡Crea tu primer reporte para obtener esta insignia!'
         : `Te falta ${remaining} reporte para obtener esta insignia`
     } else if (badge.code === 'ACTIVE_VOICE') {
@@ -260,34 +232,34 @@ export function Gamificacion() {
             </CardContent>
           </Card>
         ) : profile ? (
-        <Card className="lg:col-span-2 bg-dark-card border-dark-border card-glow">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-neon-green" />
-              Tu Nivel
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <div className="text-center relative">
-                {/* Level Up Feedback */}
-                <LevelUpFeedback newLevel={animatedLevel} visible={levelUp} />
-                
-                {/* Points Added Feedback */}
-                <PointsAddedFeedback
-                  points={pointsAdded || 0}
-                  badgeName={latestBadgeInfo?.name}
-                  badgeIcon={latestBadgeInfo?.icon}
-                  visible={pointsAdded !== null && pointsAdded > 0}
-                />
-                
-                <div className="text-6xl font-bold text-neon-green mb-2 transition-all duration-300">
-                  Nivel {animatedLevel}
-                </div>
-                <div className="text-lg text-muted-foreground mb-4">
-                  <span className="font-semibold text-foreground">{animatedPoints}</span> puntos totales
-                </div>
-                
+          <Card className="lg:col-span-2 bg-dark-card border-dark-border card-glow">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-neon-green" />
+                Tu Nivel
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div className="text-center relative">
+                  {/* Level Up Feedback */}
+                  <LevelUpFeedback newLevel={animatedLevel} visible={levelUp} />
+
+                  {/* Points Added Feedback */}
+                  <PointsAddedFeedback
+                    points={pointsAdded || 0}
+                    badgeName={latestBadgeInfo?.name}
+                    badgeIcon={latestBadgeInfo?.icon}
+                    visible={pointsAdded !== null && pointsAdded > 0}
+                  />
+
+                  <div className="text-6xl font-bold text-neon-green mb-2 transition-all duration-300">
+                    Nivel {animatedLevel}
+                  </div>
+                  <div className="text-lg text-muted-foreground mb-4">
+                    <span className="font-semibold text-foreground">{animatedPoints}</span> puntos totales
+                  </div>
+
                   {/* Obtained badges under user name */}
                   {obtainedBadges.length > 0 && (
                     <div className="flex flex-wrap justify-center gap-2 mt-4">
@@ -307,52 +279,52 @@ export function Gamificacion() {
                       )}
                     </div>
                   )}
-              </div>
-              
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Progreso al siguiente nivel</span>
-                  <span className="text-sm text-muted-foreground">
-                    {profile.level >= 4 ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
-                  </span>
                 </div>
-                <div className="w-full bg-dark-bg rounded-full h-4 overflow-hidden relative">
-                  <div
-                    className="bg-neon-green h-4 rounded-full transition-all duration-600 ease-out relative"
-                    style={{ 
-                      width: `${animatedProgress}%`,
-                      transition: 'width 600ms cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}
-                  >
-                    {/* Shimmer effect on progress bar */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-                  </div>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-dark-border">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-neon-green">
-                    {profile.total_reports}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Progreso al siguiente nivel</span>
+                    <span className="text-sm text-muted-foreground">
+                      {profile.level >= 4 ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
+                    </span>
                   </div>
-                  <div className="text-xs text-muted-foreground">Reportes</div>
+                  <div className="w-full bg-dark-bg rounded-full h-4 overflow-hidden relative">
+                    <div
+                      className="bg-neon-green h-4 rounded-full transition-all duration-600 ease-out relative"
+                      style={{
+                        width: `${animatedProgress}%`,
+                        transition: 'width 600ms cubic-bezier(0.4, 0, 0.2, 1)'
+                      }}
+                    >
+                      {/* Shimmer effect on progress bar */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-neon-green">
-                    {profile.total_votes}
+
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-dark-border">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-neon-green">
+                      {profile.total_reports}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Reportes</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">Apoyos</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-neon-green transition-all duration-300">
-                    {animatedPoints}
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-neon-green">
+                      {profile.total_votes}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Apoyos</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">Puntos</div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-neon-green transition-all duration-300">
+                      {animatedPoints}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Puntos</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
         ) : null}
 
         {/* Resumen de Insignias Obtenidas */}
@@ -478,11 +450,11 @@ export function Gamificacion() {
                         const isUnlocked = isObtained || isProgressComplete
                         // Check if this badge was just unlocked (for animation)
                         const isNewlyUnlocked = newlyUnlockedBadgeIds.has(badge.id)
-                        
-                        const progressPercent = badge.progress.required > 0 
+
+                        const progressPercent = badge.progress.required > 0
                           ? Math.min(100, (badge.progress.current / badge.progress.required) * 100)
                           : 0
-                        
+
                         return (
                           <div
                             key={badge.id}

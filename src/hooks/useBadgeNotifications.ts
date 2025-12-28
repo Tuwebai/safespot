@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { gamificationApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { getGlobalAudioContext, isAudioEnabled } from './useAudioUnlock'
+import { invalidateCachePrefix } from '@/lib/cache'
 import type { NewBadge } from '@/lib/api'
 
 const NOTIFIED_BADGES_KEY = 'safespot_notified_badges'
@@ -20,8 +21,12 @@ let globalBadgeCheckCallback: (() => void) | null = null
 /**
  * Trigger an immediate badge check from anywhere in the app
  * Call this after actions that may award badges (create report, comment, etc.)
+ * Also invalidates gamification cache to ensure fresh data
  */
 export function triggerBadgeCheck() {
+  // Invalidate cache first so next request fetches fresh data
+  invalidateCachePrefix('/gamification')
+
   if (globalBadgeCheckCallback) {
     // Small delay to let backend process the action
     setTimeout(() => {
