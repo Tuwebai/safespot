@@ -459,4 +459,32 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/gamification/evaluate
+ * Evaluate if user should receive any badges
+ */
+router.post('/evaluate', requireAnonymousId, async (req, res) => {
+  const anonymousId = req.anonymousId;
+  console.log(`[GAMIFICATION] POST /api/gamification/evaluate - User: ${anonymousId}`);
+  try {
+    const { evaluateBadges } = await import('../utils/badgeEvaluation.js');
+    const result = await evaluateBadges(anonymousId);
+
+    res.json({
+      success: true,
+      newly_awarded: result?.newlyAwarded || [],
+      count: result?.newlyAwarded?.length || 0,
+      points_added: result?.totalPointsAdded || 0
+    });
+  } catch (error) {
+    console.error('[GAMIFICATION] Evaluation failed:', error.message);
+    res.json({
+      success: true, // Return success true even on fail to not break UI
+      newly_awarded: [],
+      count: 0,
+      points_added: 0
+    });
+  }
+});
+
 export default router;
