@@ -6,7 +6,11 @@
 import { ensureAnonymousId, validateAnonymousId } from './identity';
 import { getCached, setCache } from './cache';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// Normalize: remove trailing slash if exists, then ensure it ends with /api
+const API_BASE_URL = (rawApiUrl.replace(/\/$/, '').endsWith('/api')
+  ? rawApiUrl.replace(/\/$/, '')
+  : `${rawApiUrl.replace(/\/$/, '')}/api`);
 
 // ============================================
 // CACHE TTL CONSTANTS (in milliseconds)

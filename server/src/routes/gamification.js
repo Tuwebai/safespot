@@ -262,6 +262,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
  * Returns: Profile, badges, and progress in one response
  */
 router.get('/summary', requireAnonymousId, async (req, res) => {
+  console.log(`[BACKEND] GET /api/gamification/summary - ${req.anonymousId}`);
   try {
     const anonymousId = req.anonymousId;
 

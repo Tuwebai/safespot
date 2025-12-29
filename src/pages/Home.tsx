@@ -9,33 +9,34 @@ import { Helmet } from 'react-helmet-async'
 
 export function Home() {
   // React Query - cached, deduplicated
-  const { data: stats, isLoading: statsLoading } = useGlobalStatsQuery()
-  const { data: categoryStats, isLoading: categoryLoading } = useCategoryStatsQuery()
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useGlobalStatsQuery()
+  const { data: categoryStats, isLoading: categoryLoading, isError: categoryError } = useCategoryStatsQuery()
 
   const loading = statsLoading || categoryLoading
+  const error = statsError || categoryError
 
   const statsDisplay = [
     {
       label: 'Reportes Totales',
-      value: stats?.total_reports?.toString() || '0',
+      value: error ? '0' : (stats?.total_reports?.toString() || '0'),
       icon: TrendingUp,
       color: 'text-neon-green'
     },
     {
       label: 'Recuperados',
-      value: stats?.resolved_reports?.toString() || '0',
+      value: error ? '0' : (stats?.resolved_reports?.toString() || '0'),
       icon: CheckCircle,
       color: 'text-green-400'
     },
     {
       label: 'Usuarios Totales',
-      value: stats?.total_users?.toString() || '0',
+      value: error ? '0' : (stats?.total_users?.toString() || '0'),
       icon: Users,
       color: 'text-blue-400'
     },
     {
       label: 'Usuarios Este Mes',
-      value: stats?.active_users_month?.toString() || '0',
+      value: error ? '0' : (stats?.active_users_month?.toString() || '0'),
       icon: Clock,
       color: 'text-yellow-400'
     },

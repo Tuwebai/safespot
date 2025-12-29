@@ -13,6 +13,7 @@ const router = express.Router();
  * Requires: X-Anonymous-Id header
  */
 router.get('/profile', requireAnonymousId, async (req, res) => {
+  console.log(`[BACKEND] GET /api/users/profile - ${req.anonymousId}`);
   try {
     const anonymousId = req.anonymousId;
 
@@ -106,6 +107,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
  * Get global statistics
  */
 router.get('/stats', async (req, res) => {
+  console.log('[BACKEND] GET /api/users/stats');
   try {
     // Stats are public, no anonymous_id needed
     // Use Supabase client to get stats
@@ -146,6 +148,7 @@ router.get('/stats', async (req, res) => {
  * Get report counts by category
  */
 router.get('/category-stats', async (req, res) => {
+  console.log('[BACKEND] GET /api/users/category-stats');
   try {
     // Get all reports with category field
     // Supabase doesn't support GROUP BY directly, so we fetch all and count in memory
