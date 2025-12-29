@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportSkeleton } from '@/components/ui/skeletons'
 import { ArrowLeft, MapPin } from 'lucide-react'
+import { ShareButton } from '@/components/ShareButton'
 
 // Hooks
 import { useReportDetail } from '@/hooks/useReportDetail'
@@ -233,6 +234,12 @@ export function DetalleReporte() {
               >
                 <MapPin className="h-4 w-4" />
               </Button>
+              <ShareButton
+                title={report.title}
+                category={report.category}
+                zone={report.zone}
+                reportId={report.id}
+              />
               <ReportActions
                 report={report}
                 isFavorite={reportDetail.isFavorite}
