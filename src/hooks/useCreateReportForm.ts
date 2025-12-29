@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ALL_CATEGORIES } from '@/lib/constants'
 import { LocationData } from '@/components/LocationSelector'
 import { useToast } from '@/components/ui/toast'
-import { useCreateReport } from '@/hooks/useReports'
+import { useCreateReportMutation } from '@/hooks/queries/useReportsQuery'
 import { reportsApi } from '@/lib/api'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
@@ -48,7 +48,7 @@ export function useCreateReportForm() {
     const createdUrlsRef = useRef<string[]>([])
     const navigate = useNavigate()
     const toast = useToast()
-    const { createReport, isLoading: isSubmittingReport, error: submitError } = useCreateReport()
+    const { mutateAsync: createReport, isPending: isSubmittingReport, error: submitError } = useCreateReportMutation()
 
     // Local State
     const [imageFiles, setImageFiles] = useState<File[]>([])
