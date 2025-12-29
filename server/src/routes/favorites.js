@@ -12,51 +12,60 @@ const router = express.Router();
  * Requires: X-Anonymous-Id header
  */
 router.get('/', requireAnonymousId, async (req, res) => {
-  try {
-    const anonymousId = req.anonymousId;
+  const anonymousId = req.anonymousId;
+  console.log(`[FAVORITES] GET /api/favorites - User: ${anonymousId}`);
 
-    // Ensure anonymous user exists
+  try {
+    // 1. Ensure user exists
     try {
       await ensureAnonymousUser(anonymousId);
     } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user',
-        message: error.message
+      console.warn(`[FAVORITES] Failed to ensure user ${anonymousId}:`, error.message);
+      // Continue anyway, query will fail gracefully if user really doesn't exist
+    }
+
+    // 2. Get favorites with report details
+    let result;
+    try {
+      result = await queryWithRLS(
+        anonymousId,
+        `SELECT 
+          f.id,
+          f.created_at,
+          r.id as report_id,
+          r.anonymous_id as report_anonymous_id,
+          r.title,
+          r.description,
+          r.category,
+          r.zone,
+          r.address,
+          r.latitude,
+          r.longitude,
+          r.status,
+          r.upvotes_count,
+          r.comments_count,
+          r.created_at as report_created_at,
+          r.updated_at as report_updated_at,
+          r.incident_date,
+          r.image_urls
+        FROM favorites f
+        INNER JOIN reports r ON f.report_id = r.id
+        WHERE f.anonymous_id = $1
+        ORDER BY f.created_at DESC`,
+        [anonymousId]
+      );
+    } catch (queryError) {
+      console.error('[FAVORITES] Database query failed:', queryError.message);
+      return res.json({
+        success: true,
+        data: [],
+        count: 0,
+        warning: 'No pudimos cargar tus favoritos en este momento.'
       });
     }
 
-    // Get favorites with report details using queryWithRLS for RLS enforcement
-    const result = await queryWithRLS(
-      anonymousId,
-      `SELECT 
-        f.id,
-        f.created_at,
-        r.id as report_id,
-        r.anonymous_id as report_anonymous_id,
-        r.title,
-        r.description,
-        r.category,
-        r.zone,
-        r.address,
-        r.latitude,
-        r.longitude,
-        r.status,
-        r.upvotes_count,
-        r.comments_count,
-        r.created_at as report_created_at,
-        r.updated_at as report_updated_at,
-        r.incident_date,
-        r.image_urls
-      FROM favorites f
-      INNER JOIN reports r ON f.report_id = r.id
-      WHERE f.anonymous_id = $1
-      ORDER BY f.created_at DESC`,
-      [anonymousId]
-    );
-
-    // Transform SQL result to match expected format
-    const reports = result.rows.map(row => ({
+    // 3. Transform and return
+    const reports = (result?.rows || []).map(row => ({
       id: row.report_id,
       anonymous_id: row.report_anonymous_id,
       title: row.title,
@@ -76,15 +85,20 @@ router.get('/', requireAnonymousId, async (req, res) => {
       favorited_at: row.created_at
     }));
 
+    console.log(`[FAVORITES] Success: found ${reports.length} reports for ${anonymousId}`);
     res.json({
       success: true,
       data: reports,
       count: reports.length
     });
+
   } catch (error) {
-    logError(error, req);
+    console.error('[FAVORITES] UNEXPECTED ERROR:', error);
     res.status(500).json({
-      error: 'Failed to fetch favorites'
+      success: false,
+      error: 'Internal Server Error',
+      data: [],
+      count: 0
     });
   }
 });

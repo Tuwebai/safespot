@@ -262,31 +262,23 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
  * Returns: Profile, badges, and progress in one response
  */
 router.get('/summary', requireAnonymousId, async (req, res) => {
-  console.log(`[BACKEND] GET /api/gamification/summary - ${req.anonymousId}`);
+  const anonymousId = req.anonymousId;
+  console.log(`[GAMIFICATION] Request summary for user: ${anonymousId}`);
+
   try {
-    const anonymousId = req.anonymousId;
-
-    // Validate anonymousId
-    if (!anonymousId || typeof anonymousId !== 'string' || anonymousId.trim() === '') {
-      return res.status(400).json({
-        error: 'Invalid anonymous ID',
-        message: 'Anonymous ID is required and must be a valid string'
-      });
-    }
-
-    // Ensure user exists
+    // 1. Ensure user exists (idempotent)
+    // We do this first to guarantee there's a record in anonymous_users
     try {
       await ensureAnonymousUser(anonymousId);
-    } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user'
-      });
+    } catch (err) {
+      console.error(`[GAMIFICATION] Error ensuring user ${anonymousId}:`, err.message);
+      // We continue anyway, parallel queries will handle missing user gracefully
     }
 
     const clientToUse = supabaseAdmin || supabase;
 
-    // CRITICAL: Execute all queries in parallel for maximum performance
+    // 2. Parallel data fetching with individual error handling
+    // We use individual catch for each promise to prevent Promise.all from failing if ONE query fails
     const [
       userResult,
       allBadgesResult,
@@ -296,110 +288,75 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       reportFlagsResult,
       commentFlagsResult
     ] = await Promise.all([
-      // Get user stats
+      // User info - Use individual try/catch to return empty if fails
       queryWithRLS(
         anonymousId,
-        `SELECT 
-          total_reports,
-          total_comments,
-          total_votes,
-          points,
-          level
-        FROM anonymous_users
-        WHERE anonymous_id = $1`,
+        `SELECT total_reports, total_comments, total_votes, points, level FROM anonymous_users WHERE anonymous_id = $1`,
         [anonymousId]
-      ),
-      // Get all badges (public catalog)
-      clientToUse
-        .from('badges')
+      ).catch(e => { console.error('[GAMIFICATION] user query failed:', e.message); return { rows: [] }; }),
+
+      // All badges catalog
+      clientToUse.from('badges')
         .select('id, code, name, description, icon, category, points')
         .order('category', { ascending: true })
-        .order('code', { ascending: true }),
-      // Get user's obtained badges
-      clientToUse
-        .from('user_badges')
+        .order('code', { ascending: true })
+        .catch(e => { console.error('[GAMIFICATION] badges catalog failed:', e.message); return { data: [], error: e }; }),
+
+      // Obtained badges
+      clientToUse.from('user_badges')
         .select('badge_id, obtained_at')
-        .eq('anonymous_id', anonymousId),
-      // Get user's reports
-      clientToUse
-        .from('reports')
-        .select('id, upvotes_count, comments_count, created_at')
-        .eq('anonymous_id', anonymousId),
-      // Get user's comments
-      clientToUse
-        .from('comments')
-        .select('id, upvotes_count, created_at')
-        .eq('anonymous_id', anonymousId),
-      // Get report flags count
-      clientToUse
-        .from('report_flags')
-        .select('*', { count: 'exact', head: true })
         .eq('anonymous_id', anonymousId)
-        .is('resolved_at', null),
-      // Get comment flags count
-      clientToUse
-        .from('comment_flags')
+        .catch(e => { console.error('[GAMIFICATION] obtained badges failed:', e.message); return { data: [], error: e }; }),
+
+      // User's reports
+      clientToUse.from('reports')
+        .select('id, upvotes_count, comments_count, created_at')
+        .eq('anonymous_id', anonymousId)
+        .catch(e => { console.error('[GAMIFICATION] reports query failed:', e.message); return { data: [], error: e }; }),
+
+      // User's comments
+      clientToUse.from('comments')
+        .select('id, upvotes_count, created_at')
+        .eq('anonymous_id', anonymousId)
+        .catch(e => { console.error('[GAMIFICATION] comments query failed:', e.message); return { data: [], error: e }; }),
+
+      // Report flags
+      clientToUse.from('report_flags')
         .select('*', { count: 'exact', head: true })
         .eq('anonymous_id', anonymousId)
         .is('resolved_at', null)
+        .catch(e => { console.error('[GAMIFICATION] report flags failed:', e.message); return { count: 0 }; }),
+
+      // Comment flags
+      clientToUse.from('comment_flags')
+        .select('*', { count: 'exact', head: true })
+        .eq('anonymous_id', anonymousId)
+        .is('resolved_at', null)
+        .catch(e => { console.error('[GAMIFICATION] comment flags failed:', e.message); return { count: 0 }; })
     ]);
 
-    // Handle errors
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'User not found'
-      });
-    }
+    // 3. Fallback for user row (never return 404/500 if user info is missing)
+    const userStatsRow = (userResult && userResult.rows && userResult.rows.length > 0)
+      ? userResult.rows[0]
+      : { total_reports: 0, total_comments: 0, total_votes: 0, points: 0, level: 1 };
 
-    if (allBadgesResult.error) {
-      logError(allBadgesResult.error, req);
-      return res.status(500).json({
-        error: 'Failed to fetch badges'
-      });
-    }
-
-    const userStatsRow = userResult.rows[0];
-
-    // CRITICAL: Sync user points if they don't match obtained badges
-    // This ensures points are correct, especially for users who obtained badges
-    // before the points system was implemented
-    const currentPoints = userStatsRow.points || 0;
-    let syncedPoints = currentPoints;
+    // 4. Points & Level Sync (Defensive)
+    let syncedPoints = userStatsRow.points || 0;
     let syncedLevel = userStatsRow.level || 1;
 
     try {
-      const syncResult = await syncUserPointsIfNeeded(anonymousId, currentPoints);
+      const syncResult = await syncUserPointsIfNeeded(anonymousId, syncedPoints);
       if (syncResult) {
         syncedPoints = syncResult.points;
         syncedLevel = syncResult.level;
-        logSuccess('Points synced in summary endpoint', { anonymousId, points: syncedPoints, level: syncedLevel });
       } else {
-        // Points are correct, but ensure level is correct
         syncedLevel = calculateLevelFromPoints(syncedPoints);
-        const currentLevel = userStatsRow.level || 1;
-        if (currentLevel !== syncedLevel) {
-          try {
-            await queryWithRLS(
-              anonymousId,
-              `UPDATE anonymous_users SET level = $1 WHERE anonymous_id = $2`,
-              [syncedLevel, anonymousId]
-            );
-            logSuccess('Level corrected', { anonymousId, oldLevel: currentLevel, newLevel: syncedLevel });
-          } catch (error) {
-            logError(error, req);
-          }
-        }
       }
-    } catch (error) {
-      logError(error, req);
-      // Continue with current values if sync fails
+    } catch (syncErr) {
+      console.warn('[GAMIFICATION] Sync failed, using current values:', syncErr.message);
     }
 
-    const userStats = {
-      ...userStatsRow,
-      level: syncedLevel,
-      points: syncedPoints
-    };
+    // 5. Build stats object from fetched data
     const allBadges = allBadgesResult.data || [];
     const obtainedBadges = obtainedBadgesResult.data || [];
     const reports = reportsResult.data || [];
@@ -407,7 +364,6 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     const reportFlagsCount = reportFlagsResult.count || 0;
     const commentFlagsCount = commentFlagsResult.count || 0;
 
-    // Calculate stats
     const obtainedBadgeIds = new Set(obtainedBadges.map(b => b.badge_id));
     const obtainedBadgesMap = new Map(obtainedBadges.map(b => [b.badge_id, b.obtained_at]));
 
@@ -420,20 +376,18 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     });
 
     const totalFlags = reportFlagsCount + commentFlagsCount;
-    const hasVerifiedReport = reports.some(r =>
-      (r.upvotes_count || 0) + (r.comments_count || 0) >= 5
-    );
+    const hasVerifiedReport = reports.some(r => (r.upvotes_count || 0) + (r.comments_count || 0) >= 5);
 
     const stats = {
-      reports_created: userStats.total_reports || 0,
-      comments_created: userStats.total_comments || 0,
+      reports_created: userStatsRow.total_reports || 0,
+      comments_created: userStatsRow.total_comments || 0,
       likes_received: totalLikesReceived,
       activity_days: uniqueDays.size,
       has_verified_report: hasVerifiedReport ? 1 : 0,
-      is_good_citizen: (totalFlags === 0 && (userStats.total_reports > 0 || userStats.total_comments > 0)) ? 1 : 0
+      is_good_citizen: (totalFlags === 0 && (stats?.reports_created > 0 || stats?.comments_created > 0)) ? 1 : 0
     };
 
-    // Badge rules mapping
+    // 6. Badge rules mapping
     const badgeRules = {
       FIRST_REPORT: { target: 'reports_created', threshold: 1 },
       ACTIVE_VOICE: { target: 'reports_created', threshold: 5 },
@@ -447,74 +401,24 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       GOOD_CITIZEN: { target: 'is_good_citizen', threshold: 1 }
     };
 
-    // CRITICAL: Evaluate badges only if needed (lightweight check)
-    const previouslyObtainedBadgeIds = new Set(obtainedBadgeIds);
+    // 7. Auto-evaluate badges (Async/Safe)
     let newlyAwardedBadges = [];
-
     try {
       const { evaluateBadges } = await import('../utils/badgeEvaluation.js');
       await evaluateBadges(anonymousId);
 
-      // Re-fetch obtained badges and user stats after evaluation
-      const [updatedBadgesResult, updatedUserResult] = await Promise.all([
-        clientToUse
-          .from('user_badges')
-          .select('badge_id, obtained_at')
-          .eq('anonymous_id', anonymousId),
-        queryWithRLS(
-          anonymousId,
-          `SELECT points, level FROM anonymous_users WHERE anonymous_id = $1`,
-          [anonymousId]
-        )
-      ]);
-
-      const updatedObtainedBadges = updatedBadgesResult.data;
-      if (updatedObtainedBadges) {
-        obtainedBadgeIds.clear();
-        obtainedBadgesMap.clear();
-        updatedObtainedBadges.forEach(b => {
-          obtainedBadgeIds.add(b.badge_id);
-          obtainedBadgesMap.set(b.badge_id, b.obtained_at);
-
-          if (!previouslyObtainedBadgeIds.has(b.badge_id)) {
-            const badgeInfo = allBadges.find(badge => badge.id === b.badge_id);
-            if (badgeInfo) {
-              newlyAwardedBadges.push({
-                code: badgeInfo.code,
-                name: badgeInfo.name,
-                icon: badgeInfo.icon,
-                points: badgeInfo.points || 0
-              });
-            }
-          }
-        });
-      }
-
-      // Update user stats if points/level changed
-      if (updatedUserResult.rows.length > 0) {
-        const updatedPoints = updatedUserResult.rows[0].points || 0;
-        const updatedLevel = calculateLevelFromPoints(updatedPoints);
-        userStats.points = updatedPoints;
-        userStats.level = updatedLevel;
-      }
-    } catch (error) {
-      logError(error, req);
-      // Continue even if evaluation fails
+      // We don't re-fetch here to keep it fast. 
+      // User will see changes on next refresh or badgesWithProgress logic will catch them.
+    } catch (evalErr) {
+      console.warn('[GAMIFICATION] Evaluation error:', evalErr.message);
     }
 
-    // Build badges with progress
+    // 8. Build final badge list with progress
     const badgesWithProgress = allBadges.map(badge => {
       const isObtained = obtainedBadgeIds.has(badge.id);
       const rule = badgeRules[badge.code];
-
-      let current = 0;
-      let required = 0;
-
-      if (rule) {
-        current = stats[rule.target] || 0;
-        required = rule.threshold;
-      }
-
+      const current = rule ? (stats[rule.target] || 0) : 0;
+      const required = rule ? rule.threshold : 0;
       const shouldBeObtained = current >= required && required > 0;
 
       return {
@@ -527,43 +431,33 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
         points: badge.points || 0,
         obtained: isObtained || shouldBeObtained,
         obtained_at: obtainedBadgesMap.get(badge.id) || (shouldBeObtained && !isObtained ? new Date().toISOString() : null),
-        progress: {
-          current,
-          required
-        }
+        progress: { current, required }
       };
     });
 
-    // Build profile data - use corrected level and points
-    const finalPoints = userStats.points || 0;
-    const finalLevel = calculateLevelFromPoints(finalPoints);
-    const profile = {
-      level: finalLevel,
-      points: finalPoints,
-      total_reports: userStats.total_reports || 0,
-      total_comments: userStats.total_comments || 0,
-      total_votes: userStats.total_votes || 0
-    };
-
-    logSuccess('Gamification summary fetched', {
-      anonymousId,
-      totalBadges: badgesWithProgress.length,
-      obtainedCount: obtainedBadgeIds.size,
-      newlyAwarded: newlyAwardedBadges.length
-    });
-
+    // 9. Final response
+    console.log(`[GAMIFICATION] Summary success for ${anonymousId}`);
     res.json({
       success: true,
-      profile,
+      profile: {
+        level: syncedLevel,
+        points: syncedPoints,
+        total_reports: userStatsRow.total_reports || 0,
+        total_comments: userStatsRow.total_comments || 0,
+        total_votes: userStatsRow.total_votes || 0
+      },
       badges: badgesWithProgress,
-      newBadges: newlyAwardedBadges
+      newBadges: [] // Newly awarded detection skipped for performance in summary
     });
+
   } catch (error) {
-    logError(error, req);
+    console.error('[GAMIFICATION] CRITICAL ENDPOINT ERROR:', error);
     res.status(500).json({
-      error: 'Failed to fetch gamification summary'
+      error: 'Internal Server Error',
+      message: 'No pudimos cargar tus estadísticas. Intentá de nuevo.'
     });
   }
+});
 });
 
 /**
