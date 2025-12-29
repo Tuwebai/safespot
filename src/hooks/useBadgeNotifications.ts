@@ -13,7 +13,6 @@ import { invalidateCachePrefix } from '@/lib/cache'
 import type { NewBadge } from '@/lib/api'
 
 const NOTIFIED_BADGES_KEY = 'safespot_notified_badges'
-const CHECK_INTERVAL = 15000 // Check every 15 seconds (less aggressive)
 
 // Global callback for immediate badge checks (can be called from anywhere)
 let globalBadgeCheckCallback: (() => void) | null = null
@@ -120,7 +119,6 @@ function playSoundInternal(audioContext: AudioContext) {
 export function useBadgeNotifications() {
   const toast = useToast()
   const notifiedBadgesRef = useRef<Set<string>>(getNotifiedBadges())
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isCheckingRef = useRef(false)
 
   const checkForNewBadges = useCallback(async () => {
