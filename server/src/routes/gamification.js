@@ -384,7 +384,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
       likes_received: totalLikesReceived,
       activity_days: uniqueDays.size,
       has_verified_report: hasVerifiedReport ? 1 : 0,
-      is_good_citizen: (totalFlags === 0 && (stats?.reports_created > 0 || stats?.comments_created > 0)) ? 1 : 0
+      is_good_citizen: (totalFlags === 0 && (userStatsRow.total_reports > 0 || userStatsRow.total_comments > 0)) ? 1 : 0
     };
 
     // 6. Badge rules mapping

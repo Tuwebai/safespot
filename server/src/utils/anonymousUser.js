@@ -1,4 +1,4 @@
-import supabase from '../config/supabase.js';
+import supabase, { supabaseAdmin } from '../config/supabase.js';
 import { logError, logSuccess } from './logger.js';
 
 /**
@@ -15,8 +15,11 @@ export async function ensureAnonymousUser(anonymousId) {
   }
 
   try {
+    // Use admin client to bypass RLS for system-level existence check/creation
+    const clientToUse = supabaseAdmin || supabase;
+
     // Check if user already exists
-    const { data: existingUser, error: checkError } = await supabase
+    const { data: existingUser, error: checkError } = await clientToUse
       .from('anonymous_users')
       .select('anonymous_id')
       .eq('anonymous_id', anonymousId)
@@ -33,7 +36,7 @@ export async function ensureAnonymousUser(anonymousId) {
     }
 
     // User doesn't exist, create it
-    const { data: newUser, error: insertError } = await supabase
+    const { data: newUser, error: insertError } = await clientToUse
       .from('anonymous_users')
       .insert({
         anonymous_id: anonymousId,
@@ -54,7 +57,7 @@ export async function ensureAnonymousUser(anonymousId) {
         logSuccess('Anonymous user already exists (race condition)', { anonymousId });
         return true;
       }
-      
+
       logError(insertError, null);
       throw new Error(`Failed to create anonymous user: ${insertError.message}`);
     }
