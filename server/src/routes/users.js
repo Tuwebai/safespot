@@ -125,12 +125,35 @@ router.get('/stats', async (req, res) => {
     // Stats are public, no anonymous_id needed
     // Use Supabase client to get stats with individual error handling for each count
     const [totalReportsResult, resolvedReportsResult, totalUsersResult, activeUsersResult] = await Promise.all([
-      supabase.from('reports').select('id', { count: 'exact', head: true }).catch(e => ({ count: 0, error: e })),
-      supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'resuelto').catch(e => ({ count: 0, error: e })),
-      supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true }).catch(e => ({ count: 0, error: e })),
-      supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true })
-        .gt('last_active_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-        .catch(e => ({ count: 0, error: e }))
+      (async () => {
+        try {
+          return await supabase.from('reports').select('id', { count: 'exact', head: true });
+        } catch (e) {
+          return { count: 0, error: e };
+        }
+      })(),
+      (async () => {
+        try {
+          return await supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'resuelto');
+        } catch (e) {
+          return { count: 0, error: e };
+        }
+      })(),
+      (async () => {
+        try {
+          return await supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true });
+        } catch (e) {
+          return { count: 0, error: e };
+        }
+      })(),
+      (async () => {
+        try {
+          return await supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true })
+            .gt('last_active_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+        } catch (e) {
+          return { count: 0, error: e };
+        }
+      })()
     ]);
 
     // We don't throw error here, just log if something failed and return what we have

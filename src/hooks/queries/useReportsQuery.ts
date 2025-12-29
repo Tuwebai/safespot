@@ -24,6 +24,7 @@ export function useReportsQuery(filters?: ReportFilters) {
         queryKey: queryKeys.reports.list(filters),
         queryFn: () => reportsApi.getAll(filters),
         staleTime: 30 * 1000, // 30 seconds
+        refetchInterval: 10 * 1000, // Polling every 10 seconds for real-time updates
     })
 }
 
@@ -37,6 +38,7 @@ export function useReportDetailQuery(reportId: string | undefined) {
         queryFn: () => reportsApi.getById(reportId!),
         enabled: !!reportId, // Only fetch if we have an ID
         staleTime: 60 * 1000, // 1 minute for details
+        refetchInterval: 10 * 1000, // Polling every 10 seconds for real-time updates
     })
 }
 

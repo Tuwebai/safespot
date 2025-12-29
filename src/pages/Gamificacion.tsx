@@ -409,12 +409,12 @@ export function Gamificacion() {
           <CardContent>
             {badges.length === 0 ? (
               <div className="text-center py-12">
-                <Award className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                < Award className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
                 <p className="text-muted-foreground mb-2 font-medium">
-                  Las insignias están en camino 🚀
+                  No hay insignias cargadas en el sistema 🚀
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Seguí participando y pronto podrás ver todas las insignias disponibles.
+                  Vuelve más tarde para ver los nuevos desafíos.
                 </p>
               </div>
             ) : (
@@ -426,13 +426,7 @@ export function Gamificacion() {
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {categoryBadges.map((badge) => {
-                        // CRITICAL: Use obtained status from backend (source of truth)
-                        const isObtained = badge.obtained
-                        // CRITICAL: If progress is complete, badge should be obtained
-                        const isProgressComplete = badge.progress.required > 0 && badge.progress.current >= badge.progress.required
-                        // Final state: obtained OR progress complete
-                        const isUnlocked = isObtained || isProgressComplete
-                        // Check if this badge was just unlocked (for animation)
+                        const isUnlocked = badge.obtained
                         const isNewlyUnlocked = newlyUnlockedBadgeIds.has(badge.id)
 
                         const progressPercent = badge.progress.required > 0
@@ -446,76 +440,66 @@ export function Gamificacion() {
                               p-4 rounded-lg border transition-all relative
                               ${isUnlocked
                                 ? 'bg-neon-green/10 border-neon-green/30 card-glow'
-                                : 'bg-dark-bg/50 border-dark-border opacity-60'
+                                : 'bg-dark-bg/30 border-dark-border/50'
                               }
-                              hover:opacity-100 hover:border-neon-green/50
+                              hover:border-neon-green/50
                               ${isNewlyUnlocked ? 'animate-badge-unlock' : ''}
                             `}
-                            style={{
-                              animation: isNewlyUnlocked ? 'badgeUnlock 0.6s ease-out' : undefined
-                            }}
                           >
-                            {/* Glow effect for newly unlocked badge */}
-                            {isNewlyUnlocked && (
-                              <div className="absolute inset-0 rounded-lg bg-neon-green/20 animate-pulse pointer-events-none" />
-                            )}
                             <div className="flex items-start gap-3">
                               <div className={`
-                                text-3xl transition-transform
-                                ${isUnlocked ? '' : 'grayscale opacity-50'}
+                                text-4xl transition-transform
+                                ${isUnlocked ? 'scale-110 drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]' : 'grayscale opacity-40'}
                               `}>
                                 {badge.icon}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   <h4 className={`
-                                    font-semibold text-sm
-                                    ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
+                                    font-bold text-sm
+                                    ${isUnlocked ? 'text-neon-green' : 'text-foreground/70'}
                                   `}>
                                     {badge.name}
                                   </h4>
-                                  {isUnlocked && (
-                                    <Star className="h-3 w-3 text-yellow-400 flex-shrink-0" />
-                                  )}
-                                  {!isUnlocked && (
-                                    <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                  {isUnlocked ? (
+                                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400 flex-shrink-0" />
+                                  ) : (
+                                    <Lock className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
                                   )}
                                 </div>
-                                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                                <p className={`text-xs mb-3 line-clamp-2 ${isUnlocked ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}>
                                   {badge.description}
                                 </p>
-                                {/* Show points for this badge - more prominent */}
-                                {badge.points > 0 && (
-                                  <div className="mb-2">
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-neon-green bg-neon-green/10 px-2 py-0.5 rounded border border-neon-green/20">
-                                      <span>+</span>
-                                      <span>{badge.points}</span>
-                                      <span className="font-normal text-[10px]">pts</span>
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="mt-2">
-                                  <p className={`
-                                    text-xs font-medium
-                                    ${isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}
-                                  `}>
-                                    {getProgressText(badge)}
-                                  </p>
-                                  {/* CRITICAL: Only show progress bar if NOT unlocked */}
-                                  {!isUnlocked && badge.progress.required > 0 && (
-                                    <div className="mt-2">
-                                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                                        <span>Progreso</span>
-                                        <span>{badge.progress.current} / {badge.progress.required}</span>
-                                      </div>
-                                      <div className="w-full bg-dark-bg rounded-full h-1.5 overflow-hidden">
-                                        <div
-                                          className="bg-neon-green h-full rounded-full transition-all duration-500"
-                                          style={{ width: `${progressPercent}%` }}
-                                        />
-                                      </div>
+
+                                <div className="mt-auto space-y-2">
+                                  {badge.points > 0 && (
+                                    <div>
+                                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${isUnlocked
+                                          ? 'text-neon-green bg-neon-green/10 border-neon-green/20'
+                                          : 'text-muted-foreground/50 bg-dark-bg border-dark-border/30'
+                                        }`}>
+                                        +{badge.points} pts
+                                      </span>
                                     </div>
                                   )}
+
+                                  <div className="space-y-1.5">
+                                    <div className="flex justify-between text-[10px] font-medium">
+                                      <span className={isUnlocked ? 'text-neon-green' : 'text-muted-foreground'}>
+                                        {isUnlocked ? '¡Desbloqueada!' : 'Requisito'}
+                                      </span>
+                                      <span className="text-muted-foreground">
+                                        {badge.progress.current} / {badge.progress.required}
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-dark-bg/50 rounded-full h-1.5 overflow-hidden border border-dark-border/20">
+                                      <div
+                                        className={`h-full rounded-full transition-all duration-1000 ${isUnlocked ? 'bg-neon-green shadow-[0_0_8px_rgba(57,255,20,0.5)]' : 'bg-neon-green/30'
+                                          }`}
+                                        style={{ width: `${progressPercent}%` }}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>

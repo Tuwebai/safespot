@@ -23,15 +23,26 @@ export function logRequest(req, res, next) {
 }
 
 // Error logger
-export function logError(error, req) {
-  const anonymousId = req?.headers['x-anonymous-id'] || 'MISSING';
+export function logError(error, reqOrId) {
+  let anonymousId = 'MISSING';
+
+  if (typeof reqOrId === 'string') {
+    anonymousId = reqOrId;
+  } else if (reqOrId?.headers) {
+    anonymousId = reqOrId.headers['x-anonymous-id'] || 'MISSING';
+  } else if (reqOrId?.anonymousId) {
+    anonymousId = reqOrId.anonymousId;
+  }
+
   const timestamp = new Date().toISOString();
-  
+
   console.error(`[${timestamp}] ERROR`);
   console.error(`  Anonymous ID: ${anonymousId}`);
-  console.error(`  Path: ${req?.path || 'N/A'}`);
-  console.error(`  Error:`, error.message);
-  console.error(`  Stack:`, error.stack);
+  console.error(`  Path: ${reqOrId?.path || 'N/A'}`);
+  console.error(`  Error:`, error.message || error);
+  if (error.stack) {
+    console.error(`  Stack:`, error.stack);
+  }
 }
 
 // Success logger (disabled to reduce console noise)

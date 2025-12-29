@@ -6,7 +6,7 @@ import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter, createReportLimiter, favoriteLimiter, imageUploadLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
-import { evaluateBadges } from '../utils/badgeEvaluation.js';
+import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
 import { reverseGeocode } from '../utils/georef.js';
@@ -831,7 +831,7 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
     });
 
     // Evaluate badges (async, don't wait for response)
-    evaluateBadges(anonymousId).catch(err => {
+    syncGamification(anonymousId).catch(err => {
       logError(err, req);
     });
 

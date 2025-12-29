@@ -3,7 +3,7 @@ import { requireAnonymousId, validateComment, validateCommentUpdate, validateFla
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter, createCommentLimiter, likeLimiter } from '../utils/rateLimiter.js';
-import { evaluateBadges } from '../utils/badgeEvaluation.js';
+import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
@@ -311,7 +311,7 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
 
     // Evaluate badges (async, don't wait for response)
     // This will check if user should receive badges for creating comments
-    evaluateBadges(anonymousId).catch(err => {
+    syncGamification(anonymousId).catch(err => {
       logError(err, req);
       // Don't fail the request if badge evaluation fails
     });

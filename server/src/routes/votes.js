@@ -2,7 +2,7 @@ import express from 'express';
 import { requireAnonymousId } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { evaluateBadges } from '../utils/badgeEvaluation.js';
+import { syncGamification } from '../utils/gamificationCore.js';
 import { validate as uuidValidate } from 'uuid';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
@@ -188,8 +188,13 @@ router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
       target: report_id || comment_id
     });
 
-    // Evaluate badges for the user who received the like (not the voter)
+    // Evaluate badges (async, don't wait for response)
+    syncGamification(anonymousId).catch(err => {
+      logError(err, req);
+    });
+
     // Get the owner of the report/comment that received the vote
+    let ownerId = null;
     if (report_id) {
       const { data: report } = await supabase
         .from('reports')
@@ -198,9 +203,7 @@ router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
         .single();
 
       if (report && report.anonymous_id) {
-        evaluateBadges(report.anonymous_id).catch(err => {
-          logError(err, req);
-        });
+        ownerId = report.anonymous_id;
       }
     } else if (comment_id) {
       const { data: comment } = await supabase
@@ -210,10 +213,15 @@ router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
         .single();
 
       if (comment && comment.anonymous_id) {
-        evaluateBadges(comment.anonymous_id).catch(err => {
-          logError(err, req);
-        });
+        ownerId = comment.anonymous_id;
       }
+    }
+
+    // Evaluate badges for the recipient (ownerId)
+    if (ownerId && ownerId !== anonymousId) {
+      syncGamification(ownerId).catch(err => {
+        logError(err, req);
+      });
     }
 
     res.status(201).json({

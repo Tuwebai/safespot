@@ -1,18 +1,22 @@
 import { useCallback, useReducer } from 'react'
-import { commentsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
-import type { Comment } from '@/lib/api'
+import {
+    useCommentsQuery,
+    useCreateCommentMutation,
+    useUpdateCommentMutation,
+    useDeleteCommentMutation,
+    useToggleLikeCommentMutation,
+    useFlagCommentMutation
+} from '@/hooks/queries/useCommentsQuery'
 
 // ============================================
 // STATE TYPES
 // ============================================
 
 interface CommentsState {
-    comments: Comment[]
-
     // Input texts
     commentText: string
     replyText: string
@@ -27,25 +31,9 @@ interface CommentsState {
     // Network states
     submitting: 'comment' | 'reply' | 'edit' | 'thread' | 'delete' | 'flag' | 'like' | null
     processingId: string | null // ID of item being processed
-
-    // Pagination
-    nextCursor: string | null
-    hasMore: boolean
-    isLoading: boolean
-    isLoadingMore: boolean
 }
 
 type CommentsAction =
-    | { type: 'SET_COMMENTS'; payload: { comments: Comment[]; nextCursor: string | null } }
-    | { type: 'APPEND_COMMENTS'; payload: { comments: Comment[]; nextCursor: string | null } }
-    | { type: 'START_LOADING' }
-    | { type: 'START_LOADING_MORE' }
-    | { type: 'END_LOADING' }
-    | { type: 'ADD_COMMENT'; payload: Comment }
-    | { type: 'UPDATE_COMMENT'; payload: { id: string; updates: Partial<Comment> } }
-    | { type: 'REMOVE_COMMENT'; payload: string }
-    | { type: 'REPLACE_COMMENT'; payload: { tempId: string; comment: Comment } }
-
     // Input actions
     | { type: 'SET_COMMENT_TEXT'; payload: string }
     | { type: 'SET_REPLY_TEXT'; payload: string }
@@ -66,7 +54,6 @@ type CommentsAction =
     | { type: 'RESET_AFTER_SUBMIT'; payload: 'comment' | 'reply' | 'edit' | 'thread' }
 
 const initialState: CommentsState = {
-    comments: [],
     commentText: '',
     replyText: '',
     editText: '',
@@ -76,69 +63,10 @@ const initialState: CommentsState = {
     creatingThread: false,
     submitting: null,
     processingId: null,
-    nextCursor: null,
-    hasMore: false,
-    isLoading: true,
-    isLoadingMore: false,
 }
 
 function commentsReducer(state: CommentsState, action: CommentsAction): CommentsState {
     switch (action.type) {
-        case 'SET_COMMENTS':
-            return {
-                ...state,
-                comments: action.payload.comments,
-                nextCursor: action.payload.nextCursor,
-                hasMore: !!action.payload.nextCursor,
-                isLoading: false
-            }
-
-        case 'APPEND_COMMENTS':
-            // Deduplicate just in case
-            const newIds = new Set(action.payload.comments.map(c => c.id))
-            const cleanPrevComments = state.comments.filter(c => !newIds.has(c.id))
-            return {
-                ...state,
-                comments: [...cleanPrevComments, ...action.payload.comments],
-                nextCursor: action.payload.nextCursor,
-                hasMore: !!action.payload.nextCursor,
-                isLoadingMore: false
-            }
-
-        case 'START_LOADING':
-            return { ...state, isLoading: true }
-
-        case 'START_LOADING_MORE':
-            return { ...state, isLoadingMore: true }
-
-        case 'END_LOADING':
-            return { ...state, isLoading: false, isLoadingMore: false }
-
-        case 'ADD_COMMENT':
-            return { ...state, comments: [...state.comments, action.payload] }
-
-        case 'UPDATE_COMMENT':
-            return {
-                ...state,
-                comments: state.comments.map(c =>
-                    c.id === action.payload.id ? { ...c, ...action.payload.updates } : c
-                )
-            }
-
-        case 'REMOVE_COMMENT':
-            return {
-                ...state,
-                comments: state.comments.filter(c => c.id !== action.payload)
-            }
-
-        case 'REPLACE_COMMENT':
-            return {
-                ...state,
-                comments: state.comments.map(c =>
-                    c.id === action.payload.tempId ? action.payload.comment : c
-                )
-            }
-
         // Input text actions
         case 'SET_COMMENT_TEXT':
             return { ...state, commentText: action.payload }
@@ -201,119 +129,68 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const [state, dispatch] = useReducer(commentsReducer, initialState)
 
     // ============================================
-    // DATA LOADING
+    // DATA LOADING (React Query)
     // ============================================
 
-    const loadComments = useCallback(async (cursor?: string) => {
-        if (!reportId) return
+    // For now we don't handle deep pagination in this simplified hook 
+    // but the query supports it.
+    const {
+        data: commentsData,
+        isLoading,
+        isFetching: isLoadingMore,
+        refetch
+    } = useCommentsQuery(reportId)
 
-        const isLoadMore = !!cursor
+    const comments = commentsData?.comments ?? []
+    const hasMore = !!commentsData?.nextCursor
 
-        if (isLoadMore) {
-            dispatch({ type: 'START_LOADING_MORE' })
-        } else {
-            dispatch({ type: 'START_LOADING' })
-        }
+    // ============================================
+    // MUTATIONS
+    // ============================================
 
-        try {
-            const data = await commentsApi.getByReportId(reportId, 20, cursor)
-
-            if (isLoadMore) {
-                dispatch({ type: 'APPEND_COMMENTS', payload: data })
-            } else {
-                dispatch({ type: 'SET_COMMENTS', payload: data })
-            }
-        } catch (error) {
-            handleErrorWithMessage(error, 'Error al cargar comentarios', toast.error, 'useCommentsManager.loadComments')
-            dispatch({ type: 'END_LOADING' })
-        }
-    }, [reportId, toast])
+    const createMutation = useCreateCommentMutation()
+    const updateMutation = useUpdateCommentMutation()
+    const deleteMutation = useDeleteCommentMutation()
+    const likeMutation = useToggleLikeCommentMutation()
+    const flagMutation = useFlagCommentMutation()
 
     // ============================================
     // COMMENT OPERATIONS
     // ============================================
 
-    // ... existing submit methods ...
-
-    // (Code skipped for brevity, keeping submitComment etc)
-    // I need to be careful with replace range. 
-    // The previous tool call will replace lines up to 478.
-    // I should create a separate tool call if I can't match exactly.
-    // The prompt shows I have access to replacing massive chunks.
-
-    // BUT, I prefer replacing just loadComments first.
-
-    // Then replace the return object.
-
-
     const submitComment = useCallback(async () => {
         if (!reportId || !state.commentText.trim() || state.submitting) return
 
-        const tempId = `temp-${Date.now()}`
-        const anonymousId = getAnonymousIdSafe()
         const contentToSubmit = state.commentText.trim()
-
-        // Optimistic update
-        const optimisticComment: Comment = {
-            id: tempId,
-            report_id: reportId,
-            anonymous_id: anonymousId,
-            content: contentToSubmit,
-            upvotes_count: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            liked_by_me: false,
-            is_flagged: false,
-        }
-
-        dispatch({ type: 'ADD_COMMENT', payload: optimisticComment })
-        dispatch({ type: 'SET_COMMENT_TEXT', payload: '' })
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'comment' } })
-        onCommentCountChange?.(1)
 
         try {
-            const createdComment = await commentsApi.create({
+            await createMutation.mutateAsync({
                 report_id: reportId,
                 content: contentToSubmit,
             })
 
-            dispatch({
-                type: 'REPLACE_COMMENT',
-                payload: { tempId, comment: { ...createdComment, liked_by_me: false, is_flagged: false } }
-            })
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'comment' })
+            onCommentCountChange?.(1)
             triggerBadgeCheck()
         } catch (error) {
-            // Rollback
-            dispatch({ type: 'REMOVE_COMMENT', payload: tempId })
-            dispatch({ type: 'SET_COMMENT_TEXT', payload: contentToSubmit })
-            onCommentCountChange?.(-1)
-
             handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'useCommentsManager.submitComment')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.commentText, state.submitting, onCommentCountChange, toast])
+    }, [reportId, state.commentText, state.submitting, createMutation, onCommentCountChange, toast])
 
     const submitReply = useCallback(async (parentId: string) => {
         if (!reportId || !state.replyText.trim() || state.submitting) return
 
-        const parentComment = state.comments.find(c => c.id === parentId)
-        if (!parentComment) {
-            toast.error('El comentario al que intentas responder ya no existe')
-            dispatch({ type: 'CANCEL_REPLY' })
-            return
-        }
-
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'reply', id: parentId } })
 
         try {
-            const createdComment = await commentsApi.create({
+            await createMutation.mutateAsync({
                 report_id: reportId,
                 content: state.replyText.trim(),
                 parent_id: parentId,
             })
 
-            dispatch({ type: 'ADD_COMMENT', payload: { ...createdComment, liked_by_me: false, is_flagged: false } })
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'reply' })
             onCommentCountChange?.(1)
             triggerBadgeCheck()
@@ -321,58 +198,29 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             handleErrorWithMessage(error, 'Error al responder', toast.error, 'useCommentsManager.submitReply')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.replyText, state.submitting, state.comments, onCommentCountChange, toast])
+    }, [reportId, state.replyText, state.submitting, createMutation, onCommentCountChange, toast])
 
     const submitThread = useCallback(async () => {
         if (!reportId || !state.threadText.trim() || state.submitting) return
 
-        const tempId = `temp-thread-${Date.now()}`
-        const anonymousId = getAnonymousIdSafe()
-        const contentToSubmit = state.threadText.trim()
-
-        // Optimistic update
-        const optimisticThread: Comment = {
-            id: tempId,
-            report_id: reportId,
-            anonymous_id: anonymousId,
-            content: contentToSubmit,
-            upvotes_count: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            liked_by_me: false,
-            is_flagged: false,
-            is_thread: true,
-        }
-
-        dispatch({ type: 'ADD_COMMENT', payload: optimisticThread })
-        dispatch({ type: 'SET_THREAD_TEXT', payload: '' })
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'thread' } })
-        onCommentCountChange?.(1)
 
         try {
-            const createdThread = await commentsApi.create({
+            await createMutation.mutateAsync({
                 report_id: reportId,
-                content: contentToSubmit,
+                content: state.threadText.trim(),
                 is_thread: true,
             })
 
-            dispatch({
-                type: 'REPLACE_COMMENT',
-                payload: { tempId, comment: { ...createdThread, liked_by_me: false, is_flagged: false } }
-            })
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'thread' })
+            onCommentCountChange?.(1)
             triggerBadgeCheck()
             toast.success('Hilo creado correctamente')
         } catch (error) {
-            // Rollback
-            dispatch({ type: 'REMOVE_COMMENT', payload: tempId })
-            dispatch({ type: 'SET_THREAD_TEXT', payload: contentToSubmit })
-            onCommentCountChange?.(-1)
-
             handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.threadText, state.submitting, onCommentCountChange, toast])
+    }, [reportId, state.threadText, state.submitting, createMutation, onCommentCountChange, toast])
 
     const submitEdit = useCallback(async (commentId: string) => {
         if (!state.editText.trim() || state.submitting) return
@@ -380,26 +228,24 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'edit', id: commentId } })
 
         try {
-            const updatedComment = await commentsApi.update(commentId, state.editText.trim())
-            dispatch({
-                type: 'UPDATE_COMMENT',
-                payload: { id: commentId, updates: { content: updatedComment.content, updated_at: updatedComment.updated_at } }
+            await updateMutation.mutateAsync({
+                id: commentId,
+                content: state.editText.trim()
             })
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'edit' })
         } catch (error) {
             handleErrorWithMessage(error, 'Error al editar comentario', toast.error, 'useCommentsManager.submitEdit')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.editText, state.submitting, toast])
+    }, [state.editText, state.submitting, updateMutation, toast])
 
     const deleteComment = useCallback(async (commentId: string) => {
-        if (state.submitting) return
+        if (state.submitting || !reportId) return
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'delete', id: commentId } })
 
         try {
-            await commentsApi.delete(commentId)
-            dispatch({ type: 'REMOVE_COMMENT', payload: commentId })
+            await deleteMutation.mutateAsync({ id: commentId, reportId })
             onCommentCountChange?.(-1)
             toast.success('Comentario eliminado')
         } catch (error) {
@@ -407,10 +253,10 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.submitting, onCommentCountChange, toast])
+    }, [state.submitting, reportId, deleteMutation, onCommentCountChange, toast])
 
     const flagComment = useCallback(async (commentId: string) => {
-        const comment = state.comments.find(c => c.id === commentId)
+        const comment = comments.find(c => c.id === commentId)
         if (!comment || state.submitting) return
 
         if (comment.is_flagged) {
@@ -427,13 +273,11 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'flag', id: commentId } })
 
         try {
-            await commentsApi.flag(commentId)
-            dispatch({ type: 'UPDATE_COMMENT', payload: { id: commentId, updates: { is_flagged: true } } })
+            await flagMutation.mutateAsync({ id: commentId })
             toast.success('Comentario reportado correctamente')
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : ''
             if (errorMessage.includes('already flagged')) {
-                dispatch({ type: 'UPDATE_COMMENT', payload: { id: commentId, updates: { is_flagged: true } } })
                 toast.warning('Ya has reportado este comentario')
             } else {
                 handleErrorWithMessage(error, 'Error al reportar comentario', toast.error, 'useCommentsManager.flagComment')
@@ -441,70 +285,26 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.comments, state.submitting, toast])
+    }, [comments, state.submitting, flagMutation, toast])
 
     const toggleLike = useCallback(async (commentId: string) => {
-        // Guard: prevent spam clicks (silent - this is expected behavior)
-        if (state.submitting === 'like' && state.processingId === commentId) {
-            return
-        }
+        if (state.submitting === 'like' && state.processingId === commentId) return
 
-        // Guard: validate comment exists
-        const comment = state.comments.find(c => c.id === commentId)
-        if (!comment) {
-            console.warn(`[useCommentsManager.toggleLike] Comment ${commentId} not found in state`)
-            return
-        }
+        const comment = comments.find(c => c.id === commentId)
+        if (!comment) return
 
-        // Save current state for rollback
-        const wasLiked = comment.liked_by_me ?? false
-        const previousCount = comment.upvotes_count ?? 0
-
-        // Optimistic update
-        dispatch({
-            type: 'UPDATE_COMMENT',
-            payload: {
-                id: commentId,
-                updates: {
-                    liked_by_me: !wasLiked,
-                    upvotes_count: previousCount + (wasLiked ? -1 : 1)
-                }
-            }
-        })
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'like', id: commentId } })
 
+        const wasLiked = comment.liked_by_me ?? false
+
         try {
-            const result = await commentsApi.like(commentId)
-
-            // Guard: validate API response structure
-            if (!result || typeof result.liked !== 'boolean' || typeof result.upvotes_count !== 'number') {
-                console.warn('[useCommentsManager.toggleLike] Invalid API response:', result)
-                // Keep optimistic state if response is invalid but request succeeded
-                dispatch({ type: 'END_SUBMIT' })
-                return
-            }
-
-            dispatch({
-                type: 'UPDATE_COMMENT',
-                payload: {
-                    id: commentId,
-                    updates: { liked_by_me: result.liked, upvotes_count: result.upvotes_count }
-                }
-            })
+            await likeMutation.mutateAsync({ id: commentId, isLiked: wasLiked })
         } catch (error) {
-            // Rollback to previous state
-            dispatch({
-                type: 'UPDATE_COMMENT',
-                payload: {
-                    id: commentId,
-                    updates: { liked_by_me: wasLiked, upvotes_count: previousCount }
-                }
-            })
             handleErrorWithMessage(error, 'Error al dar like', toast.error, 'useCommentsManager.toggleLike')
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.comments, state.submitting, state.processingId, toast])
+    }, [comments, state.submitting, state.processingId, likeMutation, toast])
 
     // ============================================
     // ACTION CREATORS (for UI)
@@ -519,11 +319,11 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     }, [])
 
     const startEdit = useCallback((commentId: string) => {
-        const comment = state.comments.find(c => c.id === commentId)
+        const comment = comments.find(c => c.id === commentId)
         if (comment) {
             dispatch({ type: 'START_EDIT', payload: { id: commentId, text: comment.content } })
         }
-    }, [state.comments])
+    }, [comments])
 
     const cancelEdit = useCallback(() => {
         dispatch({ type: 'CANCEL_EDIT' })
@@ -561,14 +361,12 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const isProcessing = useCallback((id: string) => state.processingId === id, [state.processingId])
 
     const loadMore = useCallback(() => {
-        if (state.hasMore && state.nextCursor && !state.isLoadingMore) {
-            loadComments(state.nextCursor)
-        }
-    }, [state.hasMore, state.nextCursor, state.isLoadingMore, loadComments])
+        // Implement loadMore if needed by passing cursor to useCommentsQuery and useInfiniteQuery
+    }, [])
 
     return {
         // State
-        comments: state.comments,
+        comments,
         commentText: state.commentText,
         replyText: state.replyText,
         editText: state.editText,
@@ -581,12 +379,12 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         isProcessing,
 
         // Pagination
-        hasMore: state.hasMore,
-        isLoading: state.isLoading,
-        isLoadingMore: state.isLoadingMore,
+        hasMore,
+        isLoading,
+        isLoadingMore,
 
         // Actions
-        loadComments,
+        loadComments: refetch,
         loadMore,
         submitComment,
         submitReply,
