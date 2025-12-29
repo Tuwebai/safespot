@@ -9,13 +9,12 @@ import { useState, useCallback } from 'react';
 import { Share2, X as XIcon, MessageCircle, Facebook, Link2, Check } from 'lucide-react';
 
 interface ShareButtonProps {
-    title: string;
     category: string;
     zone: string;
     reportId: string;
 }
 
-export function ShareButton({ title, category, zone, reportId }: ShareButtonProps) {
+export function ShareButton({ category, zone, reportId }: ShareButtonProps) {
     const [showMenu, setShowMenu] = useState(false);
     const [copied, setCopied] = useState(false);
 

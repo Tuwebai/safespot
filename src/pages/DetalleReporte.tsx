@@ -235,7 +235,6 @@ export function DetalleReporte() {
                 <MapPin className="h-4 w-4" />
               </Button>
               <ShareButton
-                title={report.title}
                 category={report.category}
                 zone={report.zone}
                 reportId={report.id}
