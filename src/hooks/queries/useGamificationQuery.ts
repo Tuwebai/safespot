@@ -14,7 +14,10 @@ export function useGamificationSummaryQuery() {
     return useQuery({
         queryKey: queryKeys.gamification.summary,
         queryFn: () => gamificationApi.getSummary(),
-        staleTime: 30 * 1000, // 30 seconds - matches existing cache TTL
+        staleTime: 30 * 1000, // 30 seconds
+        // Hardening for Production:
+        retry: false, // Don't spam retries on 500/error
+        refetchOnWindowFocus: false, // Don't refetch every time user switches tabs
     })
 }
 
@@ -26,6 +29,8 @@ export function useGamificationBadgesQuery() {
         queryKey: queryKeys.gamification.badges,
         queryFn: () => gamificationApi.getBadges(),
         staleTime: 60 * 1000, // 1 minute
+        retry: false,
+        refetchOnWindowFocus: false,
     })
 }
 

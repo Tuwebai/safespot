@@ -451,10 +451,22 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[GAMIFICATION] CRITICAL ENDPOINT ERROR:', error);
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'No pudimos cargar tus estadísticas. Intentá de nuevo.'
+    console.error('[GAMIFICATION] CRITICAL ENDPOINT ERROR (Fallback applied):', error);
+
+    // PRODUCTION HARDENING: Never return 500 if we can return a safe default.
+    // This prevents the Home page and Gamification page from breaking.
+    res.json({
+      success: true,
+      profile: {
+        level: 1,
+        points: 0,
+        total_reports: 0,
+        total_comments: 0,
+        total_votes: 0
+      },
+      badges: [],
+      newBadges: [],
+      warning: 'No pudimos cargar tus estadísticas reales, mostrando valores por defecto.'
     });
   }
 });

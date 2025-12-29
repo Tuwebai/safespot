@@ -170,17 +170,9 @@ export function useBadgeNotifications() {
       checkForNewBadges()
     }, 3000) // Wait 3 seconds after mount
 
-    // Set up periodic checking
-    intervalRef.current = setInterval(() => {
-      checkForNewBadges()
-    }, CHECK_INTERVAL)
-
     return () => {
       globalBadgeCheckCallback = null
       clearTimeout(initialTimeout)
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
     }
   }, [checkForNewBadges])
 
