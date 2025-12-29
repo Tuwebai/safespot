@@ -94,9 +94,16 @@ export default defineConfig({
   server: {
     port: 5174,
   },
+  base: '/', // Ensure absolute base path for production assets
   build: {
+    // Clean outDir before build
+    emptyOutDir: true,
+
     // Target modern browsers for smaller output
     target: 'es2020',
+
+    // Asset directory inside dist
+    assetsDir: 'assets',
 
     // Generate source maps for production debugging (optional)
     sourcemap: false,

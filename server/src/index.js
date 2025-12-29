@@ -84,23 +84,51 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 
 // ============================================
+// STATIC FILES & SPA ROUTING
+// ============================================
+
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files from the 'dist' directory (frontend build)
+// This must be AFTER API routes to avoid intercepting /api calls
+const distPath = path.join(__dirname, '../../dist');
+app.use(express.static(distPath));
+
+// SPA Fallback: Serve index.html for any request that doesn't match an API route or static file
+// This is critical for client-side routing (React Router) to work on refresh
+app.get('*', (req, res, next) => {
+  // If it's an API request that reached here, it's a 404 API route
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// ============================================
 // ERROR HANDLING
 // ============================================
 
-// 404 handler
-app.use((req, res) => {
+// 404 handler for API routes (since GET * handles others)
+app.use('/api/*', (req, res) => {
   res.status(404).json({
     error: 'Not Found',
-    message: `Route ${req.method} ${req.path} not found`
+    message: `API Route ${req.method} ${req.originalUrl} not found`
   });
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  // Enhanced production logging
+  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err);
 
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
+  const status = err.status || 500;
+  res.status(status).json({
+    error: status === 500 ? 'Internal Server Error' : err.message,
+    message: err.message,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
