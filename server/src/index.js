@@ -123,6 +123,7 @@ import sitemapRouter from './routes/sitemap.js';
 // SEO / Share Proxy Route
 // Mounted directly for maximum reliability
 import { getReportPreview } from './controllers/seoController.js';
+app.get('/seo/test', (req, res) => res.send('SEO Path Reachable'));
 app.get('/seo/reporte/:id', getReportPreview);
 
 app.use('/api/reports', reportsRouter);
