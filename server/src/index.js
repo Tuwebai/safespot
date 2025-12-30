@@ -10,31 +10,75 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5174';
 
 // ============================================
-// MIDDLEWARE
+// ENVIRONMENT VALIDATION
 // ============================================
 
-// Security
+const requiredEnvVars = ['DATABASE_URL'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('❌ ERROR: Missing required environment variables:', missingVars.join(', '));
+  process.exit(1);
+}
+
+// ============================================
+// TRUST PROXY (Required for Render)
+// ============================================
+
+// Render uses a reverse proxy, so we need to trust the X-Forwarded-* headers
+app.set('trust proxy', 1);
+
+// ============================================
+// SECURITY MIDDLEWARE
+// ============================================
+
+// Helmet for security headers
 app.use(helmet());
 
-// CORS
+// CORS - Support both localhost (dev) and Netlify (prod)
+const allowedOrigins = [
+  'http://localhost:5174',
+  'http://localhost:5173',
+  'https://safespot.netlify.app',
+  process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-  origin: CORS_ORIGIN,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-Anonymous-Id']
 }));
 
-// Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ============================================
+// BODY PARSING WITH LIMITS
+// ============================================
 
-// Request logging (morgan only, skip detailed logRequest)
+// Prevent DoS attacks with large payloads
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ============================================
+// REQUEST LOGGING
+// ============================================
+
 app.use(requestLogger);
 
-// Rate limiting
+// ============================================
+// RATE LIMITING
+// ============================================
+
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
@@ -48,19 +92,22 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // ============================================
-// ROUTES
+// HEALTH CHECK
 // ============================================
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'SafeSpot Anonymous Backend'
+    service: 'SafeSpot API',
+    version: '1.0.0'
   });
 });
 
-// API Routes
+// ============================================
+// API ROUTES
+// ============================================
+
 import reportsRouter from './routes/reports.js';
 import commentsRouter from './routes/comments.js';
 import votesRouter from './routes/votes.js';
@@ -84,35 +131,28 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 
 // ============================================
-// STATIC FILES & SPA ROUTING
+// 404 HANDLER FOR NON-API ROUTES
 // ============================================
 
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Serve static files from the 'dist' directory (frontend build)
-// This must be AFTER API routes to avoid intercepting /api calls
-const distPath = path.join(__dirname, '../../dist');
-app.use(express.static(distPath));
-
-// SPA Fallback: Serve index.html for any request that doesn't match an API route or static file
-// This is critical for client-side routing (React Router) to work on refresh
-app.get('*', (req, res, next) => {
-  // If it's an API request that reached here, it's a 404 API route
+// This backend is API-only. Any non-API route should return 404 JSON.
+// The frontend is served separately by Netlify.
+app.use((req, res, next) => {
+  // If it's an API route, let it fall through to the API 404 handler
   if (req.path.startsWith('/api/')) {
     return next();
   }
-  res.sendFile(path.join(distPath, 'index.html'));
+
+  // For any other route, return 404 JSON
+  res.status(404).json({
+    error: 'Not Found',
+    message: 'This is an API-only server. The frontend is served at https://safespot.netlify.app'
+  });
 });
 
 // ============================================
-// ERROR HANDLING
+// 404 HANDLER FOR API ROUTES
 // ============================================
 
-// 404 handler for API routes (since GET * handles others)
 app.use('/api/*', (req, res) => {
   res.status(404).json({
     error: 'Not Found',
@@ -120,17 +160,28 @@ app.use('/api/*', (req, res) => {
   });
 });
 
-// Global error handler
+// ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
+
 app.use((err, req, res, next) => {
-  // Enhanced production logging
+  // Log error details
   console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err);
 
   const status = err.status || 500;
-  res.status(status).json({
+
+  // Never expose stack traces in production
+  const response = {
     error: status === 500 ? 'Internal Server Error' : err.message,
-    message: err.message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
+    message: err.message
+  };
+
+  // Only include stack in development
+  if (process.env.NODE_ENV === 'development') {
+    response.stack = err.stack;
+  }
+
+  res.status(status).json(response);
 });
 
 // ============================================
@@ -138,24 +189,36 @@ app.use((err, req, res, next) => {
 // ============================================
 
 app.listen(PORT, async () => {
-  console.log('🚀 SafeSpot Backend - Port', PORT);
-
-  // Check if DATABASE_URL is set
-  if (!process.env.DATABASE_URL) {
-    console.error('❌ ERROR: DATABASE_URL not found in environment variables');
-  }
+  console.log('🚀 SafeSpot API Server');
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
+  console.log('✅ Server ready to accept requests');
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+// ============================================
+// GRACEFUL SHUTDOWN
+// ============================================
+
+const gracefulShutdown = (signal) => {
+  console.log(`\n${signal} received, shutting down gracefully...`);
+
+  // Close server and allow existing connections to finish
   process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
 });
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  process.exit(0);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
 export default app;
-
