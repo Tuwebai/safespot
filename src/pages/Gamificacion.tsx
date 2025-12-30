@@ -120,54 +120,7 @@ export function Gamificacion() {
     other: '📌 Otros'
   }
 
-  // Helper function to get progress text
-  const getProgressText = (badge: GamificationBadge): string => {
-    // CRITICAL: If badge is obtained, show obtained message
-    if (badge.obtained) {
-      const pointsText = badge.points > 0 ? ` (+${badge.points} pts)` : ''
-      const date = badge.obtained_at ? new Date(badge.obtained_at) : null
-      if (date) {
-        return `Ya obtenida el ${date.toLocaleDateString('es-AR')}${pointsText} 🎉`
-      }
-      return `Ya obtenida${pointsText} 🎉`
-    }
 
-    // CRITICAL: If progress is complete but not obtained (shouldn't happen, but handle it)
-    if (badge.progress.required > 0 && badge.progress.current >= badge.progress.required) {
-      return 'Insignia desbloqueada 🎉'
-    }
-
-    // Badge not obtained - show motivational text
-    const remaining = Math.max(0, badge.progress.required - badge.progress.current)
-
-    if (badge.code === 'FIRST_REPORT') {
-      return remaining === 1
-        ? '¡Crea tu primer reporte para obtener esta insignia!'
-        : `Te falta ${remaining} reporte para obtener esta insignia`
-    } else if (badge.code === 'ACTIVE_VOICE') {
-      return `Te faltan ${remaining} reportes para obtener esta insignia`
-    } else if (badge.code === 'FIRST_COMMENT') {
-      return remaining === 1
-        ? '¡Crea tu primer comentario para obtener esta insignia!'
-        : `Te falta ${remaining} comentario para obtener esta insignia`
-    } else if (badge.code === 'PARTICIPATIVE') {
-      return `Te faltan ${remaining} comentarios para obtener esta insignia`
-    } else if (badge.code === 'FIRST_LIKE_RECEIVED') {
-      return '¡Recibe tu primer like para obtener esta insignia!'
-    } else if (badge.code === 'VALUABLE_CONTRIBUTION') {
-      return `Te faltan ${remaining} likes recibidos para obtener esta insignia`
-    } else if (badge.code === 'RECURRING_USER') {
-      return `Te faltan ${remaining} días de actividad para obtener esta insignia`
-    } else if (badge.code === 'CONSISTENT_USER') {
-      return `Te faltan ${remaining} días de actividad para obtener esta insignia`
-    } else if (badge.code === 'VERIFIED_REPORT') {
-      return `Seguí participando para desbloquear esta insignia`
-    } else if (badge.code === 'GOOD_CITIZEN') {
-      return `Seguí participando para desbloquear esta insignia`
-    } else {
-      return `Progreso: ${badge.progress.current} / ${badge.progress.required}`
-    }
-  }
 
   // CRITICAL: Render immediately with skeletons, don't block UI
   // Only show error if there's an actual error and no cached data
@@ -475,8 +428,8 @@ export function Gamificacion() {
                                   {badge.points > 0 && (
                                     <div>
                                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${isUnlocked
-                                          ? 'text-neon-green bg-neon-green/10 border-neon-green/20'
-                                          : 'text-muted-foreground/50 bg-dark-bg border-dark-border/30'
+                                        ? 'text-neon-green bg-neon-green/10 border-neon-green/20'
+                                        : 'text-muted-foreground/50 bg-dark-bg border-dark-border/30'
                                         }`}>
                                         +{badge.points} pts
                                       </span>
