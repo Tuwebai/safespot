@@ -4,6 +4,17 @@ import { logError } from '../utils/logger.js';
 import https from 'https';
 
 /**
+ * Brand Constants
+ */
+const COLORS = {
+    PRIMARY: '#00ff88', // Neon Green
+    DARK: '#020617',    // Deep Navy
+    TEXT: '#1e293b',    // Slate Text
+    MUTED: '#64748b',   // Muted Slate
+    BORDER: '#e2e8f0'   // Light Border
+};
+
+/**
  * Fetch an image from a URL and return it as a Buffer
  */
 const fetchImageBuffer = (url) => {
@@ -22,110 +33,169 @@ const fetchImageBuffer = (url) => {
 };
 
 /**
+ * Draws the SafeSpot Logo using PDFKit primitives
+ */
+const drawLogo = (doc, x, y, size = 30) => {
+    doc.save();
+
+    // Draw rounded background
+    doc.roundedRect(x, y, size, size, 8)
+        .fillAndStroke(COLORS.PRIMARY, COLORS.PRIMARY);
+
+    // Draw MapPin icon (Lucide-like)
+    const centerX = x + size / 2;
+    const centerY = y + size / 2;
+    const pinColor = COLORS.DARK;
+
+    doc.translate(centerX, centerY);
+    doc.scale(size / 32, size / 32);
+
+    // Path for MapPin
+    doc.path('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z')
+        .fillAndStroke(pinColor, pinColor);
+
+    // Center circle
+    doc.circle(12, 10, 3)
+        .fillAndStroke(pinColor, pinColor);
+
+    doc.restore();
+};
+
+/**
  * GET /api/reports/:id/export/pdf
- * Generates an official PDF report for a given report ID
  */
 export const exportReportPDF = async (req, res) => {
     try {
         const { id } = req.params;
         const db = DB.public();
 
-        // 1. Fetch report data
-        const result = await db.query(`
-      SELECT * FROM reports WHERE id = $1
-    `, [id]);
-
+        const result = await db.query('SELECT * FROM reports WHERE id = $1', [id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Reporte no encontrado' });
         }
 
         const report = result.rows[0];
-
-        // 2. Prepare images
         let imageUrls = [];
-        if (report.image_urls) {
-            if (Array.isArray(report.image_urls)) imageUrls = report.image_urls;
-            else if (typeof report.image_urls === 'string') {
-                try { imageUrls = JSON.parse(report.image_urls); } catch (e) { }
-            }
-        }
+        try {
+            imageUrls = Array.isArray(report.image_urls) ? report.image_urls : JSON.parse(report.image_urls || '[]');
+        } catch (e) { imageUrls = []; }
 
-        // 3. Create PDF
-        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: true });
+        const filename = `Reporte_Oficial_${id.substring(0, 8)}.pdf`;
 
-        // Set headers for download
-        const filename = `Reporte_SafeSpot_${report.category.replace(/\s+/g, '_')}_${id.substring(0, 8)}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
         doc.pipe(res);
 
-        // --- Header ---
-        doc.fontSize(20).text('Reporte Oficial – SafeSpot', { align: 'center' });
-        doc.moveDown();
-        doc.fontSize(10).text(`Generado el: ${new Date().toLocaleString('es-AR')}`, { align: 'right' });
-        doc.moveDown();
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-        doc.moveDown();
+        // --- INSTITUTIONAL HEADER ---
+        drawLogo(doc, 50, 45, 40);
+        doc.fillColor(COLORS.DARK)
+            .fontSize(22)
+            .text('SafeSpot', 100, 50, { characterSpacing: 1 });
 
-        // --- Report Data ---
-        doc.fontSize(14).fillColor('#2c3e50').text('Datos del Reporte', { underline: true });
+        doc.fontSize(10)
+            .fillColor(COLORS.MUTED)
+            .text('PLATAFORMA DE SEGURIDAD CIUDADANA', 100, 75);
+
+        doc.fillColor(COLORS.DARK)
+            .fontSize(14)
+            .text('REPORTE OFICIAL DE INCIDENTE', 300, 55, { align: 'right' });
+
+        doc.fontSize(9)
+            .fillColor(COLORS.MUTED)
+            .text(`Documento ID: ${id.toUpperCase()}`, 300, 75, { align: 'right' });
+
+        doc.moveTo(50, 100).lineTo(545, 100).strokeColor(COLORS.BORDER).lineWidth(1).stroke();
+
+        // --- DATA SECTION ---
+        doc.moveDown(2);
+        doc.fontSize(12).fillColor(COLORS.DARK).text('Información del Reporte', { underline: true });
         doc.moveDown(0.5);
 
-        const fieldStyle = { label: { width: 150, bold: true }, value: { width: 350 } };
-
-        const addField = (label, value) => {
-            doc.fontSize(11).fillColor('#7f8c8d').text(label, { continued: true, width: fieldStyle.label.width });
-            doc.fillColor('#2c3e50').text(`: ${value || 'No especificado'}`, { width: fieldStyle.value.width });
-            doc.moveDown(0.5);
+        const addRow = (label, value) => {
+            const currentY = doc.y;
+            doc.fontSize(10).fillColor(COLORS.MUTED).text(label, 50, currentY, { width: 120 });
+            doc.fontSize(10).fillColor(COLORS.DARK).text(value || 'N/A', 180, currentY, { width: 360, bold: true });
+            doc.moveDown(0.8);
         };
 
-        addField('ID del Reporte', report.id);
-        addField('Categoría', report.category);
-        addField('Ubicación', report.address || report.zone || 'Ubicación desconocida');
-        addField('Fecha del Evento', report.incident_date ? new Date(report.incident_date).toLocaleString('es-AR') : 'No especificada');
-        addField('Fecha de Reporte', new Date(report.created_at).toLocaleString('es-AR'));
+        addRow('Estado Actual', (report.status || 'Activo').toUpperCase());
+        addRow('Categoría', report.category);
+        addRow('Ubicación Precise', report.address || report.zone || 'No disponible');
+        addRow('Fecha del Suceso', report.incident_date ? new Date(report.incident_date).toLocaleString('es-AR') : 'No especificada');
+        addRow('Fecha de Creación', new Date(report.created_at).toLocaleString('es-AR'));
 
-        doc.moveDown();
-        doc.fontSize(12).fillColor('#2c3e50').text('Descripción:', { bold: true });
-        doc.fontSize(11).fillColor('#34495e').text(report.description || 'Sin descripción.', { align: 'justify' });
-        doc.moveDown();
+        // --- DESCRIPTION BLOCK ---
+        doc.moveDown(1);
+        doc.rect(50, doc.y, 495, 20).fill(COLORS.BORDER);
+        doc.fillColor(COLORS.DARK).fontSize(10).text('DESCRIPCIÓN DE LOS HECHOS', 60, doc.y - 14, { bold: true });
 
-        // --- Images ---
-        doc.addPage();
-        doc.fontSize(14).fillColor('#2c3e50').text('Evidencia Fotográfica', { underline: true });
-        doc.moveDown();
+        doc.moveDown(1.5);
+        doc.fillColor(COLORS.TEXT).fontSize(11).text(report.description || 'Sin descripción adicional.', { align: 'justify', lineGap: 3 });
 
+        // --- IMAGE EVIDENCE GRID (New Page if needed) ---
         if (imageUrls.length > 0) {
-            for (const url of imageUrls) {
+            doc.addPage();
+            doc.fontSize(12).fillColor(COLORS.DARK).text('Evidencia Fotográfica Adjunta', { underline: true });
+            doc.moveDown(1.5);
+
+            const gridPadding = 15;
+            const imgWidth = (495 - gridPadding) / 2;
+            const imgHeight = 180;
+            let currentX = 50;
+            let currentY = doc.y;
+
+            for (let i = 0; i < imageUrls.length; i++) {
                 try {
-                    const imgBuffer = await fetchImageBuffer(url);
-                    // Scale image to fit page width (roughly 495 units)
-                    doc.image(imgBuffer, {
-                        fit: [495, 300],
+                    const imgBuffer = await fetchImageBuffer(imageUrls[i]);
+
+                    // Draw image container border
+                    doc.roundedRect(currentX, currentY, imgWidth, imgHeight, 5).strokeColor(COLORS.BORDER).stroke();
+
+                    doc.image(imgBuffer, currentX + 5, currentY + 5, {
+                        fit: [imgWidth - 10, imgHeight - 10],
                         align: 'center',
                         valign: 'center'
                     });
-                    doc.moveDown();
-                } catch (imgError) {
-                    doc.fontSize(10).fillColor('red').text(`[Error cargando imagen: ${url.substring(0, 30)}...]`);
-                    doc.moveDown();
+
+                    // Update grid positions
+                    if ((i + 1) % 2 === 0) {
+                        currentX = 50;
+                        currentY += imgHeight + gridPadding;
+                    } else {
+                        currentX += imgWidth + gridPadding;
+                    }
+
+                    // Page break if grid exceeds page height
+                    if (currentY + imgHeight > 750) {
+                        doc.addPage();
+                        currentY = 50;
+                    }
+                } catch (err) {
+                    doc.fontSize(9).fillColor('red').text(`[Error imagen ${i + 1}]`, currentX, currentY);
                 }
             }
-        } else {
-            doc.fontSize(11).fillColor('#7f8c8d').text('El reporte no contiene imágenes adjuntas.');
         }
 
-        // --- Footer ---
-        const bottom = doc.page.height - 70;
-        doc.fontSize(9).fillColor('#95a5a6')
-            .text('Este documento fue generado automáticamente por SafeSpot como constancia del reporte ciudadano.', 50, bottom, { align: 'center' })
-            .text(`URL del reporte: https://safespot.tuweb-ai.com/reporte/${report.id}`, { align: 'center', link: `https://safespot.tuweb-ai.com/reporte/${report.id}` });
+        // --- LEGAL FOOTER ---
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+            doc.switchToPage(i);
+            const bottom = doc.page.height - 60;
+
+            doc.moveTo(50, bottom).lineTo(545, bottom).strokeColor(COLORS.BORDER).stroke();
+
+            doc.fontSize(8).fillColor(COLORS.MUTED)
+                .text('Este documento fue generado automáticamente por la plataforma SafeSpot y constituye una constancia digital de reporte.', 50, bottom + 10, { align: 'center' })
+                .text(`Verificación pública disponible en: https://safespot.tuweb-ai.com/reporte/${report.id}`, { align: 'center', color: COLORS.PRIMARY });
+
+            doc.text(`Página ${i + 1} de ${pages.count}`, 50, bottom + 35, { align: 'right' });
+        }
 
         doc.end();
 
     } catch (error) {
         logError(error, req);
-        res.status(500).json({ error: 'Error interno al generar el PDF' });
+        res.status(500).json({ error: 'Fallo al generar el reporte oficial' });
     }
 };
