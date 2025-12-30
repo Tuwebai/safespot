@@ -1,15 +1,30 @@
 /**
- * Anonymous Identity Module
- * Single source of truth for anonymous_id
- * Generates UUID v4 once per browser, stores in localStorage
+ * Anonymous Identity Module (V2)
+ * 
+ * Robust multi-layer persistence for anonymous_id:
+ * 1. LocalStorage (Primary/Legacy)
+ * 2. Browsers Cookies (Resilient to storage clearing)
+ * 3. IndexedDB (Robust backup)
+ * 
+ * Includes a consensus algorithm to recover identity if one or two layers fall.
  */
 
-const ANONYMOUS_ID_KEY = 'safespot_anonymous_id';
+// ============================================
+// CONSTANTS & CONFIG
+// ============================================
+
+const L1_KEY = 'safespot_anonymous_id'; // Legacy & primary
+const L2_KEY = 'ss_anon_id';           // Cookie key
+const L3_DB = 'SafespotIdentity';      // IndexedDB Name
+const ID_VERSION = 'v1';               // Format versioning
+
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * Generate a new UUID v4
- */
+// ============================================
+// HELPERS
+// ============================================
+
+/** Generate a new UUID v4 */
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -18,150 +33,192 @@ function generateUUID(): string {
   });
 }
 
+function isValidUUID(uuid: unknown): uuid is string {
+  if (typeof uuid !== 'string') return false;
+  // Handle optional version prefix (e.g., "v1|uuid")
+  const rawId = uuid.includes('|') ? uuid.split('|')[1] : uuid;
+  return UUID_V4_REGEX.test(rawId);
+}
+
+// --------------------------------------------
+// Layer 2: Cookie Storage
+// --------------------------------------------
+
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
+  return null;
+}
+
+function setCookie(name: string, value: string, days = 365) {
+  if (typeof document === 'undefined') return;
+  const date = new Date();
+  date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+  const expires = `expires=${date.toUTCString()}`;
+  document.cookie = `${name}=${value};${expires};path=/;SameSite=Lax`;
+}
+
+// --------------------------------------------
+// Layer 3: IndexedDB Storage
+// --------------------------------------------
+
+async function getIDB(key: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(L3_DB, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('identity');
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction('identity', 'readonly');
+        const store = transaction.objectStore('identity');
+        const getReq = store.get(key);
+        getReq.onsuccess = () => resolve(getReq.result as string || null);
+        getReq.onerror = () => resolve(null);
+      };
+      request.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+async function setIDB(key: string, value: string): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(L3_DB, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('identity');
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction('identity', 'readwrite');
+        const store = transaction.objectStore('identity');
+        store.put(value, key);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+      };
+      request.onerror = () => resolve();
+    } catch (e) {
+      resolve();
+    }
+  });
+}
+
+// ============================================
+// CORE LOGIC
+// ============================================
+
+let cachedId: string | null = null;
+
 /**
- * Validate UUID v4 format
+ * Resolve identity using multi-layer consensus.
+ * Called during app initialization.
  */
-function isValidUUID(uuid: string): boolean {
-  return UUID_V4_REGEX.test(uuid);
+export async function initializeIdentity(): Promise<string> {
+  if (cachedId) return cachedId;
+  if (typeof window === 'undefined') return '';
+
+  // 1. Read all layers
+  const l1 = localStorage.getItem(L1_KEY);
+  const l2 = getCookie(L2_KEY);
+  const l3 = await getIDB('current_id');
+
+  // 2. Identify candidates (removing version prefix if any)
+  const candidates = [l1, l2, l3]
+    .filter(isValidUUID)
+    .map(id => id.includes('|') ? id.split('|')[1] : id);
+
+  let winner: string;
+
+  if (candidates.length > 0) {
+    // Consensus: Find the most frequent ID
+    const frequency: Record<string, number> = {};
+    let maxFreq = 0;
+    let fallbackWinner = candidates[0];
+
+    candidates.forEach(id => {
+      frequency[id] = (frequency[id] || 0) + 1;
+      if (frequency[id] > maxFreq) {
+        maxFreq = frequency[id];
+        fallbackWinner = id;
+      }
+    });
+
+    winner = fallbackWinner;
+  } else {
+    // Absolute loss: Generate new
+    winner = generateUUID();
+  }
+
+  // 3. Normalize and Broadcast (Synchronization)
+  cachedId = winner;
+  const versionedId = `${ID_VERSION}|${winner}`;
+
+  try {
+    localStorage.setItem(L1_KEY, winner); // We keep v4 without prefix in L1 for backward compatibility
+    setCookie(L2_KEY, versionedId);
+    await setIDB('current_id', versionedId);
+  } catch (e) {
+    console.debug('[Identity] Failed to sync all layers', e);
+  }
+
+  return winner;
 }
 
 /**
- * Get anonymous_id from localStorage or generate new one
- * This is the ONLY function that should be called to get anonymous_id
- * 
- * @throws {Error} If localStorage is completely unavailable (SSR or disabled)
+ * Synchronous access to current ID.
+ * Assumes initializeIdentity was already called.
+ * Falls back to LocalStorage if needed.
  */
 export function getAnonymousId(): string {
-  if (typeof window === 'undefined') {
-    throw new Error('Cannot access localStorage in SSR');
-  }
+  if (cachedId) return cachedId;
 
-  try {
-    // Try to get existing ID
-    const stored = localStorage.getItem(ANONYMOUS_ID_KEY);
-    
-    if (stored) {
-      if (isValidUUID(stored)) {
-        return stored;
-      } else {
-        // Invalid format, remove it and regenerate
-        try {
-          localStorage.removeItem(ANONYMOUS_ID_KEY);
-        } catch (e) {
-          // If we can't remove, continue to regenerate
-        }
-      }
-    }
-    
-    // Generate new ID
-    const newId = generateUUID();
-    try {
-      localStorage.setItem(ANONYMOUS_ID_KEY, newId);
-    } catch (e) {
-      // If we can't save, still return the ID (in-memory only)
-      // This allows the app to continue functioning temporarily
-    }
-    return newId;
-  } catch (error) {
-    // If localStorage is completely unavailable, try to generate in-memory ID
-    // This is a last resort - the ID won't persist but app won't crash
-    const fallbackId = generateUUID();
-    return fallbackId;
-  }
-}
-
-/**
- * Get anonymous_id with automatic recovery and error handling
- * This function NEVER throws - it always returns a valid UUID
- * Use this for critical paths where failure is not acceptable
- * 
- * @returns {string} A valid UUID v4 anonymous_id
- */
-export function getAnonymousIdSafe(): string {
-  try {
-    return getAnonymousId();
-  } catch (error) {
-    // Last resort: generate a new ID in memory
-    // This ensures the app never breaks due to ID issues
-    const emergencyId = generateUUID();
-    
-    // Try one more time to save it
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(ANONYMOUS_ID_KEY, emergencyId);
-      } catch (e) {
-        // If we still can't save, return in-memory ID
-      }
-    }
-    
-    return emergencyId;
-  }
-}
-
-/**
- * Initialize anonymous identity
- * Must be called before any API calls
- * Returns the anonymous_id
- * This function ensures the anonymous_id is ready before any data fetching
- * Uses safe version that never fails
- */
-export function initializeIdentity(): string {
-  return getAnonymousIdSafe();
-}
-
-/**
- * Reset anonymous_id (for testing/debugging only)
- */
-export function resetIdentity(): void {
+  // Last resort sync read from LocalStorage
   if (typeof window !== 'undefined') {
-    localStorage.removeItem(ANONYMOUS_ID_KEY);
+    const stored = localStorage.getItem(L1_KEY);
+    if (isValidUUID(stored)) {
+      return stored;
+    }
   }
+
+  return '';
 }
 
 /**
- * Validate anonymous_id format
- * Throws error if invalid
- */
-export function validateAnonymousId(id: string): void {
-  if (!id) {
-    throw new Error('Anonymous ID is required');
-  }
-  
-  if (typeof id !== 'string') {
-    throw new Error('Anonymous ID must be a string');
-  }
-  
-  if (!isValidUUID(id)) {
-    throw new Error(`Invalid anonymous ID format: ${id}`);
-  }
-}
-
-/**
- * Ensure anonymous_id exists and is valid
- * If invalid or missing, regenerates automatically
- * This function ensures we always have a valid ID
- * 
- * @returns {string} A valid UUID v4 anonymous_id
+ * Validates and ensures a valid ID exists.
  */
 export function ensureAnonymousId(): string {
-  try {
-    const id = getAnonymousId();
-    if (isValidUUID(id)) {
-      return id;
-    }
-  } catch (error) {
-    // Fall through to regeneration
+  const id = getAnonymousId();
+  if (id) return id;
+
+  // If we get here and it was never initialized, this is an emergency
+  const emergencyId = generateUUID();
+  cachedId = emergencyId;
+  return emergencyId;
+}
+
+/** Legacy support */
+export function getAnonymousIdSafe(): string {
+  return ensureAnonymousId();
+}
+
+/** Only for critical validation */
+export function validateAnonymousId(id: string): void {
+  if (!id || !isValidUUID(id)) {
+    throw new Error('Invalid or missing Anonymous ID');
   }
-  
-  // If we get here, something is wrong - regenerate
-  try {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(ANONYMOUS_ID_KEY);
-    }
-  } catch (e) {
-    // Ignore removal errors
-  }
-  
-  return getAnonymousIdSafe();
+}
+
+/** Reset identity (Testing only) */
+export function resetIdentity(): void {
+  cachedId = null;
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(L1_KEY);
+  document.cookie = `${L2_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  indexedDB.deleteDatabase(L3_DB);
 }
 

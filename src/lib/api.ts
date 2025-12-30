@@ -181,6 +181,7 @@ export interface Report {
   province?: string;  // e.g., "Buenos Aires", "Córdoba"
   locality?: string;  // e.g., "La Plata", "Córdoba Capital"
   department?: string; // e.g., "La Plata", "Capital"
+  newBadges?: NewBadge[]; // Newly awarded badges in this action
 }
 
 export interface CreateReportData {
@@ -364,6 +365,7 @@ export interface Comment {
   is_thread?: boolean; // Si es un hilo (thread) - debe ser top-level (parent_id null)
   liked_by_me?: boolean; // Si el usuario actual dio like
   is_flagged?: boolean; // Si el usuario actual flaggeó este comentario
+  newBadges?: NewBadge[]; // Newly awarded badges in this action
 }
 
 export interface CreateCommentData {

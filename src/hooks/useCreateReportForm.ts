@@ -207,7 +207,7 @@ export function useCreateReportForm() {
                 }
             }
 
-            triggerBadgeCheck()
+            triggerBadgeCheck(newReport.newBadges)
             navigate('/reportes')
             toast.success('Reporte creado exitosamente')
 

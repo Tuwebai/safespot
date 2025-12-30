@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { commentsApi, type CreateCommentData } from '@/lib/api'
+import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 
 /**
  * Fetch comments for a report with cursor-based pagination
@@ -25,12 +26,15 @@ export function useCreateCommentMutation() {
 
     return useMutation({
         mutationFn: (data: CreateCommentData) => commentsApi.create(data),
-        onSuccess: (_, variables) => {
+        onSuccess: (newComment, variables) => {
             // Update comments list
             queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(variables.report_id) })
             // Update report counters (comments_count, threads_count)
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(variables.report_id) })
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+
+            // Check for badges
+            triggerBadgeCheck(newComment.newBadges)
         },
     })
 }
@@ -76,10 +80,19 @@ export function useToggleLikeCommentMutation() {
     return useMutation({
         mutationFn: ({ id, isLiked }: { id: string; isLiked: boolean }) =>
             isLiked ? commentsApi.unlike(id) : commentsApi.like(id),
-        onSuccess: () => {
+        onSuccess: (data) => {
             // We don't have the reportId here easily without extra params or cache lookup
             // But invalidating all comments is safe or we can specify part of the key
             queryClient.invalidateQueries({ queryKey: ['comments'] })
+
+            // Check for badges (likes are point-earning actions)
+            // Note: commentsApi.like returns { liked, upvotes_count } - wait, does it return badges? 
+            // I need to check backend routes/comments.js for like route.
+            if ((data as any).newBadges) {
+                triggerBadgeCheck((data as any).newBadges)
+            } else {
+                triggerBadgeCheck()
+            }
         },
     })
 }

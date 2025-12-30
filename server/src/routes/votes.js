@@ -188,10 +188,16 @@ router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
       target: report_id || comment_id
     });
 
-    // Evaluate badges (async, don't wait for response)
-    syncGamification(anonymousId).catch(err => {
+    // Evaluate badges (await to include in response for real-time notification)
+    let newBadges = [];
+    try {
+      const gamification = await syncGamification(anonymousId);
+      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+        newBadges = gamification.profile.newlyAwarded;
+      }
+    } catch (err) {
       logError(err, req);
-    });
+    }
 
     // Get the owner of the report/comment that received the vote
     let ownerId = null;
@@ -226,7 +232,10 @@ router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: data,
+      data: {
+        ...data,
+        newBadges
+      },
       message: 'Vote created successfully'
     });
   } catch (error) {

@@ -10,6 +10,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type Report, type ReportFilters, type CreateReportData } from '@/lib/api'
+import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 
 // ============================================
 // QUERIES (READ)
@@ -143,6 +144,9 @@ export function useToggleFavoriteMutation() {
             // Refetch to ensure consistency
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
             queryClient.invalidateQueries({ queryKey: queryKeys.user.favorites })
+
+            // Check for badges (delayed poll since we don't have immediate data)
+            triggerBadgeCheck()
         },
     })
 }
@@ -165,6 +169,9 @@ export function useFlagReportMutation() {
             )
             // Invalidate lists
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+
+            // Check for badges
+            triggerBadgeCheck()
         },
     })
 }

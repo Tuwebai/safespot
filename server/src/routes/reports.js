@@ -830,10 +830,16 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
       anonymousId
     });
 
-    // Evaluate badges (async, don't wait for response)
-    syncGamification(anonymousId).catch(err => {
+    // Evaluate badges (await to include in response for real-time notification)
+    let newBadges = [];
+    try {
+      const gamification = await syncGamification(anonymousId);
+      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+        newBadges = gamification.profile.newlyAwarded;
+      }
+    } catch (err) {
       logError(err, req);
-    });
+    }
 
     // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
     // Import dynamically to avoid circular dependencies
@@ -847,7 +853,10 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: data,
+      data: {
+        ...data,
+        newBadges
+      },
       message: 'Report created successfully'
     });
   } catch (error) {

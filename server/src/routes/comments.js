@@ -309,16 +309,23 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
 
     const data = insertResult.rows[0];
 
-    // Evaluate badges (async, don't wait for response)
-    // This will check if user should receive badges for creating comments
-    syncGamification(anonymousId).catch(err => {
+    // Evaluate badges (await to include in response for real-time notification)
+    let newBadges = [];
+    try {
+      const gamification = await syncGamification(anonymousId);
+      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+        newBadges = gamification.profile.newlyAwarded;
+      }
+    } catch (err) {
       logError(err, req);
-      // Don't fail the request if badge evaluation fails
-    });
+    }
 
     res.status(201).json({
       success: true,
-      data: data,
+      data: {
+        ...data,
+        newBadges
+      },
       message: 'Comment created successfully'
     });
   } catch (error) {
@@ -567,6 +574,17 @@ router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
         [id, anonymousId, isHidden]
       );
 
+      // Evaluate badges (await to include in response for real-time notification)
+      let newBadges = [];
+      try {
+        const gamification = await syncGamification(anonymousId);
+        if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+          newBadges = gamification.profile.newlyAwarded;
+        }
+      } catch (err) {
+        logError(err, req);
+      }
+
       // Get updated count (trigger should have updated it)
       const { data: updatedComment } = await supabase
         .from('comments')
@@ -578,7 +596,8 @@ router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
         success: true,
         data: {
           liked: true,
-          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1
+          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1,
+          newBadges
         },
         message: 'Comment liked successfully'
       });
@@ -596,7 +615,8 @@ router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
           success: true,
           data: {
             liked: true,
-            upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count
+            upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count,
+            newBadges: []
           },
           message: 'Comment already liked'
         });

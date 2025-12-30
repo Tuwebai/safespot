@@ -15,22 +15,28 @@ import type { NewBadge } from '@/lib/api'
 const NOTIFIED_BADGES_KEY = 'safespot_notified_badges'
 
 // Global callback for immediate badge checks (can be called from anywhere)
-let globalBadgeCheckCallback: (() => void) | null = null
+let globalBadgeCheckCallback: ((badges?: NewBadge[]) => void) | null = null
 
 /**
- * Trigger an immediate badge check from anywhere in the app
+ * Trigger an immediate badge check or notification from anywhere in the app
  * Call this after actions that may award badges (create report, comment, etc.)
- * Also invalidates gamification cache to ensure fresh data
+ * If badges are already known (from action response), they will be notified immediately.
+ * Otherwise, a backend poll will be triggered after a short delay.
  */
-export function triggerBadgeCheck() {
-  // Invalidate cache first so next request fetches fresh data
+export function triggerBadgeCheck(badges?: NewBadge[]) {
+  // Invalidate cache first so next request (if any) fetches fresh data
   invalidateCachePrefix('/gamification')
 
   if (globalBadgeCheckCallback) {
-    // Small delay to let backend process the action
-    setTimeout(() => {
-      globalBadgeCheckCallback?.()
-    }, 1500)
+    if (badges && badges.length > 0) {
+      // Immediate notification if badges are provided
+      globalBadgeCheckCallback(badges)
+    } else {
+      // Small delay to let backend process the action if badges aren't provided
+      setTimeout(() => {
+        globalBadgeCheckCallback?.()
+      }, 1500)
+    }
   }
 }
 
@@ -121,7 +127,36 @@ export function useBadgeNotifications() {
   const notifiedBadgesRef = useRef<Set<string>>(getNotifiedBadges())
   const isCheckingRef = useRef(false)
 
-  const checkForNewBadges = useCallback(async () => {
+  const showNotifications = useCallback((badges: NewBadge[]) => {
+    const notified = notifiedBadgesRef.current
+
+    badges.forEach((badge) => {
+      // Only notify if not already notified
+      if (!notified.has(badge.code)) {
+        // Mark as notified immediately to prevent duplicates
+        markBadgeAsNotified(badge.code)
+        notified.add(badge.code)
+
+        // Show toast notification with points
+        const pointsText = badge.points ? `+${badge.points} pts` : ''
+        toast.success(
+          `🎉 ¡Nueva insignia desbloqueada!\n${badge.name} ${badge.icon} ${pointsText}`,
+          5000
+        )
+
+        // Play sound (only if audio is enabled)
+        playBadgeSound()
+      }
+    })
+  }, [toast])
+
+  const checkForNewBadges = useCallback(async (providedBadges?: NewBadge[]) => {
+    // If badges are provided directly, show them without checking backend
+    if (providedBadges && providedBadges.length > 0) {
+      showNotifications(providedBadges)
+      return
+    }
+
     // Prevent concurrent checks
     if (isCheckingRef.current) return
     isCheckingRef.current = true
@@ -129,27 +164,22 @@ export function useBadgeNotifications() {
     try {
       const summary = await gamificationApi.getSummary()
 
-      if (summary.newBadges && summary.newBadges.length > 0) {
-        const notified = notifiedBadgesRef.current
+      // Combine explicit new badges with any earned badges not yet notified
+      // This ensures we catch badges even if the "newBadges" flag was missed
+      const allAwarded: NewBadge[] = [
+        ...(summary.newBadges || []),
+        ...summary.badges
+          .filter(b => b.obtained)
+          .map(b => ({
+            code: b.code,
+            name: b.name,
+            icon: b.icon,
+            points: b.points
+          }))
+      ]
 
-        summary.newBadges.forEach((badge: NewBadge) => {
-          // Only notify if not already notified
-          if (!notified.has(badge.code)) {
-            // Mark as notified immediately to prevent duplicates
-            markBadgeAsNotified(badge.code)
-            notified.add(badge.code)
-
-            // Show toast notification with points
-            const pointsText = badge.points ? `+${badge.points} pts` : ''
-            toast.success(
-              `🎉 ¡Nueva insignia desbloqueada!\n${badge.name} ${badge.icon} ${pointsText}`,
-              5000
-            )
-
-            // Play sound (only if audio is enabled)
-            playBadgeSound()
-          }
-        })
+      if (allAwarded.length > 0) {
+        showNotifications(allAwarded)
       }
     } catch (error) {
       // Silent fail - don't show errors for badge checking
@@ -157,7 +187,7 @@ export function useBadgeNotifications() {
     } finally {
       isCheckingRef.current = false
     }
-  }, [toast])
+  }, [showNotifications])
 
   useEffect(() => {
     // Register global callback for immediate checks from other components
@@ -174,9 +204,10 @@ export function useBadgeNotifications() {
     }
   }, [checkForNewBadges])
 
-  // Expose manual check function (for testing or immediate checks after actions)
+  // Expose manual check function
   return {
-    checkForNewBadges
+    checkForNewBadges,
+    showBadgeNotifications: showNotifications
   }
 }
 
