@@ -126,21 +126,43 @@ export default defineConfig({
             return undefined
           }
 
-          // Group 1: Map Engine (Heavy & specialized)
+          // CRITICAL: Process React FIRST before any library that depends on it
+          // This prevents react-leaflet from being separated from React
+
+          // Group 1: Core Framework (MUST be first)
           if (
-            id.includes('leaflet') ||
-            id.includes('react-leaflet') ||
-            id.includes('react-leaflet-cluster')
+            id.includes('react/') ||
+            id.includes('react-dom/') ||
+            id.includes('react-router-dom') ||
+            id.includes('@tanstack/react-query')
+          ) {
+            return 'vendor-core'
+          }
+
+          // Group 2: React wrappers (MUST come after React check)
+          // Only match pure leaflet, NOT react-leaflet
+          if (
+            (id.includes('leaflet') && !id.includes('react-leaflet')) ||
+            id.includes('leaflet.markercluster')
           ) {
             return 'map-engine'
           }
 
-          // Group 2: Rich Text Editor (Heavy, used only in creation/editing)
+          // Group 3: React-based libraries (go to vendor-core with React)
+          if (
+            id.includes('react-leaflet') ||
+            id.includes('@react-leaflet/core') ||
+            id.includes('react-leaflet-cluster')
+          ) {
+            return 'vendor-core'
+          }
+
+          // Group 4: Rich Text Editor (Heavy, used only in creation/editing)
           if (id.includes('@tiptap') || id.includes('prosemirror')) {
             return 'editor-core'
           }
 
-          // Group 3: Content Transformation & Markdown
+          // Group 5: Content Transformation & Markdown
           if (
             id.includes('react-markdown') ||
             id.includes('remark') ||
@@ -150,19 +172,9 @@ export default defineConfig({
             return 'content-parser'
           }
 
-          // Group 4: Validation & Forms (Used in Perfil, CrearReporte)
+          // Group 6: Validation & Forms (Used in Perfil, CrearReporte)
           if (id.includes('react-hook-form') || id.includes('zod') || id.includes('@hookform')) {
             return 'forms-engine'
-          }
-
-          // Group 5: Core Framework (Keep together for stability)
-          if (
-            id.includes('react') ||
-            id.includes('react-dom') ||
-            id.includes('react-router-dom') ||
-            id.includes('@tanstack/react-query')
-          ) {
-            return 'vendor-core'
           }
 
           // Everything else: Generic utilities
