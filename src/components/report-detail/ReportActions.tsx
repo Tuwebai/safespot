@@ -63,7 +63,12 @@ export const ReportActions = memo(function ReportActions({
     }, [showMenu])
 
     const handleDownload = useCallback(() => {
-        const baseUrl = import.meta.env.VITE_API_URL || 'https://safespot-6e51.onrender.com';
+        // Use the same logic as in lib/api.ts to avoid duplication
+        const rawUrl = import.meta.env.VITE_API_URL || 'https://safespot-6e51.onrender.com';
+        const baseUrl = rawUrl.replace(/\/$/, '').endsWith('/api')
+            ? rawUrl.replace(/\/$/, '').slice(0, -4) // Remove /api to avoid duplication below
+            : rawUrl.replace(/\/$/, '');
+
         window.open(`${baseUrl}/api/reports/${report.id}/export/pdf`, '_blank');
         setShowMenu(false)
     }, [report.id])
