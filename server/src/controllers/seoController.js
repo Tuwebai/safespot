@@ -46,37 +46,28 @@ const formatHumanDate = (dateString) => {
 
 /**
  * Serve HTML with Open Graph tags for a specific report
- * This endpoint is designed to be shared on social media.
- * It returns static HTML with metadata and then redirects to the SPA.
+ * RESPOND 200 OK (no redirect) with dynamic meta tags for crawlers.
  */
 export const getReportPreview = async (req, res) => {
   try {
     const { id } = req.params;
     const frontendUrl = process.env.FRONTEND_URL || 'https://safespot.tuweb-ai.com';
 
-    // Fetch report data (public access)
+    // Fetch report data
     const db = DB.public();
     const result = await db.query(`
-      SELECT title, description, category, zone, address, latitude, longitude, created_at, image_urls, status
-      FROM reports 
-      WHERE id = $1
-    `, [id]);
+            SELECT category, zone, address, latitude, longitude, created_at, image_urls, description
+            FROM reports 
+            WHERE id = $1
+        `, [id]);
 
     if (result.rows.length === 0) {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta http-equiv="refresh" content="0;url=${frontendUrl}" />
-          </head>
-          <body>Redirigiendo...</body>
-        </html>
-      `);
+      return res.status(404).send('Reporte no encontrado');
     }
 
     const report = result.rows[0];
 
-    // normalize image_urls
+    // Normalizar imágenes
     let images = [];
     if (report.image_urls) {
       if (Array.isArray(report.image_urls)) images = report.image_urls;
@@ -85,12 +76,13 @@ export const getReportPreview = async (req, res) => {
       }
     }
 
-    // OG:IMAGE logic
+    // Lógica de og:image (1200x630 para mejor compatibilidad)
     let ogImage = '';
     if (images.length > 0) {
       ogImage = images[0];
     } else if (report.latitude && report.longitude) {
-      ogImage = getStaticMapUrl(report.latitude, report.longitude);
+      // Yandex Static Maps con tamaño 1200x600 (aprox a 1200x630)
+      ogImage = `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${report.longitude},${report.latitude}&z=15&l=map&size=600,300&pt=${report.longitude},${report.latitude},pm2rdm`;
     } else {
       ogImage = `${frontendUrl}/og-default.png`;
     }
@@ -106,60 +98,51 @@ export const getReportPreview = async (req, res) => {
 
     const targetUrl = `${frontendUrl}/reporte/${id}`;
 
-    const html = `
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${ogTitle} | SafeSpot</title>
-        
-        <!-- Open Graph / Facebook -->
-        <meta property="og:type" content="website">
-        <meta property="og:url" content="${targetUrl}">
-        <meta property="og:title" content="${ogTitle}">
-        <meta property="og:description" content="${ogDescription}">
-        <meta property="og:image" content="${ogImage}">
-        <meta property="og:site_name" content="SafeSpot">
-        <meta property="og:locale" content="es_AR">
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- SEO Meta Tags -->
+  <title>${ogTitle}</title>
+  <meta name="description" content="${ogDescription}">
 
-        <!-- Twitter -->
-        <meta property="twitter:card" content="summary_large_image">
-        <meta property="twitter:url" content="${targetUrl}">
-        <meta property="twitter:title" content="${ogTitle}">
-        <meta property="twitter:description" content="${ogDescription}">
-        <meta property="twitter:image" content="${ogImage}">
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${ogTitle}" />
+  <meta property="og:description" content="${ogDescription}" />
+  <meta property="og:image" content="${ogImage}" />
+  <meta property="og:url" content="${targetUrl}" />
+  <meta property="og:site_name" content="SafeSpot" />
 
-        <!-- WhatsApp / General -->
-        <meta itemprop="name" content="${ogTitle}">
-        <meta itemprop="description" content="${ogDescription}">
-        <meta itemprop="image" content="${ogImage}">
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${ogTitle}" />
+  <meta name="twitter:description" content="${ogDescription}" />
+  <meta name="twitter:image" content="${ogImage}" />
 
-        <!-- Redirect to actual app -->
-        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
-        
-        <style>
-          body { font-family: system-ui, -apple-system, sans-serif; background: #121212; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .loader { text-align: center; }
-        </style>
-      </head>
-      <body>
-        <div class="loader">
-          <p>Redirigiendo a SafeSpot...</p>
-          <script>
-            window.location.href = "${targetUrl}";
-          </script>
-        </div>
-      </body>
-      </html>
-    `;
+  <!-- Meta Refresh & Redirect -->
+  <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+  
+  <style>
+    body { font-family: system-ui, sans-serif; background: #121212; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  </style>
+</head>
+<body>
+  <div style="text-align: center;">
+    <p>Redirigiendo a SafeSpot...</p>
+    <script>
+      window.location.href = "${targetUrl}";
+    </script>
+  </div>
+</body>
+</html>`;
 
-    res.set('Content-Type', 'text/html');
-    res.send(html);
+    res.status(200).set('Content-Type', 'text/html').send(html);
 
   } catch (error) {
     logError(error, req);
-    // Fallback redirect
-    res.redirect('https://safespot.netlify.app/');
+    res.status(500).send('Error interno');
   }
 };

@@ -123,8 +123,8 @@ import sitemapRouter from './routes/sitemap.js';
 
 // SEO / Share Proxy Route
 // This route serves static HTML for social bots (Facebook, Twitter, WhatsApp)
-// It must be mounted before API routes or 404 handlers
-app.use('/reporte', seoRouter);
+// It is mounted at /seo/reporte/:id to avoid conflict with frontend routes
+app.use('/seo/reporte', seoRouter);
 
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
