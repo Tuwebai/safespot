@@ -1,16 +1,27 @@
-import { useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
-import { handleError } from '@/lib/errorHandler'
 import type { Report } from '@/lib/api'
-import { SafeSpotMap } from '@/components/map/SafeSpotMap'
 import { MapLayout } from '@/layouts/MapLayout'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { List } from 'lucide-react'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { List, Search } from 'lucide-react'
+
+// CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
+// Leaflet requires window/document and will crash if executed during build
+const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
+
+// Loading fallback for map
+const MapLoadingFallback = () => (
+  <div className="w-full h-full flex items-center justify-center bg-dark-bg">
+    <div className="text-center">
+      <div className="animate-spin h-12 w-12 border-4 border-neon-green border-t-transparent rounded-full mx-auto mb-4"></div>
+      <p className="text-foreground/60">Cargando mapa...</p>
+    </div>
+  </div>
+)
 
 export function Explorar() {
   const toast = useToast()
@@ -37,69 +48,70 @@ export function Explorar() {
       const data = await reportsApi.getAll()
       setReports(data)
     } catch (error) {
-      const errorInfo = handleError(error, toast.error, 'Explorar.loadReports')
-      console.error(errorInfo)
+      console.error('Error loading reports:', error)
+      toast.error('Error al cargar reportes')
     }
   }, [toast])
 
-  // Initial Load
   useEffect(() => {
     loadReports()
   }, [loadReports])
 
-  const handleSearchArea = useCallback(async () => {
-    if (!mapBounds) {
-      loadReports()
-      setShowSearchAreaButton(false)
-      return
-    }
+  const handleSearchInArea = useCallback(async () => {
+    if (!mapBounds) return
 
+    setIsSearching(true)
     try {
-      setIsSearching(true)
-      const data = await reportsApi.getReportsInBounds(
-        mapBounds.north,
-        mapBounds.south,
-        mapBounds.east,
-        mapBounds.west
-      )
+      const { north, south, east, west } = mapBounds
+      const data = await reportsApi.getReportsInBounds(north, south, east, west)
       setReports(data)
       setShowSearchAreaButton(false)
-      toast.success(`Zona actualizada: ${data.length} reportes encontrados`)
+      toast.success(`Se encontraron ${data.length} reportes en esta área`)
     } catch (error) {
-      handleError(error, toast.error, 'Explorar.bounds')
+      console.error('Error searching in area:', error)
+      toast.error('Error al buscar en el área')
     } finally {
       setIsSearching(false)
     }
-  }, [mapBounds, loadReports, setShowSearchAreaButton, toast])
+  }, [mapBounds, setShowSearchAreaButton, toast])
 
   return (
-    <MapLayout>
+    <>
       <Helmet>
-        <title>Explorar Reportes – SafeSpot</title>
-        <meta name="description" content="Explora el mapa interactivo de reportes de seguridad en tu ciudad. Mantente informado sobre las zonas de riesgo." />
-        <meta property="og:title" content="Explorar Reportes – SafeSpot" />
-        <meta property="og:description" content="Explora el mapa interactivo de reportes de seguridad en tu ciudad. Mantente informado sobre las zonas de riesgo." />
+        <title>Explorar Mapa - SafeSpot</title>
+        <meta name="description" content="Explora reportes de seguridad en el mapa interactivo de SafeSpot" />
       </Helmet>
-      {/* Navigation Controls Overlay */}
-      <div className="absolute top-4 left-4 z-[500] flex gap-2">
-        <Button
-          onClick={() => navigate('/reportes')}
-          variant="secondary"
-          className="shadow-lg bg-white/90 backdrop-blur hover:bg-white text-dark-bg border border-gray-200"
-        >
-          <List className="h-4 w-4 mr-2" />
-          Ver Lista
-        </Button>
-      </div>
 
-      <ErrorBoundary fallbackTitle="Error al cargar el mapa" onReset={() => loadReports()}>
-        <SafeSpotMap
-          reports={reports}
-          onSearchArea={handleSearchArea}
-          initialFocus={initialFocus}
-          isSearching={isSearching}
-        />
-      </ErrorBoundary>
-    </MapLayout>
+      <MapLayout>
+        <Suspense fallback={<MapLoadingFallback />}>
+          <SafeSpotMap reports={reports} initialFocus={initialFocus} />
+        </Suspense>
+
+        {/* Search in area button */}
+        {mapBounds && (
+          <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-[1000]">
+            <Button
+              onClick={handleSearchInArea}
+              disabled={isSearching}
+              className="bg-neon-green hover:bg-neon-green/90 text-dark-bg shadow-lg"
+            >
+              <Search className="h-5 w-5 mr-2" />
+              {isSearching ? 'Buscando...' : 'Buscar en esta área'}
+            </Button>
+          </div>
+        )}
+
+        {/* Floating button to go to list view */}
+        <div className="absolute bottom-6 left-6 z-[1000]">
+          <Button
+            onClick={() => navigate('/reportes')}
+            className="bg-dark-card hover:bg-dark-card/90 text-foreground shadow-lg"
+          >
+            <List className="h-5 w-5 mr-2" />
+            Ver Lista
+          </Button>
+        </div>
+      </MapLayout>
+    </>
   )
 }

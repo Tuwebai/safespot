@@ -131,6 +131,25 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 
 // ============================================
+// ROOT ROUTE (Explicit API Status)
+// ============================================
+
+// Explicit root route to clarify this is an API-only server
+// This prevents confusion when health checks or browsers hit the root
+app.get('/', (req, res) => {
+  res.json({
+    service: 'SafeSpot API',
+    version: '1.0.0',
+    status: 'online',
+    message: 'This is an API-only server. Frontend is served at https://safespot.netlify.app',
+    endpoints: {
+      health: '/health',
+      api: '/api/*'
+    }
+  });
+});
+
+// ============================================
 // 404 HANDLER FOR NON-API ROUTES
 // ============================================
 
