@@ -1,72 +1,73 @@
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 import { DB } from '../utils/db.js';
 import { logError } from '../utils/logger.js';
 import https from 'https';
 import http from 'http';
 
 /**
- * Brand Constants
+ * Brand Constants (Aligned with App Style)
  */
 const COLORS = {
-    PRIMARY: '#00ff88', // Green SafeSpot
-    DARK: '#020617',    // Deep Navy
-    TEXT: '#1e293b',    // Slate Text
-    MUTED: '#64748b',   // Muted Slate
-    BORDER: '#e2e8f0',  // Light Border
-    WHITE: '#ffffff',
-    BG_SECTION: '#f8fafc'
+    PRIMARY: '#00ff88',  // SafeSpot Green
+    DARK: '#020617',     // App Deep Navy
+    TEXT: '#1e293b',     // Main text
+    MUTED: '#64748b',    // Subtitles/Labels
+    BORDER: '#e2e8f0',   // Dividers
+    WHITE: '#ffffff'
 };
 
 /**
- * Fetch an image from a URL and return it as a Buffer
+ * Process Image: Fetch from URL and convert to PNG (buffer) using Sharp
+ * Fixes the issue with .webp and Supabase URLs in PDFKit
  */
-const fetchImageBuffer = (url) => {
-    return new Promise((resolve, reject) => {
+const processImage = async (url) => {
+    return new Promise((resolve) => {
         const client = url.startsWith('https') ? https : http;
         client.get(url, (res) => {
             if (res.statusCode !== 200) {
-                // Return null if fetch fails instead of crashing
                 resolve(null);
                 return;
             }
             const chunks = [];
             res.on('data', (chunk) => chunks.push(chunk));
-            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('end', async () => {
+                try {
+                    const buffer = Buffer.concat(chunks);
+                    // Convert to PNG via Sharp to ensure PDFKit compatibility
+                    const processed = await sharp(buffer)
+                        .png()
+                        .toBuffer();
+                    resolve(processed);
+                } catch (err) {
+                    console.error('Error processing image with Sharp:', err.message);
+                    resolve(null);
+                }
+            });
             res.on('error', () => resolve(null));
         }).on('error', () => resolve(null));
     });
 };
 
 /**
- * Draws the SafeSpot Logo using PDFKit primitives (Vector)
+ * Draws the SafeSpot Logo (Identical to Frontend)
  */
-const drawLogo = (doc, x, y, size = 30) => {
+const drawLogo = (doc, x, y, size = 32) => {
     doc.save();
+    doc.roundedRect(x, y, size, size, 8).fill(COLORS.PRIMARY);
 
-    // Draw rounded background (SafeSpot Green)
-    doc.roundedRect(x, y, size, size, 8)
-        .fill(COLORS.PRIMARY);
-
-    // Draw MapPin icon silhouette (Centered)
-    const iconSize = size * 0.65;
+    // MapPin Silhouette
+    const iconSize = size * 0.6;
     const offset = (size - iconSize) / 2;
-
     doc.translate(x + offset, y + offset);
     doc.scale(iconSize / 24, iconSize / 24);
-
-    // Path for MapPin
-    doc.path('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z')
-        .fill(COLORS.DARK);
-
-    // Center circle
-    doc.circle(12, 10, 3)
-        .fill(COLORS.DARK);
-
+    doc.path('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z').fill(COLORS.DARK);
+    doc.circle(12, 10, 3).fill(COLORS.DARK);
     doc.restore();
 };
 
 /**
- * Main Controller for PDF Generation (Institutional Standard)
+ * Main PDF Export Controller
  */
 export const exportReportPDF = async (req, res) => {
     try {
@@ -85,16 +86,11 @@ export const exportReportPDF = async (req, res) => {
             imageUrls = Array.isArray(report.image_urls) ? report.image_urls : JSON.parse(report.image_urls || '[]');
         } catch (e) { imageUrls = []; }
 
-        // 2. Setup Document
+        // 2. Setup Document (A4, Professional Margins)
         const doc = new PDFDocument({
             margin: 50,
             size: 'A4',
-            bufferPages: true,
-            info: {
-                Title: `Reporte SafeSpot - ${report.title}`,
-                Author: 'SafeSpot Platform',
-                Subject: 'Reporte Oficial de Incidente'
-            }
+            bufferPages: true
         });
 
         const safeTitle = (report.category || 'General').replace(/\s+/g, '_');
@@ -104,148 +100,101 @@ export const exportReportPDF = async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         doc.pipe(res);
 
-        // --- 1. HEADER ---
-        drawLogo(doc, 50, 45, 36);
-        doc.fillColor(COLORS.DARK)
-            .font('Helvetica-Bold')
-            .fontSize(20)
-            .text('SafeSpot', 100, 48);
+        // --- HEADER ---
+        drawLogo(doc, 50, 50, 36);
+        doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(22).text('SafeSpot', 95, 52);
+        doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(10).text('REPORTE OFICIAL CIUDADANO', 95, 76);
 
-        doc.font('Helvetica')
-            .fontSize(12)
-            .fillColor(COLORS.MUTED)
-            .text('Reporte Oficial de Incidente', 100, 70);
+        doc.moveTo(50, 100).lineTo(545, 100).strokeColor(COLORS.BORDER).lineWidth(1).stroke();
 
-        doc.moveTo(50, 95).lineTo(545, 95).strokeColor(COLORS.BORDER).lineWidth(1).stroke();
+        let currentY = 130;
 
-        // --- 2. REPORT INFO TABLE ---
-        doc.moveDown(2);
-        doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(14).text('INFORMACIÓN GENERAL', 50);
-        doc.moveDown(0.5);
+        // --- REPORT TITLE & CATEGORY ---
+        doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(18).text(report.title, 50, currentY);
+        currentY += 25;
 
-        const tableTop = doc.y;
-        const rowHeight = 25;
-        const colWidth = 140;
+        doc.fillColor(COLORS.PRIMARY).fontSize(11).text(report.category.toUpperCase(), 50, currentY);
+        currentY += 30;
 
-        const drawRow = (label, value, y) => {
-            doc.rect(50, y, 495, rowHeight).fill(y % 50 === 0 ? COLORS.BG_SECTION : COLORS.WHITE);
-            doc.fillColor(COLORS.MUTED).font('Helvetica-Bold').fontSize(9).text(label.toUpperCase(), 60, y + 8, { width: colWidth });
-            doc.fillColor(COLORS.DARK).font('Helvetica').fontSize(10).text(value || 'N/A', 170, y + 8);
-            doc.moveTo(50, y + rowHeight).lineTo(545, y + rowHeight).strokeColor(COLORS.BORDER).lineWidth(0.5).stroke();
-            return y + rowHeight;
+        // --- INFO GRID (Layout clean like frontend) ---
+        const drawMetadata = (label, value) => {
+            doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text(label.toUpperCase(), 50, currentY);
+            doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(11).text(value || 'No especificado', 50, currentY + 12);
+            currentY += 40;
         };
 
-        let currentY = tableTop;
-        currentY = drawRow('Título', report.title, currentY);
-        currentY = drawRow('Categoría', report.category, currentY);
-        currentY = drawRow('Estado', (report.status || 'Pendiente').toUpperCase(), currentY);
-        currentY = drawRow('Fecha/Hora', report.incident_date ? new Date(report.incident_date).toLocaleString('es-AR') : 'No especificada', currentY);
-        currentY = drawRow('Ubicación', report.address || report.zone || 'No disponible', currentY);
-        currentY = drawRow('ID Reporte', report.id, currentY);
+        const fechaIncidente = report.incident_date ? new Date(report.incident_date).toLocaleString('es-AR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }) : 'No disponible';
 
-        // --- 3. DESCRIPTION ---
-        doc.moveDown(2);
-        doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(14).text('DESCRIPCIÓN DE LOS HECHOS', 50);
-        doc.moveDown(0.5);
-        doc.font('Helvetica').fontSize(11).fillColor(COLORS.DARK).text(report.description || 'Sin descripción detallada.', {
+        drawMetadata('Fecha y Hora del Incidente', fechaIncidente);
+        drawMetadata('Ubicación del Hecho', report.address || report.zone || 'Ubicación aproximada');
+        drawMetadata('ID Único del Reporte', report.id);
+
+        // --- DESCRIPTION ---
+        doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text('DESCRIPCIÓN DE LOS HECHOS', 50, currentY);
+        currentY += 15;
+
+        doc.fillColor(COLORS.TEXT).font('Helvetica').fontSize(11).text(report.description || 'Sin descripción detallada.', 50, currentY, {
             width: 495,
             align: 'justify',
             lineGap: 4
         });
 
-        // --- 4. STATIC MAP ---
-        if (report.latitude && report.longitude) {
-            // Check if we need a new page for the map
-            if (doc.y + 300 > 750) doc.addPage();
-            else doc.moveDown(2);
+        currentY = doc.y + 40;
 
-            doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(14).text('UBICACIÓN GEOGRÁFICA', 50);
-            doc.moveDown(1);
-
-            // Using a reliable static map provider
-            const mapUrl = `https://static-maps.yandex.ru/1.x/?l=map&ll=${report.longitude},${report.latitude}&z=16&size=600,350&pt=${report.longitude},${report.latitude},pm2gnm`;
-            const mapBuffer = await fetchImageBuffer(mapUrl);
-
-            if (mapBuffer) {
-                try {
-                    doc.image(mapBuffer, 50, doc.y, { width: 495, height: 250 });
-                    doc.rect(50, doc.y - 250, 495, 250).strokeColor(COLORS.BORDER).stroke();
-                } catch (e) {
-                    doc.fillColor(COLORS.MUTED).fontSize(10).text('Visualización de mapa no disponible.', 50, doc.y);
-                }
-            } else {
-                doc.fillColor(COLORS.MUTED).fontSize(10).text('Visualización de mapa no disponible en este momento.', 50, doc.y);
-            }
-        }
-
-        // --- 5. IMAGES EVIDENCE ---
+        // --- IMAGES SECTION ---
         if (imageUrls.length > 0) {
-            doc.addPage();
-            doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(14).text('EVIDENCIA FOTOGRÁFICA', 50);
-            doc.moveDown(1);
+            // Check if we need a new page
+            if (currentY > 700) {
+                doc.addPage();
+                currentY = 50;
+            }
 
-            let imgX = 50;
-            let imgY = doc.y;
-            const imgWidth = 240;
-            const imgHeight = 180;
-            const gap = 15;
+            doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text('EVIDENCIA FOTOGRÁFICA', 50, currentY);
+            currentY += 20;
 
-            for (let i = 0; i < imageUrls.length; i++) {
-                if (imgY + imgHeight > 750) {
-                    doc.addPage();
-                    imgY = 50;
-                    doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(14).text('EVIDENCIA FOTOGRÁFICA (CONT.)', 50);
-                    doc.moveDown(1);
-                    imgY = doc.y;
-                }
+            const imgWidth = 495;
+            const imgHeight = 300;
 
-                const buf = await fetchImageBuffer(imageUrls[i]);
-                if (buf) {
-                    try {
-                        doc.image(buf, imgX, imgY, {
-                            fit: [imgWidth, imgHeight],
-                            align: 'center',
-                            valign: 'center'
-                        });
-                        // Border around image
-                        doc.rect(imgX, imgY, imgWidth, imgHeight).strokeColor(COLORS.BORDER).stroke();
-                    } catch (err) {
-                        doc.fontSize(8).text('Error al cargar imagen', imgX, imgY + 10);
+            for (const imgUrl of imageUrls) {
+                const buffer = await processImage(imgUrl);
+                if (buffer) {
+                    // Check for page overflow
+                    if (currentY + imgHeight > 750) {
+                        doc.addPage();
+                        currentY = 50;
                     }
-                } else {
-                    doc.fontSize(8).text('Imagen no disponible', imgX, imgY + 10);
-                }
 
-                // Grid Logic: 2 per row
-                if ((i + 1) % 2 === 0) {
-                    imgX = 50;
-                    imgY += imgHeight + gap;
-                } else {
-                    imgX += imgWidth + gap;
+                    try {
+                        doc.image(buffer, 50, currentY, {
+                            fit: [imgWidth, imgHeight],
+                            align: 'center'
+                        });
+                        currentY += imgHeight + 20;
+                    } catch (e) {
+                        console.error('PDFKit Image Insert Error:', e.message);
+                    }
                 }
             }
         } else {
-            doc.moveDown(2);
-            doc.fillColor(COLORS.MUTED).font('Helvetica-Oblique').fontSize(11).text('Este reporte no contiene imágenes adjuntas.', 50);
+            doc.fillColor(COLORS.MUTED).font('Helvetica-Oblique').fontSize(10).text('Este reporte no contiene imágenes adjuntas.', 50, currentY);
         }
 
-        // --- 6. FOOTER ---
+        // --- FOOTER (All pages) ---
         const range = doc.bufferedPageRange();
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
 
-            const footerY = 780;
+            const footerY = 790;
             doc.moveTo(50, footerY - 10).lineTo(545, footerY - 10).strokeColor(COLORS.BORDER).lineWidth(0.5).stroke();
 
             doc.fillColor(COLORS.MUTED).fontSize(8)
-                .text('Documento generado automáticamente por la plataforma SafeSpot.', 50, footerY, { align: 'center' })
-                .text(`Fecha de generación: ${new Date().toLocaleString('es-AR')} | ID: ${report.id}`, { align: 'center' })
-                .moveDown(0.2)
-                .fillColor(COLORS.PRIMARY).text(`https://safespot.tuweb-ai.com/reporte/${report.id}`, { link: `https://safespot.tuweb-ai.com/reporte/${report.id}`, align: 'center' })
-                .moveDown(0.2)
-                .fillColor(COLORS.MUTED).font('Helvetica-Bold').text('Este documento no reemplaza una denuncia policial formal.', { align: 'center' });
+                .text('Documento generado automáticamente por SafeSpot.', 50, footerY, { align: 'left' })
+                .text(`Página ${i + 1} de ${range.count}`, 50, footerY, { align: 'right' });
 
-            doc.fontSize(8).text(`Página ${i + 1} de ${range.count}`, 500, footerY + 10);
+            doc.text(`Validar en: https://safespot.tuweb-ai.com/reporte/${report.id}`, 50, footerY + 12);
+            doc.font('Helvetica-Bold').text('Este documento no reemplaza una denuncia policial formal.', 50, footerY + 24, { align: 'center' });
         }
 
         doc.end();
@@ -253,7 +202,7 @@ export const exportReportPDF = async (req, res) => {
     } catch (error) {
         logError(error, req);
         if (!res.headersSent) {
-            res.status(500).json({ error: 'Error interno al generar el PDF oficial' });
+            res.status(500).json({ error: 'Error al generar el PDF oficial del reporte' });
         }
     }
 };
