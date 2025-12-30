@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
@@ -17,7 +17,7 @@ import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { FavoriteButton } from '@/components/FavoriteButton'
-import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
+import { SmartLink } from '@/components/SmartLink'
 import { useReportsQuery } from '@/hooks/queries'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
@@ -75,7 +75,6 @@ const formatDate = (dateString: string) => {
 // ============================================
 
 export function Reportes() {
-  const navigate = useNavigate()
   const toast = useToast()
   const queryClient = useQueryClient()
 
@@ -221,16 +220,6 @@ export function Reportes() {
     }
   }, [flaggingReportId, reports, toast, queryClient, filters])
 
-  // Optimization: Stable handlers for list items
-  const handleCardHover = useCallback((reportId: string) => {
-    prefetchRouteChunk('DetalleReporte')
-    prefetchReport(reportId)
-  }, [])
-
-  const handleCardClick = useCallback((reportId: string, e?: React.MouseEvent) => {
-    if (e) e.preventDefault()
-    navigate(`/reporte/${reportId}`)
-  }, [navigate])
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -365,138 +354,132 @@ export function Reportes() {
                 const hasImage = imageUrls.length > 0
 
                 return (
-                  <Card
+                  <SmartLink
                     key={report.id}
-                    className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
-                    onMouseEnter={() => handleCardHover(report.id)}
-                    onClick={() => handleCardClick(report.id)}
+                    to={`/reporte/${report.id}`}
+                    prefetchReportId={report.id}
+                    prefetchRoute="DetalleReporte"
+                    className="block h-full no-underline"
                   >
-                    {/* 2.2 Image Section (Top) - Optimized */}
-                    {hasImage && (
-                      <div className="relative overflow-hidden rounded-t-lg">
-                        <OptimizedImage
-                          src={imageUrls[0]}
-                          alt={report.title}
-                          aspectRatio={16 / 9}
-                          priority={false}
-                          className="w-full"
-                        />
-                        {/* Overlays (Top Right) */}
-                        <div className="absolute top-2 right-2 flex gap-2 z-10">
-                          <Badge className={getStatusColor(report.status)}>
-                            {getStatusLabel(report.status)}
-                          </Badge>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 2.3 Content Section (Bottom) */}
-                    <CardContent className="p-6">
-                      {/* A. Header (Title & Category) */}
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                          {report.title}
-                        </h3>
-                        {!hasImage && (
-                          <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                            {getStatusLabel(report.status)}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                        <span className="text-xs text-muted-foreground">{report.category}</span>
-                      </div>
-
-                      {/* B. Description */}
-                      <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                        {report.description}
-                      </p>
-
-                      {/* C. Location */}
-                      <div className="flex items-center text-sm text-foreground/60 mb-4">
-                        <MapPin className="h-4 w-4 mr-1" />
-                        <span className="truncate">{report.zone}</span>
-                      </div>
-
-                      {/* D. Meta Footer (Date & Stats) */}
-                      <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                        <span>{formatDate(report.created_at)}</span>
-                        <div className="flex items-center space-x-4">
-                          <div className="flex items-center gap-1" title="Hilos">
-                            <GitBranch className="h-4 w-4" />
-                            <span>{report.threads_count ?? 0}</span>
-                          </div>
-                          <div className="flex items-center gap-1" title="Comentarios">
-                            <MessageCircle className="h-4 w-4" />
-                            <span>{report.comments_count}</span>
+                    <Card className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden h-full flex flex-col">
+                      {/* 2.2 Image Section (Top) - Optimized */}
+                      {hasImage && (
+                        <div className="relative overflow-hidden rounded-t-lg">
+                          <OptimizedImage
+                            src={imageUrls[0]}
+                            alt={report.title}
+                            aspectRatio={16 / 9}
+                            priority={false}
+                            className="w-full"
+                          />
+                          {/* Overlays (Top Right) */}
+                          <div className="absolute top-2 right-2 flex gap-2 z-10">
+                            <Badge className={getStatusColor(report.status)}>
+                              {getStatusLabel(report.status)}
+                            </Badge>
                           </div>
                         </div>
-                      </div>
+                      )}
 
-                      {/* E. Action Bar (Bottom) */}
-                      <div className="flex items-center justify-between pt-4 border-t border-dark-border">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-neon-green text-neon-green hover:bg-neon-green/10"
-                          onClick={(e) => handleCardClick(report.id, e)}
-                        >
-                          Ver Detalles
-                        </Button>
-                        <div className="flex items-center space-x-2">
-                          {(() => {
-                            if (!report || !report.id) return null
-                            return (
-                              <FavoriteButton
-                                reportId={report.id}
-                                isFavorite={report.is_favorite ?? false}
-                                onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
-                              />
-                            )
-                          })()}
-                          {(() => {
-                            const currentAnonymousId = getAnonymousIdSafe()
-                            const isOwner = report?.anonymous_id === currentAnonymousId
-                            const isFlagged = report?.is_flagged ?? false
-                            const isFlagging = flaggingReports.has(report.id)
+                      {/* 2.3 Content Section (Bottom) */}
+                      <CardContent className="p-6 flex-1 flex flex-col">
+                        {/* A. Header (Title & Category) */}
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                            {report.title}
+                          </h3>
+                          {!hasImage && (
+                            <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                              {getStatusLabel(report.status)}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                          <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                          <span>{report.category}</span>
+                        </div>
 
-                            // NO mostrar si es owner
-                            if (isOwner) {
-                              return null
-                            }
+                        {/* B. Description */}
+                        <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                          {report.description}
+                        </p>
 
-                            // NO mostrar si ya está flaggeado
-                            if (isFlagged) {
+                        {/* C. Location */}
+                        <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                          <MapPin className="h-4 w-4 mr-1 text-neon-green" />
+                          <span className="truncate">{report.zone}</span>
+                        </div>
+
+                        {/* D. Meta Footer (Date & Stats) */}
+                        <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                          <span>{formatDate(report.created_at)}</span>
+                          <div className="flex items-center space-x-4">
+                            <div className="flex items-center gap-1" title="Hilos">
+                              <GitBranch className="h-4 w-4" />
+                              <span>{report.threads_count ?? 0}</span>
+                            </div>
+                            <div className="flex items-center gap-1" title="Comentarios">
+                              <MessageCircle className="h-4 w-4" />
+                              <span>{report.comments_count}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* E. Action Bar (Bottom) */}
+                        <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
+                          <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
+                          <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                            {(() => {
+                              if (!report || !report.id) return null
                               return (
-                                <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                  Denunciado
-                                </span>
+                                <FavoriteButton
+                                  reportId={report.id}
+                                  isFavorite={report.is_favorite ?? false}
+                                  onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
+                                />
                               )
-                            }
+                            })()}
+                            {(() => {
+                              const currentAnonymousId = getAnonymousIdSafe()
+                              const isOwner = report?.anonymous_id === currentAnonymousId
+                              const isFlagged = report?.is_flagged ?? false
+                              const isFlagging = flaggingReports.has(report.id)
 
-                            // Mostrar botón de flag en cualquier otro caso
-                            return (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => handleFlag(e, report.id)}
-                                disabled={isFlagging}
-                                className="hover:text-yellow-400"
-                                title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                              >
-                                {isFlagging ? (
-                                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                ) : (
-                                  <Flag className="h-4 w-4" />
-                                )}
-                              </Button>
-                            )
-                          })()}
+                              if (isOwner) return null
+
+                              if (isFlagged) {
+                                return (
+                                  <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                    Denunciado
+                                  </span>
+                                )
+                              }
+
+                              return (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    handleFlag(e, report.id)
+                                  }}
+                                  disabled={isFlagging}
+                                  className="hover:text-yellow-400"
+                                  title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
+                                >
+                                  {isFlagging ? (
+                                    <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                  ) : (
+                                    <Flag className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )
+                            })()}
+                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </SmartLink>
                 )
               })
               .filter(Boolean) // Remove any null entries from map

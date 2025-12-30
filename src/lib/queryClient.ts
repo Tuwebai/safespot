@@ -13,31 +13,29 @@ import { QueryClient } from '@tanstack/react-query'
 export const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            // Data is considered fresh for 30 seconds
-            // During this time, returning to a page won't trigger a refetch
-            staleTime: 30 * 1000,
+            // Tier 1: General data (1 minute stale)
+            // Balanced between freshness and server load
+            staleTime: 60 * 1000,
 
-            // Cache entries are kept for 5 minutes after becoming inactive
-            // This allows instant back/forward navigation
-            gcTime: 5 * 60 * 1000,
+            // Tier 2: Cache retention (10 minutes)
+            // Essential for high-quality "Back" button experience
+            gcTime: 10 * 60 * 1000,
 
-            // Refetch when user returns to the browser tab
-            // Ensures data stays fresh without manual refresh
-            refetchOnWindowFocus: true,
+            // Optimization: Only refetch on focus for critical views
+            // We'll override this locally for the detailed report view
+            refetchOnWindowFocus: false,
 
-            // Retry failed requests twice with exponential backoff
+            // Resilience: Exponential backoff for network instability
             retry: 2,
-            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+            retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
 
-            // Refetch on mount if data is stale
+            // Performance: Avoid blocking main thread on hydration
             refetchOnMount: true,
-
-            // Don't refetch on reconnect - let user trigger manually
-            refetchOnReconnect: false,
+            refetchOnReconnect: true,
         },
         mutations: {
-            // Retry mutations once
-            retry: 1,
+            // Fast failure for user actions
+            retry: 0,
         },
     },
 })

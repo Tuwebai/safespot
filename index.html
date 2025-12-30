@@ -6,8 +6,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    
     <title>SafeSpot - Reportes Ciudadanos</title>
+    <meta name="description" content="Plataforma comunitaria para reportar y encontrar objetos perdidos de forma anónima y segura." />
+    
+    <style>
+      /* Minimal App Shell to prevent white flash */
+      body { background-color: #020617; margin: 0; }
+      #root:empty {
+        background: radial-gradient(circle at top center, #0f172a 0%, #020617 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #root:empty::after {
+        content: "";
+        width: 48px;
+        height: 48px;
+        border: 3px solid rgba(0, 255, 136, 0.1);
+        border-radius: 50%;
+        border-top-color: #00ff88;
+        animation: spin 1s ease-in-out infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
     <div id="root"></div>

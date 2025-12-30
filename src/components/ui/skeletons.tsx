@@ -3,31 +3,31 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export function ReportSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border">
-            <CardContent className="p-6">
-                {/* Title skeleton */}
-                <Skeleton height={28} width="70%" className="mb-3" />
+        <Card className="bg-dark-card border-dark-border max-w-4xl mx-auto overflow-hidden">
+            {/* Image Placeholder */}
+            <Skeleton height={400} width="100%" />
 
-                {/* Meta row (category + status) */}
-                <div className="flex items-center gap-2 mb-4">
-                    <Skeleton height={20} width={80} radius="9999px" />
-                    <Skeleton height={20} width={100} radius="9999px" />
+            <CardContent className="p-8">
+                {/* Title */}
+                <Skeleton height={40} width="70%" className="mb-4" />
+
+                {/* Meta Row */}
+                <div className="flex items-center gap-4 mb-8">
+                    <Skeleton height={24} width={100} radius="9999px" />
+                    <Skeleton height={24} width={150} />
                 </div>
 
-                {/* Description skeleton (2-3 lines) */}
-                <div className="space-y-2 mb-4">
-                    <Skeleton height={16} width="100%" />
-                    <Skeleton height={16} width="95%" />
-                    <Skeleton height={16} width="80%" />
+                {/* Content Block */}
+                <div className="space-y-4 mb-12">
+                    <Skeleton height={20} width="100%" />
+                    <Skeleton height={20} width="95%" />
+                    <Skeleton height={20} width="80%" />
                 </div>
 
-                {/* Image skeleton */}
-                <Skeleton height={200} width="100%" radius="0.5rem" className="mb-4" />
-
-                {/* Footer meta */}
-                <div className="flex items-center justify-between">
-                    <Skeleton height={16} width={120} />
-                    <Skeleton height={16} width={80} />
+                {/* Stats Row */}
+                <div className="flex justify-between pt-6 border-t border-dark-border">
+                    <Skeleton height={20} width={120} />
+                    <Skeleton height={20} width={180} />
                 </div>
             </CardContent>
         </Card>
@@ -36,25 +36,35 @@ export function ReportSkeleton() {
 
 export function ReportCardSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border card-glow">
-            <CardContent className="p-4">
-                {/* Title */}
-                <Skeleton height={24} width="80%" className="mb-2" />
+        <Card className="bg-dark-card border-dark-border overflow-hidden h-full flex flex-col">
+            {/* Image section placeholder */}
+            <Skeleton height={200} width="100%" />
 
-                {/* Meta */}
-                <div className="flex items-center gap-2 mb-3">
-                    <Skeleton height={18} width={60} radius="9999px" />
-                    <Skeleton height={18} width={80} radius="9999px" />
+            <CardContent className="p-6 flex-1">
+                {/* Header */}
+                <div className="flex justify-between mb-3">
+                    <Skeleton height={24} width="75%" />
                 </div>
 
-                {/* Description snippet */}
-                <Skeleton height={14} width="100%" className="mb-1" />
-                <Skeleton height={14} width="70%" className="mb-3" />
+                {/* Category */}
+                <div className="flex items-center gap-2 mb-4">
+                    <Skeleton height={12} width={12} radius="50%" />
+                    <Skeleton height={16} width={100} />
+                </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-dark-border">
-                    <Skeleton height={14} width={100} />
-                    <Skeleton height={14} width={60} />
+                {/* Description Snippet */}
+                <div className="space-y-2 mb-6">
+                    <Skeleton height={14} width="100%" />
+                    <Skeleton height={14} width="90%" />
+                </div>
+
+                {/* Footer Meta */}
+                <div className="flex justify-between items-center pt-4 border-t border-dark-border mt-auto">
+                    <Skeleton height={32} width={100} radius="0.375rem" />
+                    <div className="flex gap-2">
+                        <Skeleton height={32} width={32} radius="50%" />
+                        <Skeleton height={32} width={32} radius="50%" />
+                    </div>
                 </div>
             </CardContent>
         </Card>

@@ -120,28 +120,50 @@ export default defineConfig({
          */
         manualChunks(id) {
           if (!id.includes('node_modules')) {
-            return undefined // Let Vite handle app code splitting via lazy routes
+            return undefined
           }
 
-          // Tiptap Rich Text Editor - heavy, lazy load only when needed
+          // Group 1: Map Engine (Heavy & specialized)
+          if (
+            id.includes('leaflet') ||
+            id.includes('react-leaflet') ||
+            id.includes('react-leaflet-cluster')
+          ) {
+            return 'map-engine'
+          }
+
+          // Group 2: Rich Text Editor (Heavy, used only in creation/editing)
           if (id.includes('@tiptap') || id.includes('prosemirror')) {
-            return 'tiptap'
+            return 'editor-core'
           }
 
-          // Markdown rendering - only on detail pages
+          // Group 3: Content Transformation & Markdown
           if (
             id.includes('react-markdown') ||
             id.includes('remark') ||
             id.includes('unified') ||
-            id.includes('mdast') ||
-            id.includes('micromark') ||
-            id.includes('hast')
+            id.includes('mdast')
           ) {
-            return 'markdown'
+            return 'content-parser'
           }
 
-          // Everything else (including React) in vendor - safer for production
-          return 'vendor'
+          // Group 4: Validation & Forms (Used in Perfil, CrearReporte)
+          if (id.includes('react-hook-form') || id.includes('zod') || id.includes('@hookform')) {
+            return 'forms-engine'
+          }
+
+          // Group 5: Core Framework (Keep together for stability)
+          if (
+            id.includes('react') ||
+            id.includes('react-dom') ||
+            id.includes('react-router-dom') ||
+            id.includes('@tanstack/react-query')
+          ) {
+            return 'vendor-core'
+          }
+
+          // Everything else: Generic utilities
+          return 'vendor-utils'
         },
       },
     },
