@@ -13,8 +13,6 @@ export default defineConfig({
       workbox: {
         // Assets to precache during install
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Increase limit since @react-pdf/renderer bundle is large
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
 
         // Runtime caching rules
         runtimeCaching: [

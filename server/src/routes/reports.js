@@ -586,7 +586,7 @@ router.get('/', async (req, res) => {
  * GET /api/reports/:id/export/pdf
  * Export report as PDF
  */
-router.get('/:id/export/pdf', exportReportPDF);
+router.get('/:id/pdf', exportReportPDF);
 
 /**
  * GET /api/reports/:id

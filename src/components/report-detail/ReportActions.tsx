@@ -5,8 +5,6 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/api'
 import { ShareButton } from '@/components/ShareButton'
-import { pdf } from '@react-pdf/renderer'
-import { OfficialReportPDF } from './OfficialReportPDF'
 
 // ============================================
 // TYPES
@@ -64,39 +62,16 @@ export const ReportActions = memo(function ReportActions({
         }
     }, [showMenu])
 
-    const handleDownload = useCallback(async () => {
-        try {
-            // 1. Create the PDF instance
-            const blob = await pdf(<OfficialReportPDF report={report} />).toBlob();
+    const handleDownload = useCallback(() => {
+        // Use the same logic as in lib/api.ts to avoid duplication
+        const rawUrl = import.meta.env.VITE_API_URL || 'https://safespot-6e51.onrender.com';
+        const baseUrl = rawUrl.replace(/\/$/, '').endsWith('/api')
+            ? rawUrl.replace(/\/$/, '').slice(0, -4) // Remove /api to avoid duplication below
+            : rawUrl.replace(/\/$/, '');
 
-            // 2. Create download link
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-
-            // 3. Format filename: Reporte_SafeSpot_[CATEGORIA]_[ID].pdf
-            const sanitizedCategory = report.category.replace(/\s+/g, '_');
-            const shortId = report.id.substring(0, 8);
-            link.href = url;
-            link.download = `Reporte_SafeSpot_${sanitizedCategory}_${shortId}.pdf`;
-
-            // 4. Trigger download
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            // 5. Cleanup
-            URL.revokeObjectURL(url);
-            setShowMenu(false);
-        } catch (error) {
-            console.error('Error al generar el PDF:', error);
-            // Fallback sutil si falla la generación en frontend
-            const rawUrl = import.meta.env.VITE_API_URL || 'https://safespot-6e51.onrender.com';
-            const baseUrl = rawUrl.replace(/\/$/, '').endsWith('/api')
-                ? rawUrl.replace(/\/$/, '').slice(0, -4)
-                : rawUrl.replace(/\/$/, '');
-            window.open(`${baseUrl}/api/reports/${report.id}/export/pdf`, '_blank');
-        }
-    }, [report])
+        window.open(`${baseUrl}/api/reports/${report.id}/pdf`, '_blank');
+        setShowMenu(false)
+    }, [report.id])
 
     return (
         <div className="flex items-center space-x-2 relative" ref={menuRef}>
