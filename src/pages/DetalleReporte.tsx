@@ -251,29 +251,24 @@ export function DetalleReporte() {
         </script>
       </Helmet>
 
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button */}
-        <Button
-          variant="ghost"
-          onClick={() => navigate(-1)}
-          className="mb-6"
-          disabled={isBusy}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Volver
-        </Button>
+      <div className="min-h-screen bg-dark-bg pb-24 md:pb-8">
+        <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+          {/* Top Navigation */}
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="text-foreground/60 hover:text-foreground hover:bg-dark-border/30"
+              disabled={isBusy}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Volver
+            </Button>
 
-        {/* Header Section */}
-        {/* Header Section */}
-        <div className="mb-8">
-          <div className="flex items-start justify-between">
-            {/* Left: Title, Status, Zone (or Edit Form) */}
-            {!editor.isEditing && <ReportHeader report={report} />}
-
-            {/* Right: Actions */}
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 title="Ver en el mapa"
                 onClick={() => navigate(`/explorar?reportId=${report.id}`, {
@@ -284,17 +279,10 @@ export function DetalleReporte() {
                   }
                 })}
                 disabled={isBusy}
+                className="text-foreground/60 hover:text-neon-green hover:bg-neon-green/10"
               >
-                <MapPin className="h-4 w-4" />
+                <MapPin className="h-5 w-5" />
               </Button>
-
-              {/* Simple Header Share Button */}
-              <ShareButton
-                category={report.category}
-                zone={report.address || report.zone || 'Ubicación desconocida'}
-                reportId={report.id}
-                variant="default"
-              />
 
               <ReportActions
                 report={report}
@@ -311,17 +299,48 @@ export function DetalleReporte() {
               />
             </div>
           </div>
+
+          {/* Main Content Layout */}
+          <div className="space-y-6">
+            {/* 1. Header Section (Title, Badge, Location) */}
+            {!editor.isEditing && <ReportHeader report={report} />}
+
+            {/* 2. Description (includes edit form) */}
+            <ReportDescription report={report} editor={editor} />
+
+            {/* 3. Images Section */}
+            <ReportImages imageUrls={imageUrls} />
+
+            {/* 4. Stats Section */}
+            <ReportMeta report={report} commentsCount={commentsCount} />
+
+            {/* 5. Desktop Share CTA (Prominent) */}
+            {!editor.isEditing && (
+              <div className="hidden md:block py-4">
+                <ShareButton
+                  category={report.category}
+                  zone={report.address || report.zone || 'Ubicación desconocida'}
+                  reportId={report.id}
+                  variant="prominent"
+                />
+              </div>
+            )}
+
+            {/* 6. Comments Section */}
+            <CommentsSection
+              reportId={id!}
+              totalCount={commentsCount}
+              onCommentCountChange={handleCommentCountChange}
+            />
+
+            {/* 7. Related Reports */}
+            <RelatedReports reportId={id!} />
+          </div>
         </div>
 
-        {/* Description Card (includes edit form when editing) */}
-        <ReportDescription report={report} editor={editor} />
-
-        {/* Images Card */}
-        <ReportImages imageUrls={imageUrls} />
-
-        {/* PROMINENT SHARE CTA - Emotional Block */}
+        {/* STICKY MOBILE SHARE CTA */}
         {!editor.isEditing && (
-          <div className="mb-8 mt-8">
+          <div className="fixed bottom-0 left-0 right-0 z-50 p-4 md:hidden bg-gradient-to-t from-dark-bg via-dark-bg/95 to-transparent pt-8">
             <ShareButton
               category={report.category}
               zone={report.address || report.zone || 'Ubicación desconocida'}
@@ -330,36 +349,22 @@ export function DetalleReporte() {
             />
           </div>
         )}
-
-        {/* Stats Grid */}
-        <ReportMeta report={report} commentsCount={commentsCount} />
-
-        {/* Comments Section */}
-        <CommentsSection
-          reportId={id!}
-          totalCount={commentsCount}
-          onCommentCountChange={handleCommentCountChange}
-        />
-
-        {/* RELATED REPORTS SECTION */}
-        <RelatedReports reportId={id!} />
-
-        {/* Delete Dialog */}
-        <DeleteReportDialog
-          isOpen={flagManager.isDeleteDialogOpen}
-          deleting={flagManager.deletingReport}
-          onConfirm={flagManager.deleteReport}
-          onCancel={flagManager.closeDialog}
-        />
-
-        {/* Flag Dialog */}
-        <FlagReportDialog
-          isOpen={flagManager.isFlagDialogOpen}
-          flagging={flagManager.flaggingReport}
-          onSubmit={flagManager.flagReport}
-          onCancel={flagManager.closeDialog}
-        />
       </div>
+
+      {/* Dialogs */}
+      <DeleteReportDialog
+        isOpen={flagManager.isDeleteDialogOpen}
+        deleting={flagManager.deletingReport}
+        onConfirm={flagManager.deleteReport}
+        onCancel={flagManager.closeDialog}
+      />
+
+      <FlagReportDialog
+        isOpen={flagManager.isFlagDialogOpen}
+        flagging={flagManager.flaggingReport}
+        onSubmit={flagManager.flagReport}
+        onCancel={flagManager.closeDialog}
+      />
     </ErrorBoundary>
   )
 }

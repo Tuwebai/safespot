@@ -22,13 +22,16 @@ export const ReportImages = memo(function ReportImages({ imageUrls }: ReportImag
     }, [])
 
     return (
-        <Card className="card-glow bg-dark-card border-dark-border mb-6">
-            <CardHeader>
-                <CardTitle>Imágenes</CardTitle>
+        <Card className="bg-dark-card border-dark-border shadow-sm">
+            <CardHeader className="pb-3 border-b border-dark-border/50 mb-4">
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <ImageIcon className="h-5 w-5 text-neon-green" />
+                    Imágenes del suceso
+                </CardTitle>
             </CardHeader>
             <CardContent>
                 {imageUrls.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {imageUrls.map((imageUrl, index) => {
                             const hasFailed = failedImageUrls.has(imageUrl)
                             const imageKey = `image-${imageUrl.substring(0, 50)}-${index}`
@@ -36,21 +39,21 @@ export const ReportImages = memo(function ReportImages({ imageUrls }: ReportImag
                             return (
                                 <div
                                     key={imageKey}
-                                    className="relative aspect-square rounded-lg overflow-hidden border border-dark-border bg-dark-bg"
+                                    className="relative aspect-[4/3] rounded-xl overflow-hidden border border-dark-border/50 bg-dark-bg/50 group"
                                 >
                                     {!hasFailed ? (
                                         <img
                                             src={imageUrl}
                                             alt={`Imagen ${index + 1} del reporte`}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                             loading="lazy"
                                             onError={() => handleImageError(imageUrl)}
                                         />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-dark-bg">
+                                        <div className="w-full h-full flex items-center justify-center bg-dark-bg/30">
                                             <div className="text-center p-4">
-                                                <ImageIcon className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                                                <p className="text-xs text-muted-foreground">Imagen no disponible</p>
+                                                <ImageIcon className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+                                                <p className="text-xs text-muted-foreground/50">Imagen no disponible</p>
                                             </div>
                                         </div>
                                     )}
@@ -59,11 +62,9 @@ export const ReportImages = memo(function ReportImages({ imageUrls }: ReportImag
                         })}
                     </div>
                 ) : (
-                    <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                            <ImageIcon className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
-                            <p className="text-sm text-muted-foreground">Este reporte no tiene imágenes</p>
-                        </div>
+                    <div className="flex flex-col items-center justify-center py-12 bg-dark-bg/20 rounded-xl border border-dashed border-dark-border">
+                        <ImageIcon className="h-12 w-12 mb-3 text-muted-foreground/20" />
+                        <p className="text-sm font-medium text-muted-foreground/50">Este reporte no contiene evidencia fotográfica</p>
                     </div>
                 )}
             </CardContent>

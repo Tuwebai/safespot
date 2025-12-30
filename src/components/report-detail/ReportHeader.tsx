@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { MapPin } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/api'
 
 // ============================================
@@ -46,16 +47,19 @@ function getStatusLabel(status: Report['status']): string {
 
 export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderProps) {
     return (
-        <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-                <h1 className="text-3xl font-bold text-foreground">{report.title}</h1>
-                <Badge className={getStatusColor(report.status)}>
+        <div className="flex-1 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight">
+                    {report.title}
+                </h1>
+                <Badge className={cn("px-2.5 py-0.5 text-xs font-semibold", getStatusColor(report.status))}>
                     {getStatusLabel(report.status)}
                 </Badge>
             </div>
-            <div className="flex items-center text-foreground/60">
-                <MapPin className="h-4 w-4 mr-2" />
-                <span>{report.address || report.zone || 'Ubicación no especificada'}</span>
+
+            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-dark-card/30 w-fit px-3 py-1.5 rounded-full border border-dark-border/30">
+                <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
+                <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
             </div>
         </div>
     )
