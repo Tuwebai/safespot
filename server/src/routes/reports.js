@@ -884,6 +884,84 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
 });
 
 /**
+ * GET /api/reports/:id/related
+ * Get related reports (same category, nearby or same zone)
+ */
+router.get('/:id/related', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.headers['x-anonymous-id'] || '';
+
+    // 1. Get reference report
+    const referenceResult = await queryWithRLS(anonymousId, `
+      SELECT category, latitude, longitude, zone 
+      FROM reports WHERE id = $1
+    `, [id]);
+
+    if (referenceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const { category, latitude, longitude, zone } = referenceResult.rows[0];
+
+    let query = '';
+    let params = [];
+
+    // 2. Query related
+    if (latitude && longitude) {
+      // PostGIS KNN search by location
+      // MODIFIED: Removes strict category filter to ensure results. 
+      // Orders by Category Match first, then Distance.
+      query = `
+        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at
+        FROM reports
+        WHERE id != $2
+          AND is_hidden = false
+          AND status != 'deleted'
+          AND location IS NOT NULL
+        ORDER BY
+          (category = $1) DESC, -- Best matches (same category) first
+          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest
+        LIMIT 5
+      `;
+      params = [category, id, latitude, longitude];
+    } else {
+      // Fallback: Same zone
+      query = `
+        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at
+        FROM reports
+        WHERE id != $2
+          AND is_hidden = false
+          AND status != 'deleted'
+          AND zone = $3
+        ORDER BY 
+          (category = $1) DESC,
+          created_at DESC
+        LIMIT 5
+      `;
+      params = [category, id, zone];
+    }
+
+    const result = await queryWithRLS(anonymousId, query, params);
+
+    // Initial Dev Log to verify results
+    if (result.rows.length === 0) {
+      console.log(`[RELATED] No related reports found for Report ${id} (Lat: ${latitude}, Lng: ${longitude}, Zone: ${zone}, Cat: ${category})`);
+    } else {
+      console.log(`[RELATED] Found ${result.rows.length} related reports for Report ${id}`);
+    }
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch related reports' });
+  }
+});
+
+/**
  * PATCH /api/reports/:id
  * Update a report (only by creator)
  * Requires: X-Anonymous-Id header

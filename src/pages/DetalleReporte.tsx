@@ -24,6 +24,7 @@ import {
   DeleteReportDialog,
   FlagReportDialog,
 } from '@/components/report-detail'
+import { RelatedReports } from '@/components/report-detail/RelatedReports'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { STATUS_OPTIONS } from '@/lib/constants'
 
@@ -339,6 +340,9 @@ export function DetalleReporte() {
           totalCount={commentsCount}
           onCommentCountChange={handleCommentCountChange}
         />
+
+        {/* RELATED REPORTS SECTION */}
+        <RelatedReports reportId={id!} />
 
         {/* Delete Dialog */}
         <DeleteReportDialog
