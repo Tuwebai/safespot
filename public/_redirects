@@ -1,17 +1,16 @@
 # ===============================================
-# SOCIAL SHARE PROXY (BOTS)
-# Redirect crawlers to the backend SEO endpoint
+# SOCIAL SHARE PROXY (REWRITE)
+# Route crawlers to backend SEO without changing URL
 # ===============================================
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=facebookexternalhit
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=Twitterbot
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=WhatsApp
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=LinkedInBot
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=Slackbot
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=Discordbot
-/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  302!  User-Agent=TelegramBot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=facebookexternalhit
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Twitterbot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=WhatsApp
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=LinkedInBot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Slackbot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Discordbot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=TelegramBot
 
 # ===============================================
 # SPA FALLBACK (HUMANS)
-# Serve index.html for all other routes
 # ===============================================
 /*          /index.html                                          200

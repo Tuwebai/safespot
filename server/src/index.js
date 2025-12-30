@@ -5,6 +5,20 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { requestLogger } from './utils/logger.js';
 
+// Router imports
+import reportsRouter from './routes/reports.js';
+import commentsRouter from './routes/comments.js';
+import votesRouter from './routes/votes.js';
+import usersRouter from './routes/users.js';
+import favoritesRouter from './routes/favorites.js';
+import badgesRouter from './routes/badges.js';
+import gamificationRouter from './routes/gamification.js';
+import testRouter from './routes/test.js';
+import geocodeRouter from './routes/geocode.js';
+import pushRouter from './routes/push.js';
+import sitemapRouter from './routes/sitemap.js';
+import { getReportPreview } from './controllers/seoController.js';
+
 // Load environment variables
 dotenv.config();
 
@@ -108,24 +122,10 @@ app.get('/health', (req, res) => {
 // API ROUTES
 // ============================================
 
-import reportsRouter from './routes/reports.js';
-import commentsRouter from './routes/comments.js';
-import votesRouter from './routes/votes.js';
-import usersRouter from './routes/users.js';
-import favoritesRouter from './routes/favorites.js';
-import badgesRouter from './routes/badges.js';
-import gamificationRouter from './routes/gamification.js';
-import testRouter from './routes/test.js';
-import geocodeRouter from './routes/geocode.js';
-import pushRouter from './routes/push.js';
-import sitemapRouter from './routes/sitemap.js';
-
-// SEO / Share Proxy Route
-// Mounted directly for maximum reliability
-import { getReportPreview } from './controllers/seoController.js';
-app.get('/seo/test', (req, res) => res.send('SEO Path Reachable'));
+// SEO Path for Social Media Bots
 app.get('/seo/reporte/:id', getReportPreview);
 
+// API Routes
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/votes', votesRouter);
