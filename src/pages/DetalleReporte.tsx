@@ -263,6 +263,7 @@ export function DetalleReporte() {
         </Button>
 
         {/* Header Section */}
+        {/* Header Section */}
         <div className="mb-8">
           <div className="flex items-start justify-between">
             {/* Left: Title, Status, Zone (or Edit Form) */}
@@ -285,11 +286,15 @@ export function DetalleReporte() {
               >
                 <MapPin className="h-4 w-4" />
               </Button>
+
+              {/* Simple Header Share Button */}
               <ShareButton
                 category={report.category}
                 zone={report.address || report.zone || 'Ubicación desconocida'}
                 reportId={report.id}
+                variant="default"
               />
+
               <ReportActions
                 report={report}
                 isFavorite={reportDetail.isFavorite}
@@ -312,6 +317,18 @@ export function DetalleReporte() {
 
         {/* Images Card */}
         <ReportImages imageUrls={imageUrls} />
+
+        {/* PROMINENT SHARE CTA - Emotional Block */}
+        {!editor.isEditing && (
+          <div className="mb-8 mt-8">
+            <ShareButton
+              category={report.category}
+              zone={report.address || report.zone || 'Ubicación desconocida'}
+              reportId={report.id}
+              variant="prominent"
+            />
+          </div>
+        )}
 
         {/* Stats Grid */}
         <ReportMeta report={report} commentsCount={commentsCount} />

@@ -97,6 +97,15 @@ export default defineConfig({
   },
   server: {
     port: 5174,
+    proxy: {
+      // API already proxied? Usually api is configured in .env or works via CORS.
+      // But we need to proxy /reporte to the backend for local testing of Social Share Logic.
+      '/reporte': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
   },
   base: '/', // Ensure absolute base path for production assets
   build: {

@@ -118,7 +118,13 @@ import gamificationRouter from './routes/gamification.js';
 import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
+import seoRouter from './routes/seo.js';
 import sitemapRouter from './routes/sitemap.js';
+
+// SEO / Share Proxy Route
+// This route serves static HTML for social bots (Facebook, Twitter, WhatsApp)
+// It must be mounted before API routes or 404 handlers
+app.use('/reporte', seoRouter);
 
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
