@@ -28,9 +28,9 @@ export function useAudioUnlock() {
 
     const enableAudio = () => {
       if (enabledRef.current || globalAudioEnabled) return
-      
+
       try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
         if (AudioContextClass) {
           const context = new AudioContextClass()
           audioContextRef.current = context

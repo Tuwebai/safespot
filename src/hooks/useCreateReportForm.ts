@@ -162,9 +162,14 @@ export function useCreateReportForm() {
 
     // Clean up previews effect - Runs only on unmount
     useEffect(() => {
+        const urlsToCleanup = createdUrlsRef.current;
         return () => {
-            createdUrlsRef.current.forEach(url => {
-                try { URL.revokeObjectURL(url) } catch { }
+            urlsToCleanup.forEach(url => {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    console.error('Revoke failed', e);
+                }
             })
         }
     }, [])

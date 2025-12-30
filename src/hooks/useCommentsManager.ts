@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from 'react'
+import { useCallback, useReducer, useMemo } from 'react'
 import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
@@ -141,7 +141,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         refetch
     } = useCommentsQuery(reportId)
 
-    const comments = commentsData?.comments ?? []
+    const comments = useMemo(() => commentsData?.comments ?? [], [commentsData?.comments])
     const hasMore = !!commentsData?.nextCursor
 
     // ============================================

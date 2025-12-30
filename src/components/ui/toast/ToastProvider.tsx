@@ -1,8 +1,7 @@
-import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react'
+import { useState, useCallback, useMemo, ReactNode } from 'react'
 import { ToastContainer } from './ToastContainer'
+import { ToastContext } from './ToastContext'
 import type { Toast, ToastContextValue, ToastType } from './types'
-
-const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 
 interface ToastProviderProps {
   children: ReactNode
@@ -75,9 +74,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
     [addToast]
   )
 
-  // CRITICAL: Memoize context value to prevent cascade re-renders
-  // Functions are stable (useCallback with []), so only include them
-  // toasts is passed through but doesn't trigger value recreation
+  // Memoize context value to prevent cascade re-renders
   const value = useMemo<ToastContextValue>(
     () => ({
       toasts,
@@ -88,9 +85,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
       info,
       warning,
     }),
-    // Only functions - they're stable via useCallback
-    // toasts changes trigger ToastContainer re-render, not the whole tree
-    [addToast, removeToast, success, error, info, warning]
+    [toasts, addToast, removeToast, success, error, info, warning]
   )
 
   return (
@@ -99,13 +94,5 @@ export function ToastProvider({ children }: ToastProviderProps) {
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>
   )
-}
-
-export function useToast(): ToastContextValue {
-  const context = useContext(ToastContext)
-  if (context === undefined) {
-    throw new Error('useToast debe usarse dentro de un ToastProvider')
-  }
-  return context
 }
 

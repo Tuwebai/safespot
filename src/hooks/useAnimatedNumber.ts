@@ -90,6 +90,7 @@ export function useAnimatedNumber(
         animationFrameRef.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetValue, duration, easing])
 
   return animatedValue

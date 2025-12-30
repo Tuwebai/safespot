@@ -67,7 +67,8 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
     }
     // Case 3: Partial state (user cleared selection, still typing) - DO NOTHING
     // This prevents the bug where typing would be overwritten
-  }, [value.latitude, value.longitude, value.location_name]) // ← REMOVED searchQuery from deps!
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.latitude, value.longitude, value.location_name])
 
   const handleInputChange = (newValue: string) => {
     setSearchQuery(newValue)

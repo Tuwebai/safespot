@@ -17,12 +17,14 @@ export class ChunkErrorBoundary extends Component<Props, State> {
         errorType: null
     };
 
-    public static getDerivedStateFromError(error: any): State {
+    public static getDerivedStateFromError(error: Error): State {
         // Check if it's a chunk loading error (common in production when redeploying)
         const isChunkError =
             error.name === 'ChunkLoadError' ||
-            error.message?.includes('Loading chunk') ||
-            error.message?.includes('Failed to fetch dynamically imported module');
+            (error.message && (
+                error.message.includes('Loading chunk') ||
+                error.message.includes('Failed to fetch dynamically imported module')
+            ));
 
         return {
             hasError: true,

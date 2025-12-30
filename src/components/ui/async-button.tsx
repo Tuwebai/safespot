@@ -3,10 +3,10 @@ import { useAsyncAction } from '@/hooks/useAsyncAction'
 import { Loader2, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-interface AsyncButtonProps extends Omit<ButtonProps, 'onClick'> {
-    action: () => Promise<any>
+interface AsyncButtonProps extends Omit<ButtonProps, 'onClick' | 'onError'> {
+    action: () => Promise<unknown>
     onSuccess?: () => void
-    onError?: (error: any) => void
+    onError?: (error: Error) => void
     successLabel?: React.ReactNode
     errorLabel?: React.ReactNode
     hideIcon?: boolean
@@ -25,7 +25,7 @@ export function AsyncButton({
     hideIcon = false,
     ...props
 }: AsyncButtonProps) {
-    const { execute, isLoading, isSuccess, isError } = useAsyncAction(action, {
+    const { execute, isLoading, isSuccess, isError } = useAsyncAction<[], unknown>(action, {
         onSuccess,
         onError
     })
@@ -33,7 +33,7 @@ export function AsyncButton({
     // Determine visual state
     let content = children
     let buttonVariant = variant
-    let isDisabled = disabled || isLoading
+    const isDisabled = disabled || isLoading
 
     if (isLoading) {
         content = (

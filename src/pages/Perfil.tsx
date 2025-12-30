@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { usersApi } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,11 +18,7 @@ export function Perfil() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadProfile()
-  }, [])
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       setLoading(true)
       const data = await usersApi.getProfile()
@@ -34,7 +30,11 @@ export function Perfil() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast.error])
+
+  useEffect(() => {
+    loadProfile()
+  }, [loadProfile])
 
   const getLevelProgress = () => {
     if (!profile) return 0

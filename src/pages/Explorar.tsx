@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
@@ -32,12 +32,7 @@ export function Explorar() {
     }
   }, [searchParams, setSelectedReportId])
 
-  // Initial Load
-  useEffect(() => {
-    loadReports()
-  }, [])
-
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     try {
       const data = await reportsApi.getAll()
       setReports(data)
@@ -45,9 +40,14 @@ export function Explorar() {
       const errorInfo = handleError(error, toast.error, 'Explorar.loadReports')
       console.error(errorInfo)
     }
-  }
+  }, [toast])
 
-  const handleSearchArea = async () => {
+  // Initial Load
+  useEffect(() => {
+    loadReports()
+  }, [loadReports])
+
+  const handleSearchArea = useCallback(async () => {
     if (!mapBounds) {
       loadReports()
       setShowSearchAreaButton(false)
@@ -70,7 +70,7 @@ export function Explorar() {
     } finally {
       setIsSearching(false)
     }
-  }
+  }, [mapBounds, loadReports, setShowSearchAreaButton, toast])
 
   return (
     <MapLayout>

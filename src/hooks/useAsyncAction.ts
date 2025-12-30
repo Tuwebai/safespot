@@ -2,14 +2,14 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 
 export type AsyncStatus = 'idle' | 'loading' | 'success' | 'error'
 
-interface UseAsyncActionOptions {
+interface UseAsyncActionOptions<TError = Error> {
     resetDelay?: number // Time in ms to reset to idle after success/error. Default 2000ms.
     onSuccess?: () => void
-    onError?: (error: any) => void
+    onError?: (error: TError) => void
 }
 
-export function useAsyncAction(
-    action: (...args: any[]) => Promise<any>,
+export function useAsyncAction<TArgs extends unknown[] = unknown[], TResult = unknown>(
+    action: (...args: TArgs) => Promise<TResult>,
     options: UseAsyncActionOptions = {}
 ) {
     const [status, setStatus] = useState<AsyncStatus>('idle')
@@ -24,7 +24,7 @@ export function useAsyncAction(
         setError(null)
     }, [])
 
-    const execute = useCallback(async (...args: any[]) => {
+    const execute = useCallback(async (...args: TArgs) => {
         // Prevent concurrent executions
         if (status === 'loading') return
 
@@ -44,11 +44,12 @@ export function useAsyncAction(
                 setStatus('idle')
             }, resetDelay)
 
-        } catch (err: any) {
+        } catch (err) {
             console.error("Async action failed:", err)
+            const errorInstance = err instanceof Error ? err : new Error(String(err))
             setStatus('error')
-            setError(err)
-            onError?.(err)
+            setError(errorInstance)
+            onError?.(errorInstance)
 
             // Auto-reset
             resetTimerRef.current = setTimeout(() => {

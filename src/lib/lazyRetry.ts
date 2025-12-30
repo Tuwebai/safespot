@@ -4,8 +4,9 @@ import { lazy } from 'react';
  * Enhanced lazy import with retry logic
  * Helps recover from sporadic network failures during navigation
  */
-export function lazyRetry(
-    componentImport: () => Promise<any>,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function lazyRetry<T extends React.ComponentType<any>>(
+    componentImport: () => Promise<{ default: T }>,
     name?: string
 ) {
     return lazy(async () => {

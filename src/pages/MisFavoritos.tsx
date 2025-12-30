@@ -26,11 +26,7 @@ export function MisFavoritos() {
     }
   }, [])
 
-  useEffect(() => {
-    loadFavorites()
-  }, [])
-
-  const loadFavorites = async () => {
+  const loadFavorites = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -43,7 +39,11 @@ export function MisFavoritos() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
+
+  useEffect(() => {
+    loadFavorites()
+  }, [loadFavorites])
 
   const getStatusColor = (status: Report['status']) => {
     switch (status) {

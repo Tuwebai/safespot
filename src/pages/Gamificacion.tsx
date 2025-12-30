@@ -15,7 +15,7 @@ export function Gamificacion() {
 
   // Extract data from query result
   const profile = summary?.profile ?? null
-  const badges = summary?.badges ?? []
+  const badges = useMemo(() => summary?.badges ?? [], [summary?.badges])
 
   // Animation state for newly unlocked badges
   const [newlyUnlockedBadgeIds, setNewlyUnlockedBadgeIds] = useState<Set<string>>(new Set())

@@ -43,7 +43,7 @@ function normalizeImageUrls(imageUrls: unknown): string[] {
     try {
       const parsed = JSON.parse(imageUrls)
       if (Array.isArray(parsed)) {
-        return parsed.filter((url: any): url is string =>
+        return parsed.filter((url: unknown): url is string =>
           typeof url === 'string' && url.length > 0
         )
       }
@@ -65,21 +65,22 @@ export function DetalleReporte() {
 
   // Main hooks
   const reportDetail = useReportDetail({ reportId: id })
+  const { report: initialReport, updateReport, markAsDeleted } = reportDetail
 
   const editor = useReportEditor({
-    report: reportDetail.report,
-    onReportUpdate: reportDetail.updateReport,
+    report: initialReport,
+    onReportUpdate: updateReport,
   })
 
   const flagManager = useFlagManager({
     reportId: id,
     onBeforeDelete: () => {
       // Mark as deleted BEFORE the API call to prevent any refetch attempts
-      reportDetail.markAsDeleted()
+      markAsDeleted()
     },
     onReportFlagged: () => {
-      if (reportDetail.report) {
-        reportDetail.updateReport({ ...reportDetail.report, is_flagged: true })
+      if (initialReport) {
+        updateReport({ ...initialReport, is_flagged: true })
       }
     },
     onReportDeleted: () => {
@@ -92,10 +93,10 @@ export function DetalleReporte() {
 
   // Sync comments count with report
   useEffect(() => {
-    if (reportDetail.report) {
-      setCommentsCount(reportDetail.report.comments_count)
+    if (initialReport) {
+      setCommentsCount(initialReport.comments_count)
     }
-  }, [reportDetail.report])
+  }, [initialReport])
 
   // Handler for comment count changes
   const handleCommentCountChange = useCallback((delta: number) => {
@@ -104,10 +105,10 @@ export function DetalleReporte() {
 
   // Handler for favorite toggle - MUST be before any returns (Rules of Hooks)
   const handleFavoriteToggle = useCallback((newState: boolean) => {
-    if (reportDetail.report) {
-      reportDetail.updateReport({ ...reportDetail.report, is_favorite: newState })
+    if (initialReport) {
+      updateReport({ ...initialReport, is_favorite: newState })
     }
-  }, [reportDetail.report, reportDetail.updateReport])
+  }, [initialReport, updateReport])
 
   // Derived state - safe to compute before returns
   const isBusy =
@@ -115,7 +116,7 @@ export function DetalleReporte() {
     flagManager.deletingReport ||
     flagManager.flaggingReport
 
-  const report = reportDetail.report
+  const report = initialReport
   const imageUrls = report ? normalizeImageUrls(report.image_urls) : []
 
   // ============================================

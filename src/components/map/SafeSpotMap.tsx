@@ -13,7 +13,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 // Fix for default marker icon issues
 import L from 'leaflet'
-// @ts-ignore
+// @ts-expect-error - Leaflet icon internal property deletion
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: null,

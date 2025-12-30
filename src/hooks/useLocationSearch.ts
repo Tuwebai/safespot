@@ -4,6 +4,21 @@ interface NominatimResult {
     display_name: string
     lat: string
     lon: string
+    name?: string
+    address?: {
+        road?: string
+        street?: string
+        pedestrian?: string
+        house_number?: string
+        number?: string
+        city?: string
+        town?: string
+        village?: string
+        municipality?: string
+        state?: string
+        province?: string
+        [key: string]: string | undefined
+    }
 }
 
 const DEBOUNCE_MS = 500
@@ -98,7 +113,7 @@ export function useLocationSearch(query: string) {
                 }
 
                 // Normalization Logic
-                const normalizedResults = data.data.map((item: any) => {
+                const normalizedResults = (data.data as NominatimResult[]).map((item) => {
                     let displayName = item.display_name
 
                     // Specific addressing normalization if address details are present
@@ -148,10 +163,10 @@ export function useLocationSearch(query: string) {
                 setResults(normalizedResults)
 
 
-            } catch (err: any) {
-                if (err.name === 'AbortError') return
+            } catch (err) {
+                if (err instanceof Error && err.name === 'AbortError') return
                 console.error('Location search error:', err)
-                setError(err.message || 'No se pudo buscar la dirección')
+                setError(err instanceof Error ? err.message : 'No se pudo buscar la dirección')
             } finally {
                 if (abortControllerRef.current === controller) {
                     setIsSearching(false)

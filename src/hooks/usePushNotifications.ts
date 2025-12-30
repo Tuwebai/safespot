@@ -47,18 +47,6 @@ export function usePushNotifications() {
         && 'PushManager' in window
         && 'Notification' in window;
 
-    // ============================================
-    // INITIALIZATION
-    // ============================================
-
-    useEffect(() => {
-        if (!isSupported) {
-            setStatus(prev => ({ ...prev, isSupported: false, isLoading: false }));
-            return;
-        }
-
-        checkStatus();
-    }, [isSupported]);
 
     // Check current subscription status
     const checkStatus = useCallback(async () => {
@@ -95,6 +83,19 @@ export function usePushNotifications() {
             }));
         }
     }, []);
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+
+    useEffect(() => {
+        if (!isSupported) {
+            setStatus(prev => ({ ...prev, isSupported: false, isLoading: false }));
+            return;
+        }
+
+        checkStatus();
+    }, [isSupported, checkStatus]);
 
     // ============================================
     // SUBSCRIBE

@@ -97,16 +97,16 @@ async function apiRequest<T>(
       }
 
       // If not retriable or no retries left, throw error
-      const error = new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
-      (error as any).status = response.status;
+      const error = new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`) as Error & { status?: number };
+      error.status = response.status;
       throw error;
     }
 
     return data.data || data;
 
-  } catch (error: any) {
+  } catch (error) {
     // 3. Handle Network Errors (fetch failed)
-    const isNetworkError = error.name === 'TypeError' || error.message === 'Failed to fetch';
+    const isNetworkError = error instanceof TypeError || (error instanceof Error && error.message === 'Failed to fetch');
 
     if (isNetworkError && retries > 0) {
       console.warn(`Network error. Retrying in ${backoff}ms... (${retries} attempts left)`);
@@ -434,9 +434,9 @@ export const commentsApi = {
    * Like a comment
    * Returns updated like status and count
    */
-  like: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number }> => {
+  like: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }> => {
     // apiRequest already extracts data.data, so response is the final object
-    const response = await apiRequest<{ liked: boolean; upvotes_count: number }>(
+    const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
       `/comments/${commentId}/like`,
       {
         method: 'POST',
@@ -449,9 +449,9 @@ export const commentsApi = {
    * Unlike a comment
    * Returns updated like status and count
    */
-  unlike: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number }> => {
+  unlike: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }> => {
     // apiRequest already extracts data.data, so response is the final object
-    const response = await apiRequest<{ liked: boolean; upvotes_count: number }>(
+    const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
       `/comments/${commentId}/like`,
       {
         method: 'DELETE',

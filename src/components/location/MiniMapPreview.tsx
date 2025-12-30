@@ -5,7 +5,7 @@ import L from 'leaflet'
 import { MapPin } from 'lucide-react'
 
 // Fix for leaflet marker icons in React/Vite
-// @ts-ignore
+// @ts-expect-error - Leaflet icon internal property deletion
 delete L.Icon.Default.prototype._getIconUrl;
 
 L.Icon.Default.mergeOptions({

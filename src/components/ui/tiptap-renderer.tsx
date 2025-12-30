@@ -1,5 +1,6 @@
 import { MapPin, Type, AtSign } from 'lucide-react'
 import { MarkdownRenderer } from './markdown-renderer'
+import { TipTapDoc, TipTapNode, TipTapMark } from '@/types/tiptap'
 
 interface TipTapRendererProps {
   content: string // JSON string del editor TipTap o markdown legacy
@@ -14,10 +15,10 @@ interface TipTapRendererProps {
 export function TipTapRenderer({ content, className = '' }: TipTapRendererProps) {
   if (!content) return null
 
-  let doc: any
+  let doc: TipTapDoc
   try {
     doc = typeof content === 'string' ? JSON.parse(content) : content
-    
+
     // Verificar que sea un documento TipTap válido
     if (!doc || !doc.type || doc.type !== 'doc') {
       throw new Error('Not a valid TipTap document')
@@ -31,26 +32,26 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
     return null
   }
 
-  const renderNode = (node: any, index: number): JSX.Element | string | null => {
+  const renderNode = (node: TipTapNode, index: number): JSX.Element | string | null => {
     if (!node || !node.type) return null
 
     switch (node.type) {
       case 'paragraph':
         return (
           <p key={index} className="mb-2 last:mb-0">
-            {node.content ? node.content.map((child: any, i: number) => renderNode(child, i)) : null}
+            {node.content ? node.content.map((child, i) => renderNode(child, i)) : null}
           </p>
         )
 
-      case 'text':
-        let text: any = node.text || ''
+      case 'text': {
+        let text: JSX.Element | string = node.text || ''
         const marks = node.marks || []
-        
+
         // Aplicar marks (formato) - aplicar en orden para anidación correcta
         // Code debe aplicarse primero (más externo), luego los demás
-        const codeMark = marks.find((m: any) => m.type === 'code')
-        const otherMarks = marks.filter((m: any) => m.type !== 'code')
-        
+        const codeMark = marks.find((m: TipTapMark) => m.type === 'code')
+        const otherMarks = marks.filter((m: TipTapMark) => m.type !== 'code')
+
         // Aplicar code primero si existe
         if (codeMark) {
           text = (
@@ -59,9 +60,9 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
             </code>
           )
         }
-        
+
         // Aplicar otros marks en orden
-        otherMarks.forEach((mark: any, markIndex: number) => {
+        otherMarks.forEach((mark: TipTapMark, markIndex: number) => {
           const key = `${mark.type}-${index}-${markIndex}`
           switch (mark.type) {
             case 'bold':
@@ -78,11 +79,12 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
               break
           }
         })
-        
-        return text
 
-      case 'safespotLocation':
-        const locationValue = node.attrs?.value || ''
+        return text
+      }
+
+      case 'safespotLocation': {
+        const locationValue = (node.attrs?.value as string) || ''
         return (
           <span
             key={index}
@@ -92,9 +94,10 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
             {locationValue}
           </span>
         )
+      }
 
-      case 'safespotObject':
-        const objectValue = node.attrs?.value || ''
+      case 'safespotObject': {
+        const objectValue = (node.attrs?.value as string) || ''
         return (
           <span
             key={index}
@@ -104,9 +107,10 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
             {objectValue}
           </span>
         )
+      }
 
-      case 'safespotUser':
-        const userValue = node.attrs?.value || ''
+      case 'safespotUser': {
+        const userValue = (node.attrs?.value as string) || ''
         return (
           <span
             key={index}
@@ -116,32 +120,33 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
             {userValue}
           </span>
         )
+      }
 
       case 'bulletList':
         return (
           <ul key={index} className="list-disc list-inside mb-2 space-y-1 ml-4">
-            {node.content ? node.content.map((child: any, i: number) => renderNode(child, i)) : null}
+            {node.content ? node.content.map((child, i) => renderNode(child, i)) : null}
           </ul>
         )
 
       case 'orderedList':
         return (
           <ol key={index} className="list-decimal list-inside mb-2 space-y-1 ml-4">
-            {node.content ? node.content.map((child: any, i: number) => renderNode(child, i)) : null}
+            {node.content ? node.content.map((child, i) => renderNode(child, i)) : null}
           </ol>
         )
 
       case 'listItem':
         return (
           <li key={index} className="text-foreground/80">
-            {node.content ? node.content.map((child: any, i: number) => renderNode(child, i)) : null}
+            {node.content ? node.content.map((child, i) => renderNode(child, i)) : null}
           </li>
         )
 
       case 'blockquote':
         return (
           <blockquote key={index} className="border-l-4 border-neon-green/50 pl-4 py-2 my-2 bg-dark-bg/50 italic">
-            {node.content ? node.content.map((child: any, i: number) => renderNode(child, i)) : null}
+            {node.content ? node.content.map((child, i) => renderNode(child, i)) : null}
           </blockquote>
         )
 
@@ -153,7 +158,7 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
         if (node.content && Array.isArray(node.content)) {
           return (
             <span key={index}>
-              {node.content.map((child: any, i: number) => renderNode(child, i))}
+              {node.content.map((child, i) => renderNode(child, i))}
             </span>
           )
         }
@@ -163,7 +168,7 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
 
   return (
     <div className={`tiptap-renderer ${className}`}>
-      {doc.content.map((node: any, index: number) => renderNode(node, index))}
+      {doc.content.map((node, index) => renderNode(node, index))}
     </div>
   )
 }

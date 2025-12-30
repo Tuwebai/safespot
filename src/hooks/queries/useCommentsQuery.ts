@@ -88,8 +88,8 @@ export function useToggleLikeCommentMutation() {
             // Check for badges (likes are point-earning actions)
             // Note: commentsApi.like returns { liked, upvotes_count } - wait, does it return badges? 
             // I need to check backend routes/comments.js for like route.
-            if ((data as any).newBadges) {
-                triggerBadgeCheck((data as any).newBadges)
+            if (data.newBadges) {
+                triggerBadgeCheck(data.newBadges)
             } else {
                 triggerBadgeCheck()
             }
