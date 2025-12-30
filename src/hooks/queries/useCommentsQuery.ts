@@ -68,7 +68,7 @@ export function useCreateCommentMutation() {
 
             return { previousComments, reportId: newCommentData.report_id }
         },
-        onError: (_, variables, context) => {
+        onError: (_, _variables, context) => {
             if (context?.reportId) {
                 queryClient.setQueryData(
                     queryKeys.comments.byReport(context.reportId),
@@ -76,7 +76,7 @@ export function useCreateCommentMutation() {
                 )
             }
         },
-        onSuccess: (newComment, variables) => {
+        onSuccess: (newComment, _variables) => {
             // Check for badges
             triggerBadgeCheck(newComment.newBadges)
         },
@@ -139,7 +139,7 @@ export function useToggleLikeCommentMutation() {
             // 3. Optimistically update all comment lists that might contain this comment
             queryClient.setQueriesData<any>(
                 { queryKey: ['comments'] },
-                (old) => {
+                (old: any) => {
                     if (!old) return old
 
                     // Handle both simple arrays and paginated objects
@@ -178,7 +178,7 @@ export function useToggleLikeCommentMutation() {
             // Rollback: reverse the logic
             queryClient.setQueriesData<any>(
                 { queryKey: ['comments'] },
-                (old) => {
+                (old: any) => {
                     if (!old) return old
                     const transform = (comments: any[]) => comments.map((c: any) => {
                         if (c.id === context.id) {
@@ -229,7 +229,7 @@ export function useFlagCommentMutation() {
             // Optimistically update
             queryClient.setQueriesData<any>(
                 { queryKey: ['comments'] },
-                (old) => {
+                (old: any) => {
                     if (!old) return old
                     const transform = (comments: any[]) => comments.map((c: any) =>
                         c.id === id ? { ...c, is_flagged: true } : c
@@ -254,7 +254,7 @@ export function useFlagCommentMutation() {
             if (context?.id) {
                 queryClient.setQueriesData<any>(
                     { queryKey: ['comments'] },
-                    (old) => {
+                    (old: any) => {
                         if (!old) return old
                         const transform = (comments: any[]) => comments.map((c: any) =>
                             c.id === context.id ? { ...c, is_flagged: false } : c

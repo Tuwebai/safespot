@@ -81,7 +81,6 @@ export function Reportes() {
   // Filter state
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [selectedZone, setSelectedZone] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
 
   // Flag dialog state
@@ -96,11 +95,10 @@ export function Reportes() {
   const filters = useMemo<ReportFilters | undefined>(() => {
     const f: ReportFilters = {}
     if (selectedCategory !== 'all') f.category = selectedCategory
-    if (selectedZone !== 'all') f.zone = selectedZone
     if (selectedStatus !== 'all') f.status = selectedStatus
     if (debouncedSearchTerm.trim()) f.search = debouncedSearchTerm.trim()
     return Object.keys(f).length > 0 ? f : undefined
-  }, [selectedCategory, selectedZone, selectedStatus, debouncedSearchTerm])
+  }, [selectedCategory, selectedStatus, debouncedSearchTerm])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading: loading, error: queryError, refetch } = useReportsQuery(filters)
