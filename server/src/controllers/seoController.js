@@ -56,7 +56,7 @@ export const getReportPreview = async (req, res) => {
     `, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).send('Reporte no encontrado');
+      return res.status(404).send('SEO: Reporte No Encontrado [DB]');
     }
 
     const report = result.rows[0];
