@@ -169,10 +169,12 @@ export function DetalleReporte() {
   // ============================================
 
   // Metadata for SEO
-  const pageTitle = `${report.category} en ${report.zone} – SafeSpot`
+  const category = report.category
+  const zone = report.address || report.zone
+  const pageTitle = `${category} en ${zone} – SafeSpot`
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === report.status)?.label || report.status
   const formattedDate = new Date(report.created_at).toLocaleDateString()
-  const pageDescription = `Reporte de ${report.category} en ${report.zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`
+  const pageDescription = `Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`
   const metaImageUrl = imageUrls.length > 0 ? imageUrls[0] : '/favicon.svg'
   const currentUrl = window.location.href
 
@@ -237,7 +239,7 @@ export function DetalleReporte() {
               </Button>
               <ShareButton
                 category={report.category}
-                zone={report.zone}
+                zone={report.address || report.zone || 'Ubicación desconocida'}
                 reportId={report.id}
               />
               <ReportActions

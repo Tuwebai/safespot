@@ -190,7 +190,7 @@ export function useCreateReportForm() {
                 title: data.title,
                 description: data.description,
                 category: data.category,
-                zone: data.location.zone || 'Sin zona',
+                zone: data.location.zone || '',
                 address: data.location.location_name,
                 latitude: data.location.latitude,
                 longitude: data.location.longitude,

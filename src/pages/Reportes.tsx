@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ALL_CATEGORIES as categories, ZONES as zones, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
+import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
@@ -269,17 +269,6 @@ export function Reportes() {
               ))}
             </Select>
 
-            {/* Zona */}
-            <Select
-              value={selectedZone}
-              onChange={(e) => setSelectedZone(e.target.value)}
-            >
-              <option value="all">Todas las zonas</option>
-              {zones.map((zone) => (
-                <option key={zone} value={zone}>{zone}</option>
-              ))}
-            </Select>
-
             {/* Estado */}
             <Select
               value={selectedStatus}
@@ -407,7 +396,7 @@ export function Reportes() {
                         {/* C. Location */}
                         <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
                           <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                          <span className="truncate">{report.zone}</span>
+                          <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
                         </div>
 
                         {/* D. Meta Footer (Date & Stats) */}

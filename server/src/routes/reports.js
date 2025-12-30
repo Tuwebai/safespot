@@ -788,6 +788,14 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
       }
     }
 
+    // AUTO-POPULATE ZONE: If zone is empty or generic, use locality/department from Georef
+    // This ensures meaningful location data for new reports while maintaining backward compatibility
+    let finalZone = sanitizedZone;
+    if (!finalZone || finalZone.trim() === '' || finalZone === 'Sin zona') {
+      // Priority: locality > department > keep original
+      finalZone = locality || department || sanitizedZone || '';
+    }
+
     // Insert report using queryWithRLS for RLS consistency
     const insertResult = await queryWithRLS(anonymousId, `
       INSERT INTO reports (
@@ -801,7 +809,7 @@ router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
       sanitizedTitle,
       sanitizedDescription,
       req.body.category,  // Validated against whitelist, no sanitization needed
-      sanitizedZone,
+      finalZone,
       sanitizedAddress,
       req.body.latitude || null,
       req.body.longitude || null,

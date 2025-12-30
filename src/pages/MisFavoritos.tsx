@@ -242,7 +242,7 @@ export function MisFavoritos() {
                   {/* Location */}
                   <div className="flex items-center text-sm text-foreground/60 mb-4">
                     <MapPin className="h-4 w-4 mr-1" />
-                    <span className="truncate">{report.zone}</span>
+                    <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
                   </div>
 
                   {/* Meta Footer (Date & Stats) */}

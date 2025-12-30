@@ -10,17 +10,6 @@ export const ALL_CATEGORIES = [
 
 export type Category = typeof ALL_CATEGORIES[number]
 
-// Zones
-export const ZONES = [
-  'Centro',
-  'Norte',
-  'Sur',
-  'Este',
-  'Oeste'
-] as const
-
-export type Zone = typeof ZONES[number]
-
 // Status options
 export const STATUS_OPTIONS = [
   { value: 'pendiente', label: 'Pendiente' },
