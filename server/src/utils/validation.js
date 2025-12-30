@@ -57,6 +57,11 @@ export function validateReport(data) {
     errors.push('description is required and must be a non-empty string');
   }
 
+  // Zone is optional (can be auto-populated from coordinates)
+  if (data.zone !== undefined && data.zone !== null && typeof data.zone !== 'string') {
+    errors.push('zone must be a string');
+  }
+
   if (!data.category || typeof data.category !== 'string') {
     errors.push('category is required');
   }
@@ -67,8 +72,9 @@ export function validateReport(data) {
     errors.push(`category must be one of: ${validCategories.join(', ')}`);
   }
 
-  if (!data.zone || typeof data.zone !== 'string') {
-    errors.push('zone is required');
+  // Zone is optional (can be auto-populated from coordinates)
+  if (data.zone !== undefined && data.zone !== null && typeof data.zone !== 'string') {
+    errors.push('zone must be a string');
   }
 
   if (!data.address || typeof data.address !== 'string' || data.address.trim().length === 0) {
