@@ -16,13 +16,14 @@ export default defineConfig({
 
         // Runtime caching rules
         runtimeCaching: [
-          // API GET requests - Stale While Revalidate
-          // Returns cached data immediately, then updates in background
+          // API GET requests - Network First
+          // Ensures user always sees fresh data if they have a connection
           {
             urlPattern: /^https?:\/\/.*\/api\/(reports|comments|users|gamification|favorites|badges)/,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
+              networkTimeoutSeconds: 5, // Fallback to cache if network is very slow
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60 * 24, // 24 hours

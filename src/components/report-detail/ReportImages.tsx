@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, memo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Image as ImageIcon } from 'lucide-react'
 
@@ -14,7 +14,7 @@ interface ReportImagesProps {
 // COMPONENT
 // ============================================
 
-export function ReportImages({ imageUrls }: ReportImagesProps) {
+export const ReportImages = memo(function ReportImages({ imageUrls }: ReportImagesProps) {
     const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(new Set())
 
     const handleImageError = useCallback((imageUrl: string) => {
@@ -69,4 +69,4 @@ export function ReportImages({ imageUrls }: ReportImagesProps) {
             </CardContent>
         </Card>
     )
-}
+})

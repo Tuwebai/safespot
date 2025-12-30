@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Edit, Trash2, Flag, Save, X } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
@@ -27,7 +28,7 @@ interface ReportActionsProps {
 // COMPONENT
 // ============================================
 
-export function ReportActions({
+export const ReportActions = memo(function ReportActions({
     report,
     isFavorite,
     isEditing,
@@ -127,4 +128,4 @@ export function ReportActions({
             )}
         </div>
     )
-}
+})

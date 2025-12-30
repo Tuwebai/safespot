@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type Report, type ReportFilters, type CreateReportData } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
+import { getSmartRefetchInterval } from '@/lib/queryClient'
 
 // ============================================
 // QUERIES (READ)
@@ -18,14 +19,14 @@ import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 
 /**
  * Fetch all reports with optional filters
- * Cached for 30 seconds by default, refetches on window focus
+ * Cached for 30 seconds by default
  */
 export function useReportsQuery(filters?: ReportFilters) {
     return useQuery({
         queryKey: queryKeys.reports.list(filters),
         queryFn: () => reportsApi.getAll(filters),
-        staleTime: 30 * 1000, // 30 seconds
-        refetchInterval: 10 * 1000, // Polling every 10 seconds for real-time updates
+        staleTime: 30 * 1000,
+        refetchInterval: getSmartRefetchInterval(60 * 1000), // 1 minute base for list
     })
 }
 
@@ -37,9 +38,9 @@ export function useReportDetailQuery(reportId: string | undefined) {
     return useQuery({
         queryKey: queryKeys.reports.detail(reportId ?? ''),
         queryFn: () => reportsApi.getById(reportId!),
-        enabled: !!reportId, // Only fetch if we have an ID
-        staleTime: 60 * 1000, // 1 minute for details
-        refetchInterval: 10 * 1000, // Polling every 10 seconds for real-time updates
+        enabled: !!reportId,
+        staleTime: 60 * 1000,
+        refetchInterval: getSmartRefetchInterval(15000), // 15s base for detail (more critical)
     })
 }
 
@@ -113,39 +114,54 @@ export function useToggleFavoriteMutation() {
     return useMutation({
         mutationFn: (reportId: string) => reportsApi.toggleFavorite(reportId),
         onMutate: async (reportId) => {
-            // Cancel outgoing refetches
-            await queryClient.cancelQueries({ queryKey: queryKeys.reports.detail(reportId) })
+            // 1. Cancel outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
 
-            // Snapshot previous value
-            const previousReport = queryClient.getQueryData<Report>(
-                queryKeys.reports.detail(reportId)
-            )
+            // 2. Snapshot previous values for rollback
+            const previousDetail = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
 
-            // Optimistically update
-            if (previousReport) {
+            // 3. Optimistically update Detail Cache
+            if (previousDetail) {
                 queryClient.setQueryData<Report>(
                     queryKeys.reports.detail(reportId),
-                    { ...previousReport, is_favorite: !previousReport.is_favorite }
+                    { ...previousDetail, is_favorite: !previousDetail.is_favorite }
                 )
             }
 
-            return { previousReport }
+            // 4. Optimistically update ALL Report Lists (Explorar, Reportes, etc.)
+            // We use setQueriesData to match any list key starting with ['reports', 'list']
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old?.map(report =>
+                    report.id === reportId
+                        ? { ...report, is_favorite: !report.is_favorite }
+                        : report
+                )
+            )
+
+            return { previousDetail }
         },
         onError: (_, reportId, context) => {
-            // Rollback on error
-            if (context?.previousReport) {
-                queryClient.setQueryData(
-                    queryKeys.reports.detail(reportId),
-                    context.previousReport
-                )
+            // Rollback Detail
+            if (context?.previousDetail) {
+                queryClient.setQueryData(queryKeys.reports.detail(reportId), context.previousDetail)
             }
+            // Rollback Lists (invert the toggle back)
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old?.map(report =>
+                    report.id === reportId
+                        ? { ...report, is_favorite: !report.is_favorite }
+                        : report
+                )
+            )
         },
         onSettled: (_, __, reportId) => {
-            // Refetch to ensure consistency
+            // Refetch essential data to stay in sync with server
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
             queryClient.invalidateQueries({ queryKey: queryKeys.user.favorites })
 
-            // Check for badges (delayed poll since we don't have immediate data)
+            // Check badges
             triggerBadgeCheck()
         },
     })
@@ -161,16 +177,49 @@ export function useFlagReportMutation() {
     return useMutation({
         mutationFn: ({ reportId, reason }: { reportId: string; reason?: string }) =>
             reportsApi.flag(reportId, reason),
-        onSuccess: (_, { reportId }) => {
-            // Update the report in cache
-            queryClient.setQueryData<Report>(
-                queryKeys.reports.detail(reportId),
-                (old) => old ? { ...old, is_flagged: true } : old
-            )
-            // Invalidate lists
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        onMutate: async ({ reportId }) => {
+            // Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
 
-            // Check for badges
+            // Snapshot previous value
+            const previousDetail = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
+
+            // Optimistically update Detail
+            if (previousDetail) {
+                queryClient.setQueryData<Report>(
+                    queryKeys.reports.detail(reportId),
+                    { ...previousDetail, is_flagged: true }
+                )
+            }
+
+            // Optimistically update ALL Lists
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old?.map(report =>
+                    report.id === reportId ? { ...report, is_flagged: true } : report
+                )
+            )
+
+            return { previousDetail, reportId }
+        },
+        onError: (_, __, context) => {
+            if (context?.reportId) {
+                // Rollback detail
+                if (context.previousDetail) {
+                    queryClient.setQueryData(queryKeys.reports.detail(context.reportId), context.previousDetail)
+                }
+                // Rollback lists
+                queryClient.setQueriesData<Report[]>(
+                    { queryKey: ['reports', 'list'] },
+                    (old) => old?.map(report =>
+                        report.id === context.reportId ? { ...report, is_flagged: false } : report
+                    )
+                )
+            }
+        },
+        onSettled: (_, __, { reportId }) => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
+            queryClient.invalidateQueries({ queryKey: ['reports', 'list'] })
             triggerBadgeCheck()
         },
     })

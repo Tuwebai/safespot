@@ -2,10 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { commentsApi, type CreateCommentData } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
+import { getSmartRefetchInterval } from '@/lib/queryClient'
 
 /**
  * Fetch comments for a report with cursor-based pagination
- * Polling enabled (10s) for real-time updates
+ * Polling enabled with network-aware frequency
  */
 export function useCommentsQuery(reportId: string | undefined, limit = 20, cursor?: string) {
     return useQuery({
@@ -13,7 +14,7 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
         queryFn: () => commentsApi.getByReportId(reportId!, limit, cursor),
         enabled: !!reportId,
         staleTime: 30 * 1000,
-        refetchInterval: 10 * 1000, // Real-time polling
+        refetchInterval: getSmartRefetchInterval(30000), // 30s base, scales up on slow mobile
     })
 }
 
@@ -26,15 +27,63 @@ export function useCreateCommentMutation() {
 
     return useMutation({
         mutationFn: (data: CreateCommentData) => commentsApi.create(data),
-        onSuccess: (newComment, variables) => {
-            // Update comments list
-            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(variables.report_id) })
-            // Update report counters (comments_count, threads_count)
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(variables.report_id) })
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        onMutate: async (newCommentData) => {
+            // Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: queryKeys.comments.byReport(newCommentData.report_id) })
 
+            // Snapshot previous value
+            const previousComments = queryClient.getQueryData<any>(queryKeys.comments.byReport(newCommentData.report_id))
+
+            // Create temporary optimistic comment
+            const optimisticComment = {
+                id: `temp-${Date.now()}`,
+                ...newCommentData,
+                created_at: new Date().toISOString(),
+                is_optimistic: true, // Helper to show a "sending" state if needed
+                likes_count: 0,
+                is_liked: false,
+                author: 'Tú', // Generic for instant feedback
+            }
+
+            // Update cache
+            queryClient.setQueryData(
+                queryKeys.comments.byReport(newCommentData.report_id),
+                (old: any) => {
+                    if (!old) return [optimisticComment]
+                    if (Array.isArray(old)) return [optimisticComment, ...old]
+                    // If it's a paginated object, add to the first page
+                    if (old.pages) {
+                        const newPages = [...old.pages]
+                        if (newPages[0]) {
+                            newPages[0] = {
+                                ...newPages[0],
+                                data: [optimisticComment, ...(newPages[0].data || [])]
+                            }
+                        }
+                        return { ...old, pages: newPages }
+                    }
+                    return old
+                }
+            )
+
+            return { previousComments, reportId: newCommentData.report_id }
+        },
+        onError: (_, variables, context) => {
+            if (context?.reportId) {
+                queryClient.setQueryData(
+                    queryKeys.comments.byReport(context.reportId),
+                    context.previousComments
+                )
+            }
+        },
+        onSuccess: (newComment, variables) => {
             // Check for badges
             triggerBadgeCheck(newComment.newBadges)
+        },
+        onSettled: (_, __, variables) => {
+            // Final sync with server to replace temp ID with real one
+            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(variables.report_id) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(variables.report_id) })
         },
     })
 }
@@ -78,21 +127,88 @@ export function useToggleLikeCommentMutation() {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: ({ id, isLiked }: { id: string; isLiked: boolean }) =>
+        mutationFn: ({ id, isLiked }: { id: string; isLiked: boolean; reportId?: string }) =>
             isLiked ? commentsApi.unlike(id) : commentsApi.like(id),
-        onSuccess: (data) => {
-            // We don't have the reportId here easily without extra params or cache lookup
-            // But invalidating all comments is safe or we can specify part of the key
-            queryClient.invalidateQueries({ queryKey: ['comments'] })
+        onMutate: async ({ id, isLiked }) => {
+            // 1. Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
 
-            // Check for badges (likes are point-earning actions)
-            // Note: commentsApi.like returns { liked, upvotes_count } - wait, does it return badges? 
-            // I need to check backend routes/comments.js for like route.
-            if (data.newBadges) {
-                triggerBadgeCheck(data.newBadges)
-            } else {
-                triggerBadgeCheck()
-            }
+            // 2. Snapshot previous values (not doing full snapshot for all lists to avoid perf hit, 
+            // but we can undo the toggle on error easily)
+
+            // 3. Optimistically update all comment lists that might contain this comment
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old) => {
+                    if (!old) return old
+
+                    // Handle both simple arrays and paginated objects
+                    const transform = (comments: any[]) => comments.map((c: any) => {
+                        if (c.id === id) {
+                            return {
+                                ...c,
+                                is_liked: !isLiked,
+                                likes_count: (c.likes_count || 0) + (isLiked ? -1 : 1)
+                            }
+                        }
+                        return c
+                    })
+
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    if (old.data && Array.isArray(old.data)) {
+                        return { ...old, data: transform(old.data) }
+                    }
+                    return old
+                }
+            )
+
+            return { id, isLiked }
+        },
+        onError: (_, __, context) => {
+            if (!context) return
+            // Rollback: reverse the logic
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old) => {
+                    if (!old) return old
+                    const transform = (comments: any[]) => comments.map((c: any) => {
+                        if (c.id === context.id) {
+                            return {
+                                ...c,
+                                is_liked: context.isLiked,
+                                likes_count: (c.likes_count || 0) + (context.isLiked ? 1 : -1)
+                            }
+                        }
+                        return c
+                    })
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    return old
+                }
+            )
+        },
+        onSettled: () => {
+            // No need to invalidate everything immediately if we trust our optimistic UI,
+            // but a background sync is good.
+            // queryClient.invalidateQueries({ queryKey: ['comments'] })
+            triggerBadgeCheck()
         },
     })
 }
@@ -106,7 +222,59 @@ export function useFlagCommentMutation() {
     return useMutation({
         mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
             commentsApi.flag(id, reason),
-        onSuccess: () => {
+        onMutate: async ({ id }) => {
+            // Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
+
+            // Optimistically update
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old) => {
+                    if (!old) return old
+                    const transform = (comments: any[]) => comments.map((c: any) =>
+                        c.id === id ? { ...c, is_flagged: true } : c
+                    )
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    return old
+                }
+            )
+
+            return { id }
+        },
+        onError: (_, __, context) => {
+            if (context?.id) {
+                queryClient.setQueriesData<any>(
+                    { queryKey: ['comments'] },
+                    (old) => {
+                        if (!old) return old
+                        const transform = (comments: any[]) => comments.map((c: any) =>
+                            c.id === context.id ? { ...c, is_flagged: false } : c
+                        )
+                        if (Array.isArray(old)) return transform(old)
+                        if (old.pages) {
+                            return {
+                                ...old,
+                                pages: old.pages.map((page: any) => ({
+                                    ...page,
+                                    data: transform(page.data || [])
+                                }))
+                            }
+                        }
+                        return old
+                    }
+                )
+            }
+        },
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['comments'] })
         },
     })

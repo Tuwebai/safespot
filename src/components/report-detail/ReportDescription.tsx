@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -19,7 +20,7 @@ interface ReportDescriptionProps {
 // COMPONENT
 // ============================================
 
-export function ReportDescription({ report, editor }: ReportDescriptionProps) {
+export const ReportDescription = memo(function ReportDescription({ report, editor }: ReportDescriptionProps) {
     const { isEditing, editTitle, editDescription, editStatus, updating, setTitle, setDescription, setStatus } = editor
 
     return (
@@ -87,4 +88,4 @@ export function ReportDescription({ report, editor }: ReportDescriptionProps) {
             </Card>
         </>
     )
-}
+})

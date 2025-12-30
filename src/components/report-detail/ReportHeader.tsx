@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { MapPin } from 'lucide-react'
 import type { Report } from '@/lib/api'
@@ -43,7 +44,7 @@ function getStatusLabel(status: Report['status']): string {
 // COMPONENT
 // ============================================
 
-export function ReportHeader({ report }: ReportHeaderProps) {
+export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderProps) {
     return (
         <div className="flex-1">
             <div className="flex items-center gap-3 mb-3">
@@ -58,4 +59,4 @@ export function ReportHeader({ report }: ReportHeaderProps) {
             </div>
         </div>
     )
-}
+})

@@ -11,6 +11,8 @@ import { handleErrorSilently } from '@/lib/errorHandler'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useNavigate } from 'react-router-dom'
 import { compressImage, formatFileSize } from '@/lib/imageCompression'
+import { queryClient } from '@/lib/queryClient'
+import { queryKeys } from '@/lib/queryKeys'
 
 // ============================================
 // SCHEMA DEFINITION
@@ -53,7 +55,6 @@ export function useCreateReportForm() {
     // Local State
     const [imageFiles, setImageFiles] = useState<File[]>([])
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
-    const [isUploadingImages, setIsUploadingImages] = useState(false)
     const [isCompressing, setIsCompressing] = useState(false)
     const [compressionProgress, setCompressionProgress] = useState<string>('')
 
@@ -179,7 +180,6 @@ export function useCreateReportForm() {
     // ============================================
 
     const onSubmit = handleSubmit(async (data: CreateReportFormData) => {
-        // Final Validation
         if (!data.location.latitude || !data.location.longitude) {
             toast.error('Ubicación inválida: Faltan coordenadas.')
             return
@@ -190,7 +190,7 @@ export function useCreateReportForm() {
                 title: data.title,
                 description: data.description,
                 category: data.category,
-                zone: 'Sin zona',
+                zone: data.location.zone || 'Sin zona',
                 address: data.location.location_name,
                 latitude: data.location.latitude,
                 longitude: data.location.longitude,
@@ -198,26 +198,32 @@ export function useCreateReportForm() {
                 incident_date: data.incidentDate
             }
 
+            // 1. Create the report record (Fast JSON operation)
             const newReport = await createReport(payload)
 
+            // 2. Immediate feedback & Navigation
+            // WE DON'T WAIT FOR IMAGES TO NAVIGATE
+            toast.success('¡Reporte creado! Subiendo imágenes en segundo plano...')
+            navigate('/reportes')
+            triggerBadgeCheck(newReport.newBadges)
+
+            // 3. Background Image Upload
             if (imageFiles.length > 0) {
-                setIsUploadingImages(true)
-                try {
-                    await reportsApi.uploadImages(newReport.id, imageFiles)
-                } catch (error) {
-                    handleErrorSilently(error, 'useCreateReportForm.uploadImages')
-                    toast.warning('Reporte creado pero falló la subida de imágenes.')
-                } finally {
-                    setIsUploadingImages(false)
-                }
+                // We fire and forget this, but handle errors gracefully
+                reportsApi.uploadImages(newReport.id, imageFiles)
+                    .then(() => {
+                        // Refresh the list cache in the background since images are now available
+                        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+                    })
+                    .catch((error) => {
+                        handleErrorSilently(error, 'useCreateReportForm.uploadImages.bg')
+                        toast.warning('Ocurrió un error al subir las imágenes, pero tu reporte se guardó.')
+                    })
             }
 
-            triggerBadgeCheck(newReport.newBadges)
-            navigate('/reportes')
-            toast.success('Reporte creado exitosamente')
-
         } catch (error) {
-            // Handled by hook
+            handleErrorSilently(error, 'useCreateReportForm.submit')
+            // useCreateReportMutation's error state will also be updated
         }
     })
 
@@ -225,7 +231,7 @@ export function useCreateReportForm() {
         form,
         imageFiles,
         imagePreviews,
-        isSubmitting: isSubmittingReport || isUploadingImages,
+        isSubmitting: isSubmittingReport,
         isCompressing,
         compressionProgress,
         submitError,

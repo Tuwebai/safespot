@@ -1,6 +1,8 @@
+import { memo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Calendar, GitBranch, MessageCircle } from 'lucide-react'
 import type { Report } from '@/lib/api'
+import { formatReportDate } from '@/lib/dateUtils'
 
 // ============================================
 // TYPES
@@ -15,7 +17,7 @@ interface ReportMetaProps {
 // COMPONENT
 // ============================================
 
-export function ReportMeta({ report, commentsCount }: ReportMetaProps) {
+export const ReportMeta = memo(function ReportMeta({ report, commentsCount }: ReportMetaProps) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {/* Date Card */}
@@ -25,13 +27,7 @@ export function ReportMeta({ report, commentsCount }: ReportMetaProps) {
                     <div>
                         <div className="text-sm text-muted-foreground mb-1">Fecha del incidente</div>
                         <div className="font-medium text-foreground">
-                            {new Date(report.incident_date || report.created_at).toLocaleDateString('es-AR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            })}
+                            {formatReportDate(report.incident_date || report.created_at)}
                         </div>
                     </div>
                 </div>
@@ -60,4 +56,4 @@ export function ReportMeta({ report, commentsCount }: ReportMetaProps) {
             </Card>
         </div>
     )
-}
+})
