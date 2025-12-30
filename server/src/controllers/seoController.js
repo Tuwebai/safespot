@@ -66,18 +66,15 @@ export const getReportPreview = async (req, res) => {
       }
     }
 
-    // Image logic: first image or default
-    const ogImage = images.length > 0 ? images[0] : `${frontendUrl}/og/default.png`;
+    // Lógica de imagen: primera foto o fallback estático
+    const ogImage = images.length > 0 ? images[0] : `${frontendUrl}/og-default.png`;
 
     const humanDate = formatHumanDate(report.created_at);
     const location = report.zone || report.address || 'Ubicación desconocida';
 
-    // og:title -> "Robo de Bicicleta – SafeSpot"
-    const ogTitle = escapeHtml(`Robo de ${report.category} – SafeSpot`);
-
-    // og:description -> "Av. Colón · Hoy 12:40"
-    const ogDescription = escapeHtml(`${location} · ${humanDate}`);
-
+    // Título y descripción formateados
+    const ogTitle = escapeHtml(`Robo de ${report.category}`);
+    const ogDescription = escapeHtml(`${location} · ${humanDate} · Ayudá compartiendo`);
     const targetUrl = `${frontendUrl}/reporte/${id}`;
 
     const html = `<!DOCTYPE html>
@@ -88,10 +85,11 @@ export const getReportPreview = async (req, res) => {
 
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="SafeSpot" />
-
   <meta property="og:title" content="${ogTitle}" />
   <meta property="og:description" content="${ogDescription}" />
   <meta property="og:image" content="${ogImage}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta property="og:url" content="${targetUrl}" />
 
   <meta name="twitter:card" content="summary_large_image" />

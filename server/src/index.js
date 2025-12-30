@@ -164,8 +164,8 @@ app.get('/', (req, res) => {
 // This backend is API-only. Any non-API route should return 404 JSON.
 // The frontend is served separately by Netlify.
 app.use((req, res, next) => {
-  // If it's an API route, let it fall through to the API 404 handler
-  if (req.path.startsWith('/api/')) {
+  // If it's an API or SEO route, let it fall through
+  if (req.path.startsWith('/api/') || req.path.startsWith('/seo/')) {
     return next();
   }
 
