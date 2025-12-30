@@ -1,0 +1,16 @@
+# ===============================================
+# SOCIAL SHARE PROXY (BOTS)
+# Redirect crawlers to the backend SEO endpoint
+# ===============================================
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=facebookexternalhit
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Twitterbot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=WhatsApp
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=LinkedInBot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Slackbot
+/reporte/*  https://safespot-api.onrender.com/seo/reporte/:splat  200!  User-Agent=Discordbot
+
+# ===============================================
+# SPA FALLBACK (HUMANS)
+# Serve index.html for all other routes
+# ===============================================
+/*          /index.html                                          200

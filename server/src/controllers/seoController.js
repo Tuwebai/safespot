@@ -18,9 +18,8 @@ const escapeHtml = (text) => {
  */
 const getStaticMapUrl = (lat, lng) => {
   // Using Yandex Static Maps 1.x (Free, no key required for basic usage)
-  // l=map (schema), z=15 (zoom), size=600,400, pt=lng,lat,pm2rdm (red pushpin)
-  // lang=es_ES for Spanish labels
-  return `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${lng},${lat}&z=15&l=map&size=600,400&pt=${lng},${lat},pm2rdm`;
+  // size 650x350 is optimal for social previews
+  return `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${lng},${lat}&z=15&l=map&size=650,350&pt=${lng},${lat},pm2rdm`;
 };
 
 /**
@@ -48,6 +47,10 @@ const formatHumanDate = (dateString) => {
  * Serve HTML with Open Graph tags for a specific report
  * RESPOND 200 OK (no redirect) with dynamic meta tags for crawlers.
  */
+/**
+ * Serve HTML with Open Graph tags for a specific report
+ * RESPOND 200 OK (no redirect) with dynamic meta tags for crawlers.
+ */
 export const getReportPreview = async (req, res) => {
   try {
     const { id } = req.params;
@@ -67,7 +70,7 @@ export const getReportPreview = async (req, res) => {
 
     const report = result.rows[0];
 
-    // Normalizar imágenes
+    // Normalize images
     let images = [];
     if (report.image_urls) {
       if (Array.isArray(report.image_urls)) images = report.image_urls;
@@ -76,13 +79,13 @@ export const getReportPreview = async (req, res) => {
       }
     }
 
-    // Lógica de og:image (1200x630 para mejor compatibilidad)
+    // Smart Image Logic
     let ogImage = '';
     if (images.length > 0) {
+      // Use first real image
       ogImage = images[0];
     } else if (report.latitude && report.longitude) {
-      // Yandex Static Maps con tamaño 1200x600 (aprox a 1200x630)
-      ogImage = `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${report.longitude},${report.latitude}&z=15&l=map&size=600,300&pt=${report.longitude},${report.latitude},pm2rdm`;
+      ogImage = getStaticMapUrl(report.latitude, report.longitude);
     } else {
       ogImage = `${frontendUrl}/og-default.png`;
     }
@@ -93,9 +96,10 @@ export const getReportPreview = async (req, res) => {
     // og:title -> "Robo de Bicicleta"
     const ogTitle = escapeHtml(`Robo de ${report.category}`);
 
-    // og:description -> "Av. Colón, Córdoba · Hoy 12:40 👉 Ayudá compartiendo este reporte"
+    // og:description -> "Av. Colón · Hoy 12:40 👉 Ayudá compartiendo este reporte"
     const ogDescription = escapeHtml(`${location} · ${humanDate} 👉 Ayudá compartiendo este reporte`);
 
+    // Actual target URL for humans
     const targetUrl = `${frontendUrl}/reporte/${id}`;
 
     const html = `<!DOCTYPE html>
@@ -104,11 +108,10 @@ export const getReportPreview = async (req, res) => {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <!-- SEO Meta Tags -->
   <title>${ogTitle}</title>
   <meta name="description" content="${ogDescription}">
 
-  <!-- Open Graph / Facebook -->
+  <!-- Open Graph / Meta -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="${ogTitle}" />
   <meta property="og:description" content="${ogDescription}" />
@@ -116,15 +119,18 @@ export const getReportPreview = async (req, res) => {
   <meta property="og:url" content="${targetUrl}" />
   <meta property="og:site_name" content="SafeSpot" />
 
-  <!-- Twitter -->
+  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${ogTitle}" />
   <meta name="twitter:description" content="${ogDescription}" />
   <meta name="twitter:image" content="${ogImage}" />
 
-  <!-- Meta Refresh & Redirect -->
+  <!-- Dynamic Redirect for Humans -->
   <meta http-equiv="refresh" content="0;url=${targetUrl}" />
-  
+  <script>
+    window.location.href = "${targetUrl}";
+  </script>
+
   <style>
     body { font-family: system-ui, sans-serif; background: #121212; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
   </style>
@@ -132,9 +138,6 @@ export const getReportPreview = async (req, res) => {
 <body>
   <div style="text-align: center;">
     <p>Redirigiendo a SafeSpot...</p>
-    <script>
-      window.location.href = "${targetUrl}";
-    </script>
   </div>
 </body>
 </html>`;

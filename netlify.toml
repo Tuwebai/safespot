@@ -5,22 +5,9 @@
   NODE_VERSION = "18"
   NPM_FLAGS = "--legacy-peer-deps"
 
-# ===============================================
-# SOCIAL SHARE PROXY
-# This rule proxies crawlers/users hitting /reporte/* 
-# to the backend so they get the Open Graph HTML.
-# The backend then redirects real users back to /reporte/:id (here).
-# ===============================================
-[[redirects]]
-  from = "/reporte/*"
-  to = "https://safespot-backend.onrender.com/reporte/:splat"
-  status = 200
-  force = true
+# NOTE: Social Share redirects are handled in public/_redirects
+# to support granular User-Agent detection.
 
-# ===============================================
-# SPA FALLBACK
-# For all other routes, serve index.html
-# ===============================================
 [[redirects]]
   from = "/*"
   to = "/index.html"
