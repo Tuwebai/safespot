@@ -91,6 +91,8 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom'],
+    // Exclude Leaflet from pre-bundling to prevent SSR/build issues
+    exclude: ['leaflet', 'react-leaflet', 'react-leaflet-cluster'],
   },
   server: {
     port: 5174,

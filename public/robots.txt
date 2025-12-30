@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /perfil
+Disallow: /gamificacion
+Disallow: /crear-reporte
+Disallow: /favoritos
+Disallow: /api/
+
+Sitemap: https://safespot.netlify.app/sitemap.xml

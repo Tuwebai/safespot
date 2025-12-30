@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
+import { generateSEOTags, generateReportStructuredData } from '@/lib/seo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportSkeleton } from '@/components/ui/skeletons'
@@ -168,15 +169,42 @@ export function DetalleReporte() {
   // MAIN RENDER
   // ============================================
 
-  // Metadata for SEO
+  // Extract data for SEO
   const category = report.category
   const zone = report.address || report.zone
-  const pageTitle = `${category} en ${zone} – SafeSpot`
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === report.status)?.label || report.status
   const formattedDate = new Date(report.created_at).toLocaleDateString()
-  const pageDescription = `Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`
-  const metaImageUrl = imageUrls.length > 0 ? imageUrls[0] : '/favicon.svg'
-  const currentUrl = window.location.href
+
+  // SEO Configuration
+  const seo = generateSEOTags({
+    title: `${category} en ${zone}`,
+    description: `Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`,
+    canonical: `https://safespot.netlify.app/reporte/${report.id}`,
+    image: imageUrls.length > 0 ? imageUrls[0] : undefined,
+    imageAlt: `Imagen del reporte: ${report.title}`,
+    type: 'article',
+    publishedTime: report.created_at,
+    modifiedTime: report.updated_at,
+    author: 'SafeSpot Community',
+    section: category,
+    tags: [category, zone, report.status]
+  })
+
+  // JSON-LD Structured Data
+  const structuredData = generateReportStructuredData({
+    id: report.id,
+    title: report.title,
+    description: report.description,
+    category: report.category,
+    created_at: report.created_at,
+    updated_at: report.updated_at,
+    image_urls: imageUrls,
+    latitude: report.latitude,
+    longitude: report.longitude,
+    locality: report.locality,
+    zone: report.zone,
+    province: report.province
+  })
 
   return (
     <ErrorBoundary
@@ -184,22 +212,42 @@ export function DetalleReporte() {
       onReset={() => reportDetail.refetch()}
     >
       <Helmet>
-        <title>{pageTitle}</title>
-        <meta name="description" content={pageDescription} />
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <link rel="canonical" href={seo.canonical} />
 
-        {/* Open Graph / Facebook */}
-        <meta property="og:type" content="article" />
-        <meta property="og:url" content={currentUrl} />
-        <meta property="og:title" content={pageTitle} />
-        <meta property="og:description" content={pageDescription} />
-        <meta property="og:image" content={metaImageUrl} />
+        {/* Open Graph */}
+        <meta property="og:type" content={seo.ogType} />
+        <meta property="og:url" content={seo.ogUrl} />
+        <meta property="og:title" content={seo.ogTitle} />
+        <meta property="og:description" content={seo.ogDescription} />
+        <meta property="og:image" content={seo.ogImage} />
+        <meta property="og:image:width" content={seo.ogImageWidth} />
+        <meta property="og:image:height" content={seo.ogImageHeight} />
+        <meta property="og:image:alt" content={seo.ogImageAlt} />
+        <meta property="og:site_name" content={seo.ogSiteName} />
+        <meta property="og:locale" content={seo.ogLocale} />
+
+        {/* Article-specific */}
+        {seo.articlePublishedTime && <meta property="article:published_time" content={seo.articlePublishedTime} />}
+        {seo.articleModifiedTime && <meta property="article:modified_time" content={seo.articleModifiedTime} />}
+        {seo.articleAuthor && <meta property="article:author" content={seo.articleAuthor} />}
+        {seo.articleSection && <meta property="article:section" content={seo.articleSection} />}
+        {seo.articleTags && seo.articleTags.map((tag, i) => (
+          <meta key={i} property="article:tag" content={tag} />
+        ))}
 
         {/* Twitter */}
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:url" content={currentUrl} />
-        <meta name="twitter:title" content={pageTitle} />
-        <meta name="twitter:description" content={pageDescription} />
-        <meta name="twitter:image" content={metaImageUrl} />
+        <meta name="twitter:card" content={seo.twitterCard} />
+        <meta name="twitter:title" content={seo.twitterTitle} />
+        <meta name="twitter:description" content={seo.twitterDescription} />
+        <meta name="twitter:image" content={seo.twitterImage} />
+        <meta name="twitter:image:alt" content={seo.twitterImageAlt} />
+
+        {/* JSON-LD Structured Data */}
+        <script type="application/ld+json">
+          {JSON.stringify(structuredData)}
+        </script>
       </Helmet>
 
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">

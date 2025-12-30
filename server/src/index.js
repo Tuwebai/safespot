@@ -118,6 +118,7 @@ import gamificationRouter from './routes/gamification.js';
 import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
+import sitemapRouter from './routes/sitemap.js';
 
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
@@ -129,6 +130,7 @@ app.use('/api/gamification', gamificationRouter);
 app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
+app.use('/api', sitemapRouter);
 
 // ============================================
 // ROOT ROUTE (Explicit API Status)

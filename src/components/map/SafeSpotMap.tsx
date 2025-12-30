@@ -11,15 +11,24 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
-// Fix for default marker icon issues
-import L from 'leaflet'
-// @ts-expect-error - Leaflet icon internal property deletion
-delete L.Icon.Default.prototype._getIconUrl
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: null,
-    iconUrl: null,
-    shadowUrl: null,
-})
+// Leaflet icon fix - MUST be inside useEffect to avoid SSR/build errors
+let leafletInitialized = false
+
+function initializeLeaflet() {
+    if (leafletInitialized || typeof window === 'undefined') return
+
+    // Dynamic import to ensure this only runs client-side
+    import('leaflet').then((L) => {
+        // @ts-expect-error - Leaflet icon internal property deletion
+        delete L.default.Icon.Default.prototype._getIconUrl
+        L.default.Icon.Default.mergeOptions({
+            iconRetinaUrl: null,
+            iconUrl: null,
+            shadowUrl: null,
+        })
+        leafletInitialized = true
+    })
+}
 
 const RecenterButton = () => {
     const map = useMap()
@@ -119,6 +128,11 @@ interface SafeSpotMapProps {
 }
 
 export function SafeSpotMap({ reports, className, onSearchArea, initialFocus, isSearching }: SafeSpotMapProps) {
+    // Initialize Leaflet only in browser
+    useEffect(() => {
+        initializeLeaflet()
+    }, [])
+
     const defaultCenter: [number, number] = initialFocus
         ? [initialFocus.lat, initialFocus.lng]
         : [-34.6037, -58.3816]

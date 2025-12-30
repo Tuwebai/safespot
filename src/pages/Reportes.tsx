@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
+import { generateSEOTags } from '@/lib/seo'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
@@ -219,18 +220,41 @@ export function Reportes() {
   }, [flaggingReportId, reports, toast, queryClient, filters])
 
 
+  const seo = generateSEOTags({
+    title: 'Lista de Reportes – SafeSpot',
+    description: 'Consulta todos los incidentes reportados por la comunidad. Filtra por categoría, zona y estado para encontrar reportes relevantes.',
+    canonical: 'https://safespot.netlify.app/reportes',
+    type: 'website'
+  })
+
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       <Helmet>
-        <title>Lista de Reportes – SafeSpot</title>
-        <meta name="description" content="Consulta la lista completa de incidentes reportados por la comunidad. Filtra por categoría y zona." />
-        <meta property="og:title" content="Lista de Reportes – SafeSpot" />
-        <meta property="og:description" content="Consulta la lista completa de incidentes reportados por la comunidad. Filtra por categoría y zona." />
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <link rel="canonical" href={seo.canonical} />
+
+        {/* Open Graph */}
+        <meta property="og:type" content={seo.ogType} />
+        <meta property="og:url" content={seo.ogUrl} />
+        <meta property="og:title" content={seo.ogTitle} />
+        <meta property="og:description" content={seo.ogDescription} />
+        <meta property="og:image" content={seo.ogImage} />
+        <meta property="og:image:width" content={seo.ogImageWidth} />
+        <meta property="og:image:height" content={seo.ogImageHeight} />
+        <meta property="og:site_name" content={seo.ogSiteName} />
+        <meta property="og:locale" content={seo.ogLocale} />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content={seo.twitterCard} />
+        <meta name="twitter:title" content={seo.twitterTitle} />
+        <meta name="twitter:description" content={seo.twitterDescription} />
+        <meta name="twitter:image" content={seo.twitterImage} />
       </Helmet>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2">
-          <span className="gradient-text">Reportes</span>
+          Lista de Reportes
         </h1>
         <p className="text-muted-foreground">
           Explora y filtra todos los reportes de la comunidad

@@ -6,6 +6,7 @@ import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
 import { Helmet } from 'react-helmet-async'
+import { generateSEOTags } from '@/lib/seo'
 
 export function Home() {
   // React Query - cached, deduplicated
@@ -84,14 +85,38 @@ export function Home() {
     count: getCategoryCount(cat.name)
   }))
 
+  const seo = generateSEOTags({
+    title: 'SafeSpot – Reportes Ciudadanos en Tiempo Real',
+    description: 'Reporta y visualiza incidentes de seguridad en tu zona. Mapa colaborativo de la comunidad para moverte más seguro por la ciudad.',
+    canonical: 'https://safespot.netlify.app/',
+    type: 'website'
+  })
+
   return (
     <div className="min-h-screen bg-dark-bg">
       <Helmet>
-        <title>SafeSpot – Mapa Colaborativo de Seguridad</title>
-        <meta name="description" content="Reporta y visualiza incidentes de seguridad en tu zona. SafeSpot te ayuda a moverte más seguro por la ciudad." />
-        <meta property="og:title" content="SafeSpot – Mapa Colaborativo de Seguridad" />
-        <meta property="og:description" content="Reporta y visualiza incidentes de seguridad en tu zona. SafeSpot te ayuda a moverte más seguro por la ciudad." />
-        <meta property="og:type" content="website" />
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <link rel="canonical" href={seo.canonical} />
+
+        {/* Open Graph */}
+        <meta property="og:type" content={seo.ogType} />
+        <meta property="og:url" content={seo.ogUrl} />
+        <meta property="og:title" content={seo.ogTitle} />
+        <meta property="og:description" content={seo.ogDescription} />
+        <meta property="og:image" content={seo.ogImage} />
+        <meta property="og:image:width" content={seo.ogImageWidth} />
+        <meta property="og:image:height" content={seo.ogImageHeight} />
+        <meta property="og:image:alt" content={seo.ogImageAlt} />
+        <meta property="og:site_name" content={seo.ogSiteName} />
+        <meta property="og:locale" content={seo.ogLocale} />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content={seo.twitterCard} />
+        <meta name="twitter:title" content={seo.twitterTitle} />
+        <meta name="twitter:description" content={seo.twitterDescription} />
+        <meta name="twitter:image" content={seo.twitterImage} />
+        <meta name="twitter:image:alt" content={seo.twitterImageAlt} />
       </Helmet>
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-dark-bg via-dark-card to-dark-bg py-24">
