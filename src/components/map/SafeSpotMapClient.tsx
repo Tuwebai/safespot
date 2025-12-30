@@ -11,15 +11,9 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
-// Fix for default marker icon issues
-import L from 'leaflet'
-// @ts-expect-error - Leaflet icon internal property deletion
-delete L.Icon.Default.prototype._getIconUrl
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: null,
-    iconUrl: null,
-    shadowUrl: null,
-})
+// CRITICAL: Leaflet initialization flag
+// This MUST be at module level to persist across component re-renders
+let leafletIconsInitialized = false
 
 const RecenterButton = () => {
     const map = useMap()
@@ -126,6 +120,26 @@ export function SafeSpotMapClient({ reports, className, onSearchArea, initialFoc
     const defaultZoom = initialFocus ? 16 : 13
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
     const highlightedId = useMapStore(s => s.highlightedReportId)
+
+    // CRITICAL: Initialize Leaflet icons ONLY in browser
+    // This prevents build-time execution that causes createContext errors
+    useEffect(() => {
+        if (leafletIconsInitialized || typeof window === 'undefined') return
+
+        // Dynamic import ensures this only runs client-side
+        import('leaflet').then((L) => {
+            // @ts-expect-error - Leaflet icon internal property deletion
+            delete L.default.Icon.Default.prototype._getIconUrl
+            L.default.Icon.Default.mergeOptions({
+                iconRetinaUrl: null,
+                iconUrl: null,
+                shadowUrl: null,
+            })
+            leafletIconsInitialized = true
+        }).catch((error) => {
+            console.error('Failed to initialize Leaflet icons:', error)
+        })
+    }, [])
 
     // Filter out reports with invalid coordinates to prevent crashes
     // Generic debug logging
