@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Button } from '@/components/ui/button'
-import { Edit, Trash2, Flag, Save, X } from 'lucide-react'
+import { Edit, Trash2, Flag, Save, X, FileText } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { cn } from '@/lib/utils'
@@ -55,6 +55,20 @@ export const ReportActions = memo(function ReportActions({
                 label="Guardar"
                 disabled={disabled}
             />
+
+            {/* Official PDF Export - Always visible */}
+            <Button
+                variant="outline"
+                size="sm"
+                className="border-dark-border text-foreground/80 hover:text-neon-green hover:border-neon-green/50 transition-colors"
+                onClick={() => {
+                    const baseUrl = import.meta.env.VITE_API_URL || 'https://safespot-6e51.onrender.com';
+                    window.open(`${baseUrl}/api/reports/${report.id}/export/pdf`, '_blank');
+                }}
+            >
+                <FileText className="h-4 w-4 mr-2" />
+                Descargar reporte
+            </Button>
 
             {/* Owner Actions */}
             {isOwner && (

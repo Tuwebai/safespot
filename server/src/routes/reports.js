@@ -10,6 +10,7 @@ import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
 import { reverseGeocode } from '../utils/georef.js';
+import { exportReportPDF } from '../controllers/exportController.js';
 
 const router = express.Router();
 
@@ -580,6 +581,12 @@ router.get('/', async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /api/reports/:id/export/pdf
+ * Export report as PDF
+ */
+router.get('/:id/export/pdf', exportReportPDF);
 
 /**
  * GET /api/reports/:id
