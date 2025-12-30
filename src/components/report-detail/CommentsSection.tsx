@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -6,7 +6,11 @@ import { CommentThread } from '@/components/comments/comment-thread'
 import { ThreadList } from '@/components/comments/thread-list'
 import { useCommentsManager } from '@/hooks/useCommentsManager'
 import { getAnonymousIdSafe } from '@/lib/identity'
+import { commentsApi } from '@/lib/api'
 import { MessageCircle } from 'lucide-react'
+import { SightingActions, SightingType } from './SightingActions'
+import { SightingFormDialog } from './SightingFormDialog'
+import { SightingCard, SightingData } from './SightingCard'
 
 // ============================================
 // TYPES
@@ -24,6 +28,8 @@ interface CommentsSectionProps {
 
 export function CommentsSection({ reportId, totalCount, onCommentCountChange }: CommentsSectionProps) {
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
+    const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
+    const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
 
     const commentsManager = useCommentsManager({
         reportId,
@@ -87,8 +93,68 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
         await flagComment(commentId)
     }, [flagComment])
 
+    // Handle sighting submission
+    const handleSightingSubmit = async (data: { zone: string, content: string, type: SightingType }) => {
+        try {
+            setIsSubmittingSighting(true)
+
+            // Construct JSON payload for sighting
+            const payload = JSON.stringify({
+                type: 'sighting',
+                subtype: data.type,
+                data: {
+                    zone: data.zone,
+                    text: data.content
+                }
+            })
+
+            await commentsApi.create({
+                report_id: reportId,
+                content: payload
+            })
+
+            // Refresh comments to show new sighting
+            await loadComments()
+            setSightingModalType(null)
+        } catch (error) {
+            console.error('Error submitting sighting:', error)
+            alert('Error al enviar el reporte. Por favor intentá de nuevo.')
+        } finally {
+            setIsSubmittingSighting(false)
+        }
+    }
+
     const currentAnonymousId = getAnonymousIdSafe()
     const isCommentMod = false // Prepared for future mod system
+
+    // Split comments into Sightings and Discussion
+    const { sightings, discussionComments } = useMemo(() => {
+        const sightingsList: SightingData[] = []
+        const discussionList: typeof comments = []
+
+        comments.forEach(c => {
+            try {
+                // Peek content to see if it looks like JSON
+                if (c.content.trim().startsWith('{')) {
+                    const parsed = JSON.parse(c.content)
+                    if (parsed.type === 'sighting') {
+                        sightingsList.push({
+                            id: c.id,
+                            subtype: parsed.subtype,
+                            data: parsed.data,
+                            created_at: c.created_at
+                        })
+                        return // Skip adding to discussion
+                    }
+                }
+            } catch {
+                // Not JSON, treat as normal comment
+            }
+            discussionList.push(c)
+        })
+
+        return { sightings: sightingsList, discussionComments: discussionList }
+    }, [comments])
 
     return (
         <div>
@@ -116,6 +182,14 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                 </div>
             </div>
 
+            {/* ACTIONABLE SIGHTINGS BUTTONS - Always visible in comments view */}
+            {viewMode === 'comments' && (
+                <SightingActions
+                    onActionClick={setSightingModalType}
+                    disabled={isSubmittingSighting}
+                />
+            )}
+
             {/* Add Comment Card - ONLY in comments view */}
             {viewMode === 'comments' && (
                 <Card className="mb-6 bg-dark-card border-dark-border">
@@ -139,11 +213,21 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
             {/* Comments List */}
             {viewMode === 'comments' && (
                 <div className="space-y-4">
+                    {/* Render Sightings First */}
+                    {sightings.length > 0 && (
+                        <div className="mb-6 space-y-3">
+                            {sightings.map(sighting => (
+                                <SightingCard key={sighting.id} sighting={sighting} />
+                            ))}
+                            <div className="border-b border-dark-border/50 my-4" />
+                        </div>
+                    )}
+
                     {isLoading && comments.length === 0 ? (
                         <div className="py-12 text-center text-muted-foreground">
                             Cargando comentarios...
                         </div>
-                    ) : comments.length === 0 ? (
+                    ) : discussionComments.length === 0 && sightings.length === 0 ? (
                         <Card className="bg-dark-card border-dark-border">
                             <CardContent className="py-12 text-center">
                                 <MessageCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -153,7 +237,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                         </Card>
                     ) : (
                         <>
-                            {comments
+                            {discussionComments
                                 .filter(c => !c.parent_id && !(c.is_thread === true))
                                 .map((comment) => {
                                     const isCommentOwner = comment.anonymous_id === currentAnonymousId
@@ -162,7 +246,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                                         <CommentThread
                                             key={comment.id}
                                             comment={comment}
-                                            allComments={comments}
+                                            allComments={comments} // Original comments array for threading context
                                             depth={0}
                                             maxDepth={5}
                                             onReply={startReply}
@@ -219,7 +303,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
             {/* Threads View */}
             {viewMode === 'threads' && (
                 <ThreadList
-                    comments={comments}
+                    comments={discussionComments} // Show only discussion comments in threads view too? Or all? "discussionComments" roughly corresponds to user threads.
                     onNewThread={startThread}
                     onReply={startReply}
                     onEdit={startEdit}
@@ -251,6 +335,15 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                     submittingReply={submitting === 'reply'}
                 />
             )}
+
+            {/* Sighting Form Modal */}
+            <SightingFormDialog
+                isOpen={!!sightingModalType}
+                type={sightingModalType}
+                onClose={() => setSightingModalType(null)}
+                onSubmit={handleSightingSubmit}
+                submitting={isSubmittingSighting}
+            />
         </div>
     )
 }

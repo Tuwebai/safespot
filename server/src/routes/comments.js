@@ -7,7 +7,7 @@ import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
-import { sanitizeContent, sanitizeText } from '../utils/sanitize.js';
+import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
 
 const router = express.Router();
 
@@ -224,23 +224,12 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
       }
     }
 
-    // Insert comment using Supabase client
-    // Si el contenido es JSON válido, no hacer trim (preservar estructura)
-    let content = req.body.content
-    try {
-      JSON.parse(content)
-      // Es JSON válido, no hacer trim
-    } catch {
-      // No es JSON, hacer trim como antes (compatibilidad con contenido legacy)
-      content = content.trim()
-    }
-
     // Context for logging suspicious content
     const sanitizeContext = { anonymousId, ip: req.ip };
 
     // SECURITY: Sanitize content BEFORE database insert
-    // This handles both plain text and JSON-structured comments
-    content = sanitizeContent(content, 'comment.content', sanitizeContext);
+    // This handles both plain text and JSON-structured comments (automatically detects JSON)
+    let content = sanitizeCommentContent(req.body.content, sanitizeContext);
 
     // CRITICAL: Validate required fields before INSERT
     if (!req.body.report_id || !anonymousId || !content) {
