@@ -118,13 +118,12 @@ import gamificationRouter from './routes/gamification.js';
 import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
-import seoRouter from './routes/seo.js';
 import sitemapRouter from './routes/sitemap.js';
 
 // SEO / Share Proxy Route
-// This route serves static HTML for social bots (Facebook, Twitter, WhatsApp)
-// It is mounted at /seo/reporte/:id to avoid conflict with frontend routes
-app.use('/seo/reporte', seoRouter);
+// Mounted directly for maximum reliability
+import { getReportPreview } from './controllers/seoController.js';
+app.get('/seo/reporte/:id', getReportPreview);
 
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
@@ -164,15 +163,19 @@ app.get('/', (req, res) => {
 // This backend is API-only. Any non-API route should return 404 JSON.
 // The frontend is served separately by Netlify.
 app.use((req, res, next) => {
-  // If it's an API or SEO route, let it fall through
+  // If we reach here, no route matched. 
+  // If it's an API or SEO route, send a specific 404.
   if (req.path.startsWith('/api/') || req.path.startsWith('/seo/')) {
-    return next();
+    return res.status(404).json({
+      error: 'Not Found',
+      message: `Endpoint ${req.method} ${req.originalUrl} not found in SafeSpot API`
+    });
   }
 
-  // For any other route, return 404 JSON
+  // Default fallback for everything else
   res.status(404).json({
     error: 'Not Found',
-    message: 'This is an API-only server. The frontend is served at https://safespot.netlify.app'
+    message: 'SafeSpot API - This is a backend-only server.'
   });
 });
 

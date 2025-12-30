@@ -38,6 +38,10 @@ const formatHumanDate = (dateString) => {
  * Serve HTML with Open Graph tags for a specific report
  * This is consumed ONLY by social bots via Netlify redirection.
  */
+/**
+ * Serve HTML with Open Graph tags for a specific report.
+ * Consumed by social bots to show rich previews.
+ */
 export const getReportPreview = async (req, res) => {
   try {
     const { id } = req.params;
@@ -57,7 +61,7 @@ export const getReportPreview = async (req, res) => {
 
     const report = result.rows[0];
 
-    // Normalize images
+    // Normalize images (parsed from JSON array)
     let images = [];
     if (report.image_urls) {
       if (Array.isArray(report.image_urls)) images = report.image_urls;
@@ -66,38 +70,46 @@ export const getReportPreview = async (req, res) => {
       }
     }
 
-    // Lógica de imagen: primera foto o fallback estático
+    // Image logic: First report image or professional fallback
     const ogImage = images.length > 0 ? images[0] : `${frontendUrl}/og-default.png`;
 
     const humanDate = formatHumanDate(report.created_at);
     const location = report.zone || report.address || 'Ubicación desconocida';
 
-    // Título y descripción formateados
+    // Data for Meta Tags
     const ogTitle = escapeHtml(`Robo de ${report.category}`);
     const ogDescription = escapeHtml(`${location} · ${humanDate} · Ayudá compartiendo`);
     const targetUrl = `${frontendUrl}/reporte/${id}`;
 
+    // Professional HTML response for crawlers
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <title>${ogTitle}</title>
 
+  <!-- Canonical and Dynamic Meta -->
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="SafeSpot" />
+  <meta property="og:url" content="${targetUrl}" />
   <meta property="og:title" content="${ogTitle}" />
   <meta property="og:description" content="${ogDescription}" />
   <meta property="og:image" content="${ogImage}" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:url" content="${targetUrl}" />
 
+  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${ogTitle}" />
   <meta name="twitter:description" content="${ogDescription}" />
   <meta name="twitter:image" content="${ogImage}" />
+
+  <!-- Meta Refresh for Browsers -->
+  <meta http-equiv="refresh" content="0; url=${targetUrl}">
 </head>
-<body></body>
+<body>
+  <p>Redirigiendo a <a href="${targetUrl}">SafeSpot</a>...</p>
+</body>
 </html>`;
 
     res.status(200).set('Content-Type', 'text/html').send(html);
