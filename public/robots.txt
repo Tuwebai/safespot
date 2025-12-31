@@ -6,4 +6,4 @@ Disallow: /crear-reporte
 Disallow: /favoritos
 Disallow: /api/
 
-Sitemap: https://safespot.netlify.app/sitemap.xml
+Sitemap: https://safespot.tuweb-ai.com/sitemap.xml

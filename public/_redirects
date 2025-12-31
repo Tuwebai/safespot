@@ -1,4 +1,15 @@
 # ===============================================
+# DOMAIN CONSOLIDATION (301 Redirect)
+# ===============================================
+https://safespot.netlify.app/*  https://safespot.tuweb-ai.com/:splat  301!
+https://safespotar.netlify.app/*  https://safespot.tuweb-ai.com/:splat  301!
+
+# ===============================================
+# SITEMAP REWRITE (Forced XML)
+# ===============================================
+/sitemap.xml  https://safespot-6e51.onrender.com/api/sitemap.xml  200!
+
+# ===============================================
 # SAFE-SPOT UNIVERSAL SEO REWRITE
 # Route ALL /reporte/* to the backend SEO generator
 # Humans are handled by Meta-Refresh in the HTML

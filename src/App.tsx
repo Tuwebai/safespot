@@ -14,6 +14,7 @@ const Explorar = lazyRetry(() => import('@/pages/Explorar').then(m => ({ default
 const Gamificacion = lazyRetry(() => import('@/pages/Gamificacion').then(m => ({ default: m.Gamificacion })), 'Gamificacion')
 const Perfil = lazyRetry(() => import('@/pages/Perfil').then(m => ({ default: m.Perfil })), 'Perfil')
 const MisFavoritos = lazyRetry(() => import('@/pages/MisFavoritos').then(m => ({ default: m.MisFavoritos })), 'MisFavoritos')
+const ZoneAlertsPage = lazyRetry(() => import('@/pages/ZoneAlertsPage').then(m => ({ default: m.ZoneAlertsPage })), 'ZoneAlertsPage')
 const TerminosPage = lazyRetry(() => import('@/pages/TerminosPage'), 'Terminos')
 const PrivacidadPage = lazyRetry(() => import('@/pages/PrivacidadPage'), 'Privacidad')
 const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), 'Notifications')
@@ -45,6 +46,7 @@ function App() {
               <Route path="/gamificacion" element={<Gamificacion />} />
               <Route path="/perfil" element={<Perfil />} />
               <Route path="/favoritos" element={<MisFavoritos />} />
+              <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
               <Route path="/notificaciones" element={<NotificationsPage />} />
               <Route path="/terminos" element={<TerminosPage />} />
               <Route path="/privacidad" element={<PrivacidadPage />} />

@@ -841,3 +841,23 @@ export const geocodeApi = {
     }
   }
 };
+
+// ============================================
+// SEO API
+// ============================================
+
+export interface ZoneSEO {
+  name: string;
+  slug: string;
+  report_count: number;
+  last_updated: string;
+}
+
+export const seoApi = {
+  /**
+   * Get all active zones for programmatic SEO
+   */
+  getZones: async (): Promise<ZoneSEO[]> => {
+    return apiRequest<ZoneSEO[]>('/seo/zones');
+  }
+};

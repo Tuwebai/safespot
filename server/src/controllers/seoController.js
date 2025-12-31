@@ -12,6 +12,22 @@ const escapeHtml = (text) => {
     .replace(/'/g, "&#039;");
 };
 
+/**
+ * Convert a string to a URL-friendly slug
+ */
+const slugify = (text) => {
+  if (!text) return '';
+  return text
+    .toString()
+    .toLowerCase()
+    .normalize('NFD') // Remove accents
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w-]+/g, '')
+    .replace(/--+/g, '-');
+};
+
 
 /**
  * Format date in a human-friendly way: "Hoy 12:40", "Ayer 15:00", or "20 de Oct 10:30"
@@ -117,5 +133,42 @@ export const getReportPreview = async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).send('Error interno');
+  }
+};
+
+/**
+ * Get all active zones from the reports table for programmatic SEO
+ */
+export const getZones = async (req, res) => {
+  try {
+    const db = DB.public();
+
+    // Aggregate unique zones and localities
+    // We prioritize 'zone' but fallback to 'address' components if needed.
+    // However, the schema has a 'zone' column which is populated during report creation.
+    const result = await db.query(`
+      SELECT 
+        zone as name,
+        COUNT(*) as report_count,
+        MAX(updated_at) as last_updated
+      FROM reports 
+      WHERE is_hidden = false AND zone IS NOT NULL AND zone != ''
+      GROUP BY zone
+      HAVING COUNT(*) > 0
+      ORDER BY report_count DESC
+    `);
+
+    const zones = result.rows.map(z => ({
+      name: z.name,
+      slug: slugify(z.name),
+      report_count: parseInt(z.report_count, 10),
+      last_updated: z.last_updated
+    }));
+
+    res.json({ success: true, data: zones });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error al obtener las zonas' });
   }
 };

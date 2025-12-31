@@ -50,7 +50,7 @@ export interface SEOTags {
     articleTags?: string[]
 }
 
-const BASE_URL = 'https://safespot.netlify.app'
+const BASE_URL = 'https://safespot.tuweb-ai.com'
 const DEFAULT_IMAGE = `${BASE_URL}/og-default.png`
 const SITE_NAME = 'SafeSpot'
 const LOCALE = 'es_AR'

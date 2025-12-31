@@ -1,7 +1,13 @@
 import express from 'express';
-import { getReportPreview } from '../controllers/seoController.js';
+import { getReportPreview, getZones } from '../controllers/seoController.js';
 
 const router = express.Router();
+
+/**
+ * GET /api/seo/zones
+ * List all active zones for sitemap and programmatic SEO
+ */
+router.get('/zones', getZones);
 
 /**
  * GET /reporte/:id
