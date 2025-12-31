@@ -40,13 +40,51 @@ export const useUserZones = () => {
                 body: JSON.stringify(zone)
             });
         },
-        onSuccess: () => {
+        onMutate: async (newZone) => {
+            // 1. Cancel any outgoing refetches to prevent overwrite
+            await queryClient.cancelQueries({ queryKey });
+
+            // 2. Snapshot the previous value
+            const previousZones = queryClient.getQueryData<UserZone[]>(queryKey);
+
+            // 3. Optimistically update to the new value
+            if (previousZones) {
+                queryClient.setQueryData<UserZone[]>(queryKey, (old) => {
+                    const existingIndex = old?.findIndex(z => z.type === newZone.type);
+                    const optimisticZone = {
+                        ...newZone,
+                        id: newZone.id || `temp-${Date.now()}`,
+                        created_at: new Date().toISOString()
+                    } as UserZone;
+
+                    if (existingIndex !== undefined && existingIndex !== -1 && old) {
+                        // Update existing
+                        const newZones = [...old];
+                        newZones[existingIndex] = { ...newZones[existingIndex], ...optimisticZone };
+                        return newZones;
+                    } else {
+                        // Add new
+                        return [...(old || []), optimisticZone];
+                    }
+                });
+            }
+
+            return { previousZones };
+        },
+        onError: (_err, _newZone, context) => {
+            // 4. Rollback to the previous value
+            if (context?.previousZones) {
+                queryClient.setQueryData(queryKey, context.previousZones);
+            }
+            error('Error al guardar la zona');
+        },
+        onSettled: () => {
+            // 5. Always refetch to sync with server
             queryClient.invalidateQueries({ queryKey });
+        },
+        onSuccess: () => {
             success('Zona guardada correctamente');
         },
-        onError: () => {
-            error('Error al guardar la zona');
-        }
     });
 
     const deleteZone = useMutation({
@@ -55,13 +93,28 @@ export const useUserZones = () => {
                 method: 'DELETE'
             });
         },
-        onSuccess: () => {
+        onMutate: async (type) => {
+            await queryClient.cancelQueries({ queryKey });
+            const previousZones = queryClient.getQueryData<UserZone[]>(queryKey);
+
+            queryClient.setQueryData<UserZone[]>(queryKey, (old) => {
+                return old?.filter(z => z.type !== type) || [];
+            });
+
+            return { previousZones };
+        },
+        onError: (_err, _type, context) => {
+            if (context?.previousZones) {
+                queryClient.setQueryData(queryKey, context.previousZones);
+            }
+            error('Error al eliminar la zona');
+        },
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey });
+        },
+        onSuccess: () => {
             success('Zona eliminada');
         },
-        onError: () => {
-            error('Error al eliminar la zona');
-        }
     });
 
     return {
