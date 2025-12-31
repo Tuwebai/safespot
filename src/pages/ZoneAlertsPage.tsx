@@ -56,7 +56,7 @@ export function ZoneAlertsPage() {
     const seo = generateSEOTags({
         title: `Alertas de Robos en ${zoneName} | SafeSpot`,
         description: `Consultá el mapa de alertas y últimos robos reportados en ${zoneName}. Información comunitaria en tiempo real para moverte más seguro por el barrio.`,
-        canonical: `https://safespot.netlify.app/alertas/${zoneSlug}`,
+        canonical: `https://safespot.tuweb-ai.com/alertas/${zoneSlug}`,
         type: 'website'
     })
 
@@ -64,6 +64,48 @@ export function ZoneAlertsPage() {
     const getContextualIntro = () => {
         if (reports.length === 0) return `Actualmente no hay reportes recientes en ${zoneName}. SafeSpot es una red ciudadana colaborativa: si sabés de algún incidente, tu reporte puede ayudar a otros vecinos.`
         return `Se han detectado ${reports.length} incidentes recientes en ${zoneName}. Esta información es generada de forma anónima y colaborativa por ciudadanos de la zona para fomentar la prevención comunitaria.`
+    }
+
+    // Senior SEO Content Generator (300-500 words)
+    const renderSEOContent = () => {
+        return (
+            <div className="prose prose-invert max-w-none mt-12 pt-12 border-t border-dark-border">
+                <h2 className="text-3xl font-bold mb-6 text-foreground">Estado actual de la seguridad en {zoneName}</h2>
+                <div className="space-y-4 text-foreground/70 leading-relaxed text-lg">
+                    <p>
+                        La seguridad en <strong>{zoneName}</strong> es una preocupación constante para quienes transitan y viven en el barrio. En SafeSpot, entendemos que la prevención comienza con la información compartida. Al monitorear en tiempo real las alertas de robos e incidentes en esta zona, nuestra comunidad logra identificar patrones que muchas veces pasan desapercibidos en los mapas tradicionales de criminalidad.
+                    </p>
+                    <p>
+                        Nuestra plataforma se nutre exclusivamente de <strong>reportes de ciudadanos reales</strong>. Esto significa que cada alerta que ves en esta página de {zoneName} es un testimonio directo de un vecino que busca proteger a los demás. Ya sea un robo de bicicleta, un incidente en la vía pública o el hallazgo de objetos perdidos, la transparencia comunitaria es nuestra mayor herramienta contra la inseguridad local.
+                    </p>
+
+                    <h3 className="text-2xl font-bold mt-8 mb-4 text-foreground">¿Por qué es importante reportar en SafeSpot?</h3>
+                    <p>
+                        Muchas veces, los incidentes menores en barrios como {zoneName} no llegan a las noticias locales o no son denunciados formalmente debido a la complejidad de los procesos burocráticos. Sin embargo, para un vecino que camina por las mismas calles todos los días, saber que hubo un aumento de arrebatos en una esquina específica puede ser la diferencia entre evitar un mal momento o no.
+                    </p>
+                    <p>
+                        Al usar SafeSpot en <strong>{zoneName}</strong>, estás contribuyendo a una construcción colectiva de seguridad. No solo se trata de alertar sobre el pasado, sino de prevenir incidentes futuros. Cuando reportás de manera anónima, ayudás a:
+                    </p>
+                    <ul className="list-disc pl-6 space-y-2 mt-4">
+                        <li>Alertar a otros vecinos en tiempo real mediante notificaciones directas.</li>
+                        <li>Identificar zonas "calientes" en {zoneName} que requieren mayor precaución o presencia.</li>
+                        <li>Fomentar una cultura de colaboración ciudadana sin depender exclusivamente de intermediarios.</li>
+                        <li>Facilitar la recuperación de objetos robados o perdidos mediante la red de avistamientos.</li>
+                    </ul>
+
+                    <h3 className="text-2xl font-bold mt-8 mb-4 text-foreground">Cómo colaborar con tus vecinos de {zoneName}</h3>
+                    <p>
+                        Si vivís o trabajás en {zoneName}, te invitamos a ser un miembro activo de esta red ciudadana. No necesitás crear una cuenta con tus datos personales; nuestro sistema está diseñado para ser <strong>100% anónimo</strong>, garantizando tu total privacidad y fomentando la honestidad en los reportes.
+                    </p>
+                    <p>
+                        Podes usar el mapa interactivo para visualizar lo que está sucediendo cerca de tu ubicación actual, compartir fotos detalladas del incidente si es seguro hacerlo, y comentar en los reportes de otros vecinos para aportar información valiosa. Juntos, estamos transformando el miedo en información procesable y la información en un barrio más seguro para todos en {zoneName}.
+                    </p>
+                    <p className="mt-6 italic">
+                        Recordá que SafeSpot es una herramienta complementaria. Siempre que sea posible, recomendamos realizar la denuncia oficial ante las autoridades pertinentes para que el incidente quede registrado en las estadísticas públicas de {zoneName}.
+                    </p>
+                </div>
+            </div>
+        )
     }
 
     if (loading) {
@@ -223,8 +265,11 @@ export function ZoneAlertsPage() {
                     )}
                 </div>
 
+                {/* Senior SEO Content Section */}
+                {renderSEOContent()}
+
                 {/* Local Footer / CTA */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 py-12 border-t border-dark-border">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 py-12 border-t border-dark-border mt-12">
                     <div className="space-y-4">
                         <h4 className="font-bold text-lg">¿Viste algo en {zoneName}?</h4>
                         <p className="text-sm text-foreground/60 leading-relaxed">
