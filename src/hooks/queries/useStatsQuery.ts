@@ -14,7 +14,9 @@ export function useGlobalStatsQuery() {
     return useQuery({
         queryKey: queryKeys.stats.global,
         queryFn: () => usersApi.getStats(),
-        staleTime: 60 * 1000, // 1 minute
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: false,
     })
 }
 
@@ -26,6 +28,8 @@ export function useCategoryStatsQuery() {
     return useQuery({
         queryKey: queryKeys.stats.categories,
         queryFn: () => usersApi.getCategoryStats(),
-        staleTime: 60 * 1000, // 1 minute
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: false,
     })
 }

@@ -16,30 +16,73 @@ export const NotificationService = {
 
         try {
             const db = DB.public();
+
+            // Query both general settings and specific user zones
             const recipients = await db.query(`
-                SELECT 
-                    ns.anonymous_id,
-                    ST_Distance(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
-                FROM notification_settings ns
-                WHERE 
-                    ns.proximity_alerts = true
-                    AND ns.anonymous_id != $3
-                    AND ns.notifications_today < ns.max_notifications_per_day
-                    AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, ns.radius_meters)
+                WITH user_matches AS (
+                    -- General proximity matched from settings
+                    SELECT 
+                        ns.anonymous_id,
+                        'proximity' as alert_type,
+                        NULL as zone_type,
+                        ST_Distance(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
+                    FROM notification_settings ns
+                    WHERE 
+                        ns.proximity_alerts = true
+                        AND ns.anonymous_id != $3
+                        AND ns.notifications_today < ns.max_notifications_per_day
+                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, ns.radius_meters)
+                    
+                    UNION ALL
+                    
+                    -- Priority zone matches
+                    SELECT 
+                        uz.anonymous_id,
+                        'zone' as alert_type,
+                        uz.type as zone_type,
+                        ST_Distance(uz.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
+                    FROM user_zones uz
+                    JOIN notification_settings ns ON ns.anonymous_id = uz.anonymous_id
+                    WHERE 
+                        uz.anonymous_id != $3
+                        AND ns.notifications_today < ns.max_notifications_per_day
+                        AND ST_DWithin(uz.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, uz.radius_meters)
+                )
+                SELECT DISTINCT ON (anonymous_id) 
+                    anonymous_id, alert_type, zone_type, distance
+                FROM user_matches
+                ORDER BY anonymous_id, 
+                         CASE 
+                            WHEN zone_type = 'home' THEN 1
+                            WHEN zone_type = 'work' THEN 2
+                            WHEN zone_type = 'frequent' THEN 3
+                            ELSE 4
+                         END ASC
             `, [report.latitude, report.longitude, report.anonymous_id]);
 
-            console.log(`[Notify] Found ${recipients.rows.length} recipients for proximity alert`);
+            console.log(`[Notify] Found ${recipients.rows.length} unique recipients for alert`);
 
             for (const recipient of recipients.rows) {
                 const distanceStr = recipient.distance < 1000
                     ? `${Math.round(recipient.distance)}m`
                     : `${(recipient.distance / 1000).toFixed(1)}km`;
 
+                // Handle custom messaging based on zone
+                let title = '⚠️ Nuevo reporte cerca tuyo';
+                let message = `Se reportó ${report.category} a ${distanceStr}.`;
+
+                if (recipient.alert_type === 'zone') {
+                    const zoneEmojis = { home: '🏠 Casa', work: '💼 Trabajo', frequent: '📍 Zona frecuente' };
+                    const zoneLabel = zoneEmojis[recipient.zone_type] || 'tu zona configurada';
+                    title = `🚨 Reporte en tu ${zoneLabel}`;
+                    message = `Se reportó ${report.category} a ${distanceStr} de tu ${zoneLabel.split(' ')[1]}.`;
+                }
+
                 await this.createNotification({
                     anonymous_id: recipient.anonymous_id,
-                    type: 'proximity',
-                    title: '⚠️ Nuevo reporte cerca tuyo',
-                    message: `Se reportó ${report.category} a ${distanceStr}.`,
+                    type: recipient.alert_type,
+                    title,
+                    message,
                     entity_type: 'report',
                     entity_id: report.id,
                     report_id: report.id

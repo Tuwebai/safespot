@@ -1,16 +1,15 @@
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { reportsApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast'
 import type { Report } from '@/lib/api'
 import { MapLayout } from '@/layouts/MapLayout'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { List, Search } from 'lucide-react'
+import { List } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
-// Leaflet requires window/document and will crash if executed during build
 const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
 
 // Loading fallback for map
@@ -24,16 +23,17 @@ const MapLoadingFallback = () => (
 )
 
 export function Explorar() {
-  const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
+  const activateZoneType = (location.state as any)?.activateZoneType as any
   const [searchParams] = useSearchParams()
   const setShowSearchAreaButton = useMapStore(s => s.setShowSearchAreaButton)
   const mapBounds = useMapStore(s => s.mapBounds)
   const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
-  const [reports, setReports] = useState<Report[]>([])
-  const [isSearching, setIsSearching] = useState(false)
+
+  const [boundsSearchEnabled, setBoundsSearchEnabled] = useState(false)
 
   // Sync URL -> Store
   useEffect(() => {
@@ -43,37 +43,27 @@ export function Explorar() {
     }
   }, [searchParams, setSelectedReportId])
 
-  const loadReports = useCallback(async () => {
-    try {
-      const data = await reportsApi.getAll()
-      setReports(data)
-    } catch (error) {
-      console.error('Error loading reports:', error)
-      toast.error('Error al cargar reportes')
-    }
-  }, [toast])
+  // MAIN REPORTS QUERY
+  const { data: reports = [], isFetching } = useQuery<Report[]>({
+    queryKey: ['reports', boundsSearchEnabled ? mapBounds : 'all'],
+    queryFn: async () => {
+      if (boundsSearchEnabled && mapBounds) {
+        const { north, south, east, west } = mapBounds
+        return reportsApi.getReportsInBounds(north, south, east, west)
+      }
+      return reportsApi.getAll()
+    },
+    staleTime: 30000, // 30 seconds fresh
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
 
-  useEffect(() => {
-    loadReports()
-  }, [loadReports])
-
-  const handleSearchInArea = useCallback(async () => {
+  const handleSearchInArea = useCallback(() => {
     if (!mapBounds) return
-
-    setIsSearching(true)
-    try {
-      const { north, south, east, west } = mapBounds
-      const data = await reportsApi.getReportsInBounds(north, south, east, west)
-      setReports(data)
-      setShowSearchAreaButton(false)
-      toast.success(`Se encontraron ${data.length} reportes en esta área`)
-    } catch (error) {
-      console.error('Error searching in area:', error)
-      toast.error('Error al buscar en el área')
-    } finally {
-      setIsSearching(false)
-    }
-  }, [mapBounds, setShowSearchAreaButton, toast])
+    setBoundsSearchEnabled(true)
+    setShowSearchAreaButton(false)
+    queryClient.invalidateQueries({ queryKey: ['reports'] })
+  }, [mapBounds, setShowSearchAreaButton, queryClient])
 
   return (
     <>
@@ -84,22 +74,14 @@ export function Explorar() {
 
       <MapLayout>
         <Suspense fallback={<MapLoadingFallback />}>
-          <SafeSpotMap reports={reports} initialFocus={initialFocus} />
+          <SafeSpotMap
+            reports={reports}
+            initialFocus={initialFocus}
+            activateZoneType={activateZoneType}
+            onSearchArea={handleSearchInArea}
+            isSearching={isFetching}
+          />
         </Suspense>
-
-        {/* Search in area button */}
-        {mapBounds && (
-          <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-[1000]">
-            <Button
-              onClick={handleSearchInArea}
-              disabled={isSearching}
-              className="bg-neon-green hover:bg-neon-green/90 text-dark-bg shadow-lg"
-            >
-              <Search className="h-5 w-5 mr-2" />
-              {isSearching ? 'Buscando...' : 'Buscar en esta área'}
-            </Button>
-          </div>
-        )}
 
         {/* Floating button to go to list view */}
         <div className="absolute bottom-6 left-6 z-[1000]">

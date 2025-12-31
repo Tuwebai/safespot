@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag } from 'lucide-react'
+import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { OptimizedImage } from '@/components/OptimizedImage'
@@ -372,25 +372,38 @@ export function Reportes() {
                     prefetchRoute="DetalleReporte"
                     className="block h-full no-underline"
                   >
-                    <Card className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden h-full flex flex-col">
-                      {/* 2.2 Image Section (Top) - Optimized */}
-                      {hasImage && (
-                        <div className="relative overflow-hidden rounded-t-lg">
-                          <OptimizedImage
-                            src={imageUrls[0]}
-                            alt={report.title}
-                            aspectRatio={16 / 9}
-                            priority={false}
-                            className="w-full"
-                          />
-                          {/* Overlays (Top Right) */}
-                          <div className="absolute top-2 right-2 flex gap-2 z-10">
-                            <Badge className={getStatusColor(report.status)}>
-                              {getStatusLabel(report.status)}
-                            </Badge>
-                          </div>
+                    <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
+                      {report.priority_zone && (
+                        <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                          report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
+                            'bg-amber-500 text-white'
+                          }`}>
+                          {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
+                          {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
+                          {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
+                          {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
                         </div>
                       )}
+
+                      <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                        {hasImage && (
+                          <div className="relative overflow-hidden">
+                            <OptimizedImage
+                              src={imageUrls[0]}
+                              alt={report.title}
+                              aspectRatio={16 / 9}
+                              priority={false}
+                              className="w-full"
+                            />
+                            {/* Overlays (Top Right) */}
+                            <div className="absolute top-2 right-2 flex gap-2 z-10">
+                              <Badge className={getStatusColor(report.status)}>
+                                {getStatusLabel(report.status)}
+                              </Badge>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* 2.3 Content Section (Bottom) */}
                       <CardContent className="p-6 flex-1 flex flex-col">

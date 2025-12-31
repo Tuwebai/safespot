@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { commentsApi, type CreateCommentData } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
-import { getSmartRefetchInterval } from '@/lib/queryClient'
 
 /**
  * Fetch comments for a report with cursor-based pagination
@@ -13,8 +12,9 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
         queryKey: queryKeys.comments.byReportPaginated(reportId ?? '', cursor),
         queryFn: () => commentsApi.getByReportId(reportId!, limit, cursor),
         enabled: !!reportId,
-        staleTime: 30 * 1000,
-        refetchInterval: getSmartRefetchInterval(30000), // 30s base, scales up on slow mobile
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: true, // Refetch only when user returns to the tab (efficient)
+        // refetchInterval: 30000, // Disabled to prevent main thread blocking on older devices
     })
 }
 
@@ -40,14 +40,15 @@ export function useCreateCommentMutation() {
                 ...newCommentData,
                 created_at: new Date().toISOString(),
                 is_optimistic: true, // Helper to show a "sending" state if needed
-                likes_count: 0,
-                is_liked: false,
+                upvotes_count: 0,
+                liked_by_me: false,
                 author: 'Tú', // Generic for instant feedback
+                anonymous_id: 'Tú', // Needed for getUserInitials
             }
 
-            // Update cache
-            queryClient.setQueryData(
-                queryKeys.comments.byReport(newCommentData.report_id),
+            // Update cache using fuzzy matching to catch all paginated queries
+            queryClient.setQueriesData(
+                { queryKey: queryKeys.comments.byReport(newCommentData.report_id) },
                 (old: any) => {
                     if (!old) return [optimisticComment]
                     if (Array.isArray(old)) return [optimisticComment, ...old]
@@ -62,6 +63,10 @@ export function useCreateCommentMutation() {
                         }
                         return { ...old, pages: newPages }
                     }
+                    // Handle PaginatedComments ({ comments: [] })
+                    if (old.comments && Array.isArray(old.comments)) {
+                        return { ...old, comments: [optimisticComment, ...old.comments] }
+                    }
                     return old
                 }
             )
@@ -70,8 +75,8 @@ export function useCreateCommentMutation() {
         },
         onError: (_, _variables, context) => {
             if (context?.reportId) {
-                queryClient.setQueryData(
-                    queryKeys.comments.byReport(context.reportId),
+                queryClient.setQueriesData(
+                    { queryKey: queryKeys.comments.byReport(context.reportId) },
                     context.previousComments
                 )
             }
@@ -147,8 +152,8 @@ export function useToggleLikeCommentMutation() {
                         if (c.id === id) {
                             return {
                                 ...c,
-                                is_liked: !isLiked,
-                                likes_count: (c.likes_count || 0) + (isLiked ? -1 : 1)
+                                liked_by_me: !isLiked,
+                                upvotes_count: (c.upvotes_count || 0) + (isLiked ? -1 : 1)
                             }
                         }
                         return c
@@ -163,6 +168,10 @@ export function useToggleLikeCommentMutation() {
                                 data: transform(page.data || [])
                             }))
                         }
+                    }
+                    // Handle PaginatedComments structure explicitly ({ comments: [...], nextCursor: ... })
+                    if (old.comments && Array.isArray(old.comments)) {
+                        return { ...old, comments: transform(old.comments) }
                     }
                     if (old.data && Array.isArray(old.data)) {
                         return { ...old, data: transform(old.data) }
@@ -184,8 +193,8 @@ export function useToggleLikeCommentMutation() {
                         if (c.id === context.id) {
                             return {
                                 ...c,
-                                is_liked: context.isLiked,
-                                likes_count: (c.likes_count || 0) + (context.isLiked ? 1 : -1)
+                                liked_by_me: context.isLiked,
+                                upvotes_count: (c.upvotes_count || 0) + (context.isLiked ? 1 : -1)
                             }
                         }
                         return c

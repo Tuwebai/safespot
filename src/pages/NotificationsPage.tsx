@@ -1,50 +1,25 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, Check, Clock, MessageCircle, Eye, Share2, AlertTriangle, ChevronRight, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { notificationsApi, Notification } from '@/lib/api';
+import { Notification } from '@/lib/api';
+import { useNotificationsQuery, useMarkNotificationReadMutation, useMarkAllNotificationsReadMutation } from '@/hooks/queries/useNotificationsQuery';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
 export default function NotificationsPage() {
-    const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
-
-    const loadNotifications = async () => {
-        try {
-            setLoading(true);
-            const data = await notificationsApi.getAll();
-            setNotifications(data);
-        } catch (err) {
-            console.error('Error loading notifications:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        loadNotifications();
-    }, []);
+    const { data: notifications = [], isLoading: loading } = useNotificationsQuery();
+    const markAsReadMutation = useMarkNotificationReadMutation();
+    const markAllReadMutation = useMarkAllNotificationsReadMutation();
 
     const handleMarkAsRead = async (id: string) => {
-        try {
-            await notificationsApi.markAsRead(id);
-            setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-        } catch (err) {
-            console.error('Error marking as read:', err);
-        }
+        markAsReadMutation.mutate(id);
     };
 
     const handleMarkAllAsRead = async () => {
-        try {
-            await notificationsApi.markAllAsRead();
-            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-        } catch (err) {
-            console.error('Error marking all as read:', err);
-        }
+        markAllReadMutation.mutate();
     };
 
     const handleNotificationClick = async (notif: Notification) => {

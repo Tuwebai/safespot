@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Report } from '@/lib/api'
+import type { Report, ZoneType } from '@/lib/api'
 
 interface SafeSpotMapProps {
     reports: Report[]
@@ -7,6 +7,7 @@ interface SafeSpotMapProps {
     onSearchArea?: () => void
     initialFocus?: { focusReportId: string, lat: number, lng: number } | null
     isSearching?: boolean
+    activateZoneType?: ZoneType | null
 }
 
 /**

@@ -11,7 +11,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type Report, type ReportFilters, type CreateReportData } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
-import { getSmartRefetchInterval } from '@/lib/queryClient'
 
 // ============================================
 // QUERIES (READ)
@@ -25,8 +24,9 @@ export function useReportsQuery(filters?: ReportFilters) {
     return useQuery({
         queryKey: queryKeys.reports.list(filters),
         queryFn: () => reportsApi.getAll(filters),
-        staleTime: 30 * 1000,
-        refetchInterval: getSmartRefetchInterval(60 * 1000), // 1 minute base for list
+        staleTime: 60 * 1000, // 1 minute staling
+        refetchOnWindowFocus: false,
+        retry: 1, // Minimize retries
     })
 }
 
@@ -40,7 +40,8 @@ export function useReportDetailQuery(reportId: string | undefined) {
         queryFn: () => reportsApi.getById(reportId!),
         enabled: !!reportId,
         staleTime: 60 * 1000,
-        refetchInterval: getSmartRefetchInterval(15000), // 15s base for detail (more critical)
+        refetchOnWindowFocus: false,
+        retry: 1,
     })
 }
 

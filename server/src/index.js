@@ -13,6 +13,7 @@ import usersRouter from './routes/users.js';
 import favoritesRouter from './routes/favorites.js';
 import badgesRouter from './routes/badges.js';
 import gamificationRouter from './routes/gamification.js';
+import userZonesRouter from './routes/userZones.js';
 import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
@@ -138,6 +139,7 @@ app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/user-zones', userZonesRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency
 

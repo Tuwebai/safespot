@@ -193,11 +193,24 @@ router.get('/', async (req, res) => {
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
-            r.threads_count
+            r.threads_count,
+            uz.type as priority_zone
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8
           LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8
+          LEFT JOIN LATERAL (
+            SELECT type 
+            FROM user_zones 
+            WHERE anonymous_id = $8 
+            AND ST_DWithin(r.location, location, radius_meters)
+            ORDER BY CASE 
+                WHEN type = 'home' THEN 1
+                WHEN type = 'work' THEN 2
+                WHEN type = 'frequent' THEN 3
+            END ASC
+            LIMIT 1
+          ) uz ON true
           WHERE 
             ST_DWithin(r.location, ul.point, $3)
             AND r.location IS NOT NULL
@@ -210,7 +223,11 @@ router.get('/', async (req, res) => {
                 (ST_Distance(r.location, ul.point) = $4 AND r.created_at = $5 AND r.id < $6)
               )
             )
-          ORDER BY distance_meters ASC, r.created_at DESC, r.id DESC
+          ORDER BY 
+            (uz.type IS NOT NULL) DESC, 
+            distance_meters ASC, 
+            r.created_at DESC, 
+            r.id DESC
           LIMIT $7
         `;
 
@@ -473,12 +490,35 @@ router.get('/', async (req, res) => {
         SELECT 
           r.*,
           CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
-          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged
+          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
+          uz.type as priority_zone
         FROM reports r
         LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
         LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
+        LEFT JOIN LATERAL (
+          SELECT type 
+          FROM user_zones 
+          WHERE anonymous_id = $1 
+          AND ST_DWithin(r.location, location, radius_meters)
+          ORDER BY CASE 
+              WHEN type = 'home' THEN 1
+              WHEN type = 'work' THEN 2
+              WHEN type = 'frequent' THEN 3
+          END ASC
+          LIMIT 1
+        ) uz ON true
         ${whereClause}
-        ${orderByClause}
+        ORDER BY 
+          (uz.type IS NOT NULL) DESC, 
+          ${f.searchIdx ? `GREATEST(
+            similarity(r.title, $${f.searchIdx}),
+            similarity(r.description, $${f.searchIdx}),
+            similarity(r.category, $${f.searchIdx}),
+            similarity(r.zone, $${f.searchIdx}),
+            similarity(r.address, $${f.searchIdx})
+          ) DESC,` : ''}
+          r.created_at DESC, 
+          r.id DESC
         LIMIT $${pIdx}
       `;
       queryParams.push(fetchLimit);

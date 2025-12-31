@@ -1,29 +1,11 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell } from 'lucide-react';
-import { notificationsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useNotificationsQuery } from '@/hooks/queries/useNotificationsQuery';
 
 export function NotificationBell() {
-    const [unreadCount, setUnreadCount] = useState(0);
-
-    useEffect(() => {
-        const fetchNotifications = async () => {
-            try {
-                const notifications = await notificationsApi.getAll();
-                const unread = notifications.filter(n => !n.is_read).length;
-                setUnreadCount(unread);
-            } catch (err) {
-                console.error('Failed to fetch notifications:', err);
-            }
-        };
-
-        fetchNotifications();
-
-        // Refresh every 2 minutes
-        const interval = setInterval(fetchNotifications, 120000);
-        return () => clearInterval(interval);
-    }, []);
+    const { data: notifications = [] } = useNotificationsQuery();
+    const unreadCount = notifications.filter(n => !n.is_read).length;
 
     return (
         <Link to="/notificaciones" className="relative p-2 text-foreground/70 hover:text-neon-green transition-colors">

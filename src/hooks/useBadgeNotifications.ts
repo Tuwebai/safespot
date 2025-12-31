@@ -7,6 +7,8 @@
 
 import { useEffect, useRef, useCallback } from 'react'
 import { gamificationApi } from '@/lib/api'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/queryKeys'
 import { useToast } from '@/components/ui/toast'
 import { getGlobalAudioContext, isAudioEnabled } from './useAudioUnlock'
 import { invalidateCachePrefix } from '@/lib/cache'
@@ -124,6 +126,7 @@ function playSoundInternal(audioContext: AudioContext) {
  */
 export function useBadgeNotifications() {
   const toast = useToast()
+  const queryClient = useQueryClient()
   const notifiedBadgesRef = useRef<Set<string>>(getNotifiedBadges())
   const isCheckingRef = useRef(false)
 
@@ -162,7 +165,13 @@ export function useBadgeNotifications() {
     isCheckingRef.current = true
 
     try {
-      const summary = await gamificationApi.getSummary()
+      // Use queryClient to fetch summary, respecting existing cache to avoid 429s.
+      // If the page already loaded this data (e.g. GamificationPage), we use that.
+      const summary = await queryClient.fetchQuery({
+        queryKey: queryKeys.gamification.summary,
+        queryFn: () => gamificationApi.getSummary(),
+        staleTime: 60 * 1000, // Reuse data if < 1 min old
+      })
 
       // Combine explicit new badges with any earned badges not yet notified
       // This ensures we catch badges even if the "newBadges" flag was missed

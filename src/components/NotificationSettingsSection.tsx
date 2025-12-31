@@ -97,8 +97,8 @@ export function NotificationSettingsSection() {
 
                 try {
                     const { latitude, longitude } = pos.coords;
-                    let city = undefined;
-                    let province = undefined;
+                    let city: string | undefined = undefined;
+                    let province: string | undefined = undefined;
                     let formattedName = null;
 
                     // 1. Resolve address (ONLY when updating)

@@ -3,14 +3,14 @@
  * All requests include X-Anonymous-Id header
  */
 
-import { ensureAnonymousId, validateAnonymousId } from './identity';
+import { ensureAnonymousId } from './identity';
 import { getCached, setCache } from './cache';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-// Normalize: remove trailing slash if exists, then ensure it ends with /api
-const API_BASE_URL = (rawApiUrl.replace(/\/$/, '').endsWith('/api')
+// Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
+const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
   ? rawApiUrl.replace(/\/$/, '')
-  : `${rawApiUrl.replace(/\/$/, '')}/api`);
+  : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
 // ============================================
 // CACHE TTL CONSTANTS (in milliseconds)
@@ -22,26 +22,15 @@ export const CACHE_TTL = {
 } as const;
 
 /**
+ * Helper to pause execution
+ */
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * Get headers with anonymous_id
- * Uses safe version that never fails and auto-recovers
  */
 function getHeaders(): HeadersInit {
-  // Use ensureAnonymousId to guarantee we have a valid ID
-  // This will regenerate if corrupted and never throw
   const anonymousId = ensureAnonymousId();
-
-  // Validate before sending (should always pass, but double-check)
-  try {
-    validateAnonymousId(anonymousId);
-  } catch (error) {
-    // If validation fails, regenerate and try again
-    const newId = ensureAnonymousId();
-    return {
-      'Content-Type': 'application/json',
-      'X-Anonymous-Id': newId,
-    };
-  }
-
   return {
     'Content-Type': 'application/json',
     'X-Anonymous-Id': anonymousId,
@@ -49,25 +38,33 @@ function getHeaders(): HeadersInit {
 }
 
 /**
- * Helper to pause execution
- */
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
  * API Request wrapper with error handling, offline detection and retries
  */
-async function apiRequest<T>(
+export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
   retries = 3,
   backoff = 500
 ): Promise<T> {
   // 1. Check offline status immediately
-  if (!navigator.onLine) {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('Sin conexión. Revisá tu internet.');
   }
 
-  const url = `${API_BASE_URL}${endpoint}`;
+  // 2. Normalize endpoint: Remove any existing /api or api/ prefix to avoid duplication
+  let cleanEndpoint = endpoint;
+  if (cleanEndpoint.startsWith('/api/')) cleanEndpoint = cleanEndpoint.slice(4);
+  else if (cleanEndpoint.startsWith('api/')) cleanEndpoint = cleanEndpoint.slice(3);
+  else if (cleanEndpoint === '/api' || cleanEndpoint === 'api') cleanEndpoint = '';
+
+  // 3. Ensure cleanEndpoint starts with a leading slash and build final URL
+  const finalEndpoint = cleanEndpoint.startsWith('/') ? cleanEndpoint : `/${cleanEndpoint}`;
+  const url = `${API_BASE_URL}${finalEndpoint}`;
+
+  // Log in development to catch issues fast
+  if (import.meta.env.DEV) {
+    console.debug(`[API Request] ${options.method || 'GET'} ${url}`);
+  }
 
   try {
     const response = await fetch(url, {
@@ -77,6 +74,13 @@ async function apiRequest<T>(
         ...options.headers,
       },
     });
+
+    // Handle 429 Too Many Requests specifically
+    if (response.status === 429) {
+      const error = new Error('Demasiadas peticiones. Por favor, esperá un momento.') as any;
+      error.status = 429;
+      throw error;
+    }
 
     // Parse JSON safely
     const data = await response.json().catch(() => ({
@@ -156,6 +160,20 @@ async function apiRequestCached<T>(
 // REPORTS API
 // ============================================
 
+export type ZoneType = 'home' | 'work' | 'frequent';
+
+export interface UserZone {
+  id: string;
+  anonymous_id: string;
+  type: ZoneType;
+  lat: number;
+  lng: number;
+  radius_meters: number;
+  label?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Report {
   id: string;
   anonymous_id: string;
@@ -181,6 +199,7 @@ export interface Report {
   province?: string;  // e.g., "Buenos Aires", "Córdoba"
   locality?: string;  // e.g., "La Plata", "Córdoba Capital"
   department?: string; // e.g., "La Plata", "Capital"
+  priority_zone?: ZoneType;
   newBadges?: NewBadge[]; // Newly awarded badges in this action
 }
 
@@ -227,7 +246,7 @@ export const reportsApi = {
    * format: north, south, east, west
    */
   getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
-    return apiRequest<Report[]>(`/reports?bounds=${north},${south},${east},${west}`);
+    return apiRequest<Report[]>(`/reports/bounds?north=${north}&south=${south}&east=${east}&west=${west}`);
   },
 
   /**
@@ -346,14 +365,14 @@ export const reportsApi = {
    * Flag a report as inappropriate
    */
   flag: async (reportId: string, reason?: string): Promise<{ is_flagged: boolean; flag_id: string }> => {
-    const response = await apiRequest<{ data: { is_flagged: boolean; flag_id: string } }>(
+    const response = await apiRequest<{ is_flagged: boolean; flag_id: string }>(
       `/reports/${reportId}/flag`,
       {
         method: 'POST',
         body: JSON.stringify({ reason }),
       }
     );
-    return response.data;
+    return response;
   },
 };
 
@@ -372,7 +391,11 @@ export interface Comment {
   parent_id?: string; // Para comentarios anidados (replies)
   is_thread?: boolean; // Si es un hilo (thread) - debe ser top-level (parent_id null)
   liked_by_me?: boolean; // Si el usuario actual dio like
-  is_flagged?: boolean; // Si el usuario actual flaggeó este comentario
+  is_flagged?: boolean;
+  province?: string;
+  locality?: string;
+  department?: string;
+  priority_zone?: 'home' | 'work' | 'frequent';
   newBadges?: NewBadge[]; // Newly awarded badges in this action
 }
 
@@ -472,14 +495,14 @@ export const commentsApi = {
    * Flag a comment as inappropriate
    */
   flag: async (commentId: string, reason?: string): Promise<{ flagged: boolean; flag_id: string }> => {
-    const response = await apiRequest<{ data: { flagged: boolean; flag_id: string } }>(
+    const response = await apiRequest<{ flagged: boolean; flag_id: string }>(
       `/comments/${commentId}/flag`,
       {
         method: 'POST',
         body: JSON.stringify({ reason }),
       }
     );
-    return response.data;
+    return response;
   },
 };
 
@@ -642,16 +665,18 @@ export const badgesApi = {
    * Get all available badges (catalog)
    */
   getAll: async (): Promise<Badge[]> => {
-    const response = await apiRequest<{ data: Badge[] }>('/badges/all');
-    return response.data || [];
+    // apiRequest unwraps data automatically
+    const response = await apiRequest<Badge[]>('/badges/all');
+    return response || [];
   },
 
   /**
    * Get user's badge progress (earned + progress towards next)
    */
   getProgress: async (): Promise<BadgeProgress> => {
-    const response = await apiRequest<{ data: BadgeProgress }>('/badges/progress');
-    return response.data;
+    // apiRequest unwraps data automatically
+    const response = await apiRequest<BadgeProgress>('/badges/progress');
+    return response;
   },
 };
 
@@ -751,9 +776,9 @@ export const notificationsApi = {
    * Fetch user's notifications
    */
   getAll: async (): Promise<Notification[]> => {
-    const res = await apiRequest<{ success: boolean; data: Notification[] }>('/notifications');
-    // apiRequest already unwraps data.data, so res IS the array
-    return (res as any) || [];
+    const res = await apiRequest<Notification[]>('/notifications');
+    // apiRequest already unwraps data.data
+    return res || [];
   },
 
   /**
@@ -774,9 +799,9 @@ export const notificationsApi = {
    * Get user settings
    */
   getSettings: async (): Promise<NotificationSettings> => {
-    const res = await apiRequest<{ success: boolean; data: NotificationSettings }>('/notifications/settings');
-    // apiRequest already unwraps data.data, so res IS the settings object
-    return res as any;
+    const res = await apiRequest<NotificationSettings>('/notifications/settings');
+    // apiRequest already unwraps data.data
+    return res;
   },
 
   /**
@@ -787,7 +812,7 @@ export const notificationsApi = {
       method: 'PATCH',
       body: JSON.stringify(settings),
     });
-    return res.data;
+    return res as any;
   },
 };
 

@@ -54,6 +54,11 @@ router.get('/sitemap.xml', async (req, res) => {
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>${BASE_URL}/alertas</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>${BASE_URL}/explorar</loc>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>

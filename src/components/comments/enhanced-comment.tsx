@@ -16,8 +16,6 @@ import {
   Link as LinkIcon
 } from 'lucide-react'
 import type { Comment } from '@/lib/api'
-import { commentsApi } from '@/lib/api'
-import { handleErrorSilently } from '@/lib/errorHandler'
 
 interface EnhancedCommentProps {
   comment: Comment & {
@@ -54,9 +52,6 @@ export const EnhancedComment = memo(function EnhancedComment({
 }: EnhancedCommentProps) {
   const toast = useToast()
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
-  const [isLiking, setIsLiking] = useState(false)
-  const [localLiked, setLocalLiked] = useState(comment.liked_by_me ?? false)
-  const [localCount, setLocalCount] = useState(comment.upvotes_count ?? 0)
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', {
@@ -153,50 +148,9 @@ export const EnhancedComment = memo(function EnhancedComment({
     }
   }
 
-  const handleLike = async () => {
-    if (isLiking) return // Prevent double clicks
-
-    // Guardar estado previo para revertir en caso de error
-    const previousLiked = localLiked
-    const previousCount = localCount
-
-    // Optimistic UI: actualizar estado inmediatamente
-    const newLiked = !localLiked
-    const newCount = newLiked ? localCount + 1 : Math.max(0, localCount - 1)
-
-    setLocalLiked(newLiked)
-    setLocalCount(newCount)
-    setIsLiking(true)
-
-    try {
-      let result: { liked: boolean; upvotes_count: number } | undefined
-
-      if (previousLiked) {
-        // Unlike
-        result = await commentsApi.unlike(comment.id)
-      } else {
-        // Like
-        result = await commentsApi.like(comment.id)
-      }
-
-      // Validación defensiva: solo actualizar si result es válido
-      if (result && typeof result.liked === 'boolean' && typeof result.upvotes_count === 'number') {
-        setLocalLiked(result.liked)
-        setLocalCount(result.upvotes_count)
-        onLikeChange?.(comment.id, result.liked, result.upvotes_count)
-      } else {
-        // Si la respuesta es inválida, mantener el estado optimistic
-        // (asumimos que funcionó si no hay error)
-        onLikeChange?.(comment.id, newLiked, newCount)
-      }
-    } catch (error) {
-      // Revertir al estado previo en caso de error
-      handleErrorSilently(error, 'EnhancedComment.handleLike')
-      setLocalLiked(previousLiked)
-      setLocalCount(previousCount)
-    } finally {
-      setIsLiking(false)
-    }
+  const handleLike = () => {
+    // Delegate entirely to parent mutation (which handles optimistic UI)
+    onLikeChange?.(comment.id, !comment.liked_by_me, 0)
   }
 
   const isThread = comment.is_thread === true
@@ -424,20 +378,12 @@ export const EnhancedComment = memo(function EnhancedComment({
               variant="ghost"
               size="sm"
               onClick={handleLike}
-              disabled={isLiking}
-              className={localLiked ? "text-yellow-400 font-medium" : "text-foreground/60 hover:text-foreground"}
+              className={comment.liked_by_me ? "text-yellow-400 font-medium" : "text-foreground/60 hover:text-foreground"}
             >
-              {isLiking ? (
-                <>
-                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-1" />
-                  Cargando...
-                </>
-              ) : (
-                <>
-                  <ThumbsUp className={`h-4 w-4 mr-1 ${localLiked ? 'fill-current' : ''}`} />
-                  Me gusta {localCount > 0 && `(${localCount})`}
-                </>
-              )}
+              <>
+                <ThumbsUp className={`h-4 w-4 mr-1 ${comment.liked_by_me ? 'fill-current' : ''}`} />
+                Me gusta {comment.upvotes_count > 0 && `(${comment.upvotes_count})`}
+              </>
             </Button>
           </div>
 

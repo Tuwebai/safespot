@@ -12,6 +12,7 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { NotificationSettingsSection } from '@/components/NotificationSettingsSection'
+import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection'
 
 export function Perfil() {
   const toast = useToast()
@@ -275,6 +276,9 @@ export function Perfil() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Modo Alerta por Zonas */}
+          <AlertZoneStatusSection />
 
           {/* Notificaciones */}
           <NotificationSettingsSection />

@@ -14,8 +14,7 @@ export function useGamificationSummaryQuery() {
     return useQuery({
         queryKey: queryKeys.gamification.summary,
         queryFn: () => gamificationApi.getSummary(),
-        staleTime: 30 * 1000, // 30 seconds
-        // Hardening for Production:
+        staleTime: 60 * 1000, // 60 seconds strict
         retry: false, // Don't spam retries on 500/error
         refetchOnWindowFocus: false, // Don't refetch every time user switches tabs
     })

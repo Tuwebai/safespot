@@ -14,6 +14,8 @@ export function useProfileQuery() {
         queryKey: queryKeys.user.profile,
         queryFn: () => usersApi.getProfile(),
         staleTime: 60 * 1000, // 1 minute
+        refetchOnWindowFocus: false,
+        retry: false,
     })
 }
 
@@ -24,7 +26,9 @@ export function useFavoritesQuery() {
     return useQuery({
         queryKey: queryKeys.user.favorites,
         queryFn: () => favoritesApi.getAll(),
-        staleTime: 30 * 1000, // 30 seconds
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: false,
     })
 }
 

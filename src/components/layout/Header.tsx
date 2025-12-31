@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -8,6 +9,7 @@ import { useState } from 'react'
 
 export function Header() {
   const location = useLocation()
+  const queryClient = useQueryClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const isActive = (path: string) => location.pathname === path
@@ -39,7 +41,24 @@ export function Header() {
               const Icon = item.icon
               const active = isActive(item.path)
               return (
-                <Link key={item.path} to={item.path}>
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onMouseEnter={() => {
+                    // Prefetch data for "instant" feel
+                    if (item.path === '/reportes' || item.path === '/explorar') {
+                      queryClient.prefetchQuery({
+                        queryKey: ['reports', 'all'],
+                        queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
+                      })
+                    } else if (item.path === '/gamificacion') {
+                      queryClient.prefetchQuery({
+                        queryKey: ['badges', 'progress'],
+                        queryFn: () => import('@/lib/api').then(m => m.badgesApi.getProgress())
+                      })
+                    }
+                  }}
+                >
                   <button
                     className={cn(
                       'text-sm font-medium px-3 py-2 rounded-md transition-colors',
