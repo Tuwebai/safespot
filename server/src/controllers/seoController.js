@@ -198,9 +198,10 @@ export const getZonePreview = async (req, res) => {
     const zoneName = currentZone ? currentZone.name : slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const reportCount = currentZone ? parseInt(currentZone.report_count, 10) : 0;
 
-    // 2. Intelligent Indexation Control (Fixing Thin Content)
-    // If 0 reports, we emit noindex to avoid indexing empty hub pages.
-    const robots = reportCount > 0 ? 'index, follow' : 'noindex, follow';
+    // 2. Intelligent Indexation Control (Optimized for Editorial Value)
+    // Even if reports are 0, the hub contains high-value editorial content (400+ words)
+    // so it must be indexed to build site authority.
+    const robots = 'index, follow';
 
     // 3. Dynamic Meta Tags
     const ogTitle = escapeHtml(`Alertas de seguridad en ${zoneName} | SafeSpot`);

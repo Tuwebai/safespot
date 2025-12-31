@@ -139,12 +139,8 @@ export function ZoneAlertsPage() {
                 <meta name="description" content={seo.description} />
                 <link rel="canonical" href={seo.canonical} />
 
-                {/* Intelligent Indexation Control (Sync with Backend) */}
-                {reports.length === 0 ? (
-                    <meta name="robots" content="noindex, follow" />
-                ) : (
-                    <meta name="robots" content="index, follow" />
-                )}
+                {/* High-Authority Indexation (Editorial Content) */}
+                <meta name="robots" content="index, follow" />
 
                 {/* OG Tags */}
                 <meta property="og:title" content={seo.ogTitle} />
