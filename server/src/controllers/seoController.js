@@ -137,6 +137,82 @@ export const getReportPreview = async (req, res) => {
 };
 
 /**
+ * Serve HTML for the general /alertas landing page
+ */
+export const getGeneralAlertsPreview = async (req, res) => {
+  try {
+    const frontendUrl = 'https://safespot.tuweb-ai.com';
+    const ogTitle = escapeHtml('Alertas de Seguridad Ciudadana en Tiempo Real | SafeSpot');
+    const ogDescription = escapeHtml('Mapa interactivo de incidentes, robos y alertas ciudadanas. Colaborá con tu comunidad de forma anónima para construir un entorno más seguro.');
+
+    const targetUrl = `${frontendUrl}/reportes`;
+    const ogImage = `${frontendUrl}/og-default.png`;
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${ogTitle}</title>
+  <meta name="description" content="${ogDescription}" />
+  <link rel="canonical" href="${frontendUrl}/alertas" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SafeSpot" />
+  <meta property="og:url" content="${targetUrl}" />
+  <meta property="og:title" content="${ogTitle}" />
+  <meta property="og:description" content="${ogDescription}" />
+  <meta property="og:image" content="${ogImage}" />
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+    ${JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": ogTitle,
+      "description": ogDescription,
+      "publisher": {
+        "@type": "Organization",
+        "name": "SafeSpot",
+        "logo": {
+          "@type": "ImageObject",
+          "url": `${frontendUrl}/logo.png`
+        }
+      }
+    })}
+  </script>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px 20px;">
+  <header>
+    <h1 style="color: #1a1a1a; font-size: 2.5rem; margin-bottom: 20px;">${ogTitle}</h1>
+  </header>
+  <main>
+    <section>
+      <h2 style="color: #2c3e50; margin-top: 30px;">¿Qué es SafeSpot?</h2>
+      <p>SafeSpot es una plataforma de <strong>seguridad comunitaria</strong> diseñada para que los ciudadanos puedan reportar y visualizar incidentes en tiempo real de forma totalmente anónima. Nuestra misión es democratizar la información de seguridad para que cada vecino sepa qué está pasando en su calle.</p>
+      
+      <h2 style="color: #2c3e50; margin-top: 30px;">¿Cómo funcionan las alertas?</h2>
+      <p>Cada vez que un usuario reporta un incidente (un robo, una actividad sospechosa o una emergencia), el sistema procesa la ubicación y genera una alerta en el mapa. Los vecinos suscritos a esa zona reciben notificaciones inmediatas, permitiendo una prevención ciudadana efectiva basada en datos reales.</p>
+
+      <h2 style="color: #2c3e50; margin-top: 30px;">Impacto de la Participación Ciudadana</h2>
+      <p>La seguridad no depende solo de las autoridades, sino de la red que construimos entre todos. Al reportar, no solo registrás un hecho, sino que protegés al próximo vecino que camine por esa misma esquina. SafeSpot transforma el reporte individual en prevención colectiva.</p>
+    </section>
+    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #666;">
+      <p>Accedé a la aplicación completa en <a href="${frontendUrl}" style="color: #1a73e8; text-decoration: none; font-weight: bold;">safespot.tuweb-ai.com</a></p>
+    </footer>
+  </main>
+</body>
+</html>`;
+
+    res.status(200).set('Content-Type', 'text/html; charset=utf-8').send(html);
+  } catch (error) {
+    logError(error, req);
+    res.status(500).send('Error interno');
+  }
+};
+
+/**
  * Get all active zones from the reports table for programmatic SEO
  */
 export const getZones = async (req, res) => {
@@ -181,8 +257,6 @@ export const getZonePreview = async (req, res) => {
     const { slug } = req.params;
     const frontendUrl = 'https://safespot.tuweb-ai.com';
 
-    // 1. Find the zone name from the slug
-    // Since we don't have a zones table, we infer it from existing reports or slug transformation
     const db = DB.public();
     const zoneResult = await db.query(`
       SELECT zone as name, COUNT(*) as report_count
@@ -194,78 +268,24 @@ export const getZonePreview = async (req, res) => {
     const zones = zoneResult.rows;
     const currentZone = zones.find(z => slugify(z.name) === slug);
 
-    // Fallback if zone not found in DB yet
+    // Recovery zone name from slug if not found
     const zoneName = currentZone ? currentZone.name : slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const reportCount = currentZone ? parseInt(currentZone.report_count, 10) : 0;
 
-    // 2. Intelligent Indexation Control (Optimized for Editorial Value)
-    // Even if reports are 0, the hub contains high-value editorial content (400+ words)
-    // so it must be indexed to build site authority.
-    const robots = 'index, follow';
-
-    // 3. Dynamic Meta Tags
     const ogTitle = escapeHtml(`Alertas de seguridad en ${zoneName} | SafeSpot`);
-    // Dynamic description (140-160 chars)
-    const rawDesc = reportCount > 0
-      ? `Alertas de seguridad en ${zoneName}: ${reportCount} incidentes y reportes ciudadanos en tiempo real. Colaborá con tu barrio para estar más seguro en SafeSpot.`
-      : `Alertas de seguridad en ${zoneName}: robos, incidentes y reportes comunitarios anónimos. Uníte a la red de SafeSpot para proteger a tu barrio.`;
+    const rawDesc = `Alertas de seguridad en ${zoneName}: ${reportCount > 0 ? reportCount + ' incidentes y ' : ''}reportes ciudadanos en tiempo real. Colaborá con tu barrio para estar más seguro en SafeSpot.`;
     const ogDescription = escapeHtml(rawDesc.substring(0, 160));
 
     const targetUrl = `${frontendUrl}/alertas/${slug}`;
     const ogImage = `${frontendUrl}/og-default.png`;
 
-    // 4. JSON-LD Structured Data (BreadcrumbList & Place)
-    const jsonLd = {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "BreadcrumbList",
-          "itemListElement": [
-            {
-              "@type": "ListItem",
-              "position": 1,
-              "name": "Inicio",
-              "item": frontendUrl
-            },
-            {
-              "@type": "ListItem",
-              "position": 2,
-              "name": "Alertas",
-              "item": `${frontendUrl}/reportes`
-            },
-            {
-              "@type": "ListItem",
-              "position": 3,
-              "name": zoneName,
-              "item": targetUrl
-            }
-          ]
-        },
-        {
-          "@type": "Place",
-          "name": zoneName,
-          "address": {
-            "@type": "PostalAddress",
-            "addressLocality": zoneName,
-            "addressRegion": "Argentina"
-          },
-          "publicAccess": true
-        }
-      ]
-    };
-
-    // 5. Senior SEO Content Block (Shared with Frontend)
-    const seoContentHeader = `Estado actual de la seguridad en ${zoneName}`;
-    const seoContentBody = `La seguridad en ${zoneName} es una preocupación constante para quienes transitan y viven en el barrio. En SafeSpot, entendemos que la prevención comienza con la información compartida. Al monitorear en tiempo real las alertas de robos e incidentes en esta zona, nuestra comunidad identifica patrones críticos.`;
-
-    // Professional HTML response for crawlers
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${ogTitle}</title>
   <meta name="description" content="${ogDescription}" />
-  <meta name="robots" content="${robots}" />
   <link rel="canonical" href="${targetUrl}" />
 
   <!-- Open Graph -->
@@ -278,29 +298,59 @@ export const getZonePreview = async (req, res) => {
 
   <!-- Structured Data -->
   <script type="application/ld+json">
-    ${JSON.stringify(jsonLd)}
+    ${JSON.stringify({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Inicio", "item": frontendUrl },
+            { "@type": "ListItem", "position": 2, "name": "Alertas", "item": `${frontendUrl}/alertas` },
+            { "@type": "ListItem", "position": 3, "name": zoneName, "item": targetUrl }
+          ]
+        },
+        {
+          "@type": "Place",
+          "name": zoneName,
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": zoneName,
+            "addressRegion": "Argentina"
+          }
+        }
+      ]
+    })}
   </script>
-
-  <!-- Meta Refresh for Browsers -->
-  <meta http-equiv="refresh" content="0; url=${targetUrl}">
 </head>
-<body>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px 20px;">
   <header>
-    <h1>${ogTitle}</h1>
+    <h1 style="color: #1a1a1a; font-size: 2.2rem; margin-bottom: 20px;">${ogTitle}</h1>
   </header>
   <main>
     <section>
-      <h2>${seoContentHeader}</h2>
-      <p>${seoContentBody}</p>
-      <p>Se han detectado ${reportCount} incidentes en esta ubicación.</p>
+      <h2 style="color: #2c3e50; margin-top: 30px;">Estado actual de la seguridad en ${zoneName}</h2>
+      <p>La seguridad en <strong>${zoneName}</strong> es una preocupación constante para quienes transitan y viven en el barrio. En SafeSpot, entendemos que la prevención comienza con la información compartida. Al monitorear en tiempo real las alertas de robos e incidentes en esta zona, nuestra comunidad identifica patrones críticos que de otro modo pasarían desapercibidos.</p>
+      
+      <p>Nuestra plataforma se nutre exclusivamente de <strong>reportes de ciudadanos reales</strong> de ${zoneName}. Esto significa que cada alerta es un testimonio directo de un vecino que busca proteger a los demás. Ya sea un robo de bicicleta, un incidente en la vía pública o el hallazgo de objetos perdidos, la transparencia comunitaria es nuestra herramienta principal contra la inseguridad local.</p>
+      
+      <h3 style="color: #2c3e50; margin-top: 30px;">¿Por qué es importante reportar en SafeSpot?</h3>
+      <p>Muchas veces, los incidentes menores en barrios como ${zoneName} no llegan a las noticias locales o no son denunciados formalmente. Sin embargo, para un vecino que camina por las mismas calles todos los días, saber que hubo un aumento de arrebatos en una esquina específica puede ser la diferencia entre evitar un mal momento o no.</p>
+
+      <div style="background: #f8f9fa; border-left: 4px solid #1a73e8; padding: 20px; margin: 30px 0;">
+        <p style="margin: 0; font-weight: bold;">Actualmente se han registrado ${reportCount} incidentes reportados por la comunidad en ${zoneName}.</p>
+      </div>
+
+      <h3 style="color: #2c3e50; margin-top: 30px;">Participación Ciudadana en ${zoneName}</h3>
+      <p>Al unirte a SafeSpot desde ${zoneName}, no solo visualizas datos, sino que te conviertes en un nodo activo de prevención. Reportar de forma anónima protege tu identidad mientras fortaleces la red de seguridad de tus vecinos.</p>
     </section>
-    <p>Redirigiendo a <a href="${targetUrl}">SafeSpot App</a>...</p>
+    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #666;">
+      <p>Accedé al mapa interactivo de ${zoneName} en <a href="${targetUrl}" style="color: #1a73e8; text-decoration: none; font-weight: bold;">SafeSpot App</a></p>
+    </footer>
   </main>
 </body>
 </html>`;
 
-    res.status(200).set('Content-Type', 'text/html').send(html);
-
+    res.status(200).set('Content-Type', 'text/html; charset=utf-8').send(html);
   } catch (error) {
     logError(error, req);
     res.status(500).send('Error interno');

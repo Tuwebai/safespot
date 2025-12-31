@@ -8,6 +8,8 @@ https://safespotar.netlify.app/*  https://safespot.tuweb-ai.com/:splat  301!
 # SITEMAP REWRITE (Forced XML)
 # ===============================================
 /sitemap.xml  https://safespot-6e51.onrender.com/api/sitemap.xml  200!
+/alertas      https://safespot-6e51.onrender.com/seo/general            200!
+/alertas/     https://safespot-6e51.onrender.com/seo/general            200!
 /alertas/*    https://safespot-6e51.onrender.com/seo/zone/:splat        200!
 
 # ===============================================

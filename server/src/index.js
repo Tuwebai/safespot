@@ -17,8 +17,8 @@ import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
 import sitemapRouter from './routes/sitemap.js';
+import seoRouter from './routes/seo.js';
 import notificationsRouter from './routes/notifications.js';
-import { getReportPreview } from './controllers/seoController.js';
 
 // Load environment variables
 dotenv.config();
@@ -123,8 +123,8 @@ app.get('/health', (req, res) => {
 // API ROUTES
 // ============================================
 
-// SEO Path for Social Media Bots
-app.get('/seo/reporte/:id', getReportPreview);
+// SEO Routes (Shadow SSR for bots)
+app.use('/seo', seoRouter);
 
 // API Routes
 app.use('/api/reports', reportsRouter);
@@ -139,6 +139,7 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api', sitemapRouter);
+app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency
 
 // ============================================
 // ROOT ROUTE (Explicit API Status)
