@@ -61,6 +61,9 @@ export function useCreateReportMutation() {
         onSuccess: () => {
             // Invalidate all report lists to refetch with new report
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            // Refresh stats immediately
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },
     })
 }
@@ -91,16 +94,46 @@ export function useUpdateReportMutation() {
  * Delete a report
  * Removes from cache and invalidates lists
  */
+/**
+ * Delete a report
+ * Removes from cache instantly (Optimistic)
+ */
 export function useDeleteReportMutation() {
     const queryClient = useQueryClient()
 
     return useMutation({
         mutationFn: (id: string) => reportsApi.delete(id),
-        onSuccess: (_, id) => {
-            // Remove from detail cache
+        onMutate: async (id) => {
+            // 1. Cancel outgoing queries
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
+
+            // 2. Snapshot previous
+            const previousReports = queryClient.getQueriesData({ queryKey: ['reports', 'list'] })
+
+            // 3. Optimistic Update (Remove from all lists)
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old?.filter(r => r.id !== id)
+            )
+
+            // Remove detail immediately (optional, but good for focus)
             queryClient.removeQueries({ queryKey: queryKeys.reports.detail(id) })
-            // Invalidate lists
+
+            return { previousReports }
+        },
+        onError: (_err, _id, context) => {
+            // 4. Rollback
+            if (context?.previousReports) {
+                context.previousReports.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: () => {
+            // 5. Final Invalidation (Sync)
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },
     })
 }
