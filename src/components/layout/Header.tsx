@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { NotificationBell } from '@/components/NotificationBell'
 import { useState } from 'react'
 
 export function Header() {
@@ -53,10 +54,11 @@ export function Header() {
             })}
           </nav>
 
-          {/* Botón Crear Reporte Desktop */}
-          <div className="hidden md:flex">
+          {/* Notification Bell and Create Report Button */}
+          <div className="hidden md:flex items-center space-x-4">
+            <NotificationBell />
             <Link to="/crear-reporte">
-              <Button 
+              <Button
                 className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -66,7 +68,8 @@ export function Header() {
           </div>
 
           {/* Menú Móvil */}
-          <div className="flex md:hidden items-center space-x-2">
+          <div className="flex md:hidden items-center space-x-4">
+            <NotificationBell />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 text-foreground/70 hover:text-neon-green"
@@ -109,7 +112,7 @@ export function Header() {
                 onClick={() => setMobileMenuOpen(false)}
                 className="mt-4"
               >
-                <Button 
+                <Button
                   className="w-full neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg"
                 >
                   <Plus className="mr-2 h-4 w-4" />

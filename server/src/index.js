@@ -17,6 +17,7 @@ import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
 import pushRouter from './routes/push.js';
 import sitemapRouter from './routes/sitemap.js';
+import notificationsRouter from './routes/notifications.js';
 import { getReportPreview } from './controllers/seoController.js';
 
 // Load environment variables
@@ -136,6 +137,7 @@ app.use('/api/gamification', gamificationRouter);
 app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
+app.use('/api/notifications', notificationsRouter);
 app.use('/api', sitemapRouter);
 
 // ============================================

@@ -11,6 +11,7 @@ import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
+import { NotificationSettingsSection } from '@/components/NotificationSettingsSection'
 
 export function Perfil() {
   const toast = useToast()
@@ -274,6 +275,9 @@ export function Perfil() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Notificaciones */}
+          <NotificationSettingsSection />
 
           {/* CTA Crear Reporte */}
           <Card className="bg-dark-card border-dark-border border-neon-green/20">

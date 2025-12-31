@@ -16,6 +16,7 @@ const Perfil = lazyRetry(() => import('@/pages/Perfil').then(m => ({ default: m.
 const MisFavoritos = lazyRetry(() => import('@/pages/MisFavoritos').then(m => ({ default: m.MisFavoritos })), 'MisFavoritos')
 const TerminosPage = lazyRetry(() => import('@/pages/TerminosPage'), 'Terminos')
 const PrivacidadPage = lazyRetry(() => import('@/pages/PrivacidadPage'), 'Privacidad')
+const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), 'Notifications')
 
 function App() {
   return (
@@ -44,6 +45,7 @@ function App() {
               <Route path="/gamificacion" element={<Gamificacion />} />
               <Route path="/perfil" element={<Perfil />} />
               <Route path="/favoritos" element={<MisFavoritos />} />
+              <Route path="/notificaciones" element={<NotificationsPage />} />
               <Route path="/terminos" element={<TerminosPage />} />
               <Route path="/privacidad" element={<PrivacidadPage />} />
             </Routes>

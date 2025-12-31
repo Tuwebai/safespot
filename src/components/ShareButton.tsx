@@ -1,12 +1,7 @@
-/**
- * ShareButton Component
- * 
- * Allows users to share reports on social media.
- * Uses Web Share API on mobile, fallback menu on desktop.
- */
-
 import { useState, useCallback } from 'react';
 import { Share2, X as XIcon, MessageCircle, Facebook, Link2, Check } from 'lucide-react';
+import { reportsApi } from '@/lib/api';
+import { logError } from '@/lib/logger';
 
 interface ShareButtonProps {
     category: string;
@@ -36,6 +31,8 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                 text: shareText,
                 url: shareUrl
             });
+            // Register share on successful trigger
+            reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
         } catch (err) {
             // User cancelled or error - fail silently
             console.log('Share cancelled');
@@ -130,7 +127,10 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
-                                onClick={() => setShowMenu(false)}
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                }}
                             >
                                 <MessageCircle className="h-5 w-5 text-green-500" />
                                 <span>WhatsApp</span>
@@ -142,7 +142,10 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
-                                onClick={() => setShowMenu(false)}
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                }}
                             >
                                 <XIcon className="h-5 w-5" />
                                 <span>X (Twitter)</span>
@@ -154,7 +157,10 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
-                                onClick={() => setShowMenu(false)}
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                }}
                             >
                                 <Facebook className="h-5 w-5 text-blue-500" />
                                 <span>Facebook</span>

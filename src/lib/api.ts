@@ -287,6 +287,7 @@ export const reportsApi = {
   },
 
   /**
+  /**
    * Upload images for a report
    * Accepts FormData with image files
    */
@@ -317,7 +318,14 @@ export const reportsApi = {
       throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return data.data || data;
+    return data.data;
+  },
+
+  /**
+   * Register a share event
+   */
+  registerShare: async (id: string): Promise<void> => {
+    await apiRequest(`/reports/${id}/share`, { method: 'POST' });
   },
 
   /**
@@ -709,6 +717,80 @@ export const gamificationApi = {
 };
 
 // ============================================
+// NOTIFICATIONS API
+// ============================================
+
+export interface Notification {
+  id: string;
+  anonymous_id: string;
+  type: 'proximity' | 'activity' | 'similar';
+  title: string;
+  message: string;
+  entity_type: 'report' | 'comment' | 'share' | 'sighting';
+  entity_id: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationSettings {
+  proximity_alerts: boolean;
+  report_activity: boolean;
+  similar_reports: boolean;
+  radius_meters: number;
+  max_notifications_per_day: number;
+  last_known_lat?: number;
+  last_known_lng?: number;
+  updated_at?: string;
+  last_known_city?: string;
+  last_known_province?: string;
+}
+
+export const notificationsApi = {
+  /**
+   * Fetch user's notifications
+   */
+  getAll: async (): Promise<Notification[]> => {
+    const res = await apiRequest<{ success: boolean; data: Notification[] }>('/notifications');
+    // apiRequest already unwraps data.data, so res IS the array
+    return (res as any) || [];
+  },
+
+  /**
+   * Mark a notification as read
+   */
+  markAsRead: async (id: string): Promise<void> => {
+    await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
+  },
+
+  /**
+   * Mark all as read
+   */
+  markAllAsRead: async (): Promise<void> => {
+    await apiRequest('/notifications/read-all', { method: 'PATCH' });
+  },
+
+  /**
+   * Get user settings
+   */
+  getSettings: async (): Promise<NotificationSettings> => {
+    const res = await apiRequest<{ success: boolean; data: NotificationSettings }>('/notifications/settings');
+    // apiRequest already unwraps data.data, so res IS the settings object
+    return res as any;
+  },
+
+  /**
+   * Update user settings
+   */
+  updateSettings: async (settings: Partial<NotificationSettings>): Promise<NotificationSettings> => {
+    const res = await apiRequest<{ success: boolean; data: NotificationSettings }>('/notifications/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    });
+    return res.data;
+  },
+};
+
+// ============================================
 // FAVORITES API
 // ============================================
 
@@ -719,4 +801,42 @@ export const favoritesApi = {
   getAll: async (): Promise<Report[]> => {
     return apiRequest<Report[]>('/favorites');
   },
+};
+
+// ============================================
+// GEOCODE API
+// ============================================
+
+export interface GeocodeResponse {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address: {
+    city?: string;
+    town?: string;
+    village?: string;
+    neighborhood?: string;
+    state?: string;
+    province?: string;
+    country?: string;
+  };
+}
+
+export const geocodeApi = {
+  /**
+   * Reverse geocode coordinates to get a human-readable address
+   */
+  reverse: async (lat: number, lng: number): Promise<GeocodeResponse | null> => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: GeocodeResponse }>(
+        `/geocode/reverse?lat=${lat}&lon=${lng}`,
+        {},
+        1 // Only retry once as this is non-critical
+      );
+      // Ensure we return the inner data object
+      return (res as any) || null;
+    } catch (error) {
+      return null;
+    }
+  }
 };

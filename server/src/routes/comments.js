@@ -8,6 +8,7 @@ import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
+import { NotificationService } from '../utils/notificationService.js';
 
 const router = express.Router();
 
@@ -307,6 +308,18 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
       }
     } catch (err) {
       logError(err, req);
+    }
+
+    // NOTIFICATIONS: Notify report owner (Async)
+    try {
+      const isSighting = content.includes('"type":"sighting"');
+      const activityType = isSighting ? 'sighting' : 'comment';
+
+      NotificationService.notifyActivity(req.body.report_id, activityType, data.id, anonymousId).catch(err => {
+        logError(err, { context: 'notifyActivity.comment', reportId: req.body.report_id });
+      });
+    } catch (err) {
+      // Ignore notification errors to not break comment creation
     }
 
     res.status(201).json({
