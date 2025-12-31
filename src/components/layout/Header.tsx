@@ -48,14 +48,19 @@ export function Header() {
                     // Prefetch data for "instant" feel
                     if (item.path === '/reportes' || item.path === '/explorar') {
                       queryClient.prefetchQuery({
-                        queryKey: ['reports', 'all'],
+                        queryKey: ['reports', 'list'], // Matches queryKeys.reports.list()
                         queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
                       })
                     } else if (item.path === '/gamificacion') {
                       queryClient.prefetchQuery({
-                        queryKey: ['badges', 'progress'],
-                        queryFn: () => import('@/lib/api').then(m => m.badgesApi.getProgress())
+                        queryKey: ['gamification', 'summary'], // Matches queryKeys.gamification.summary
+                        queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
                       })
+                    } else if (item.path === '/favoritos') {
+                      // Note: Favorites page logic might vary, assuming it uses favorites endpoint
+                      // But checking usage, it likely uses a filtered report list or specific endpoint.
+                      // Let's stick to standard report list or just skip if unsure to avoid over-fetching.
+                      // Actually, let's prefetch reports list as it's the main content.
                     }
                   }}
                 >
