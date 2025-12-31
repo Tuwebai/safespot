@@ -3,6 +3,7 @@ import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart } from 'lucide
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
+import { BetaBadge } from '@/components/ui/BetaBadge'
 import { useState } from 'react'
 
 export function Header() {
@@ -29,6 +30,7 @@ export function Header() {
               <MapPin className="w-5 h-5 text-dark-bg" />
             </div>
             <div className="text-xl font-bold gradient-text">SafeSpot</div>
+            <BetaBadge className="ml-1" />
           </Link>
 
           {/* Navegación Desktop */}
