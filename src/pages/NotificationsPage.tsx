@@ -52,16 +52,21 @@ export default function NotificationsPage() {
             handleMarkAsRead(notif.id);
         }
 
-        if (notif.entity_type === 'report' || notif.entity_type === 'comment' || notif.entity_type === 'sighting') {
-            // For comments and sightings, we navigate to the report
-            // If entity_id is the report itself, perfect. If it's the comment, we'd ideally scroll to it.
-            // Notifications table stores report_id in entity_id for proximity/similar, and comment_id for activity.
-            // Wait, my service stores report_id for some and entity_id for others.
-            // I'll assume for now we always go to the report if we have a report_id.
-            // Actually, my service stores report_id in entity_id for most things.
-            navigate(`/reporte/${notif.entity_id}`);
-        } else if (notif.entity_type === 'share') {
-            navigate(`/reporte/${notif.entity_id}`);
+        // DEBUG: Trace notification click
+        console.log("[Notification Click]", {
+            notificationId: notif.id,
+            reportId: notif.report_id,
+            entityId: notif.entity_id,
+            type: notif.type,
+            entityType: notif.entity_type
+        });
+
+        const targetReportId = notif.report_id || (notif.entity_type === 'report' ? notif.entity_id : null);
+
+        if (targetReportId) {
+            navigate(`/reporte/${targetReportId}`);
+        } else {
+            console.error('[Notification] No valid report_id for navigation', notif);
         }
     };
 

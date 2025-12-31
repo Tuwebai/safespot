@@ -41,7 +41,8 @@ export const NotificationService = {
                     title: '⚠️ Nuevo reporte cerca tuyo',
                     message: `Se reportó ${report.category} a ${distanceStr}.`,
                     entity_type: 'report',
-                    entity_id: report.id
+                    entity_id: report.id,
+                    report_id: report.id
                 });
             }
         } catch (err) {
@@ -121,7 +122,8 @@ export const NotificationService = {
                 title,
                 message,
                 entity_type: entityType,
-                entity_id: entityId // Original entity (comment_id or report_id for shares)
+                entity_id: entityId, // Original entity (comment_id or report_id for shares)
+                report_id: reportId
             });
         } catch (err) {
             logError(err, { context: 'notifyActivity', reportId, type });
@@ -155,7 +157,8 @@ export const NotificationService = {
                     title: '📍 Reporte similar cerca tuyo',
                     message: `Se reportó un nuevo caso de "${report.category}" en tu zona.`,
                     entity_type: 'report',
-                    entity_id: report.id
+                    entity_id: report.id,
+                    report_id: report.id
                 });
             }
         } catch (err) {
@@ -166,16 +169,16 @@ export const NotificationService = {
     /**
      * Create the notification record and increment daily count
      */
-    async createNotification({ anonymous_id, type, title, message, entity_type, entity_id }) {
+    async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
         const db = DB.public();
         try {
             await db.query('BEGIN');
 
             // Insert notification
             await db.query(`
-                INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [anonymous_id, type, title, message, entity_type, entity_id]);
+                INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `, [anonymous_id, type, title, message, entity_type, entity_id, report_id]);
 
             // Increment count in settings
             await db.query(`

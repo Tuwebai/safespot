@@ -728,6 +728,7 @@ export interface Notification {
   message: string;
   entity_type: 'report' | 'comment' | 'share' | 'sighting';
   entity_id: string;
+  report_id?: string;
   is_read: boolean;
   created_at: string;
 }
