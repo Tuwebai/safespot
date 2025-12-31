@@ -30,6 +30,8 @@ router.get('/sitemap.xml', async (req, res) => {
       SELECT DISTINCT zone 
       FROM reports 
       WHERE is_hidden = false AND zone IS NOT NULL AND zone != ''
+      GROUP BY zone
+      HAVING COUNT(*) > 0
     `);
 
     const slugify = (text) => text.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-');

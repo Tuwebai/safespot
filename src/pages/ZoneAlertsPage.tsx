@@ -138,11 +138,60 @@ export function ZoneAlertsPage() {
                 <title>{seo.title}</title>
                 <meta name="description" content={seo.description} />
                 <link rel="canonical" href={seo.canonical} />
+
+                {/* Intelligent Indexation Control (Sync with Backend) */}
+                {reports.length === 0 ? (
+                    <meta name="robots" content="noindex, follow" />
+                ) : (
+                    <meta name="robots" content="index, follow" />
+                )}
+
                 {/* OG Tags */}
                 <meta property="og:title" content={seo.ogTitle} />
                 <meta property="og:description" content={seo.ogDescription} />
                 <meta property="og:url" content={seo.ogUrl} />
                 <meta property="og:type" content="website" />
+
+                {/* Structured Data (BreadcrumbList & Place) */}
+                <script type="application/ld+json">
+                    {JSON.stringify({
+                        "@context": "https://schema.org",
+                        "@graph": [
+                            {
+                                "@type": "BreadcrumbList",
+                                "itemListElement": [
+                                    {
+                                        "@type": "ListItem",
+                                        "position": 1,
+                                        "name": "Inicio",
+                                        "item": "https://safespot.tuweb-ai.com"
+                                    },
+                                    {
+                                        "@type": "ListItem",
+                                        "position": 2,
+                                        "name": "Alertas",
+                                        "item": "https://safespot.tuweb-ai.com/reportes"
+                                    },
+                                    {
+                                        "@type": "ListItem",
+                                        "position": 3,
+                                        "name": zoneName,
+                                        "item": seo.canonical
+                                    }
+                                ]
+                            },
+                            {
+                                "@type": "Place",
+                                "name": zoneName,
+                                "address": {
+                                    "@type": "PostalAddress",
+                                    "addressLocality": zoneName,
+                                    "addressRegion": "Argentina"
+                                }
+                            }
+                        ]
+                    })}
+                </script>
             </Helmet>
 
             <div className="container mx-auto max-w-7xl px-4 py-8">

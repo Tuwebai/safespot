@@ -1,5 +1,5 @@
 import express from 'express';
-import { getReportPreview, getZones } from '../controllers/seoController.js';
+import { getReportPreview, getZones, getZonePreview } from '../controllers/seoController.js';
 
 const router = express.Router();
 
@@ -14,5 +14,11 @@ router.get('/zones', getZones);
  * Serves static HTML with Open Graph tags for social sharing
  */
 router.get('/:id', getReportPreview);
+
+/**
+ * GET /zone/:slug
+ * Serves static HTML for neighborhood hubs
+ */
+router.get('/zone/:slug', getZonePreview);
 
 export default router;
