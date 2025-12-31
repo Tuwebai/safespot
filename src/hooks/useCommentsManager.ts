@@ -3,6 +3,7 @@ import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
+import { getPlainTextFromTipTap } from '@/lib/tiptap-content'
 import {
     useCommentsQuery,
     useCreateCommentMutation,
@@ -155,19 +156,52 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const flagMutation = useFlagCommentMutation()
 
     // ============================================
+    // UTILS
+    // ============================================
+
+    const normalizeCommentPayload = useCallback((input: unknown) => {
+        // Defensive: If input is a React event or Null, it's NOT a comment
+        if (!input || (typeof input === 'object' && input !== null && ('_reactName' in input || 'nativeEvent' in input))) {
+            return { plain: '', rich: '' }
+        }
+
+        const plain = getPlainTextFromTipTap(input)
+
+        let rich = ''
+        if (typeof input === 'string') {
+            rich = input.trim()
+        } else if (typeof input === 'object') {
+            rich = JSON.stringify(input)
+        }
+
+        return { plain, rich }
+    }, [])
+
+    // ============================================
     // COMMENT OPERATIONS
     // ============================================
 
-    const submitComment = useCallback(async () => {
-        if (!reportId || !state.commentText.trim() || state.submitting) return
+    const submitComment = useCallback(async (overridingContent?: unknown) => {
+        // Detect if overridingContent is a React event/SyntheticEvent
+        const isEvent = overridingContent && typeof overridingContent === 'object' && ('_reactName' in overridingContent || 'nativeEvent' in overridingContent)
 
-        const contentToSubmit = state.commentText.trim()
+        const textToUse = (overridingContent !== undefined && !isEvent) ? overridingContent : state.commentText
+        const { plain, rich } = normalizeCommentPayload(textToUse)
+
+        if (!reportId || !plain.trim() || state.submitting) {
+            // Only show toast if it's a manual submit (not an event) and content is actually empty
+            if (!plain.trim() && !state.submitting && textToUse && typeof textToUse !== 'object' && !('_reactName' in (textToUse as any))) {
+                toast.warning('El comentario no puede estar vacío')
+            }
+            return
+        }
+
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'comment' } })
 
         try {
             await createMutation.mutateAsync({
                 report_id: reportId,
-                content: contentToSubmit,
+                content: rich || plain, // Try rich first, fallback to plain
             })
 
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'comment' })
@@ -177,17 +211,24 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'useCommentsManager.submitComment')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.commentText, state.submitting, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.commentText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
 
     const submitReply = useCallback(async (parentId: string) => {
-        if (!reportId || !state.replyText.trim() || state.submitting) return
+        const { plain, rich } = normalizeCommentPayload(state.replyText)
+
+        if (!reportId || !plain.trim() || state.submitting) {
+            if (!plain.trim() && !state.submitting) {
+                toast.warning('La respuesta no puede estar vacía')
+            }
+            return
+        }
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'reply', id: parentId } })
 
         try {
             await createMutation.mutateAsync({
                 report_id: reportId,
-                content: state.replyText.trim(),
+                content: rich || plain,
                 parent_id: parentId,
             })
 
@@ -198,17 +239,24 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             handleErrorWithMessage(error, 'Error al responder', toast.error, 'useCommentsManager.submitReply')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.replyText, state.submitting, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.replyText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
 
     const submitThread = useCallback(async () => {
-        if (!reportId || !state.threadText.trim() || state.submitting) return
+        const { plain, rich } = normalizeCommentPayload(state.threadText)
+
+        if (!reportId || !plain.trim() || state.submitting) {
+            if (!plain.trim() && !state.submitting) {
+                toast.warning('El texto del hilo no puede estar vacío')
+            }
+            return
+        }
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'thread' } })
 
         try {
             await createMutation.mutateAsync({
                 report_id: reportId,
-                content: state.threadText.trim(),
+                content: rich || plain,
                 is_thread: true,
             })
 
@@ -220,24 +268,26 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.threadText, state.submitting, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.threadText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
 
     const submitEdit = useCallback(async (commentId: string) => {
-        if (!state.editText.trim() || state.submitting) return
+        const { plain, rich } = normalizeCommentPayload(state.editText)
+
+        if (!plain.trim() || state.submitting) return
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'edit', id: commentId } })
 
         try {
             await updateMutation.mutateAsync({
                 id: commentId,
-                content: state.editText.trim()
+                content: rich || plain
             })
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'edit' })
         } catch (error) {
             handleErrorWithMessage(error, 'Error al editar comentario', toast.error, 'useCommentsManager.submitEdit')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.editText, state.submitting, updateMutation, toast])
+    }, [state.editText, state.submitting, normalizeCommentPayload, updateMutation, toast])
 
     const deleteComment = useCallback(async (commentId: string) => {
         if (state.submitting || !reportId) return

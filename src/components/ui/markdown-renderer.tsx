@@ -63,19 +63,6 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       return `SAFESPOT_${tags.length - 1}`
     })
 
-    // Procesar ||spoiler||
-    processed = processed.replace(/\|\|([^|]+)\|\|/g, (match, value, index) => {
-      tags.push({ index: index + offset, type: 'spoiler', value })
-      offset += match.length - `SAFESPOT_${tags.length - 1}`.length
-      return `SAFESPOT_${tags.length - 1}`
-    })
-
-    // Procesar ||SENSIBLE: ...||
-    processed = processed.replace(/\|\|SENSIBLE:\s*([^|]+)\|\|/g, (match, value, index) => {
-      tags.push({ index: index + offset, type: 'sensible', value })
-      offset += match.length - `SAFESPOT_${tags.length - 1}`.length
-      return `SAFESPOT_${tags.length - 1}`
-    })
 
     return { processed, tags }
   }
@@ -98,27 +85,13 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
 
         const tag = tagMap.get(match[0])
         if (tag) {
-          if (tag.type === 'spoiler') {
-            parts.push(
-              <span key={match.index} className="inline-block px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs border border-yellow-500/30">
-                {tag.value}
-              </span>
-            )
-          } else if (tag.type === 'sensible') {
-            parts.push(
-              <span key={match.index} className="inline-block px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs border border-red-500/30">
-                [Información sensible oculta]
-              </span>
-            )
-          } else {
-            parts.push(
-              <SafeSpotTag
-                key={match.index}
-                type={tag.type as 'ubicacion' | 'objeto' | 'usuario'}
-                value={tag.value}
-              />
-            )
-          }
+          parts.push(
+            <SafeSpotTag
+              key={match.index}
+              type={tag.type as 'ubicacion' | 'objeto' | 'usuario'}
+              value={tag.value}
+            />
+          )
         }
 
         lastIndex = regex.lastIndex

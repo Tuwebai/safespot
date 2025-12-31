@@ -21,8 +21,6 @@ import {
   Hash,
   Type,
   AtSign,
-  AlertTriangle,
-  Lock,
   List,
   ListOrdered,
   Eye
@@ -298,37 +296,6 @@ export function RichTextEditor({
           >
             <AtSign className="h-4 w-4 text-purple-400" />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (!editor) return
-              const selectedText = editor.state.doc.textBetween(
-                editor.state.selection.from,
-                editor.state.selection.to
-              )
-              const spoilerText = selectedText || 'spoiler'
-              editor.chain().focus().insertContent(`||${spoilerText}||`).run()
-            }}
-            className="h-8 w-8 p-0"
-            title="Spoiler"
-          >
-            <AlertTriangle className="h-4 w-4 text-yellow-400" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (!editor) return
-              editor.chain().focus().insertContent('||SENSIBLE: ||').run()
-            }}
-            className="h-8 w-8 p-0"
-            title="Información Sensible"
-          >
-            <Lock className="h-4 w-4 text-red-400" />
-          </Button>
         </div>
 
         {/* Lists */}
@@ -411,7 +378,7 @@ export function RichTextEditor({
           {onSubmit && (
             <Button
               type="button"
-              onClick={onSubmit}
+              onClick={() => onSubmit?.()}
               disabled={disabled || !editor.getText().trim()}
               className="bg-neon-green text-dark-bg hover:bg-neon-green/90"
             >

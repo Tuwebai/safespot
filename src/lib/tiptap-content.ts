@@ -14,7 +14,7 @@ export function isValidJSON(value: string): boolean {
   if (!value || typeof value !== 'string') {
     return false
   }
-  
+
   try {
     JSON.parse(value)
     return true
@@ -30,9 +30,9 @@ function isValidTipTapDocument(doc: unknown): doc is JSONContent {
   if (!doc || typeof doc !== 'object' || doc === null) {
     return false
   }
-  
+
   const obj = doc as Record<string, unknown>
-  
+
   // TipTap documents have type: "doc" and content array
   return (
     obj.type === 'doc' &&
@@ -48,7 +48,7 @@ function isValidTipTapDocument(doc: unknown): doc is JSONContent {
  */
 function convertTextToTipTapJSON(text: string): JSONContent {
   const trimmedText = text.trim()
-  
+
   // If text is empty, return empty paragraph (no text node - TipTap doesn't allow empty text nodes)
   if (!trimmedText) {
     return {
@@ -60,7 +60,7 @@ function convertTextToTipTapJSON(text: string): JSONContent {
       ]
     }
   }
-  
+
   // If text has content, include text node
   return {
     type: 'doc',
@@ -86,7 +86,7 @@ function cleanEmptyTextNodes(content: unknown): unknown {
   if (!content || typeof content !== 'object' || content === null) {
     return content
   }
-  
+
   if (Array.isArray(content)) {
     return content
       .map(item => cleanEmptyTextNodes(item))
@@ -99,10 +99,10 @@ function cleanEmptyTextNodes(content: unknown): unknown {
         return true
       })
   }
-  
+
   const obj = content as Record<string, unknown>
   const cleaned: Record<string, unknown> = {}
-  
+
   for (const [key, value] of Object.entries(obj)) {
     if (key === 'content' && Array.isArray(value)) {
       // Clean content array
@@ -116,7 +116,7 @@ function cleanEmptyTextNodes(content: unknown): unknown {
           }
           return true
         })
-      
+
       // If content array is empty after cleaning, don't include it (paragraph can be empty)
       if (cleanedContent.length > 0) {
         cleaned[key] = cleanedContent
@@ -125,7 +125,7 @@ function cleanEmptyTextNodes(content: unknown): unknown {
       cleaned[key] = cleanEmptyTextNodes(value)
     }
   }
-  
+
   return cleaned
 }
 
@@ -148,7 +148,7 @@ export function normalizeTipTapContent(
   if (!content) {
     return convertTextToTipTapJSON('')
   }
-  
+
   // If already an object, validate and return if valid, otherwise convert
   if (typeof content !== 'string') {
     if (isValidTipTapDocument(content)) {
@@ -158,26 +158,26 @@ export function normalizeTipTapContent(
     // If it's an object but not valid TipTap, convert to string and process
     return convertTextToTipTapJSON(String(content))
   }
-  
+
   // Handle string content
   const contentString = content.trim()
-  
+
   // If empty string, return empty TipTap document
   if (!contentString) {
     return convertTextToTipTapJSON('')
   }
-  
+
   // Try to parse as JSON
   if (isValidJSON(contentString)) {
     try {
       const parsed = JSON.parse(contentString)
-      
+
       // Validate it's a TipTap document
       if (isValidTipTapDocument(parsed)) {
         // Clean empty text nodes before returning
         return cleanEmptyTextNodes(parsed) as Content
       }
-      
+
       // If it's valid JSON but not TipTap structure, treat as plain text
       return convertTextToTipTapJSON(contentString)
     } catch {
@@ -185,8 +185,65 @@ export function normalizeTipTapContent(
       return convertTextToTipTapJSON(contentString)
     }
   }
-  
+
   // Not valid JSON, treat as plain text
   return convertTextToTipTapJSON(contentString)
 }
+/**
+ * Extracts plain text from a TipTap JSON structure or string
+ * 
+ * @param content - JSON string or TipTap object
+ * @returns Plain text representation
+ */
+export function getPlainTextFromTipTap(content: string | unknown): string {
+  if (!content) return ''
 
+  // If it's a string, try to parse it as JSON
+  if (typeof content === 'string') {
+    const trimmed = content.trim()
+    if (!trimmed) return ''
+
+    if (isValidJSON(trimmed)) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        return getPlainTextFromObject(parsed)
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // If it's an object, process it
+  return getPlainTextFromObject(content)
+}
+
+/**
+ * Recursively extracts text from a TipTap object
+ */
+function getPlainTextFromObject(doc: unknown): string {
+  if (!doc || typeof doc !== 'object' || doc === null) {
+    return ''
+  }
+
+  const node = doc as Record<string, unknown>
+
+  if (node.type === 'text' && typeof node.text === 'string') {
+    return node.text
+  }
+
+  if (Array.isArray(node.content)) {
+    const text = node.content
+      .map(child => getPlainTextFromObject(child))
+      .join('')
+
+    // Add newlines for block elements
+    if (node.type === 'paragraph' || node.type === 'heading') {
+      return text + '\n'
+    }
+
+    return text
+  }
+
+  return ''
+}
