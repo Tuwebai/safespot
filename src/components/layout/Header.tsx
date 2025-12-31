@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
 import { BetaBadge } from '@/components/ui/BetaBadge'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export function Header() {
   const location = useLocation()
@@ -21,6 +21,22 @@ export function Header() {
     { path: '/explorar', label: 'Mapa', icon: MapPin },
     { path: '/gamificacion', label: 'Gamificación', icon: Trophy },
   ]
+
+  // Mobile Perf: Prefetch data when menu opens (user intent signal)
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      // Prefetch Reports
+      queryClient.prefetchQuery({
+        queryKey: ['reports', 'list'],
+        queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
+      })
+      // Prefetch Gamification
+      queryClient.prefetchQuery({
+        queryKey: ['gamification', 'summary'],
+        queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
+      })
+    }
+  }, [mobileMenuOpen, queryClient])
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-dark-border bg-dark-card">

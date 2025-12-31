@@ -96,14 +96,62 @@ export function useCreateCommentMutation() {
 /**
  * Update a comment
  */
+/**
+ * Update a comment
+ */
 export function useUpdateCommentMutation() {
     const queryClient = useQueryClient()
 
     return useMutation({
         mutationFn: ({ id, content }: { id: string; content: string }) =>
             commentsApi.update(id, content),
-        onSuccess: (updatedComment) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(updatedComment.report_id) })
+        onMutate: async ({ id, content }) => {
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
+            const previousComments = queryClient.getQueriesData({ queryKey: ['comments'] })
+
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old: any) => {
+                    if (!old) return old
+                    const transform = (comments: any[]) => comments.map((c: any) =>
+                        c.id === id ? { ...c, content, updated_at: new Date().toISOString() } : c
+                    )
+
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    if (old.comments && Array.isArray(old.comments)) {
+                        return { ...old, comments: transform(old.comments) }
+                    }
+                    if (old.data && Array.isArray(old.data)) {
+                        return { ...old, data: transform(old.data) }
+                    }
+                    return old
+                }
+            )
+
+            return { previousComments }
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousComments) {
+                context.previousComments.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: (updatedComment) => {
+            if (updatedComment?.report_id) {
+                queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(updatedComment.report_id) })
+            } else {
+                queryClient.invalidateQueries({ queryKey: ['comments'] })
+            }
         },
     })
 }
@@ -117,7 +165,46 @@ export function useDeleteCommentMutation() {
     return useMutation({
         mutationFn: ({ id }: { id: string; reportId: string }) =>
             commentsApi.delete(id),
-        onSuccess: (_, { reportId }) => {
+        onMutate: async ({ id }) => {
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
+            const previousComments = queryClient.getQueriesData({ queryKey: ['comments'] })
+
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old: any) => {
+                    if (!old) return old
+                    const transform = (comments: any[]) => comments.filter((c: any) => c.id !== id)
+
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    if (old.comments && Array.isArray(old.comments)) {
+                        return { ...old, comments: transform(old.comments) }
+                    }
+                    if (old.data && Array.isArray(old.data)) {
+                        return { ...old, data: transform(old.data) }
+                    }
+                    return old
+                }
+            )
+
+            return { previousComments }
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousComments) {
+                context.previousComments.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: (_, __, { reportId }) => {
             queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(reportId) })
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })

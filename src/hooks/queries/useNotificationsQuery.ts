@@ -21,11 +21,23 @@ export function useMarkNotificationReadMutation() {
 
     return useMutation({
         mutationFn: (id: string) => notificationsApi.markAsRead(id),
-        onSuccess: (_, id) => {
-            // Optimistically update cache
+        onMutate: async (id) => {
+            await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+            const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);
+
             queryClient.setQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY, (old) =>
                 old?.map(n => n.id === id ? { ...n, is_read: true } : n) || []
             );
+
+            return { previousNotifications };
+        },
+        onError: (_err, _id, context) => {
+            if (context?.previousNotifications) {
+                queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
         }
     });
 }
@@ -35,11 +47,23 @@ export function useMarkAllNotificationsReadMutation() {
 
     return useMutation({
         mutationFn: () => notificationsApi.markAllAsRead(),
-        onSuccess: () => {
-            // Optimistically update cache
+        onMutate: async () => {
+            await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+            const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);
+
             queryClient.setQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY, (old) =>
                 old?.map(n => ({ ...n, is_read: true })) || []
             );
+
+            return { previousNotifications };
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousNotifications) {
+                queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
         }
     });
 }
