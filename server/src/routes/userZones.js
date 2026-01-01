@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAnonymousId } from '../utils/validation.js';
+import { requireAnonymousId, validateCoordinates } from '../utils/validation.js';
 import { DB } from '../utils/db.js';
 import { logError } from '../utils/logger.js';
 
@@ -36,9 +36,18 @@ router.post('/', requireAnonymousId, async (req, res) => {
         const db = DB.withContext(anonymousId);
         const { type, lat, lng, radius_meters, label } = req.body;
 
-        if (!type || !lat || !lng) {
+        if (!type || lat === undefined || lng === undefined) {
             return res.status(400).json({ error: 'Type, lat, and lng are required' });
         }
+
+        try {
+            validateCoordinates(lat, lng);
+        } catch (error) {
+            return res.status(400).json({ error: 'Coordenadas inválidas', details: error.message });
+        }
+
+        const latitude = Number(lat);
+        const longitude = Number(lng);
 
         // Use upsert-like logic via raw query to handle the UNIQUE constraint on (anonymous_id, type)
         const result = await db.query(`
@@ -55,8 +64,8 @@ router.post('/', requireAnonymousId, async (req, res) => {
         `, [
             anonymousId,
             type,
-            parseFloat(lat),
-            parseFloat(lng),
+            latitude,
+            longitude,
             radius_meters || 500,
             label || null
         ]);

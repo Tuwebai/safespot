@@ -9,54 +9,70 @@ import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 /**
  * Calculate all metrics for a user in real-time (Strict action-based)
+ * Highly optimized for scalability using server-side SQL aggregations.
  * @param {string} anonymousId 
  */
 export async function calculateUserMetrics(anonymousId) {
-    const clientToUse = supabaseAdmin || supabase;
+    try {
+        // We use a single SQL query with CTEs to calculate everything in one trip
+        const result = await queryWithRLS(anonymousId, `
+            WITH 
+                counts AS (
+                    SELECT 
+                        (SELECT COUNT(*) FROM reports WHERE anonymous_id = $1) as reports_created,
+                        (SELECT COUNT(*) FROM comments WHERE anonymous_id = $1) as comments_created,
+                        (SELECT COUNT(*) FROM votes WHERE anonymous_id = $1) as votes_cast,
+                        (SELECT COUNT(*) FROM report_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as r_flags,
+                        (SELECT COUNT(*) FROM comment_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as c_flags
+                ),
+                likes AS (
+                    SELECT 
+                        COALESCE((SELECT SUM(upvotes_count) FROM reports WHERE anonymous_id = $1), 0) +
+                        COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as likes_received
+                ),
+                activity AS (
+                    -- Calculate unique days of contribution (reports or comments)
+                    SELECT COUNT(DISTINCT created_at::date) as activity_days
+                    FROM (
+                        SELECT created_at FROM reports WHERE anonymous_id = $1
+                        UNION ALL
+                        SELECT created_at FROM comments WHERE anonymous_id = $1
+                    ) combined_activity
+                ),
+                verified AS (
+                    -- Check if user has at least one report with significant engagement
+                    SELECT EXISTS (
+                        SELECT 1 FROM reports 
+                        WHERE anonymous_id = $1 
+                        AND (upvotes_count + comments_count) >= 5
+                    ) as has_verified_report
+                )
+            SELECT 
+                c.*, 
+                l.likes_received, 
+                a.activity_days, 
+                v.has_verified_report
+            FROM counts c, likes l, activity a, verified v;
+        `, [anonymousId]);
 
-    // Fetch real-time action data in parallel
-    const [
-        reportsRes,
-        commentsRes,
-        votesRes,
-        reportsDataRes,
-        commentsDataRes,
-        rFlagsRes,
-        cFlagsRes
-    ] = await Promise.all([
-        clientToUse.from('reports').select('*', { count: 'exact', head: true }).eq('anonymous_id', anonymousId),
-        clientToUse.from('comments').select('*', { count: 'exact', head: true }).eq('anonymous_id', anonymousId),
-        clientToUse.from('votes').select('*', { count: 'exact', head: true }).eq('anonymous_id', anonymousId),
-        clientToUse.from('reports').select('upvotes_count, comments_count, created_at').eq('anonymous_id', anonymousId),
-        clientToUse.from('comments').select('upvotes_count, created_at').eq('anonymous_id', anonymousId),
-        clientToUse.from('report_flags').select('id', { count: 'exact', head: true }).eq('anonymous_id', anonymousId).is('resolved_at', null),
-        clientToUse.from('comment_flags').select('id', { count: 'exact', head: true }).eq('anonymous_id', anonymousId).is('resolved_at', null)
-    ]);
+        if (result.rows.length === 0) return null;
 
-    // Calculate metrics derived from real data
-    const reportsData = reportsDataRes.data || [];
-    const commentsData = commentsDataRes.data || [];
+        const row = result.rows[0];
+        const totalFlags = (parseInt(row.r_flags) || 0) + (parseInt(row.c_flags) || 0);
 
-    const totalLikesReceived = reportsData.reduce((sum, r) => sum + (r.upvotes_count || 0), 0) +
-        commentsData.reduce((sum, c) => sum + (c.upvotes_count || 0), 0);
-
-    const uniqueDays = new Set();
-    [...reportsData, ...commentsData].forEach(item => {
-        if (item.created_at) uniqueDays.add(new Date(item.created_at).toISOString().split('T')[0]);
-    });
-
-    const totalFlags = (rFlagsRes.count || 0) + (cFlagsRes.count || 0);
-    const hasVerifiedReport = reportsData.some(r => (r.upvotes_count || 0) + (r.comments_count || 0) >= 5);
-
-    return {
-        reports_created: reportsRes.count || 0,
-        comments_created: commentsRes.count || 0,
-        votes_cast: votesRes.count || 0,
-        likes_received: totalLikesReceived,
-        activity_days: uniqueDays.size,
-        has_verified_report: hasVerifiedReport ? 1 : 0,
-        is_good_citizen: (totalFlags === 0 && ((reportsRes.count || 0) > 0 || (commentsRes.count || 0) > 0)) ? 1 : 0
-    };
+        return {
+            reports_created: parseInt(row.reports_created) || 0,
+            comments_created: parseInt(row.comments_created) || 0,
+            votes_cast: parseInt(row.votes_cast) || 0,
+            likes_received: parseInt(row.likes_received) || 0,
+            activity_days: parseInt(row.activity_days) || 0,
+            has_verified_report: row.has_verified_report ? 1 : 0,
+            is_good_citizen: (totalFlags === 0 && (row.reports_created > 0 || row.comments_created > 0)) ? 1 : 0
+        };
+    } catch (error) {
+        logError(error, { context: 'calculateUserMetrics.sql', anonymousId });
+        throw error;
+    }
 }
 
 /**

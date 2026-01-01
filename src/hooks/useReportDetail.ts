@@ -1,5 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useReportDetailQuery } from '@/hooks/queries/useReportsQuery'
+import { queryKeys } from '@/lib/queryKeys'
 import type { Report } from '@/lib/api'
 
 // ============================================
@@ -26,29 +28,47 @@ interface UseReportDetailReturn {
 // ============================================
 
 export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDetailReturn {
+    const queryClient = useQueryClient()
+    const [localDeleted, setLocalDeleted] = useState(false)
+
     // Use React Query for loading and polling (polling enabled in useReportDetailQuery)
     const {
         data: report = null,
         isLoading: loading,
         error: queryError,
         refetch: refetchQuery
-    } = useReportDetailQuery(reportId)
+    } = useReportDetailQuery(reportId, !localDeleted)
 
     // Derived state
     const isFavorite = report?.is_favorite ?? false
     const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
 
     // ============================================
-    // ACTIONS (Maintaining legacy interface for DetalleReporte.tsx)
+    // ACTIONS
     // ============================================
 
-    const updateReport = useCallback((_updated: Report) => {
-        // Compatibility method
-    }, [])
+    const updateReport = useCallback((updated: Report) => {
+        if (!reportId) return
+
+        // Directly update the Detail Cache for "0ms visual lag"
+        queryClient.setQueryData(
+            queryKeys.reports.detail(reportId),
+            updated
+        )
+
+        // Also invalidate lists to ensure global consistency
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+    }, [reportId, queryClient])
 
     const markAsDeleted = useCallback(() => {
-        // Compatibility method
-    }, [])
+        if (!reportId) return
+        setLocalDeleted(true)
+
+        // Remove from cache immediately
+        queryClient.removeQueries({ queryKey: queryKeys.reports.detail(reportId) })
+        // Invalidate lists
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+    }, [reportId, queryClient])
 
     const refetch = useCallback(async () => {
         await refetchQuery()
@@ -58,7 +78,7 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
         report,
         loading,
         error,
-        isDeleted: false,
+        isDeleted: localDeleted,
         isFavorite,
         updateReport,
         markAsDeleted,

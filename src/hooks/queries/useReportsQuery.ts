@@ -34,11 +34,11 @@ export function useReportsQuery(filters?: ReportFilters) {
  * Fetch a single report by ID
  * Used by DetalleReporte page
  */
-export function useReportDetailQuery(reportId: string | undefined) {
+export function useReportDetailQuery(reportId: string | undefined, enabled = true) {
     return useQuery({
         queryKey: queryKeys.reports.detail(reportId ?? ''),
         queryFn: () => reportsApi.getById(reportId!),
-        enabled: !!reportId,
+        enabled: !!reportId && enabled,
         staleTime: 60 * 1000,
         refetchOnWindowFocus: false,
         retry: 1,

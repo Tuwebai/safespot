@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateReport, validateFlagReason } from '../utils/validation.js';
+import { requireAnonymousId, validateReport, validateFlagReason, validateCoordinates, validateImageBuffer } from '../utils/validation.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
@@ -94,21 +94,15 @@ router.get('/', async (req, res) => {
     const isGeoFeed = lat && lng;
 
     if (isGeoFeed) {
-      // Validate coordinates
       const userLat = parseFloat(lat);
       const userLng = parseFloat(lng);
 
-      if (isNaN(userLat) || isNaN(userLng)) {
+      try {
+        validateCoordinates(userLat, userLng);
+      } catch (error) {
         return res.status(400).json({
           error: 'Coordenadas inválidas',
-          details: 'lat y lng deben ser números válidos'
-        });
-      }
-
-      if (userLat < -90 || userLat > 90 || userLng < -180 || userLng > 180) {
-        return res.status(400).json({
-          error: 'Coordenadas fuera de rango',
-          details: 'lat debe estar entre -90 y 90, lng entre -180 y 180'
+          details: error.message
         });
       }
 
@@ -1362,14 +1356,14 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max per file
+    fileSize: 5 * 1024 * 1024, // 5MB max per file (production grade limit)
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only jpg, jpeg, png, and webp are allowed.'), false);
+      cb(new Error('Archivo de imagen inválido'), false);
     }
   },
 });
@@ -1388,7 +1382,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
 
     // Verify report exists and belongs to user
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, anonymous_id FROM reports WHERE id = $1
+      SELECT id, anonymous_id, image_urls FROM reports WHERE id = $1
     `, [id]);
 
     if (reportResult.rows.length === 0) {
@@ -1405,6 +1399,20 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
       });
     }
 
+    // Parse existing image URLs
+    let existingUrls = [];
+    if (report.image_urls) {
+      if (Array.isArray(report.image_urls)) {
+        existingUrls = report.image_urls;
+      } else if (typeof report.image_urls === 'string') {
+        try {
+          existingUrls = JSON.parse(report.image_urls);
+        } catch (e) {
+          existingUrls = [];
+        }
+      }
+    }
+
     // Check if supabaseAdmin is available
     if (!supabaseAdmin) {
       return res.status(500).json({
@@ -1414,11 +1422,14 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
     }
 
     // Upload files to Supabase Storage
-    const imageUrls = [];
+    const newImageUrls = [];
     const bucketName = 'report-images';
 
     for (const file of files) {
       try {
+        // VALIDATION: Strict MIME verification with Sharp
+        await validateImageBuffer(file.buffer);
+
         // Generate unique filename
         const fileExt = file.originalname.split('.').pop();
         const fileName = `${id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -1442,7 +1453,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
           .getPublicUrl(fileName);
 
         if (urlData?.publicUrl) {
-          imageUrls.push(urlData.publicUrl);
+          newImageUrls.push(urlData.publicUrl);
         } else {
           throw new Error(`Failed to get public URL for ${file.originalname}`);
         }
@@ -1453,26 +1464,28 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
       }
     }
 
-    if (imageUrls.length === 0) {
+    if (newImageUrls.length === 0) {
       return res.status(500).json({
         error: 'Failed to upload any images',
         message: 'All image uploads failed'
       });
     }
 
-    // Update report with image URLs using queryWithRLS for RLS consistency
+    const finalImageUrls = [...existingUrls, ...newImageUrls];
+
+    // Update report with merged image URLs using queryWithRLS for RLS consistency
     await queryWithRLS(anonymousId, `
       UPDATE reports SET image_urls = $1 WHERE id = $2 AND anonymous_id = $3
-    `, [JSON.stringify(imageUrls), id, anonymousId]);
+    `, [JSON.stringify(finalImageUrls), id, anonymousId]);
 
-    logSuccess('Images uploaded', { id, anonymousId, count: imageUrls.length });
+    logSuccess('Images uploaded and appended', { id, anonymousId, new_count: newImageUrls.length, total_count: finalImageUrls.length });
 
     res.json({
       success: true,
       data: {
-        image_urls: imageUrls
+        image_urls: finalImageUrls
       },
-      message: `Successfully uploaded ${imageUrls.length} image(s)`
+      message: `Successfully uploaded ${newImageUrls.length} image(s)`
     });
   } catch (error) {
     logError(error, req);

@@ -14,6 +14,7 @@ interface ReportEditorState {
     description: string
     status: Report['status']
     updating: boolean
+    newImages: File[]
 }
 
 // ============================================
@@ -34,6 +35,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         description: '',
         status: 'pendiente',
         updating: false,
+        newImages: [],
     })
 
     // ============================================
@@ -49,6 +51,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             description: report.description,
             status: report.status,
             updating: false,
+            newImages: [],
         })
     }, [report])
 
@@ -59,6 +62,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             title: '',
             description: '',
             status: 'pendiente',
+            newImages: [],
         }))
     }, [])
 
@@ -72,6 +76,10 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
 
     const setStatus = useCallback((status: Report['status']) => {
         setState(prev => ({ ...prev, status }))
+    }, [])
+
+    const setNewImages = useCallback((files: File[]) => {
+        setState(prev => ({ ...prev, newImages: files }))
     }, [])
 
     const saveChanges = useCallback(async () => {
@@ -90,11 +98,24 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         setState(prev => ({ ...prev, updating: true }))
 
         try {
-            const updatedReport = await reportsApi.update(report.id, {
+            // 1. Update text fields
+            let updatedReport = await reportsApi.update(report.id, {
                 title: state.title.trim(),
                 description: state.description.trim(),
                 status: state.status,
             })
+
+            // 2. Upload images if any
+            if (state.newImages.length > 0) {
+                try {
+                    const uploadRes = await reportsApi.uploadImages(report.id, state.newImages)
+                    // The backend now appends, so uploadRes.image_urls will contain ALL images
+                    updatedReport = { ...updatedReport, image_urls: uploadRes.image_urls }
+                } catch (imgError) {
+                    console.error('Error uploading images during edit:', imgError)
+                    toast.error('Se guardaron los cambios pero falló la carga de imágenes')
+                }
+            }
 
             onReportUpdate(updatedReport)
 
@@ -104,6 +125,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                 description: '',
                 status: 'pendiente',
                 updating: false,
+                newImages: [],
             })
 
             toast.success('Reporte actualizado correctamente')
@@ -120,6 +142,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         editDescription: state.description,
         editStatus: state.status,
         updating: state.updating,
+        newImages: state.newImages,
 
         // Actions
         startEditing,
@@ -127,6 +150,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         setTitle,
         setDescription,
         setStatus,
+        setNewImages,
         saveChanges,
     }
 }

@@ -1,5 +1,6 @@
 import express from 'express';
 import { logError, logSuccess } from '../utils/logger.js';
+import { validateCoordinates } from '../utils/validation.js';
 
 const router = express.Router();
 
@@ -186,20 +187,15 @@ router.get('/reverse', async (req, res) => {
         const { lat, lon } = req.query;
 
         // Validation
-        const latitude = parseFloat(lat);
-        const longitude = parseFloat(lon);
+        const latitude = Number(lat);
+        const longitude = Number(lon);
 
-        if (isNaN(latitude) || isNaN(longitude)) {
+        try {
+            validateCoordinates(latitude, longitude);
+        } catch (error) {
             return res.status(400).json({
                 error: 'VALIDATION_ERROR',
-                message: 'Los parámetros "lat" y "lon" son requeridos y deben ser números'
-            });
-        }
-
-        if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-            return res.status(400).json({
-                error: 'VALIDATION_ERROR',
-                message: 'Coordenadas fuera de rango válido'
+                message: error.message
             });
         }
 

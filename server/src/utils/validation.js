@@ -21,6 +21,34 @@ export function validateAnonymousId(anonymousId) {
 }
 
 /**
+ * Validates geographic coordinates strictly
+ * Rules:
+ * - Must be typeof 'number'
+ * - Must not be NaN or Infinity
+ * - lat ∈ [-90, 90]
+ * - lng ∈ [-180, 180]
+ */
+export function validateCoordinates(lat, lng) {
+  if (lat === undefined || lat === null || lng === undefined || lng === null) {
+    throw new Error('Coordenadas inválidas: lat y lng son requeridos');
+  }
+
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    throw new Error('Coordenadas inválidas: lat y lng deben ser números');
+  }
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error('Coordenadas inválidas: valores no permitidos');
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    throw new Error('Coordenadas inválidas: fuera de rango');
+  }
+
+  return true;
+}
+
+/**
  * Middleware to validate anonymous_id in request
  */
 export function requireAnonymousId(req, res, next) {
@@ -81,18 +109,14 @@ export function validateReport(data) {
     errors.push('address is required and must be a non-empty string');
   }
 
-  if (data.latitude !== undefined && data.latitude !== null) {
-    const lat = parseFloat(data.latitude);
-    if (isNaN(lat) || lat < -90 || lat > 90) {
-      errors.push('latitude must be a number between -90 and 90');
+  if (data.latitude !== undefined && data.latitude !== null && data.longitude !== undefined && data.longitude !== null) {
+    try {
+      validateCoordinates(data.latitude, data.longitude);
+    } catch (error) {
+      errors.push(error.message);
     }
-  }
-
-  if (data.longitude !== undefined && data.longitude !== null) {
-    const lng = parseFloat(data.longitude);
-    if (isNaN(lng) || lng < -180 || lng > 180) {
-      errors.push('longitude must be a number between -180 and 180');
-    }
+  } else if (data.latitude !== undefined || data.longitude !== undefined) {
+    errors.push('Ambas coordenadas (latitud y longitud) son requeridas si se proporciona una');
   }
 
   if (data.status && !['pendiente', 'en_proceso', 'resuelto', 'cerrado'].includes(data.status)) {
@@ -283,5 +307,24 @@ export function validateImageUrls(urls) {
   });
 
   return true;
+}
+
+/**
+ * Validates image buffer using sharp to ensure real MIME type
+ */
+export async function validateImageBuffer(buffer) {
+  try {
+    const sharp = (await import('sharp')).default;
+    const metadata = await sharp(buffer).metadata();
+
+    const allowedFormats = ['jpeg', 'jpg', 'png', 'webp'];
+    if (!metadata.format || !allowedFormats.includes(metadata.format)) {
+      throw new Error('Archivo de imagen inválido: formato no permitido');
+    }
+
+    return true;
+  } catch (error) {
+    throw new Error('Archivo de imagen inválido');
+  }
 }
 

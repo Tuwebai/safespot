@@ -12,14 +12,20 @@ export const NotificationService = {
     async notifyNearbyNewReport(report) {
         if (!report.latitude || !report.longitude) return;
 
-        console.log(`[Notify] Event: notifyNearbyNewReport for report ${report.id}`);
+        console.log(`[Notify] Bulk Event: notifyNearbyNewReport for report ${report.id}`);
 
         try {
             const db = DB.public();
 
-            // Query both general settings and specific user zones
-            const recipients = await db.query(`
-                WITH user_matches AS (
+            // SINGLE BULK OPERATION:
+            // 1. Find all recipients (Settings proximity OR User Zones)
+            // 2. Generate appropriate titles/messages in SQL
+            // 3. Insert into notifications table
+            // 4. Update notification_settings counts
+            // All within a single database transaction for performance and consistency.
+
+            await db.query(`
+                WITH matched_recipients AS (
                     -- General proximity matched from settings
                     SELECT 
                         ns.anonymous_id,
@@ -47,49 +53,60 @@ export const NotificationService = {
                         uz.anonymous_id != $3
                         AND ns.notifications_today < ns.max_notifications_per_day
                         AND ST_DWithin(uz.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, uz.radius_meters)
+                ),
+                unique_recipients AS (
+                    SELECT DISTINCT ON (anonymous_id) 
+                        anonymous_id, alert_type, zone_type, distance
+                    FROM matched_recipients
+                    ORDER BY anonymous_id, 
+                             CASE 
+                                WHEN zone_type = 'home' THEN 1
+                                WHEN zone_type = 'work' THEN 2
+                                WHEN zone_type = 'frequent' THEN 3
+                                ELSE 4
+                             END ASC
+                ),
+                inserted_notifications AS (
+                    INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
+                    SELECT 
+                        anonymous_id,
+                        alert_type,
+                        CASE 
+                            WHEN alert_type = 'zone' THEN 
+                                CASE 
+                                    WHEN zone_type = 'home' THEN '🏠 Reporte cerca de tu Casa'
+                                    WHEN zone_type = 'work' THEN '💼 Reporte cerca de tu Trabajo'
+                                    WHEN zone_type = 'frequent' THEN '📍 Reporte en tu zona frecuente'
+                                    ELSE '⚠️ Reporte en tu zona configurada'
+                                END
+                            ELSE '⚠️ Nuevo reporte cerca tuyo'
+                        END as title,
+                        'Se reportó ' || $4 || ' a ' || 
+                        CASE 
+                            WHEN distance < 1000 THEN ROUND(distance)::text || 'm'
+                            ELSE ROUND(distance/1000, 1)::text || 'km'
+                        END || '.' as message,
+                        'report',
+                        $5,
+                        $5
+                    FROM unique_recipients
+                    RETURNING anonymous_id
                 )
-                SELECT DISTINCT ON (anonymous_id) 
-                    anonymous_id, alert_type, zone_type, distance
-                FROM user_matches
-                ORDER BY anonymous_id, 
-                         CASE 
-                            WHEN zone_type = 'home' THEN 1
-                            WHEN zone_type = 'work' THEN 2
-                            WHEN zone_type = 'frequent' THEN 3
-                            ELSE 4
-                         END ASC
-            `, [report.latitude, report.longitude, report.anonymous_id]);
+                UPDATE notification_settings
+                SET notifications_today = notifications_today + 1,
+                    last_notified_at = NOW()
+                WHERE anonymous_id IN (SELECT anonymous_id FROM inserted_notifications);
+            `, [
+                report.latitude,
+                report.longitude,
+                report.anonymous_id,
+                report.category || 'un incidente',
+                report.id
+            ]);
 
-            console.log(`[Notify] Found ${recipients.rows.length} unique recipients for alert`);
-
-            for (const recipient of recipients.rows) {
-                const distanceStr = recipient.distance < 1000
-                    ? `${Math.round(recipient.distance)}m`
-                    : `${(recipient.distance / 1000).toFixed(1)}km`;
-
-                // Handle custom messaging based on zone
-                let title = '⚠️ Nuevo reporte cerca tuyo';
-                let message = `Se reportó ${report.category} a ${distanceStr}.`;
-
-                if (recipient.alert_type === 'zone') {
-                    const zoneEmojis = { home: '🏠 Casa', work: '💼 Trabajo', frequent: '📍 Zona frecuente' };
-                    const zoneLabel = zoneEmojis[recipient.zone_type] || 'tu zona configurada';
-                    title = `🚨 Reporte en tu ${zoneLabel}`;
-                    message = `Se reportó ${report.category} a ${distanceStr} de tu ${zoneLabel.split(' ')[1]}.`;
-                }
-
-                await this.createNotification({
-                    anonymous_id: recipient.anonymous_id,
-                    type: recipient.alert_type,
-                    title,
-                    message,
-                    entity_type: 'report',
-                    entity_id: report.id,
-                    report_id: report.id
-                });
-            }
+            console.log(`[Notify] Bulk notification process completed for report ${report.id}`);
         } catch (err) {
-            logError(err, { context: 'notifyNearbyNewReport', reportId: report.id });
+            logError(err, { context: 'notifyNearbyNewReport.bulk', reportId: report.id });
         }
     },
 
