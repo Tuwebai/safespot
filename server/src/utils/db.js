@@ -75,9 +75,19 @@ export class DB {
     // Build ORDER BY clause
     let orderClause = '';
     if (orderBy) {
-      const [column, direction = 'ASC'] = Array.isArray(orderBy) ? orderBy : [orderBy];
-      // ORDER BY doesn't use parameters (column names and directions are safe)
-      orderClause = `ORDER BY ${column} ${direction.toUpperCase()}`;
+      if (typeof orderBy === 'string') {
+        orderClause = `ORDER BY ${orderBy} ASC`;
+      } else if (Array.isArray(orderBy)) {
+        // Check if it's an array of objects [{ column: 'a', direction: 'desc' }] or simple [col, dir]
+        if (orderBy.length > 0 && typeof orderBy[0] === 'object' && orderBy[0] !== null) {
+          const parts = orderBy.map(o => `${o.column} ${(o.direction || 'ASC').toUpperCase()}`);
+          orderClause = `ORDER BY ${parts.join(', ')}`;
+        } else {
+          // Legacy: [column, direction]
+          const [column, direction = 'ASC'] = orderBy;
+          orderClause = `ORDER BY ${column} ${direction.toUpperCase()}`;
+        }
+      }
     }
 
     // Build LIMIT clause (use parameterized query for safety)
@@ -136,7 +146,7 @@ export class DB {
     const setClause = Object.keys(data)
       .map((key, i) => `${key} = $${i + 1}`)
       .join(', ');
-    
+
     const values = Object.values(data);
     let paramIndex = values.length + 1;
 
