@@ -25,16 +25,15 @@ SafeSpot se encuentra en un estado de **Beta avanzada (v0.95)**. La arquitectura
 - **Qué funciona bien**: El cálculo automático de métricas y la asignación silenciosa de insignias.
 - **Qué funcionó**: Se implementó una visualización granular del "Próximo Logro" en el perfil con barras de progreso reales. [x]
 - **Riesgo**: (Mitigado) Falta de motivación al no saber qué tan cerca está el usuario de un logro.
-- **Mejora propuesta**: Utilizar el campo `next_badge` para renderizar una línea de tiempo visual en el perfil.
 
 ---
 
 ## 3. UX / UI
 - **Flujo de usuario**: Muy fluido. La navegación lateral y los botones flotantes son consistentes.
 - **Feedback visual**: Excelente uso de `Lucide-react` y variantes de `shadcn/ui`.
-- **Estados de carga**: Bien cubiertos por Skeletons, pero el cambio entre "Mapa" y "Lista" muestra un flash de fondo vacío (Glow/DarkBg).
-- **Errores silenciosos**: Si una subida de imagen falla en el edit, el reporte se guarda (texto) pero la imagen no siempre notifica el error de forma persistente.
-- **Accesibilidad**: Se requiere revisar el contraste de los textos `muted-foreground` en modo oscuro sobre gradientes de color.
+- **Estados de carga**: Corregido. Se eliminó el flash visual mediante `min-h` persistente y transiciones `fade-in` en el Layout. [x]
+- **Errores silenciosos**: Corregido. Implementado feedback persistente e inline en la edición de reportes ante fallos de subida de imagen. [x]
+- **Accesibilidad**: Corregido. Se ajustó el contraste de `muted-foreground` cumpliendo con WCAG AA en modo oscuro. [x]
 
 ---
 

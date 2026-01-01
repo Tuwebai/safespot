@@ -154,7 +154,7 @@ const ZoneMarkers = () => {
                             position={[zone.lat, zone.lng]}
                             icon={pinIcon}
                         >
-                            <Popup onOpen={() => setConfirmingDelete(null)}>
+                            <Popup eventHandlers={{ add: () => setConfirmingDelete(null) }}>
                                 <div
                                     key={confirmingDelete ? 'confirm' : 'idle'}
                                     className="p-2 min-w-[160px] min-h-[80px] flex flex-col justify-center"

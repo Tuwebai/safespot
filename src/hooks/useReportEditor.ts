@@ -15,6 +15,7 @@ interface ReportEditorState {
     status: Report['status']
     updating: boolean
     newImages: File[]
+    imageUploadError: string | null
 }
 
 // ============================================
@@ -36,6 +37,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         status: 'pendiente',
         updating: false,
         newImages: [],
+        imageUploadError: null,
     })
 
     // ============================================
@@ -52,6 +54,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             status: report.status,
             updating: false,
             newImages: [],
+            imageUploadError: null,
         })
     }, [report])
 
@@ -63,6 +66,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             description: '',
             status: 'pendiente',
             newImages: [],
+            imageUploadError: null,
         }))
     }, [])
 
@@ -113,6 +117,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                     updatedReport = { ...updatedReport, image_urls: uploadRes.image_urls }
                 } catch (imgError) {
                     console.error('Error uploading images during edit:', imgError)
+                    setState(prev => ({ ...prev, imageUploadError: 'La carga de fotos falló. Reintentá o eliminá las imágenes con problemas.' }))
                     toast.error('Se guardaron los cambios pero falló la carga de imágenes')
                 }
             }
@@ -126,12 +131,13 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                 status: 'pendiente',
                 updating: false,
                 newImages: [],
+                imageUploadError: null,
             })
 
             toast.success('Reporte actualizado correctamente')
         } catch (error) {
             handleErrorWithMessage(error, 'Error al actualizar el reporte', toast.error, 'useReportEditor.saveChanges')
-            setState(prev => ({ ...prev, updating: false }))
+            setState(prev => ({ ...prev, updating: false, imageUploadError: 'No se pudo guardar el reporte. Verificá tu conexión.' }))
         }
     }, [report, state, onReportUpdate, toast])
 
@@ -143,6 +149,8 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         editStatus: state.status,
         updating: state.updating,
         newImages: state.newImages,
+        imageUploadError: state.imageUploadError,
+        setImageUploadError: useCallback((error: string | null) => setState(prev => ({ ...prev, imageUploadError: error })), []),
 
         // Actions
         startEditing,

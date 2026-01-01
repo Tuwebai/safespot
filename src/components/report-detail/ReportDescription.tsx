@@ -114,6 +114,21 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                                     Añadir imágenes (recomendado)
                                 </label>
 
+                                {editor.imageUploadError && (
+                                    <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/50 text-red-500 text-xs font-medium flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                            {editor.imageUploadError}
+                                        </div>
+                                        <button
+                                            onClick={() => editor.setImageUploadError(null)}
+                                            className="hover:bg-red-500/20 p-1 rounded transition-colors"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                     {/* New Images Previews */}
                                     {newImages.map((file, index) => (
