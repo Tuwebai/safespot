@@ -875,6 +875,12 @@ router.post('/', requireAnonymousId, validate(reportSchema), async (req, res) =>
       const gamification = await syncGamification(anonymousId);
       if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
         newBadges = gamification.profile.newlyAwarded;
+
+        // Notify for each new badge
+        for (const badge of newBadges) {
+          NotificationService.notifyBadgeEarned(anonymousId, badge)
+            .catch(err => logError(err, { context: 'notifyBadgeEarned', badge: badge.code }));
+        }
       }
     } catch (err) {
       logError(err, req);

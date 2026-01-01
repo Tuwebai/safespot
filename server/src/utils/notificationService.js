@@ -229,6 +229,30 @@ export const NotificationService = {
     /**
      * Create the notification record and increment daily count
      */
+    async notifyBadgeEarned(anonymousId, badge) {
+        if (!badge || !badge.name) return;
+
+        console.log(`[Notify] Badge Earned: ${badge.name} for ${anonymousId}`);
+
+        try {
+            await this.createNotification({
+                anonymous_id: anonymousId,
+                type: 'achievement',
+                title: '🏆 ¡Nueva Insignia Desbloqueada!',
+                message: `Has ganado la insignia "${badge.name}". ¡Felicitaciones!`,
+                entity_type: 'badge',
+                entity_id: badge.code || 'badge', // Use code as entity_id if id not available
+                report_id: null
+            });
+        } catch (err) {
+            logError(err, { context: 'notifyBadgeEarned', anonymousId, badge: badge.name });
+        }
+    },
+
+    /**
+     * Create the notification record and increment daily count
+     * ... existing createNotification ...
+     */
     async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
         const db = DB.public();
         try {

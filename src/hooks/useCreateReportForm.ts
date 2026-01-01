@@ -206,6 +206,7 @@ export function useCreateReportForm() {
             toast.success('¡Reporte creado! Subiendo imágenes en segundo plano...')
             navigate('/reportes')
             triggerBadgeCheck(newReport.newBadges)
+            queryClient.invalidateQueries({ queryKey: queryKeys.gamification.summary })
 
             // 3. Background Image Upload
             if (imageFiles.length > 0) {
