@@ -2,6 +2,7 @@ import { queryWithRLS } from './rls.js';
 import { logError, logSuccess } from './logger.js';
 import { calculateLevelFromPoints } from './levelCalculation.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
+import { NotificationService } from './notificationService.js';
 
 /**
  * GAMIFICATION CORE - Single Source of Truth
@@ -89,8 +90,9 @@ export async function calculateUserGamification(anonymousId) {
         // 1. Get all badge rules from database
         const { data: allBadges } = await clientToUse
             .from('badges')
-            .select('id, code, points, target_metric, threshold, name, icon, description, category')
-            .order('category', { ascending: true });
+            .select('id, code, points, target_metric, threshold, name, icon, description, category, category_label, level, rarity')
+            .order('category', { ascending: true })
+            .order('level', { ascending: true }); // Ensure hierarchical order
 
         if (!allBadges) throw new Error('Could not fetch badges catalog');
 
@@ -117,19 +119,11 @@ export async function calculateUserGamification(anonymousId) {
             const requiredVal = badge.threshold;
             const meetsThreshold = requiredVal > 0 && currentVal >= requiredVal;
 
-
             if (obtainedMap.has(badge.id)) {
-                // RULE: If unlocked but progress falls behind, REVOKE (ensures consistency)
-                if (!meetsThreshold) {
-                    await clientToUse
-                        .from('user_badges')
-                        .delete()
-                        .eq('anonymous_id', anonymousId)
-                        .eq('badge_id', badge.id);
-
-                    obtainedMap.delete(badge.id);
-                    logSuccess('Badge revoked (insufficient progress)', { anonymousId, badgeCode: badge.code });
-                }
+                // RULE: Badges are PERSISTENT. 
+                // Once obtained, they are never revoked even if metrics drop.
+                // This prevents "lost progress" feeling when deleting content.
+                // (Revocation logic removed)
             } else {
                 // RULE: If threshold met but not unlocked, AWARD
                 if (meetsThreshold) {
@@ -149,8 +143,17 @@ export async function calculateUserGamification(anonymousId) {
                             code: badge.code,
                             name: badge.name,
                             icon: badge.icon,
-                            points: badge.points
+                            points: badge.points,
+                            rarity: badge.rarity
                         });
+
+                        // Notify user of achievement
+                        // We do this asynchronously to not block the main process
+                        NotificationService.notifyBadgeEarned(anonymousId, badge).catch(err => {
+                            // Just log error, don't fail the award
+                            console.error('Failed to send badge notification:', err);
+                        });
+
                         logSuccess('Badge awarded', { anonymousId, badgeCode: badge.code });
                     } else {
                         logError(insertError, anonymousId);
@@ -173,23 +176,61 @@ export async function calculateUserGamification(anonymousId) {
             [totalPoints, newLevel, anonymousId]
         );
 
-        // 7. Format consistent response
-        const badgesWithStatus = allBadges.map(badge => ({
-            id: badge.id,
-            code: badge.code,
-            name: badge.name,
-            description: badge.description,
-            icon: badge.icon,
-            category: badge.category,
-            points: badge.points,
-            obtained: obtainedMap.has(badge.id),
-            awarded_at: obtainedMap.get(badge.id) || null,
-            progress: {
-                current: Math.min(badge.threshold, metrics[badge.target_metric] || 0),
-                required: badge.threshold,
-                percent: badge.threshold > 0 ? Math.min(100, Math.floor((metrics[badge.target_metric] || 0) / badge.threshold * 100)) : 0
+        // 7. Format consistent response & Calculate Next Achievement
+
+        let nextAchievement = null;
+        let maxPercent = -1;
+
+        const badgesWithStatus = allBadges.map(badge => {
+            // Metrics Logic
+            const currentMetric = metrics[badge.target_metric] || 0;
+            const requiredMetric = badge.threshold;
+            const isObtained = obtainedMap.has(badge.id);
+
+            const progress = {
+                current: Math.min(requiredMetric, currentMetric),
+                required: requiredMetric,
+                percent: requiredMetric > 0 ? Math.min(100, Math.floor((currentMetric / requiredMetric) * 100)) : 0
+            };
+
+            // Calculate potential candidate for "Next Achievement"
+            if (!isObtained) {
+                // We prioritize badges that are close to completion
+                if (progress.percent > maxPercent) {
+                    maxPercent = progress.percent;
+                    nextAchievement = {
+                        name: badge.name,
+                        description: badge.description,
+                        icon: badge.icon,
+                        rarity: badge.rarity,
+                        points: badge.points,
+                        metric_label: badge.category_label,
+                        missing: requiredMetric - currentMetric,
+                        progress
+                    };
+                }
             }
-        }));
+
+            return {
+                id: badge.id,
+                code: badge.code,
+                name: badge.name,
+                description: badge.description,
+                icon: badge.icon,
+                category: badge.category,
+                category_label: badge.category_label,
+                level: badge.level,
+                rarity: badge.rarity,
+                points: badge.points,
+                obtained: isObtained,
+                awarded_at: obtainedMap.get(badge.id) || null,
+                progress
+            };
+        });
+
+        // 8. Sort badges: Obtained first, then by Category/Level
+        // But the frontend might handle grouping. Let's keep catalog order but maybe Obtained=true is useful.
+        // The array is already sorted by category, level from SQL.
 
         return {
             success: true,
@@ -199,7 +240,8 @@ export async function calculateUserGamification(anonymousId) {
                 newlyAwarded
             },
             badges: badgesWithStatus,
-            metrics
+            metrics,
+            nextAchievement // New field for frontend UX
         };
 
     } catch (error) {

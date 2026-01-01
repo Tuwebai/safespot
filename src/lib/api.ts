@@ -636,23 +636,6 @@ export interface BadgeProgress {
   total_count: number;
 }
 
-// New gamification badge interface
-export interface GamificationBadge {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  icon: string;
-  category: string;
-  points: number;
-  obtained: boolean;
-  obtained_at: string | null;
-  progress: {
-    current: number;
-    required: number;
-  };
-}
-
 export interface NewBadge {
   code: string;
   name: string;
@@ -680,9 +663,40 @@ export const badgesApi = {
   },
 };
 
-// ============================================
-// GAMIFICATION API
-// ============================================
+export interface GamificationBadge {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  category_label?: string; // e.g. "Influencia"
+  level: number;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  points: number;
+  obtained: boolean;
+  obtained_at: string | null;
+  progress: {
+    current: number;
+    required: number;
+    percent: number;
+  };
+}
+
+export interface NextAchievement {
+  name: string;
+  description: string;
+  icon: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  points: number;
+  metric_label: string; // e.g. "Influencia"
+  missing: number;
+  progress: {
+    current: number;
+    required: number;
+    percent: number;
+  };
+}
 
 export interface GamificationBadgesResponse {
   badges: GamificationBadge[];
@@ -699,6 +713,7 @@ export interface GamificationSummaryResponse {
   };
   badges: GamificationBadge[];
   newBadges?: NewBadge[];
+  nextAchievement?: NextAchievement | null;
 }
 
 export const gamificationApi = {

@@ -83,8 +83,8 @@ export const NotificationService = {
                         END as title,
                         'Se reportó ' || $4 || ' a ' || 
                         CASE 
-                            WHEN distance < 1000 THEN ROUND(distance)::text || 'm'
-                            ELSE ROUND(distance/1000, 1)::text || 'km'
+                            WHEN distance < 1000 THEN ROUND(distance::numeric)::text || 'm'
+                            ELSE ROUND((distance/1000)::numeric, 1)::text || 'km'
                         END || '.' as message,
                         'report',
                         $5,
@@ -205,6 +205,9 @@ export const NotificationService = {
                     ns.similar_reports = true
                     AND ns.anonymous_id != $2
                     AND ns.notifications_today < ns.max_notifications_per_day
+                    -- $1 is category, $2 is user to exclude, $3/$4 are lat/long
+                    -- Fix: Cast $1 to text to avoid "could not determine data type"
+                    AND (ns.categories_of_interest IS NULL OR $1::text = ANY(ns.categories_of_interest))
                     AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, 2000) -- Tight 2km radius for "nearby"
             `, [report.category, report.anonymous_id, report.latitude, report.longitude]);
 
@@ -255,27 +258,18 @@ export const NotificationService = {
      */
     async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
         const db = DB.public();
-        try {
-            await db.query('BEGIN');
-
-            // Insert notification
-            await db.query(`
+        // Insert notification
+        await db.query(`
                 INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
             `, [anonymous_id, type, title, message, entity_type, entity_id, report_id]);
 
-            // Increment count in settings
-            await db.query(`
+        // Increment count in settings
+        await db.query(`
                 UPDATE notification_settings 
                 SET notifications_today = notifications_today + 1,
                     last_notified_at = NOW()
                 WHERE anonymous_id = $1
             `, [anonymous_id]);
-
-            await db.query('COMMIT');
-        } catch (err) {
-            await db.query('ROLLBACK');
-            throw err;
-        }
     }
 };

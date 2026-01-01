@@ -12,32 +12,7 @@ interface UsePointsAnimationOptions {
   animationDuration?: number
 }
 
-/**
- * Calculate level progress (0-100%)
- */
-function calculateLevelProgress(points: number, level: number): number {
-  const ranges: Record<number, { min: number; max: number }> = {
-    1: { min: 0, max: 49 },
-    2: { min: 50, max: 149 },
-    3: { min: 150, max: 299 },
-    4: { min: 300, max: Infinity }
-  }
-
-  if (level >= 4) {
-    return 100
-  }
-
-  const currentRange = ranges[level] || ranges[1]
-  const nextRange = ranges[level + 1] || ranges[4]
-
-  const pointsInCurrentLevel = Math.max(0, points - currentRange.min)
-  const pointsNeededForNext = nextRange.min - currentRange.min
-
-  if (pointsNeededForNext === 0) return 100
-
-  const progress = (pointsInCurrentLevel / pointsNeededForNext) * 100
-  return Math.min(100, Math.max(0, progress))
-}
+import { calculateLevelProgress } from '@/lib/levelCalculation'
 
 /**
  * Hook to animate points and level changes

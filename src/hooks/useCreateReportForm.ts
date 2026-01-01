@@ -203,7 +203,7 @@ export function useCreateReportForm() {
 
             // 2. Immediate feedback & Navigation
             // WE DON'T WAIT FOR IMAGES TO NAVIGATE
-            toast.success('¡Reporte creado! Subiendo imágenes en segundo plano...')
+            toast.success('¡Reporte creado!')
             navigate('/reportes')
             triggerBadgeCheck(newReport.newBadges)
             queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
