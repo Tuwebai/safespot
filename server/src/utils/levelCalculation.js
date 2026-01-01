@@ -12,7 +12,9 @@
  * - Level 50: 9604 pts
  */
 
-export const MAX_LEVEL = 50;
+import { GAMIFICATION } from '../config/constants.js';
+
+export const MAX_LEVEL = GAMIFICATION.MAX_LEVEL;
 
 /**
  * Calculate level from total points

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VALIDATION } from '../config/constants.js';
 
 /**
  * Common regex and constants
@@ -15,7 +16,7 @@ export const reportSchema = z.object({
         .trim(),
     description: z.string()
         .min(10, 'La descripción debe tener al menos 10 caracteres')
-        .max(2000, 'La descripción es muy larga')
+        .max(VALIDATION.MAX_DESCRIPTION_LENGTH, 'La descripción es muy larga')
         .trim(),
     category: z.enum(['Celulares', 'Bicicletas', 'Motos', 'Autos', 'Laptops', 'Carteras'], {
         errorMap: () => ({ message: 'Categoría no válida' })

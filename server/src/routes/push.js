@@ -8,6 +8,7 @@ import express from 'express';
 import { requireAnonymousId } from '../utils/validation.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { ZONES } from '../config/constants.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import {
     sendBatchNotifications,
@@ -64,8 +65,8 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
         }
 
         // Validate radius
-        const validRadii = [500, 1000, 2000];
-        const safeRadius = validRadii.includes(radius) ? radius : 500;
+        const validRadii = ZONES.VALID_RADII;
+        const safeRadius = validRadii.includes(radius) ? radius : ZONES.VALID_RADII[0];
 
         // Upsert subscription (update if endpoint exists)
         const { data, error } = await supabaseAdmin

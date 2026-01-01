@@ -13,7 +13,9 @@
  * - Level 50: 9604 pts (Approx max badge score)
  */
 
-export const MAX_LEVEL = 50;
+import { GAMIFICATION } from '@/config/constants';
+
+export const MAX_LEVEL = GAMIFICATION.MAX_LEVEL;
 
 /**
  * Calculate level from total points
