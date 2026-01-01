@@ -43,7 +43,7 @@ const HeroSection = memo(() => (
           <Link to="/explorar">
             <Button
               variant="outline"
-              className="px-8 py-6 text-lg h-auto border-neon-green text-neon-green hover:bg-neon-green/10"
+              className="onboarding-map px-8 py-6 text-lg h-auto border-neon-green text-neon-green hover:bg-neon-green/10"
             >
               <Eye className="mr-2 h-5 w-5" />
               Ver Mapa

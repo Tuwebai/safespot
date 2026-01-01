@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride'
+import Joyride, { CallBackProps, STATUS, Step, ACTIONS, EVENTS } from 'react-joyride'
 
 export function Onboarding() {
     const [run, setRun] = useState(false)
@@ -11,10 +11,10 @@ export function Onboarding() {
         const hasSeenTour = localStorage.getItem('safespot_onboarding_completed')
         // Solo mostrar en Home page
         if (!hasSeenTour && location.pathname === '/') {
-            // Esperar 1.5 segundos para que la página cargue completamente
+            // Esperar 2 segundos para que la página cargue completamente
             const timer = setTimeout(() => {
                 setRun(true)
-            }, 1500)
+            }, 2000)
             return () => clearTimeout(timer)
         }
     }, [location.pathname])
@@ -86,8 +86,14 @@ export function Onboarding() {
     ]
 
     const handleJoyrideCallback = (data: CallBackProps) => {
-        const { status } = data
+        const { status, action, type } = data
         const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED]
+
+        // Si el tour se salta un paso porque no encuentra el target, continuar
+        if (type === EVENTS.TARGET_NOT_FOUND) {
+            console.warn('Onboarding: Target not found, skipping step')
+            return
+        }
 
         if (finishedStatuses.includes(status)) {
             setRun(false)
@@ -103,6 +109,9 @@ export function Onboarding() {
             showProgress
             showSkipButton
             disableOverlayClose
+            disableScrolling={false}
+            scrollToFirstStep
+            scrollOffset={100}
             spotlightPadding={8}
             callback={handleJoyrideCallback}
             styles={{
