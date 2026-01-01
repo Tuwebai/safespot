@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
+import { useDeleteReportMutation, useFlagReportMutation } from '@/hooks/queries/useReportsQuery'
 
 // ============================================
 // STATE TYPES
@@ -11,8 +11,6 @@ type DialogType = 'flag' | 'delete' | null
 
 interface FlagManagerState {
     openDialog: DialogType
-    flaggingReport: boolean
-    deletingReport: boolean
 }
 
 // ============================================
@@ -28,11 +26,11 @@ interface UseFlagManagerProps {
 
 export function useFlagManager({ reportId, onBeforeDelete, onReportFlagged, onReportDeleted }: UseFlagManagerProps) {
     const toast = useToast()
+    const deleteMutation = useDeleteReportMutation()
+    const flagMutation = useFlagReportMutation()
 
     const [state, setState] = useState<FlagManagerState>({
         openDialog: null,
-        flaggingReport: false,
-        deletingReport: false,
     })
 
     // ============================================
@@ -40,15 +38,15 @@ export function useFlagManager({ reportId, onBeforeDelete, onReportFlagged, onRe
     // ============================================
 
     const openFlagDialog = useCallback(() => {
-        setState(prev => ({ ...prev, openDialog: 'flag' }))
+        setState({ openDialog: 'flag' })
     }, [])
 
     const openDeleteDialog = useCallback(() => {
-        setState(prev => ({ ...prev, openDialog: 'delete' }))
+        setState({ openDialog: 'delete' })
     }, [])
 
     const closeDialog = useCallback(() => {
-        setState(prev => ({ ...prev, openDialog: null }))
+        setState({ openDialog: null })
     }, [])
 
     // ============================================
@@ -56,57 +54,55 @@ export function useFlagManager({ reportId, onBeforeDelete, onReportFlagged, onRe
     // ============================================
 
     const flagReport = useCallback(async (reason: string) => {
-        if (!reportId || state.flaggingReport) return
+        if (!reportId) return
 
-        setState(prev => ({ ...prev, flaggingReport: true }))
-
-        try {
-            await reportsApi.flag(reportId, reason)
-            toast.success('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
-            onReportFlagged?.()
-            setState(prev => ({ ...prev, openDialog: null, flaggingReport: false }))
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : ''
-
-            if (errorMessage.includes('own report')) {
-                toast.warning('No puedes denunciar tu propio reporte')
-            } else if (errorMessage.includes('already flagged')) {
-                toast.warning('Ya has denunciado este reporte anteriormente')
-            } else {
-                handleErrorWithMessage(error, 'Error al denunciar el reporte', toast.error, 'useFlagManager.flagReport')
+        flagMutation.mutate({ reportId, reason }, {
+            onSuccess: () => {
+                toast.success('Reporte denunciado correctamente. Gracias por ayudar a mantener la comunidad segura.')
+                onReportFlagged?.()
+                closeDialog()
+            },
+            onError: (error: any) => {
+                const errorMessage = error instanceof Error ? error.message : ''
+                if (errorMessage.includes('own report')) {
+                    toast.warning('No puedes denunciar tu propio reporte')
+                } else if (errorMessage.includes('already flagged')) {
+                    toast.warning('Ya has denunciado este reporte anteriormente')
+                } else {
+                    handleErrorWithMessage(error, 'Error al denunciar el reporte', toast.error, 'useFlagManager.flagReport')
+                }
             }
-            setState(prev => ({ ...prev, flaggingReport: false }))
-        }
-    }, [reportId, state.flaggingReport, onReportFlagged, toast])
+        })
+    }, [reportId, flagMutation, onReportFlagged, toast, closeDialog])
 
     // ============================================
     // DELETE OPERATIONS
     // ============================================
 
     const deleteReport = useCallback(async () => {
-        if (!reportId || state.deletingReport) return
+        if (!reportId) return
 
-        // CRITICAL: Call onBeforeDelete FIRST, before ANY state changes
-        // This prevents re-renders that could trigger loadReport()
+        // 1. Instant UI Feedback (Navigational/Visual)
         onBeforeDelete?.()
+        closeDialog()
 
-        setState(prev => ({ ...prev, deletingReport: true }))
-
-        try {
-            await reportsApi.delete(reportId)
-            toast.success('Reporte eliminado correctamente')
-            onReportDeleted?.()
-        } catch (error) {
-            handleErrorWithMessage(error, 'Error al eliminar el reporte', toast.error, 'useFlagManager.deleteReport')
-            setState(prev => ({ ...prev, deletingReport: false }))
-        }
-    }, [reportId, state.deletingReport, onBeforeDelete, onReportDeleted, toast])
+        // 2. Optimistic Mutation (Already handles cache updates)
+        deleteMutation.mutate(reportId, {
+            onSuccess: () => {
+                toast.success('Reporte eliminado correctamente')
+                onReportDeleted?.()
+            },
+            onError: (error) => {
+                handleErrorWithMessage(error, 'Error al eliminar el reporte', toast.error, 'useFlagManager.deleteReport')
+            }
+        })
+    }, [reportId, deleteMutation, onBeforeDelete, onReportDeleted, toast, closeDialog])
 
     return {
         // State
         openDialog: state.openDialog,
-        flaggingReport: state.flaggingReport,
-        deletingReport: state.deletingReport,
+        flaggingReport: flagMutation.isPending,
+        deletingReport: deleteMutation.isPending,
         isFlagDialogOpen: state.openDialog === 'flag',
         isDeleteDialogOpen: state.openDialog === 'delete',
 

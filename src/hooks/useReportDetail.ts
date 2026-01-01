@@ -31,7 +31,7 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
     const queryClient = useQueryClient()
     const [localDeleted, setLocalDeleted] = useState(false)
 
-    // Use React Query for loading and polling (polling enabled in useReportDetailQuery)
+    // Use React Query for loading and polling
     const {
         data: report = null,
         isLoading: loading,
@@ -47,28 +47,16 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
     // ACTIONS
     // ============================================
 
+    // Optimized for 0ms lag: Just provides a bridge to the cache if needed
+    // though most components should use the mutations directly.
     const updateReport = useCallback((updated: Report) => {
         if (!reportId) return
-
-        // Directly update the Detail Cache for "0ms visual lag"
-        queryClient.setQueryData(
-            queryKeys.reports.detail(reportId),
-            updated
-        )
-
-        // Also invalidate lists to ensure global consistency
-        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        queryClient.setQueryData(queryKeys.reports.detail(reportId), updated)
     }, [reportId, queryClient])
 
     const markAsDeleted = useCallback(() => {
-        if (!reportId) return
         setLocalDeleted(true)
-
-        // Remove from cache immediately
-        queryClient.removeQueries({ queryKey: queryKeys.reports.detail(reportId) })
-        // Invalidate lists
-        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
-    }, [reportId, queryClient])
+    }, [])
 
     const refetch = useCallback(async () => {
         await refetchQuery()

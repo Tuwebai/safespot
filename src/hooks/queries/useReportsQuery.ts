@@ -58,10 +58,46 @@ export function useCreateReportMutation() {
 
     return useMutation({
         mutationFn: (data: CreateReportData) => reportsApi.create(data),
-        onSuccess: () => {
-            // Invalidate all report lists to refetch with new report
+        onMutate: async (newReportData) => {
+            // Standard Optimistic UI for stats
+            await queryClient.cancelQueries({ queryKey: queryKeys.stats.global })
+            await queryClient.cancelQueries({ queryKey: queryKeys.stats.categories })
+
+            const previousGlobalStats = queryClient.getQueryData(queryKeys.stats.global)
+            const previousCategoryStats = queryClient.getQueryData(queryKeys.stats.categories)
+
+            // Update global count
+            if (previousGlobalStats) {
+                queryClient.setQueryData(
+                    queryKeys.stats.global,
+                    (old: any) => ({ ...old, total_reports: (old?.total_reports || 0) + 1 })
+                )
+            }
+
+            // Update category count
+            if (previousCategoryStats && newReportData.category) {
+                queryClient.setQueryData(
+                    queryKeys.stats.categories,
+                    (old: any) => ({
+                        ...old,
+                        [newReportData.category]: (old?.[newReportData.category] || 0) + 1
+                    })
+                )
+            }
+
+            return { previousGlobalStats, previousCategoryStats }
+        },
+        onError: (_err, _newReport, context) => {
+            if (context?.previousGlobalStats) {
+                queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
+            }
+            if (context?.previousCategoryStats) {
+                queryClient.setQueryData(queryKeys.stats.categories, context.previousCategoryStats)
+            }
+        },
+        onSettled: () => {
+            // Final sync with server
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
-            // Refresh stats immediately
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },
@@ -78,15 +114,50 @@ export function useUpdateReportMutation() {
     return useMutation({
         mutationFn: ({ id, data }: { id: string; data: Partial<CreateReportData> }) =>
             reportsApi.update(id, data),
-        onSuccess: (updatedReport, { id }) => {
-            // Update the specific report in cache
-            queryClient.setQueryData(
-                queryKeys.reports.detail(id),
-                updatedReport
+        onMutate: async ({ id, data }) => {
+            // 1. Cancel outgoing queries
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.detail(id) })
+
+            // 2. Snapshot previous values
+            const previousDetail = queryClient.getQueryData<Report>(queryKeys.reports.detail(id))
+            const previousLists = queryClient.getQueriesData<Report[]>({ queryKey: ['reports', 'list'] })
+
+            // 3. Optimistic Update: Detail
+            if (previousDetail) {
+                queryClient.setQueryData<Report>(
+                    queryKeys.reports.detail(id),
+                    { ...previousDetail, ...data }
+                )
+            }
+
+            // 4. Optimistic Update: Lists
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old?.map(r => r.id === id ? { ...r, ...data } : r)
             )
-            // Invalidate lists to refetch
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+
+            return { previousDetail, previousLists }
         },
+        onError: (_err, { id }, context) => {
+            // Rollback Detail
+            if (context?.previousDetail) {
+                queryClient.setQueryData(queryKeys.reports.detail(id), context.previousDetail)
+            }
+            // Rollback Lists
+            if (context?.previousLists) {
+                context.previousLists.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: (_data, _error, { id }) => {
+            // Final Sync
+            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(id) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
+            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
+        }
     })
 }
 
@@ -104,33 +175,84 @@ export function useDeleteReportMutation() {
     return useMutation({
         mutationFn: (id: string) => reportsApi.delete(id),
         onMutate: async (id) => {
-            // 1. Cancel outgoing queries
+            // 1. Cancel outgoing queries for reports and stats
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
+            await queryClient.cancelQueries({ queryKey: queryKeys.stats.global })
+            await queryClient.cancelQueries({ queryKey: queryKeys.stats.categories })
 
-            // 2. Snapshot previous
+            // 2. Snapshot previous values
             const previousReports = queryClient.getQueriesData({ queryKey: ['reports', 'list'] })
+            const previousGlobalStats = queryClient.getQueryData(queryKeys.stats.global)
+            const previousCategoryStats = queryClient.getQueryData(queryKeys.stats.categories)
 
-            // 3. Optimistic Update (Remove from all lists)
+            // 3. Find report category for category stats update
+            let reportCategory: string | null = null
+            // Check in detail cache first
+            const detailData = queryClient.getQueryData<Report>(queryKeys.reports.detail(id))
+            if (detailData) {
+                reportCategory = detailData.category
+            } else {
+                // Look in lists if not in detail
+                for (const [_, data] of previousReports) {
+                    const found = (data as Report[])?.find(r => r.id === id)
+                    if (found) {
+                        reportCategory = found.category
+                        break
+                    }
+                }
+            }
+
+            // 4. Optimistic Update - Remove from Lists
             queryClient.setQueriesData<Report[]>(
                 { queryKey: ['reports', 'list'] },
                 (old) => old?.filter(r => r.id !== id)
             )
 
-            // Remove detail immediately (optional, but good for focus)
+            // 5. Optimistic Update - Global Stats
+            if (previousGlobalStats) {
+                queryClient.setQueryData(
+                    queryKeys.stats.global,
+                    (old: any) => ({
+                        ...old,
+                        total_reports: Math.max(0, (old?.total_reports || 1) - 1)
+                    })
+                )
+            }
+
+            // 6. Optimistic Update - Category Stats
+            if (previousCategoryStats && reportCategory) {
+                queryClient.setQueryData(
+                    queryKeys.stats.categories,
+                    (old: any) => ({
+                        ...old,
+                        [reportCategory!]: Math.max(0, (old?.[reportCategory!] || 1) - 1)
+                    })
+                )
+            }
+
+            // Remove detail immediately
             queryClient.removeQueries({ queryKey: queryKeys.reports.detail(id) })
 
-            return { previousReports }
+            return { previousReports, previousGlobalStats, previousCategoryStats }
         },
         onError: (_err, _id, context) => {
-            // 4. Rollback
+            // Rollback reports
             if (context?.previousReports) {
                 context.previousReports.forEach(([queryKey, data]) => {
                     queryClient.setQueryData(queryKey, data)
                 })
             }
+            // Rollback global stats
+            if (context?.previousGlobalStats) {
+                queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
+            }
+            // Rollback category stats
+            if (context?.previousCategoryStats) {
+                queryClient.setQueryData(queryKeys.stats.categories, context.previousCategoryStats)
+            }
         },
         onSettled: () => {
-            // 5. Final Invalidation (Sync)
+            // Final Sync
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })

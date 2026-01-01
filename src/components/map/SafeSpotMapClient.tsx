@@ -48,20 +48,43 @@ const CenterManager = ({
     return null
 }
 
-// Helper to create the 3D Pin Icon
-const createPinIcon = (color: string) => divIcon({
-    html: `<div style="transform: translate(-50%, -100%); position: absolute; left: 50%; top: 100%;">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" filter="drop-shadow(0px 4px 6px rgba(0,0,0,0.5))">
+// Helper to create the 3D Pin Icon as a static SVG Data URI
+// Senior Architect Note: Using static images (L.icon) instead of divIcon reduces DOM nodes
+// and allows the browser to optimize rendering via GPU.
+import L from 'leaflet'
+
+const createPinIcon = (color: string) => {
+    const svg = `
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+                    <feOffset dx="0" dy="2" result="offsetblur" />
+                    <feComponentTransfer>
+                        <feFuncA type="linear" slope="0.5" />
+                    </feComponentTransfer>
+                    <feMerge>
+                        <feMergeNode />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+            <g filter="url(#shadow)">
                 <path d="M20 0C11.164 0 4 7.164 4 16C4 26 20 40 20 40C20 40 36 26 36 16C36 7.164 28.836 0 20 0Z" fill="${color}"/>
                 <path d="M20 0C11.164 0 4 7.164 4 16C4 26 20 40 20 40C20 40 36 26 36 16C36 7.164 28.836 0 20 0Z" stroke="#FFFFFF" stroke-width="2"/>
                 <circle cx="20" cy="16" r="6" fill="#FFFFFF"/>
-            </svg>
-           </div>`,
-    className: 'bg-transparent',
-    iconSize: [40, 40],
-    iconAnchor: [20, 40],
-    popupAnchor: [0, -40]
-})
+            </g>
+        </svg>
+    `.trim()
+
+    return L.icon({
+        iconUrl: `data:image/svg+xml;base64,${btoa(svg)}`,
+        iconSize: [40, 40],
+        iconAnchor: [20, 40],
+        popupAnchor: [0, -40],
+        className: 'marker-pin-svg'
+    })
+}
 
 // CRITICAL: Leaflet initialization flag
 // This MUST be at module level to persist across component re-renders

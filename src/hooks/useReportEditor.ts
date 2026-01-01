@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
+import { useUpdateReportMutation } from '@/hooks/queries/useReportsQuery'
 import type { Report } from '@/lib/api'
 
 // ============================================
@@ -86,6 +87,8 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         setState(prev => ({ ...prev, newImages: files }))
     }, [])
 
+    const updateMutation = useUpdateReportMutation()
+
     const saveChanges = useCallback(async () => {
         if (!report || state.updating) return
 
@@ -101,28 +104,31 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
 
         setState(prev => ({ ...prev, updating: true }))
 
+        // Pattern: Text Updates are OPTIMISTIC (mutate)
+        // Image uploads are SEQUENTIAL (await)
         try {
-            // 1. Update text fields
-            let updatedReport = await reportsApi.update(report.id, {
-                title: state.title.trim(),
-                description: state.description.trim(),
-                status: state.status,
+            // 1. Optimistic Text Update
+            updateMutation.mutate({
+                id: report.id,
+                data: {
+                    title: state.title.trim(),
+                    description: state.description.trim(),
+                    status: state.status,
+                }
             })
 
-            // 2. Upload images if any
+            // 2. Sequential Image Upload (if needed)
             if (state.newImages.length > 0) {
                 try {
                     const uploadRes = await reportsApi.uploadImages(report.id, state.newImages)
-                    // The backend now appends, so uploadRes.image_urls will contain ALL images
-                    updatedReport = { ...updatedReport, image_urls: uploadRes.image_urls }
+                    // Update cache again with merged images after successful upload
+                    onReportUpdate({ ...report, ...state, image_urls: uploadRes.image_urls } as Report)
                 } catch (imgError) {
                     console.error('Error uploading images during edit:', imgError)
                     setState(prev => ({ ...prev, imageUploadError: 'La carga de fotos falló. Reintentá o eliminá las imágenes con problemas.' }))
                     toast.error('Se guardaron los cambios pero falló la carga de imágenes')
                 }
             }
-
-            onReportUpdate(updatedReport)
 
             setState({
                 isEditing: false,
@@ -134,12 +140,12 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                 imageUploadError: null,
             })
 
-            toast.success('Reporte actualizado correctamente')
+            toast.success('Cambios guardados')
         } catch (error) {
             handleErrorWithMessage(error, 'Error al actualizar el reporte', toast.error, 'useReportEditor.saveChanges')
             setState(prev => ({ ...prev, updating: false, imageUploadError: 'No se pudo guardar el reporte. Verificá tu conexión.' }))
         }
-    }, [report, state, onReportUpdate, toast])
+    }, [report, state, updateMutation, onReportUpdate, toast])
 
     return {
         // State

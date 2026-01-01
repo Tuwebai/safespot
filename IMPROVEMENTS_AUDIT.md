@@ -28,7 +28,7 @@ SafeSpot se encuentra en un estado de **Beta avanzada (v0.95)**. La arquitectura
 
 ---
 
-## 3. UX / UI
+## 3. UX / UI [x]
 - **Flujo de usuario**: Muy fluido. La navegación lateral y los botones flotantes son consistentes.
 - **Feedback visual**: Excelente uso de `Lucide-react` y variantes de `shadcn/ui`.
 - **Estados de carga**: Corregido. Se eliminó el flash visual mediante `min-h` persistente y transiciones `fade-in` en el Layout. [x]
@@ -37,7 +37,7 @@ SafeSpot se encuentra en un estado de **Beta avanzada (v0.95)**. La arquitectura
 
 ---
 
-## 4. Performance
+## 4. Performance 
 - **React Query**: Implementación ejemplar. `staleTime` y `invalidateQueries` están bien afinados. Se recomienda uniformidad en el uso de `onSettled` para triggers de UI.
 - **Renderizados innecesarios**: El `Home.tsx` re-renderiza componentes estáticos cuando las estadísticas globales se actualizan. Convendría aplicar `React.memo` a las secciones de "Features".
 - **Mapa**: El uso de `divIcon` para pins personalizados es costoso. En v1.0, convendría moverlos a SVGs base64 estáticos para reducir el costo del DOM.
