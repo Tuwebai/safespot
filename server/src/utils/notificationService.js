@@ -192,37 +192,50 @@ export const NotificationService = {
 
     /**
      * Notify users of similar reports in their zone
+     * OPTIMIZED: Uses batch INSERT for all recipients in a single query
      */
     async notifySimilarReports(report) {
         if (!report.latitude || !report.longitude) return;
 
         try {
             const db = DB.public();
-            const recipients = await db.query(`
-                SELECT ns.anonymous_id
-                FROM notification_settings ns
-                WHERE 
-                    ns.similar_reports = true
-                    AND ns.anonymous_id != $2
-                    AND ns.notifications_today < ns.max_notifications_per_day
-                    -- $1 is category, $2 is user to exclude, $3/$4 are lat/long
-                    -- Fix: Cast $1 to text to avoid "could not determine data type"
-                    AND (ns.categories_of_interest IS NULL OR $1::text = ANY(ns.categories_of_interest))
-                    AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, 2000) -- Tight 2km radius for "nearby"
-            `, [report.category, report.anonymous_id, report.latitude, report.longitude]);
 
-            console.log(`[Notify] Found ${recipients.rows.length} recipients for similar reports`);
+            // Batch INSERT: Create all notifications in one query
+            const result = await db.query(`
+                WITH eligible_recipients AS (
+                    SELECT ns.anonymous_id
+                    FROM notification_settings ns
+                    WHERE 
+                        ns.similar_reports = true
+                        AND ns.anonymous_id != $2
+                        AND ns.notifications_today < ns.max_notifications_per_day
+                        AND (ns.categories_of_interest IS NULL OR $1::text = ANY(ns.categories_of_interest))
+                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, 2000)
+                )
+                INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
+                SELECT 
+                    anonymous_id,
+                    'similar',
+                    '📍 Reporte similar cerca tuyo',
+                    'Se reportó un nuevo caso de "' || $1::text || '" en tu zona.',
+                    'report',
+                    $5,
+                    $5
+                FROM eligible_recipients
+                RETURNING anonymous_id
+            `, [report.category, report.anonymous_id, report.latitude, report.longitude, report.id]);
 
-            for (const recipient of recipients.rows) {
-                await this.createNotification({
-                    anonymous_id: recipient.anonymous_id,
-                    type: 'similar',
-                    title: '📍 Reporte similar cerca tuyo',
-                    message: `Se reportó un nuevo caso de "${report.category}" en tu zona.`,
-                    entity_type: 'report',
-                    entity_id: report.id,
-                    report_id: report.id
-                });
+            const notifiedCount = result.rows.length;
+            console.log(`[Notify] Batch created ${notifiedCount} similar report notifications`);
+
+            // Batch UPDATE: Increment notification counts for all recipients
+            if (notifiedCount > 0) {
+                await db.query(`
+                    UPDATE notification_settings
+                    SET notifications_today = notifications_today + 1,
+                        last_notified_at = NOW()
+                    WHERE anonymous_id = ANY($1::uuid[])
+                `, [result.rows.map(r => r.anonymous_id)]);
             }
         } catch (err) {
             logError(err, { context: 'notifySimilarReports', reportId: report.id });
