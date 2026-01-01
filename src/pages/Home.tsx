@@ -156,6 +156,16 @@ export function Home() {
                 </Button>
               </Link>
             </div>
+
+            <div className="mt-8 animate-fade-in delay-300">
+              <Link
+                to="/perfil"
+                className="text-sm font-medium text-foreground/50 hover:text-neon-green flex items-center justify-center gap-2 transition-colors group"
+              >
+                <TrendingUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                Ver mi progreso y logros
+              </Link>
+            </div>
           </div>
         </div>
       </section>

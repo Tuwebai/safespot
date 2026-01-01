@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -99,9 +99,22 @@ export function Header() {
           {/* Notification Bell and Create Report Button */}
           <div className="hidden md:flex items-center space-x-4">
             <NotificationBell />
+            <Link to="/perfil">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "rounded-full hover:bg-neon-green/10 hover:text-neon-green",
+                  isActive('/perfil') && "text-neon-green bg-neon-green/10"
+                )}
+                title="Mi Perfil"
+              >
+                <User className="h-5 w-5" />
+              </Button>
+            </Link>
             <Link to="/crear-reporte">
               <Button
-                className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg"
+                className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg transition-all active:scale-95"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Crear Reporte
@@ -149,6 +162,23 @@ export function Header() {
                   </Link>
                 )
               })}
+
+              <div className="pt-2 mt-2 border-t border-dark-border">
+                <Link
+                  to="/perfil"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={cn(
+                    'text-sm font-medium px-3 py-3 rounded-md transition-colors flex items-center',
+                    isActive('/perfil')
+                      ? 'text-neon-green bg-neon-green/10'
+                      : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+                  )}
+                >
+                  <User className="mr-2 h-4 w-4 text-neon-green" />
+                  Mi Perfil y Logros
+                </Link>
+              </div>
+
               <Link
                 to="/crear-reporte"
                 onClick={() => setMobileMenuOpen(false)}
