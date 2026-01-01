@@ -82,7 +82,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     const reportsResult = await queryWithRLS(
       anonymousId,
       `SELECT id, title, status, upvotes_count, comments_count, created_at
-       FROM reports WHERE anonymous_id = $1 ORDER BY created_at DESC LIMIT 10`,
+       FROM reports WHERE anonymous_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 10`,
       [anonymousId]
     ).catch(e => {
       console.error('[PROFILE] reports query failed:', e.message);
