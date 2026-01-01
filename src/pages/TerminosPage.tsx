@@ -37,8 +37,7 @@ export default function TerminosPage() {
                     {/* Intro */}
                     <section className="prose prose-invert max-w-none">
                         <p className="text-lg text-foreground/90 leading-relaxed">
-                            Bienvenido/a a SafeSpot. Al usar esta plataforma, aceptás los siguientes
-                            términos y condiciones. Te pedimos que los leas con atención.
+                            Bienvenido/a a SafeSpot. Antes de utilizar nuestra plataforma, te solicitamos que leas detenidamente estos Términos y Condiciones. El acceso y uso de la aplicación implica tu aceptación total y sin reservas.
                         </p>
                     </section>
 
@@ -48,28 +47,28 @@ export default function TerminosPage() {
                             <div className="p-2 bg-neon-green/20 rounded-lg">
                                 <MapPin className="h-5 w-5 text-neon-green" />
                             </div>
-                            <h2 className="text-xl font-semibold">1. Naturaleza del Servicio</h2>
+                            <h2 className="text-xl font-semibold">1. Naturaleza de la Plataforma</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
                             <p>
-                                <strong>SafeSpot es una plataforma informativa y comunitaria</strong> que permite
-                                a los usuarios compartir reportes sobre incidentes de seguridad urbana de manera anónima.
+                                <strong>SafeSpot es una herramienta tecnológica de información colaborativa</strong> diseñada para el reporte y visualización de incidentes de seguridad comunitaria. No constituye un servicio de vigilancia, monitoreo profesional ni respuesta operativa.
                             </p>
-                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-                                <p className="text-yellow-400 font-medium flex items-center gap-2">
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                                <p className="text-red-400 font-bold flex items-center gap-2 uppercase tracking-wide">
                                     <AlertTriangle className="h-4 w-4" />
-                                    Importante
+                                    AVISO CRÍTICO DE SEGURIDAD
                                 </p>
-                                <p className="mt-2 text-foreground/70">
-                                    SafeSpot <strong>NO reemplaza</strong> denuncias policiales oficiales, llamados
-                                    de emergencia al 911, ni ningún otro mecanismo formal de seguridad pública.
-                                    Ante una emergencia real, siempre contactá a las autoridades correspondientes.
+                                <p className="mt-2 text-foreground/90 font-medium">
+                                    SafeSpot **NO REEMPLAZA** en ningún caso a las autoridades de seguridad pública (Policía, Gendarmería, etc.), servicios de emergencias médicas ni líneas oficiales (como el 911).
+                                </p>
+                                <p className="mt-2 text-sm text-foreground/70 italic">
+                                    Ante una situación de riesgo inminente o emergencia real, el usuario tiene la obligación y responsabilidad de contactar de inmediato a las autoridades oficiales competentes.
                                 </p>
                             </div>
                         </div>
                     </section>
 
-                    {/* Section 2: Limitation of Liability */}
+                    {/* Section 2: Limitación de Responsabilidad */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -77,102 +76,80 @@ export default function TerminosPage() {
                             </div>
                             <h2 className="text-xl font-semibold">2. Limitación de Responsabilidad</h2>
                         </div>
-                        <div className="space-y-3 text-foreground/80">
+                        <div className="space-y-4 text-foreground/80">
                             <p>
-                                Los reportes publicados en SafeSpot son generados por usuarios de la comunidad.
+                                El uso de SafeSpot se realiza bajo la exclusiva responsabilidad y cuenta del usuario.
                             </p>
-                            <ul className="list-disc pl-5 space-y-2">
+                            <ul className="list-disc pl-5 space-y-3">
                                 <li>
-                                    <strong>No garantizamos la veracidad, exactitud o actualidad</strong> de la
-                                    información publicada por los usuarios.
+                                    <strong>Exactitud del Contenido:</strong> Los reportes son generados íntegramente por usuarios anónimos. SafeSpot no verifica de forma independiente la veracidad, exactitud, vigencia ni integridad de dicha información.
                                 </li>
                                 <li>
-                                    SafeSpot <strong>no se hace responsable</strong> por decisiones que tomes
-                                    basándote en la información de esta plataforma.
+                                    <strong>Carácter Informativo:</strong> La información geolocalizada puede ser inexacta debido a limitaciones técnicas o errores de carga. No debe ser utilizada como única fuente para tomar decisiones de seguridad personal.
                                 </li>
                                 <li>
-                                    La plataforma se ofrece "tal cual está", sin garantías de ningún tipo.
+                                    <strong>Ausencia de Garantías:</strong> La plataforma se ofrece "tal cual es" (as-is). SafeSpot no asume responsabilidad por daños directos o indirectos derivados del uso indebido de la información o de fallos técnicos en la visualización de datos.
                                 </li>
                             </ul>
                         </div>
                     </section>
 
-                    {/* Section 3: Acceptable Use */}
+                    {/* Section 3: Uso Adecuado */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-purple-500/20 rounded-lg">
                                 <Users className="h-5 w-5 text-purple-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">3. Uso Adecuado</h2>
+                            <h2 className="text-xl font-semibold">3. Reglas de la Comunidad</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
-                            <p>Al usar SafeSpot, te comprometés a:</p>
+                            <p>Al utilizar este servicio, te comprometes a:</p>
                             <ul className="list-disc pl-5 space-y-2">
                                 <li>
-                                    <strong>No publicar reportes falsos, maliciosos o difamatorios</strong> con
-                                    intención de engañar o perjudicar a terceros.
+                                    <strong>Prohibición de reportes falsos:</strong> No publicar información maliciosa o deliberadamente inexacta.
                                 </li>
                                 <li>
-                                    No utilizar la plataforma para acosar, amenazar o discriminar.
+                                    <strong>Respeto y Legalidad:</strong> No utilizar la herramienta para actividades ilícitas, acoso, difamación o exposición de datos personales de terceros.
                                 </li>
                                 <li>
-                                    Reportar únicamente incidentes que hayas presenciado o tengas conocimiento
-                                    directo de su ocurrencia.
-                                </li>
-                                <li>
-                                    No intentar identificar o revelar la identidad de otros usuarios.
+                                    <strong>Integridad del Sistema:</strong> No realizar acciones que comprometan la seguridad o disponibilidad de la infraestructura de SafeSpot.
                                 </li>
                             </ul>
-                            <p className="text-sm text-muted-foreground mt-4">
-                                El incumplimiento de estas reglas puede resultar en restricciones de uso sin previo aviso.
+                            <p className="text-sm text-muted-foreground mt-4 italic">
+                                El incumplimiento de estas normas facultará a SafeSpot para restringir el acceso del dispositivo infractor sin previo aviso.
                             </p>
                         </div>
                     </section>
 
-                    {/* Section 4: Moderation */}
+                    {/* Section 4: Moderación y Propiedad */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-orange-500/20 rounded-lg">
                                 <Shield className="h-5 w-5 text-orange-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">4. Moderación</h2>
+                            <h2 className="text-xl font-semibold">4. Control de Contenidos</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
-                            <p>SafeSpot se reserva el derecho de:</p>
+                            <p>Para proteger la integridad de la comunidad, SafeSpot se reserva el derecho unilatereal de:</p>
                             <ul className="list-disc pl-5 space-y-2">
-                                <li>
-                                    <strong>Ocultar, modificar o eliminar</strong> cualquier contenido que
-                                    infrinja estos términos o que consideremos inapropiado.
-                                </li>
-                                <li>
-                                    <strong>Limitar o restringir</strong> el acceso de usuarios que abusen de la plataforma.
-                                </li>
-                                <li>
-                                    Implementar sistemas automatizados de moderación para proteger la comunidad.
-                                </li>
+                                <li>Eliminar, editar o etiquetar como "dudoso" cualquier reporte que infrinja estos términos.</li>
+                                <li>Implementar sistemas de filtrado automático de spam y contenido ofensivo.</li>
+                                <li>Suspender el acceso a identificadores anónimos involucrados en comportamientos maliciosos persistentes.</li>
                             </ul>
-                            <p className="text-sm text-muted-foreground mt-4">
-                                Estas acciones pueden realizarse sin notificación previa para proteger
-                                la integridad de la plataforma y sus usuarios.
-                            </p>
                         </div>
                     </section>
 
-                    {/* Section 5: Jurisdiction */}
+                    {/* Section 5: Jurisdicción y Validez */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-red-500/20 rounded-lg">
                                 <Gavel className="h-5 w-5 text-red-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">5. Jurisdicción</h2>
+                            <h2 className="text-xl font-semibold">5. Marco Legal</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
                             <p>
-                                Estos términos se rigen por las leyes de la <strong>República Argentina</strong>.
-                            </p>
-                            <p>
-                                Cualquier controversia que surja del uso de SafeSpot será sometida a la
-                                jurisdicción de los tribunales ordinarios de la Ciudad Autónoma de Buenos Aires.
+                                Estos términos se rigen por las leyes de la República Argentina y estándares internacionales de protección de servicios web. Cualquier conflicto será dirimido ante los tribunales competentes de la Ciudad Autónoma de Buenos Aires.
                             </p>
                         </div>
                     </section>

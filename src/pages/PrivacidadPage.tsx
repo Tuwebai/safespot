@@ -5,7 +5,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Eye, Database, UserX, Lock, Server, Shield } from 'lucide-react';
+import { ArrowLeft, Eye, Database, UserX, Lock, Shield } from 'lucide-react';
 
 export default function PrivacidadPage() {
     return (
@@ -47,134 +47,108 @@ export default function PrivacidadPage() {
                         </p>
                     </div>
 
-                    {/* Section 1: What we collect */}
+                    {/* Section 1: Data Collection & Minimization */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-blue-500/20 rounded-lg">
                                 <Database className="h-5 w-5 text-blue-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">1. Qué Datos Guardamos</h2>
+                            <h2 className="text-xl font-semibold">1. Recolección Mínima de Datos</h2>
                         </div>
                         <div className="space-y-4 text-foreground/80">
-                            <div>
-                                <h3 className="font-medium text-foreground mb-2">✅ Lo que SÍ guardamos:</h3>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Contenido de los reportes que publicás (título, descripción, categoría)</li>
-                                    <li>Ubicación geográfica del incidente (coordenadas)</li>
-                                    <li>Fecha y hora del reporte</li>
-                                    <li>Imágenes que subas voluntariamente</li>
-                                    <li>Un identificador anónimo único (explicado abajo)</li>
-                                </ul>
-                            </div>
-                            <div>
-                                <h3 className="font-medium text-foreground mb-2">❌ Lo que NO guardamos:</h3>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Tu nombre real</li>
-                                    <li>Tu email o teléfono</li>
-                                    <li>Tu dirección IP de forma persistente</li>
-                                    <li>Historial de ubicaciones</li>
-                                    <li>Ningún dato que pueda identificarte personalmente</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </section>
-
-                    {/* Section 2: Anonymous ID */}
-                    <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 bg-purple-500/20 rounded-lg">
-                                <UserX className="h-5 w-5 text-purple-400" />
-                            </div>
-                            <h2 className="text-xl font-semibold">2. Identificador Anónimo</h2>
-                        </div>
-                        <div className="space-y-3 text-foreground/80">
                             <p>
-                                Para prevenir abusos y permitir funcionalidades básicas, generamos un
-                                <strong> identificador anónimo único</strong> que se almacena solo en tu dispositivo.
+                                De acuerdo con el principio de **minimización de datos**, SafeSpot solo solicita y almacena la información estrictamente necesaria para la prestación del servicio:
                             </p>
-                            <div className="bg-dark-bg rounded-lg p-4 border border-dark-border">
-                                <h4 className="font-medium mb-2">¿Qué es el identificador anónimo?</h4>
-                                <ul className="list-disc pl-5 space-y-1 text-sm">
-                                    <li>Es un código aleatorio generado en tu navegador</li>
-                                    <li><strong>NO está vinculado a tu identidad real</strong></li>
-                                    <li>NO podemos saber quién sos a partir de este código</li>
-                                    <li>Si borrás los datos del navegador, se genera uno nuevo</li>
-                                </ul>
+                            <div>
+                                <h3 className="font-medium text-foreground mb-2 italic">Datos de Geolocalización:</h3>
+                                <p className="text-sm mb-2">
+                                    Al generar un reporte, procesamos las coordenadas exactas (latitud y longitud) para ubicar el incidente en el mapa. Estos datos se utilizan exclusivamente para informar a la comunidad sobre zonas de riesgo.
+                                </p>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                                Este identificador nos permite saber que varios reportes fueron hechos
-                                desde el mismo dispositivo (para prevenir spam), pero nunca quién los hizo.
-                            </p>
-                        </div>
-                    </section>
-
-                    {/* Section 3: No Third Parties */}
-                    <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 bg-green-500/20 rounded-lg">
-                                <Lock className="h-5 w-5 text-green-400" />
-                            </div>
-                            <h2 className="text-xl font-semibold">3. No Compartimos tus Datos</h2>
-                        </div>
-                        <div className="space-y-3 text-foreground/80">
-                            <p>
-                                <strong>No vendemos, alquilamos ni compartimos</strong> ningún dato con terceros.
-                            </p>
-                            <ul className="list-disc pl-5 space-y-2">
-                                <li>No usamos servicios de publicidad que rastreen usuarios</li>
-                                <li>No enviamos datos a redes sociales</li>
-                                <li>No compartimos información con gobiernos ni empresas privadas</li>
+                            <ul className="list-disc pl-5 space-y-1">
+                                <li>Contenido del reporte (categoría, descripción, fotos adjuntas).</li>
+                                <li>Marca temporal del incidente.</li>
+                                <li>Identificador Anónimo único del dispositivo.</li>
                             </ul>
-                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mt-4">
-                                <p className="text-yellow-400 text-sm">
-                                    <strong>Excepción legal:</strong> Solo revelaríamos información si nos lo
-                                    exigiera una orden judicial válida emitida por un tribunal argentino,
-                                    y en ese caso solo podríamos entregar el identificador anónimo y el
-                                    contenido público del reporte.
+                            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                                <p className="text-green-400 text-sm font-medium">
+                                    SafeSpot NO vincula estos datos a nombres, correos electrónicos, números de teléfono ni identidades civiles reales.
                                 </p>
                             </div>
                         </div>
                     </section>
 
-                    {/* Section 4: Anti-fraud */}
+                    {/* Section 2: Anonymous ID Transparency */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 bg-orange-500/20 rounded-lg">
-                                <Server className="h-5 w-5 text-orange-400" />
+                            <div className="p-2 bg-purple-500/20 rounded-lg">
+                                <UserX className="h-5 w-5 text-purple-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">4. Uso para Moderación</h2>
+                            <h2 className="text-xl font-semibold">2. Uso del Identificador Anónimo</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
                             <p>
-                                Utilizamos el identificador anónimo internamente para:
+                                El `anonymous_id` es una cadena de caracteres aleatoria generada localmente en tu dispositivo.
                             </p>
-                            <ul className="list-disc pl-5 space-y-2">
-                                <li>Detectar y prevenir reportes spam o abusivos</li>
-                                <li>Limitar la cantidad de reportes por dispositivo</li>
-                                <li>Aplicar restricciones a usuarios que infrinjan las normas</li>
-                                <li>Permitir que veas y edites tus propios reportes</li>
-                            </ul>
-                            <p className="text-sm text-muted-foreground mt-4">
-                                Estas medidas protegen la calidad de la comunidad sin comprometer tu privacidad.
+                            <div className="bg-dark-bg rounded-lg p-4 border border-dark-border space-y-2">
+                                <h4 className="font-medium text-foreground">¿Para qué lo usamos?</h4>
+                                <ul className="list-disc pl-5 space-y-1 text-sm">
+                                    <li><strong>Prevención de Fraude:</strong> Evitar la saturación de reportes falsos desde un mismo origen.</li>
+                                    <li><strong>Gestión de Usuario:</strong> Permitirte visualizar, editar o eliminar tus propios reportes sin necesidad de crear una cuenta con contraseña.</li>
+                                    <li><strong>Seguridad:</strong> Mitigar ataques de denegación de servicio (DDoS) o spam malicioso.</li>
+                                </ul>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                Este identificador no nos permite conocer tu perfil personal ni rastrear tu actividad fuera de la aplicación.
                             </p>
                         </div>
                     </section>
 
-                    {/* Section 5: Your Rights */}
+                    {/* Section 3: No-Sells & No-Ads Policy */}
+                    <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-green-500/20 rounded-lg">
+                                <Lock className="h-5 w-5 text-green-400" />
+                            </div>
+                            <h2 className="text-xl font-semibold">3. Política de Terceros y Publicidad</h2>
+                        </div>
+                        <div className="space-y-3 text-foreground/80">
+                            <p className="font-medium text-foreground">Nuestro compromiso es absoluto:</p>
+                            <ul className="list-disc pl-5 space-y-2">
+                                <li><strong>No vendemos ni alquilamos</strong> tus datos a empresas de marketing ni brokers de bases de datos.</li>
+                                <li><strong>No utilizamos</strong> herramientas de publicidad personalizada o rastreadores de comportamiento (ads tracking).</li>
+                                <li>Los datos de geolocalización no se comparten con anunciantes ni con redes sociales.</li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    {/* Section 4: GDPR/LATAM Compliance & Rights */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-cyan-500/20 rounded-lg">
                                 <Eye className="h-5 w-5 text-cyan-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">5. Tus Derechos</h2>
+                            <h2 className="text-xl font-semibold">4. Tus Derechos y Eliminación de Datos</h2>
                         </div>
-                        <div className="space-y-3 text-foreground/80">
-                            <p>Tenés derecho a:</p>
-                            <ul className="list-disc pl-5 space-y-2">
-                                <li><strong>Borrar tu historial:</strong> Limpiá los datos del navegador para generar un nuevo identificador</li>
-                                <li><strong>No ser rastreado:</strong> No usamos cookies de tracking</li>
-                                <li><strong>Usar la app sin identificarte:</strong> Nunca te pediremos datos personales</li>
-                            </ul>
+                        <div className="space-y-4 text-foreground/80">
+                            <p>
+                                Bajo normativas como el GDPR (Europa) y leyes de protección de datos locales en LATAM, tienes derecho a controlar tu información:
+                            </p>
+                            <div className="space-y-2">
+                                <h4 className="font-medium text-foreground">Cómo ejercer tus derechos:</h4>
+                                <ul className="list-disc pl-5 space-y-2">
+                                    <li><strong>Eliminación Automática:</strong> Al borrar la caché y los datos del sitio en tu navegador, el identificador anónimo se destruye permanentemente en tu dispositivo.</li>
+                                    <li><strong>Solicitud Manual:</strong> Si deseas que eliminemos un reporte específico o datos vinculados a tu identificador anónimo de nuestros servidores, puedes hacerlo por correo electrónico.</li>
+                                </ul>
+                            </div>
+                            <div className="bg-dark-bg p-4 rounded-lg border border-dark-border">
+                                <p className="text-sm">
+                                    Para solicitudes de eliminación de datos, escribe a:
+                                    <span className="text-neon-green ml-1 font-mono">privacidad@safespot.app</span>
+                                    <br />
+                                    <span className="text-[10px] text-muted-foreground italic">Incluye tu identificador anónimo (si lo posees) o el detalle del reporte a remover.</span>
+                                </p>
+                            </div>
                         </div>
                     </section>
 
