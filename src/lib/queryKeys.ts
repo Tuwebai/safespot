@@ -55,6 +55,9 @@ export const queryKeys = {
     // GAMIFICATION
     // ============================================
     gamification: {
+        // Base key for all gamification queries
+        all: ['gamification'] as const,
+
         // Complete gamification summary (profile + badges)
         summary: ['gamification', 'summary'] as const,
 

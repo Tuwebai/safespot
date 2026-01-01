@@ -958,7 +958,7 @@ router.get('/:id/related', async (req, res) => {
         FROM reports
         WHERE id != $2
           AND is_hidden = false
-          AND status != 'deleted'
+          AND deleted_at IS NULL
           AND location IS NOT NULL
         ORDER BY
           (category = $1) DESC, -- Best matches (same category) first
@@ -973,7 +973,7 @@ router.get('/:id/related', async (req, res) => {
         FROM reports
         WHERE id != $2
           AND is_hidden = false
-          AND status != 'deleted'
+          AND deleted_at IS NULL
           AND zone = $3
         ORDER BY 
           (category = $1) DESC,
