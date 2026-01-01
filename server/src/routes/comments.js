@@ -298,16 +298,10 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
 
     const data = insertResult.rows[0];
 
-    // Evaluate badges (await to include in response for real-time notification)
-    let newBadges = [];
-    try {
-      const gamification = await syncGamification(anonymousId);
-      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
-        newBadges = gamification.profile.newlyAwarded;
-      }
-    } catch (err) {
-      logError(err, req);
-    }
+    // Trigger gamification sync asynchronously (non-blocking)
+    syncGamification(anonymousId).catch(err => {
+      logError(err, { context: 'syncGamification.comment', anonymousId });
+    });
 
     // NOTIFICATIONS: Notify report owner (Async)
     try {
@@ -323,10 +317,7 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
 
     res.status(201).json({
       success: true,
-      data: {
-        ...data,
-        newBadges
-      },
+      data,
       message: 'Comment created successfully'
     });
   } catch (error) {

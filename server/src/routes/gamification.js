@@ -2,7 +2,7 @@ import express from 'express';
 import { requireAnonymousId } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { syncGamification } from '../utils/gamificationCore.js';
+import { syncGamification, getGamificationProfile } from '../utils/gamificationCore.js';
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ router.get('/badges', requireAnonymousId, async (req, res) => {
 
 /**
  * GET /api/gamification/summary
- * Optimized endpoint for Home and Profile
+ * OPTIMIZED: Read-only endpoint for Home and Profile (no writes)
  */
 router.get('/summary', requireAnonymousId, async (req, res) => {
   const anonymousId = req.anonymousId;
@@ -39,8 +39,8 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
     // 1. Ensure user exists (idempotent)
     await ensureAnonymousUser(anonymousId);
 
-    // 2. Sync and get current state
-    const data = await syncGamification(anonymousId);
+    // 2. Get current state (READ-ONLY, no badge awarding)
+    const data = await getGamificationProfile(anonymousId);
 
     // 3. Return consistent structure
     return res.json({
@@ -79,7 +79,7 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
 
 /**
  * POST /api/gamification/evaluate
- * Explicitly trigger sync
+ * Explicitly trigger sync (WRITE mode)
  */
 router.post('/evaluate', requireAnonymousId, async (req, res) => {
   try {

@@ -77,20 +77,20 @@ export async function calculateUserMetrics(anonymousId) {
 }
 
 /**
- * SOURCE OF TRUTH: Synchronize and calculate user's gamification state.
- * Enforces strict consistency between progress, badges, and points.
+ * SOURCE OF TRUTH: Synchronize and/or calculate user's gamification state.
  * @param {string} anonymousId 
+ * @param {boolean} readOnly - If true, only calculates without database writes
  */
-export async function calculateUserGamification(anonymousId) {
+export async function calculateUserGamification(anonymousId, readOnly = false) {
     if (!anonymousId) return null;
 
     try {
         const clientToUse = supabaseAdmin || supabase;
 
-        // 1. Get all badge rules from database
+        // 1. Get all badge rules
         const { data: allBadges } = await clientToUse
             .from('badges')
-            .select('id, code, points, target_metric, threshold, name, icon, description, category, category_label, level, rarity')
+            .select('*')
             .order('category', { ascending: true })
             .order('level', { ascending: true }); // Ensure hierarchical order
 
@@ -99,7 +99,7 @@ export async function calculateUserGamification(anonymousId) {
         // 2. Calculate REAL-TIME metrics from user actions
         const metrics = await calculateUserMetrics(anonymousId);
 
-        // 3. Get currently stored badges
+        // 3. Get currently obtained badges
         const { data: obtainedBadges, error: fetchError } = await clientToUse
             .from('user_badges')
             .select('badge_id, awarded_at')
@@ -112,51 +112,51 @@ export async function calculateUserGamification(anonymousId) {
 
         const obtainedMap = new Map((obtainedBadges || []).map(ub => [ub.badge_id, ub.awarded_at]));
 
-        // 4. SYNC LOGIC: Award or Revoke based on REAL thresholds
+        // 4. SYNC LOGIC: Award (Write Operation) - SKIPPED IN READ-ONLY
         let newlyAwarded = [];
-        for (const badge of allBadges) {
-            const currentVal = metrics[badge.target_metric] || 0;
-            const requiredVal = badge.threshold;
-            const meetsThreshold = requiredVal > 0 && currentVal >= requiredVal;
 
-            if (obtainedMap.has(badge.id)) {
-                // RULE: Badges are PERSISTENT. 
-                // Once obtained, they are never revoked even if metrics drop.
-                // This prevents "lost progress" feeling when deleting content.
-                // (Revocation logic removed)
-            } else {
-                // RULE: If threshold met but not unlocked, AWARD
-                if (meetsThreshold) {
-                    const now = new Date().toISOString();
-                    const { error: insertError } = await clientToUse
-                        .from('user_badges')
-                        .insert({
-                            anonymous_id: anonymousId,
-                            badge_id: badge.id,
-                            badge_code: badge.code,
-                            awarded_at: now
-                        });
+        if (!readOnly) {
+            for (const badge of allBadges) {
+                const currentVal = metrics[badge.target_metric] || 0;
+                const requiredVal = badge.threshold;
+                const meetsThreshold = requiredVal > 0 && currentVal >= requiredVal;
 
-                    if (!insertError) {
-                        obtainedMap.set(badge.id, now);
-                        newlyAwarded.push({
-                            code: badge.code,
-                            name: badge.name,
-                            icon: badge.icon,
-                            points: badge.points,
-                            rarity: badge.rarity
-                        });
+                if (obtainedMap.has(badge.id)) {
+                    // Persistent: Already obtained
+                } else {
+                    // RULE: If threshold met but not unlocked, AWARD
+                    if (meetsThreshold) {
+                        const now = new Date().toISOString();
+                        const { error: insertError } = await clientToUse
+                            .from('user_badges')
+                            .insert({
+                                anonymous_id: anonymousId,
+                                badge_id: badge.id,
+                                badge_code: badge.code,
+                                awarded_at: now
+                            });
 
-                        // Notify user of achievement
-                        // We do this asynchronously to not block the main process
-                        NotificationService.notifyBadgeEarned(anonymousId, badge).catch(err => {
-                            // Just log error, don't fail the award
-                            console.error('Failed to send badge notification:', err);
-                        });
+                        if (!insertError) {
+                            obtainedMap.set(badge.id, now);
+                            newlyAwarded.push({
+                                code: badge.code,
+                                name: badge.name,
+                                icon: badge.icon,
+                                points: badge.points,
+                                rarity: badge.rarity
+                            });
 
-                        logSuccess('Badge awarded', { anonymousId, badgeCode: badge.code });
-                    } else {
-                        logError(insertError, anonymousId);
+                            // Notify user of achievement
+                            // We do this asynchronously to not block the main process
+                            NotificationService.notifyBadgeEarned(anonymousId, badge).catch(err => {
+                                // Just log error, don't fail the award
+                                console.error('Failed to send badge notification:', err);
+                            });
+
+                            logSuccess('Badge awarded', { anonymousId, badgeCode: badge.code });
+                        } else {
+                            logError(insertError, anonymousId);
+                        }
                     }
                 }
             }
@@ -169,15 +169,16 @@ export async function calculateUserGamification(anonymousId) {
 
         const newLevel = calculateLevelFromPoints(totalPoints);
 
-        // 6. Persist profile updates (Internal DB only)
-        await queryWithRLS(
-            anonymousId,
-            `UPDATE anonymous_users SET points = $1, level = $2 WHERE anonymous_id = $3`,
-            [totalPoints, newLevel, anonymousId]
-        );
+        // 6. Persist profile updates - SKIPPED IN READ-ONLY
+        if (!readOnly) {
+            await queryWithRLS(
+                anonymousId,
+                `UPDATE anonymous_users SET points = $1, level = $2 WHERE anonymous_id = $3`,
+                [totalPoints, newLevel, anonymousId]
+            );
+        }
 
         // 7. Format consistent response & Calculate Next Achievement
-
         let nextAchievement = null;
         let maxPercent = -1;
 
@@ -237,7 +238,7 @@ export async function calculateUserGamification(anonymousId) {
             profile: {
                 points: totalPoints,
                 level: newLevel,
-                newlyAwarded
+                newlyAwarded // Empty if readOnly
             },
             badges: badgesWithStatus,
             metrics,
@@ -250,5 +251,12 @@ export async function calculateUserGamification(anonymousId) {
     }
 }
 
-// Alias for backwards compatibility
+/**
+ * READ-ONLY: Get profile without side effects
+ */
+export async function getGamificationProfile(anonymousId) {
+    return calculateUserGamification(anonymousId, true);
+}
+
+// Alias for backwards compatibility (Write mode by default)
 export const syncGamification = calculateUserGamification;
