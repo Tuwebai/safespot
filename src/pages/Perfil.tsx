@@ -135,14 +135,25 @@ export function Perfil() {
                   <div className="w-full bg-dark-bg rounded-full h-2.5 p-0.5 border border-white/5">
                     <div
                       className="bg-gradient-to-r from-neon-green to-emerald-400 h-1.5 rounded-full transition-all duration-1000"
-                      style={{ width: `${getLevelProgress()}%` }}
+                      style={{
+                        width: `${calculateLevelProgress(
+                          gamificationData?.profile?.points ?? profile?.points ?? 0,
+                          gamificationData?.profile?.level ?? profile?.level ?? 1
+                        )}%`
+                      }}
                     />
                   </div>
                   <div className="flex justify-between items-center mt-2">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">
-                      {getPointsToNextLevel()} pts para Nivel {(gamificationData?.profile?.level ?? profile?.level ?? 1) + 1}
+                      {getPointsToNextLevel(
+                        gamificationData?.profile?.points ?? profile?.points ?? 0,
+                        gamificationData?.profile?.level ?? profile?.level ?? 1
+                      )} pts para Nivel {(gamificationData?.profile?.level ?? profile?.level ?? 1) + 1}
                     </p>
-                    <span className="text-[10px] font-bold text-neon-green/60">{Math.round(getLevelProgress())}%</span>
+                    <span className="text-[10px] font-bold text-neon-green/60">{Math.round(calculateLevelProgress(
+                      gamificationData?.profile?.points ?? profile?.points ?? 0,
+                      gamificationData?.profile?.level ?? profile?.level ?? 1
+                    ))}%</span>
                   </div>
                 </div>
 
