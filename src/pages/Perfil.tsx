@@ -125,7 +125,7 @@ export function Perfil() {
             <CardContent>
               <div className="space-y-6">
                 {/* Nivel y Puntos */}
-                <div>
+                <div className="onboarding-gamification">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-bold tracking-tight">Nivel {gamificationData?.profile?.level ?? profile?.level}</span>
                     <span className="text-xs font-mono text-neon-green bg-neon-green/10 px-2 py-0.5 rounded">
@@ -318,7 +318,9 @@ export function Perfil() {
           </Card>
 
           {/* Modo Alerta por Zonas */}
-          <AlertZoneStatusSection />
+          <div className="onboarding-zones">
+            <AlertZoneStatusSection />
+          </div>
 
           {/* Notificaciones */}
           <NotificationSettingsSection />
