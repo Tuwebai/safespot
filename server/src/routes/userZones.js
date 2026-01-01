@@ -7,7 +7,26 @@ import { logError } from '../utils/logger.js';
 
 const router = express.Router();
 
-// ... existing GET route ...
+/**
+ * GET /api/user-zones
+ * List all priority zones for the user
+ */
+router.get('/', requireAnonymousId, async (req, res) => {
+    try {
+        const anonymousId = req.anonymousId;
+        const db = DB.withContext(anonymousId);
+
+        const zones = await db.select('user_zones', {
+            where: { anonymous_id: anonymousId },
+            orderBy: [{ column: 'created_at', direction: 'desc' }]
+        });
+
+        res.json({ success: true, data: zones });
+    } catch (error) {
+        logError(error, req);
+        res.status(500).json({ error: 'Failed to fetch user zones' });
+    }
+});
 
 /**
  * POST /api/user-zones

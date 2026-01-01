@@ -54,9 +54,14 @@ export function Perfil() {
     if (!gamificationData?.badges) return null
 
     // Filter non-obtained badges and sort by progress percentage
+    // Filter non-obtained badges and sort by progress percentage
     const pendingBadges = gamificationData.badges
       .filter(b => !b.obtained)
-      .sort((a, b) => (b.progress?.percent || 0) - (a.progress?.percent || 0))
+      .sort((a, b) => {
+        const percentA = a.progress && a.progress.required ? (a.progress.current / a.progress.required) * 100 : 0;
+        const percentB = b.progress && b.progress.required ? (b.progress.current / b.progress.required) * 100 : 0;
+        return percentB - percentA;
+      })
 
     return pendingBadges[0] || null
   }
@@ -126,7 +131,7 @@ export function Perfil() {
     )
   }
 
-  const userReports = profile.recent_reports || []
+  const userReports = profile?.recent_reports || []
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -217,7 +222,7 @@ export function Perfil() {
                             <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
                               <div
                                 className="bg-neon-green h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(57,255,20,0.4)]"
-                                style={{ width: `${nextBadge.progress.percent}%` }}
+                                style={{ width: `${nextBadge.progress.required ? (nextBadge.progress.current / nextBadge.progress.required) * 100 : 0}%` }}
                               />
                             </div>
                           </div>
