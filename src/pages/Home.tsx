@@ -34,7 +34,7 @@ const HeroSection = memo(() => (
           <Link to="/crear-reporte">
             <Button
               variant="neon"
-              className="px-8 py-6 text-lg h-auto neon-glow"
+              className="onboarding-create-report px-8 py-6 text-lg h-auto neon-glow"
             >
               <MapPin className="mr-2 h-5 w-5" />
               Crear Reporte

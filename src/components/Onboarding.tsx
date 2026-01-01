@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import Joyride, { CallBackProps, STATUS, Step, ACTIONS, EVENTS } from 'react-joyride'
+import Joyride, { CallBackProps, STATUS, Step, EVENTS } from 'react-joyride'
 
 export function Onboarding() {
     const [run, setRun] = useState(false)
