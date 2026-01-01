@@ -1,10 +1,12 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateReport, validateFlagReason, validateCoordinates, validateImageBuffer } from '../utils/validation.js';
+import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer } from '../utils/validation.js';
+import { validate } from '../utils/validateMiddleware.js';
+import { reportSchema, geoQuerySchema } from '../utils/schemas.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter, createReportLimiter, favoriteLimiter, imageUploadLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, favoriteLimiter, imageUploadLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
@@ -94,27 +96,16 @@ router.get('/', async (req, res) => {
     const isGeoFeed = lat && lng;
 
     if (isGeoFeed) {
-      const userLat = parseFloat(lat);
-      const userLng = parseFloat(lng);
+      // Validate coordinates and radius using Zod
+      const validatedGeo = geoQuerySchema.parse({
+        lat,
+        lng,
+        radius_meters: radius
+      });
 
-      try {
-        validateCoordinates(userLat, userLng);
-      } catch (error) {
-        return res.status(400).json({
-          error: 'Coordenadas inválidas',
-          details: error.message
-        });
-      }
-
-      // Parse radius (default 5km = 5000m)
-      const radiusMeters = radius ? parseInt(radius, 10) : 5000;
-
-      if (radiusMeters < 100 || radiusMeters > 50000) {
-        return res.status(400).json({
-          error: 'Radio inválido',
-          details: 'El radio debe estar entre 100m y 50km'
-        });
-      }
+      const userLat = validatedGeo.lat;
+      const userLng = validatedGeo.lng;
+      const radiusMeters = validatedGeo.radius_meters;
 
       // Parse cursor for geographic feed
       const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -132,7 +123,7 @@ router.get('/', async (req, res) => {
 
       // Build filters for geographic feed
       const buildGeoFilters = (startIdx) => {
-        const conds = [];
+        const conds = ['r.deleted_at IS NULL']; // Always filter out soft-deleted records
         const vals = [];
         let idx = startIdx;
 
@@ -183,7 +174,9 @@ router.get('/', async (req, res) => {
             SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS point
           )
           SELECT 
-            r.*,
+            r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+            r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+            r.created_at, r.updated_at, r.incident_date, r.image_urls,
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
@@ -206,7 +199,8 @@ router.get('/', async (req, res) => {
             LIMIT 1
           ) uz ON true
           WHERE 
-            ST_DWithin(r.location, ul.point, $3)
+            r.deleted_at IS NULL
+            AND ST_DWithin(r.location, ul.point, $3)
             AND r.location IS NOT NULL
             ${additionalWhere}
             AND (
@@ -246,13 +240,16 @@ router.get('/', async (req, res) => {
             SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS point
           )
           SELECT 
-            r.*,
+            r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+            r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+            r.created_at, r.updated_at, r.incident_date, r.image_urls,
             ST_Distance(r.location, ul.point) AS distance_meters,
             r.threads_count
           FROM reports r
           CROSS JOIN user_location ul
           WHERE 
-            ST_DWithin(r.location, ul.point, $3)
+            r.deleted_at IS NULL
+            AND ST_DWithin(r.location, ul.point, $3)
             AND r.location IS NOT NULL
             ${additionalWhere}
             AND (
@@ -343,10 +340,10 @@ router.get('/', async (req, res) => {
     // Let's build a shared WHERE clause builder approach.
 
     const buildFilters = (startIndex) => {
-      const conds = [];
+      const conds = ['r.deleted_at IS NULL']; // Always filter out soft-deleted records
       const vals = [];
       let idx = startIndex;
-      let searchIdx = null; // Track search param index for sorting
+      let searchIdx = null;
 
       if (search && typeof search === 'string' && search.trim()) {
         const searchTerm = search.trim();
@@ -501,7 +498,7 @@ router.get('/', async (req, res) => {
           END ASC
           LIMIT 1
         ) uz ON true
-        ${whereClause}
+        ${whereClause || 'WHERE r.deleted_at IS NULL'}
         ORDER BY 
           (uz.type IS NOT NULL) DESC, 
           ${f.searchIdx ? `GREATEST(
@@ -722,19 +719,11 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-/**
- * POST /api/reports
- * Create a new report
- * Requires: X-Anonymous-Id header
- */
-router.post('/', createReportLimiter, requireAnonymousId, async (req, res) => {
+router.post('/', requireAnonymousId, validate(reportSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
 
     logSuccess('Creating report', { anonymousId, title: req.body.title });
-
-    // Validate request body
-    validateReport(req.body);
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {
@@ -1321,14 +1310,18 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       });
     }
 
-    // Delete report using queryWithRLS for RLS consistency
+    // Soft Delete report using queryWithRLS for RLS consistency
     const deleteResult = await queryWithRLS(anonymousId, `
-      DELETE FROM reports WHERE id = $1 AND anonymous_id = $2 RETURNING id
+      UPDATE reports 
+      SET deleted_at = NOW() 
+      WHERE id = $1 AND anonymous_id = $2 
+      AND deleted_at IS NULL
+      RETURNING id
     `, [id, anonymousId]);
 
     if (deleteResult.rows.length === 0) {
       return res.status(403).json({
-        error: 'Forbidden: You can only delete your own reports'
+        error: 'Forbidden: You can only delete your own reports or report is already deleted'
       });
     }
 

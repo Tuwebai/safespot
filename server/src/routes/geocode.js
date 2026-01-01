@@ -1,6 +1,7 @@
 import express from 'express';
 import { logError, logSuccess } from '../utils/logger.js';
-import { validateCoordinates } from '../utils/validation.js';
+import { validate } from '../utils/validateMiddleware.js';
+import { geocodeSearchSchema, reverseGeocodeSchema } from '../utils/schemas.js';
 
 const router = express.Router();
 
@@ -50,11 +51,11 @@ function checkRateLimit(ip) {
  * - CORS headers are inconsistent on mobile browsers
  * - Backend proxy has stable User-Agent and no CORS restrictions
  */
-router.get('/search', async (req, res) => {
+router.get('/search', validate(geocodeSearchSchema, 'query'), async (req, res) => {
     try {
         const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
 
-        // Rate limiting
+        // Rate limiting (internal)
         if (!checkRateLimit(clientIp)) {
             return res.status(429).json({
                 error: 'RATE_LIMIT_EXCEEDED',
@@ -64,17 +65,9 @@ router.get('/search', async (req, res) => {
 
         const { q, limit, countrycodes } = req.query;
 
-        // Validation
-        if (!q || typeof q !== 'string' || q.trim().length === 0) {
-            return res.status(400).json({
-                error: 'VALIDATION_ERROR',
-                message: 'El parámetro "q" (query) es requerido'
-            });
-        }
-
-        const searchQuery = q.trim();
-        const resultLimit = Math.min(10, Math.max(1, parseInt(limit, 10) || 5));
-        const countryCodes = countrycodes || 'ar';
+        const searchQuery = q;
+        const resultLimit = limit;
+        const countryCodes = countrycodes;
 
         // Build Nominatim URL
         const nominatimUrl = new URL('https://nominatim.openstreetmap.org/search');
@@ -172,11 +165,11 @@ router.get('/search', async (req, res) => {
  * - lat: latitude (required)
  * - lon: longitude (required)
  */
-router.get('/reverse', async (req, res) => {
+router.get('/reverse', validate(reverseGeocodeSchema, 'query'), async (req, res) => {
     try {
         const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
 
-        // Rate limiting
+        // Rate limiting (internal)
         if (!checkRateLimit(clientIp)) {
             return res.status(429).json({
                 error: 'RATE_LIMIT_EXCEEDED',
@@ -185,19 +178,8 @@ router.get('/reverse', async (req, res) => {
         }
 
         const { lat, lon } = req.query;
-
-        // Validation
-        const latitude = Number(lat);
-        const longitude = Number(lon);
-
-        try {
-            validateCoordinates(latitude, longitude);
-        } catch (error) {
-            return res.status(400).json({
-                error: 'VALIDATION_ERROR',
-                message: error.message
-            });
-        }
+        const latitude = lat;
+        const longitude = lon;
 
         // Build Nominatim URL
         const nominatimUrl = new URL('https://nominatim.openstreetmap.org/reverse');

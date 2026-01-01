@@ -122,59 +122,37 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
 router.get('/stats', async (req, res) => {
   console.log('[STATS] GET /api/users/stats');
   try {
-    // Stats are public, no anonymous_id needed
-    // Use Supabase client to get stats with individual error handling for each count
-    const [totalReportsResult, resolvedReportsResult, totalUsersResult, activeUsersResult] = await Promise.all([
-      (async () => {
-        try {
-          return await supabase.from('reports').select('id', { count: 'exact', head: true });
-        } catch (e) {
-          return { count: 0, error: e };
-        }
-      })(),
-      (async () => {
-        try {
-          return await supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'resuelto');
-        } catch (e) {
-          return { count: 0, error: e };
-        }
-      })(),
-      (async () => {
-        try {
-          return await supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true });
-        } catch (e) {
-          return { count: 0, error: e };
-        }
-      })(),
-      (async () => {
-        try {
-          return await supabase.from('anonymous_users').select('anonymous_id', { count: 'exact', head: true })
-            .gt('last_active_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
-        } catch (e) {
-          return { count: 0, error: e };
-        }
-      })()
-    ]);
+    // Read from precalculated global_stats table (O(1))
+    const { data: stats, error } = await supabase
+      .from('global_stats')
+      .select('total_reports, resolved_reports, total_users')
+      .eq('id', 1)
+      .maybeSingle();
 
-    // We don't throw error here, just log if something failed and return what we have
-    if (totalReportsResult.error) console.error('[STATS] totalReports count failed:', totalReportsResult.error.message);
-    if (resolvedReportsResult.error) console.error('[STATS] resolvedReports count failed:', resolvedReportsResult.error.message);
-    if (totalUsersResult.error) console.error('[STATS] totalUsers count failed:', totalUsersResult.error.message);
-    if (activeUsersResult.error) console.error('[STATS] activeUsers count failed:', activeUsersResult.error.message);
+    if (error) {
+      logError(error, req);
+      // Fallback to zeros but keep success: true to avoid breaking UI
+      return res.json({
+        success: true,
+        data: { total_reports: 0, resolved_reports: 0, total_users: 0, active_users_month: 0 }
+      });
+    }
 
+    // Note: active_users_month is currently kept as a placeholder or handled by DB
+    // For now we return what we have in O(1)
     res.json({
       success: true,
       data: {
-        total_reports: totalReportsResult.count || 0,
-        resolved_reports: resolvedReportsResult.count || 0,
-        total_users: totalUsersResult.count || 0,
-        active_users_month: activeUsersResult.count || 0
+        total_reports: parseInt(stats?.total_reports || 0, 10),
+        resolved_reports: parseInt(stats?.resolved_reports || 0, 10),
+        total_users: parseInt(stats?.total_users || 0, 10),
+        active_users_month: 0 // Placeholder for now
       }
     });
   } catch (error) {
-    console.error('[STATS] Unexpected error in global stats:', error);
+    logError(error, req);
     res.json({
-      success: true, // Use true here to prevent frontend from showing error UI if possible
+      success: true,
       data: { total_reports: 0, resolved_reports: 0, total_users: 0, active_users_month: 0 }
     });
   }
@@ -187,42 +165,31 @@ router.get('/stats', async (req, res) => {
 router.get('/category-stats', async (req, res) => {
   console.log('[STATS] GET /api/users/category-stats');
   try {
-    // Get all reports with category field
-    const { data: reports, error } = await supabase
-      .from('reports')
-      .select('category');
+    // Read category breakdown from global_stats (O(1))
+    const { data: stats, error } = await supabase
+      .from('global_stats')
+      .select('reports_by_category')
+      .eq('id', 1)
+      .maybeSingle();
 
     if (error) {
-      console.error('[STATS] category-stats query failed:', error.message);
+      logError(error, req);
     }
 
-    // Initialize category counts (official categories only)
+    // Default structure for official categories
     const validCategories = ['Celulares', 'Bicicletas', 'Motos', 'Autos', 'Laptops', 'Carteras'];
-    const categoryCounts = {
-      'Celulares': 0,
-      'Bicicletas': 0,
-      'Motos': 0,
-      'Autos': 0,
-      'Laptops': 0,
-      'Carteras': 0
-    };
+    const categoryCounts = {};
 
-    // Count reports by category
-    if (reports && Array.isArray(reports)) {
-      reports.forEach((report) => {
-        const category = report.category;
-        if (category && typeof category === 'string' && validCategories.includes(category)) {
-          categoryCounts[category]++;
-        }
-      });
-    }
+    validCategories.forEach(cat => {
+      categoryCounts[cat] = parseInt(stats?.reports_by_category?.[cat] || 0, 10);
+    });
 
     res.json({
       success: true,
       data: categoryCounts
     });
   } catch (error) {
-    console.error('[STATS] Unexpected error in category stats:', error);
+    logError(error, req);
     res.json({
       success: true,
       data: { 'Celulares': 0, 'Bicicletas': 0, 'Motos': 0, 'Autos': 0, 'Laptops': 0, 'Carteras': 0 }

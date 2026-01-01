@@ -1,9 +1,10 @@
 import express from 'express';
 import { requireAnonymousId } from '../utils/validation.js';
+import { validate } from '../utils/validateMiddleware.js';
+import { voteSchema } from '../utils/schemas.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { syncGamification } from '../utils/gamificationCore.js';
-import { validate as uuidValidate } from 'uuid';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
@@ -18,38 +19,12 @@ const router = express.Router();
  * Body: { report_id: UUID } OR { comment_id: UUID }
  * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/', voteLimiter, requireAnonymousId, async (req, res) => {
+router.post('/', requireAnonymousId, validate(voteSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     const { report_id, comment_id } = req.body;
 
     logSuccess('Creating vote', { anonymousId, reportId: report_id, commentId: comment_id });
-
-    // Validate that exactly one target is provided
-    if (!report_id && !comment_id) {
-      return res.status(400).json({
-        error: 'Either report_id or comment_id is required'
-      });
-    }
-
-    if (report_id && comment_id) {
-      return res.status(400).json({
-        error: 'Cannot vote on both report and comment at the same time'
-      });
-    }
-
-    // Validate UUID format
-    if (report_id && !uuidValidate(report_id)) {
-      return res.status(400).json({
-        error: 'report_id must be a valid UUID'
-      });
-    }
-
-    if (comment_id && !uuidValidate(comment_id)) {
-      return res.status(400).json({
-        error: 'comment_id must be a valid UUID'
-      });
-    }
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {

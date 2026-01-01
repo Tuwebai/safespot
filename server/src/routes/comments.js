@@ -1,8 +1,10 @@
 import express from 'express';
-import { requireAnonymousId, validateComment, validateCommentUpdate, validateFlagReason } from '../utils/validation.js';
+import { requireAnonymousId, validateFlagReason } from '../utils/validation.js';
+import { validate } from '../utils/validateMiddleware.js';
+import { commentSchema, commentUpdateSchema } from '../utils/schemas.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter, createCommentLimiter, likeLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, likeLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
@@ -32,14 +34,16 @@ router.get('/:reportId', async (req, res) => {
     // Build base query for counting total comments (without pagination)
     const countQuery = supabase
       .from('comments')
-      .select('*', { count: 'exact', head: true })
-      .eq('report_id', reportId);
+      .select('id', { count: 'exact', head: true })
+      .eq('report_id', reportId)
+      .is('deleted_at', null);
 
     // Build query for fetching comments (with pagination)
     let dataQuery = supabase
       .from('comments')
-      .select('*')
+      .select('id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread')
       .eq('report_id', reportId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .range(offset, offset + limitNum - 1);
 
@@ -149,12 +153,9 @@ router.get('/:reportId', async (req, res) => {
  * Create a new comment
  * Requires: X-Anonymous-Id header
  */
-router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
+router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-
-    // Validate request body
-    validateComment(req.body);
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {
@@ -243,8 +244,6 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
         }
       });
     }
-
-    // ... other imports
 
     // CRITICAL: Normalize parent_id - must be explicit null, never undefined
     const parentId = (hasParentId && !isThread) ? req.body.parent_id : null;
@@ -366,23 +365,10 @@ router.post('/', createCommentLimiter, requireAnonymousId, async (req, res) => {
  * Requires: X-Anonymous-Id header
  * Body: { content: string }
  */
-router.patch('/:id', requireAnonymousId, async (req, res) => {
+router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-
-    // Validate request body
-    try {
-      validateCommentUpdate(req.body);
-    } catch (error) {
-      if (error.message.startsWith('VALIDATION_ERROR')) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          message: error.message
-        });
-      }
-      throw error;
-    }
 
     // Check if comment exists and belongs to user using queryWithRLS
     const checkResult = await queryWithRLS(
@@ -486,17 +472,20 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       });
     }
 
-    // Delete comment using queryWithRLS for RLS enforcement
+    // Soft Delete comment using queryWithRLS for RLS enforcement
     const deleteResult = await queryWithRLS(
       anonymousId,
-      `DELETE FROM comments WHERE id = $1 AND anonymous_id = $2`,
+      `UPDATE comments 
+       SET deleted_at = NOW() 
+       WHERE id = $1 AND anonymous_id = $2
+       AND deleted_at IS NULL`,
       [id, anonymousId]
     );
 
     if (deleteResult.rowCount === 0) {
-      logError(new Error('Delete returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to delete comment'
+      logError(new Error('Update returned no rows (comment already deleted or not found)'), req);
+      return res.status(403).json({
+        error: 'Forbidden: You can only delete your own comments or comment is already deleted'
       });
     }
 

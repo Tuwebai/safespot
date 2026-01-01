@@ -95,17 +95,47 @@ app.use(requestLogger);
 // RATE LIMITING
 // ============================================
 
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+// Base key generator that prioritizes anonymous_id
+const keyGenerator = (req) => {
+  return req.headers['x-anonymous-id'] || req.ip;
+};
+
+// Global limiter: 100 req / 5 min
+const globalLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 100,
+  keyGenerator,
   message: {
-    error: 'Too many requests from this IP, please try again later'
+    error: true,
+    code: 'RATE_LIMIT_EXCEEDED',
+    message: 'Demasiadas peticiones. Por favor, intentá más tarde.'
   },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use('/api/', limiter);
+// Strict limiter for sensitive actions (Reports/Comments): 5 req / 10 min
+const actionLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  keyGenerator,
+  message: {
+    error: true,
+    code: 'RATE_LIMIT_EXCEEDED',
+    message: 'Has realizado demasiadas acciones en poco tiempo. Por favor, esperá unos minutos.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false, // Count all attempts (even failed ones) against the limit
+});
+
+app.use('/api/', globalLimiter);
+app.use(['/api/reports', '/api/comments'], (req, res, next) => {
+  if (req.method === 'POST') {
+    return actionLimiter(req, res, next);
+  }
+  next();
+});
 
 // ============================================
 // HEALTH CHECK
@@ -201,20 +231,41 @@ app.use('/api/*', (req, res) => {
 // ============================================
 
 app.use((err, req, res, next) => {
-  // Log error details
-  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err);
+  // Log error details for internal debugging
+  console.error(`[API ERROR] ${req.method} ${req.url}:`, err);
 
-  const status = err.status || 500;
+  // Default values
+  let status = err.status || 500;
+  let code = err.code || 'INTERNAL_ERROR';
+  let message = err.message || 'Ocurrió un error inesperado en el servidor';
 
-  // Never expose stack traces in production
+  // Handle specific error types
+  if (err.name === 'ZodError') {
+    status = 422;
+    code = 'VALIDATION_ERROR';
+    const firstError = err.errors[0];
+    message = `${firstError.path.join('.')}: ${firstError.message}`;
+  } else if (err.name === 'CustomError') {
+    status = err.status;
+    code = err.code;
+    message = err.message;
+  } else if (err.message?.includes('Not allowed by CORS')) {
+    status = 403;
+    code = 'CORS_ERROR';
+    message = 'Origen no permitido';
+  }
+
+  // Response structure
   const response = {
-    error: status === 500 ? 'Internal Server Error' : err.message,
-    message: err.message
+    error: true,
+    code: code,
+    message: message
   };
 
-  // Only include stack in development
+  // Only include stack in development and if it's a 500 error
   if (process.env.NODE_ENV === 'development') {
     response.stack = err.stack;
+    response.details = err.details || err.errors;
   }
 
   res.status(status).json(response);

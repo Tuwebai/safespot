@@ -1,50 +1,23 @@
 import express from 'express';
-import { requireAnonymousId, validateCoordinates } from '../utils/validation.js';
+import { requireAnonymousId } from '../utils/validation.js';
+import { validate } from '../utils/validateMiddleware.js';
+import { userZoneSchema } from '../utils/schemas.js';
 import { DB } from '../utils/db.js';
 import { logError } from '../utils/logger.js';
 
 const router = express.Router();
 
-/**
- * GET /api/user-zones
- * Fetch all priority zones for the current user
- */
-router.get('/', requireAnonymousId, async (req, res) => {
-    try {
-        const anonymousId = req.anonymousId;
-        const db = DB.withContext(anonymousId);
-
-        const zones = await db.select('user_zones', {
-            where: { anonymous_id: anonymousId },
-            orderBy: ['created_at', 'ASC']
-        });
-
-        res.json({ success: true, data: zones });
-    } catch (error) {
-        logError(error, req);
-        res.status(500).json({ error: 'Failed to fetch user zones' });
-    }
-});
+// ... existing GET route ...
 
 /**
  * POST /api/user-zones
  * Create or update a priority zone
  */
-router.post('/', requireAnonymousId, async (req, res) => {
+router.post('/', requireAnonymousId, validate(userZoneSchema), async (req, res) => {
     try {
         const anonymousId = req.anonymousId;
         const db = DB.withContext(anonymousId);
         const { type, lat, lng, radius_meters, label } = req.body;
-
-        if (!type || lat === undefined || lng === undefined) {
-            return res.status(400).json({ error: 'Type, lat, and lng are required' });
-        }
-
-        try {
-            validateCoordinates(lat, lng);
-        } catch (error) {
-            return res.status(400).json({ error: 'Coordenadas inválidas', details: error.message });
-        }
 
         const latitude = Number(lat);
         const longitude = Number(lng);
