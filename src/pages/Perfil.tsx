@@ -15,6 +15,7 @@ import { NotificationSettingsSection } from '@/components/NotificationSettingsSe
 import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection'
 import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuery'
 import { Lock, ChevronRight, Award } from 'lucide-react'
+import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
 
 export function Perfil() {
   const toast = useToast()
@@ -67,48 +68,6 @@ export function Perfil() {
   }
 
   const nextBadge = getNextBadgeData()
-
-  const getLevelProgress = () => {
-    // Priority to real-time data from gamification summary
-    const currentPoints = gamificationData?.profile?.points ?? profile?.points ?? 0
-    const currentLevel = gamificationData?.profile?.level ?? profile?.level ?? 1
-
-    if (currentLevel >= 4) return 100
-
-    const ranges: Record<number, { min: number; max: number }> = {
-      1: { min: 0, max: 49 },
-      2: { min: 50, max: 149 },
-      3: { min: 150, max: 299 },
-      4: { min: 300, max: Infinity }
-    }
-
-    const currentRange = ranges[currentLevel] || ranges[1]
-    const nextRange = ranges[currentLevel + 1] || ranges[4]
-
-    const pointsInCurrentLevel = Math.max(0, currentPoints - currentRange.min)
-    const pointsNeededForNext = nextRange.min - currentRange.min
-
-    if (pointsNeededForNext === 0) return 100
-
-    return Math.min(100, Math.max(0, (pointsInCurrentLevel / pointsNeededForNext) * 100))
-  }
-
-  const getPointsToNextLevel = () => {
-    const currentPoints = gamificationData?.profile?.points ?? profile?.points ?? 0
-    const currentLevel = gamificationData?.profile?.level ?? profile?.level ?? 1
-
-    if (currentLevel >= 4) return 0
-
-    const ranges: Record<number, { min: number; max: number }> = {
-      1: { min: 0, max: 49 },
-      2: { min: 50, max: 149 },
-      3: { min: 150, max: 299 },
-      4: { min: 300, max: Infinity }
-    }
-
-    const nextRange = ranges[currentLevel + 1] || ranges[4]
-    return Math.max(0, nextRange.min - currentPoints)
-  }
 
   const anonymousId = getAnonymousIdSafe()
 
