@@ -121,6 +121,8 @@ const SearchAreaButton = ({ onClick, visible, loading }: { onClick: () => void, 
 
 const ZoneMarkers = () => {
     const { zones, deleteZone } = useUserZones()
+    const [confirmingDelete, setConfirmingDelete] = useState<ZoneType | null>(null)
+
     const zoneStyles = {
         home: { color: '#22c55e', fillColor: '#22c55e' }, // Emerald-500
         work: { color: '#3b82f6', fillColor: '#3b82f6' }, // Blue-500
@@ -152,23 +154,66 @@ const ZoneMarkers = () => {
                             position={[zone.lat, zone.lng]}
                             icon={pinIcon}
                         >
-                            <Popup>
-                                <div className="p-2 min-w-[150px]">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        {zone.type === 'home' && <Home className="w-4 h-4 text-emerald-500" />}
-                                        {zone.type === 'work' && <Briefcase className="w-4 h-4 text-blue-500" />}
-                                        {zone.type === 'frequent' && <MapPin className="w-4 h-4 text-amber-500" />}
-                                        <span className="font-bold capitalize">{zone.type === 'home' ? 'Casa' : zone.type === 'work' ? 'Trabajo' : 'Zona Frecuente'}</span>
+                            <Popup onOpen={() => setConfirmingDelete(null)}>
+                                <div
+                                    key={confirmingDelete ? 'confirm' : 'idle'}
+                                    className="p-2 min-w-[160px] min-h-[80px] flex flex-col justify-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className={`p-1.5 rounded-lg ${zone.type === 'home' ? 'bg-emerald-500/10' : zone.type === 'work' ? 'bg-blue-500/10' : 'bg-amber-500/10'}`}>
+                                            {zone.type === 'home' && <Home className="w-4 h-4 text-emerald-500" />}
+                                            {zone.type === 'work' && <Briefcase className="w-4 h-4 text-blue-500" />}
+                                            {zone.type === 'frequent' && <MapPin className="w-4 h-4 text-amber-500" />}
+                                        </div>
+                                        <span className="font-bold text-sm capitalize">{zone.type === 'home' ? 'Casa' : zone.type === 'work' ? 'Trabajo' : 'Zona Frecuente'}</span>
                                     </div>
-                                    <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        className="w-full h-8 gap-2"
-                                        onClick={() => deleteZone(zone.type)}
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                        Eliminar Zona
-                                    </Button>
+
+                                    {confirmingDelete === zone.type ? (
+                                        <div className="flex flex-col gap-2 animate-in zoom-in-95 duration-200">
+                                            <p className="text-[10px] text-muted-foreground font-medium text-center mb-1 leading-tight">
+                                                ¿Estás seguro de eliminar esta zona?
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="flex-1 h-8 text-[11px]"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setConfirmingDelete(null)
+                                                    }}
+                                                >
+                                                    No, volver
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    className="flex-1 h-8 text-[11px] font-bold"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        deleteZone(zone.type)
+                                                        setConfirmingDelete(null)
+                                                    }}
+                                                >
+                                                    Sí, borrar
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            className="w-full h-9 gap-2 text-[11px] font-semibold bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 transition-all duration-200"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setConfirmingDelete(zone.type)
+                                            }}
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            Eliminar Zona
+                                        </Button>
+                                    )}
                                 </div>
                             </Popup>
                         </Marker>
@@ -473,9 +518,20 @@ export function SafeSpotMapClient({
         }).catch(err => console.error('Leaflet icons failed', err))
     }, [])
 
-    const validReports = reports
-        .map(r => ({ ...r, latitude: Number(r.latitude), longitude: Number(r.longitude) }))
-        .filter(r => !isNaN(r.latitude) && !isNaN(r.longitude) && r.latitude !== 0)
+    // Memoize the transformation of data to prevent redundant calculations on every render
+    const validReports = useMemo(() => {
+        return reports
+            .map(r => ({
+                ...r,
+                latitude: Number(r.latitude),
+                longitude: Number(r.longitude)
+            }))
+            .filter(r =>
+                !isNaN(r.latitude) &&
+                !isNaN(r.longitude) &&
+                r.latitude !== 0
+            )
+    }, [reports])
 
     const highlightedId = useMapStore(s => s.highlightedReportId)
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)

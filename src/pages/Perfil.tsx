@@ -13,9 +13,20 @@ import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { NotificationSettingsSection } from '@/components/NotificationSettingsSection'
 import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection'
+import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuery'
+import { Lock, ChevronRight, Award } from 'lucide-react'
 
 export function Perfil() {
   const toast = useToast()
+
+  // Use React Query for real-time gamification data
+  const {
+    data: gamificationData,
+    isLoading: gamificationLoading,
+    error: gamificationError,
+    refetch: refetchGamification
+  } = useGamificationSummaryQuery()
+
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -38,15 +49,26 @@ export function Perfil() {
     loadProfile()
   }, [loadProfile])
 
-  const getLevelProgress = () => {
-    if (!profile) return 0
-    // Use correct level calculation: Level 1: 0-49, Level 2: 50-149, Level 3: 150-299, Level 4: 300+
-    const currentPoints = profile.points || 0
-    const currentLevel = profile.level || 1
+  // Logic to find the "Next Badge" (closest to completion)
+  const getNextBadgeData = () => {
+    if (!gamificationData?.badges) return null
 
-    if (currentLevel >= 4) {
-      return 100 // Max level
-    }
+    // Filter non-obtained badges and sort by progress percentage
+    const pendingBadges = gamificationData.badges
+      .filter(b => !b.obtained)
+      .sort((a, b) => (b.progress?.percent || 0) - (a.progress?.percent || 0))
+
+    return pendingBadges[0] || null
+  }
+
+  const nextBadge = getNextBadgeData()
+
+  const getLevelProgress = () => {
+    // Priority to real-time data from gamification summary
+    const currentPoints = gamificationData?.profile?.points ?? profile?.points ?? 0
+    const currentLevel = gamificationData?.profile?.level ?? profile?.level ?? 1
+
+    if (currentLevel >= 4) return 100
 
     const ranges: Record<number, { min: number; max: number }> = {
       1: { min: 0, max: 49 },
@@ -63,16 +85,14 @@ export function Perfil() {
 
     if (pointsNeededForNext === 0) return 100
 
-    const progress = (pointsInCurrentLevel / pointsNeededForNext) * 100
-    return Math.min(100, Math.max(0, progress))
+    return Math.min(100, Math.max(0, (pointsInCurrentLevel / pointsNeededForNext) * 100))
   }
 
   const getPointsToNextLevel = () => {
-    if (!profile) return 0
-    const currentPoints = profile.points || 0
-    const currentLevel = profile.level || 1
+    const currentPoints = gamificationData?.profile?.points ?? profile?.points ?? 0
+    const currentLevel = gamificationData?.profile?.level ?? profile?.level ?? 1
 
-    if (currentLevel >= 4) return 0 // Max level
+    if (currentLevel >= 4) return 0
 
     const ranges: Record<number, { min: number; max: number }> = {
       1: { min: 0, max: 49 },
@@ -87,17 +107,17 @@ export function Perfil() {
 
   const anonymousId = getAnonymousIdSafe()
 
-  if (loading) {
+  if (loading || gamificationLoading) {
     return <ProfileSkeleton />
   }
 
-  if (error || !profile) {
+  if ((error && gamificationError) || (!profile && !gamificationData)) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <Card className="bg-dark-card border-dark-border">
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{error || 'Error al cargar perfil'}</p>
-            <Button variant="outline" onClick={loadProfile} className="mt-4">
+            <Button variant="outline" onClick={() => { loadProfile(); refetchGamification(); }} className="mt-4">
               Reintentar
             </Button>
           </CardContent>
@@ -139,45 +159,95 @@ export function Perfil() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {/* Nivel y Puntos */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Nivel {profile.level}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {profile.points} puntos
+                    <span className="text-sm font-bold tracking-tight">Nivel {gamificationData?.profile?.level ?? profile?.level}</span>
+                    <span className="text-xs font-mono text-neon-green bg-neon-green/10 px-2 py-0.5 rounded">
+                      {gamificationData?.profile?.points ?? profile?.points} PUNTOS
                     </span>
                   </div>
-                  <div className="w-full bg-dark-bg rounded-full h-2">
+                  <div className="w-full bg-dark-bg rounded-full h-2.5 p-0.5 border border-white/5">
                     <div
-                      className="bg-neon-green h-2 rounded-full transition-all"
+                      className="bg-gradient-to-r from-neon-green to-emerald-400 h-1.5 rounded-full transition-all duration-1000"
                       style={{ width: `${getLevelProgress()}%` }}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {getPointsToNextLevel()} puntos para el siguiente nivel
-                  </p>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">
+                      {getPointsToNextLevel()} pts para Nivel {(gamificationData?.profile?.level ?? profile?.level ?? 1) + 1}
+                    </p>
+                    <span className="text-[10px] font-bold text-neon-green/60">{Math.round(getLevelProgress())}%</span>
+                  </div>
                 </div>
 
+                {/* Siguiente Logro (Next Badge) - v1.0 AUDIT IMPROVEMENT */}
+                {nextBadge && (
+                  <div className="pt-4 border-t border-white/5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Award className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground">Próximo Logro</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-white/40">{nextBadge.progress.current} / {nextBadge.progress.required}</span>
+                    </div>
+
+                    <div className="bg-dark-bg/50 rounded-2xl p-4 border border-white/5 relative overflow-hidden group">
+                      {/* Timeline Background Visual */}
+                      <div className="absolute top-0 right-0 p-3 opacity-10 grayscale group-hover:grayscale-0 transition-all">
+                        <span className="text-4xl">{nextBadge.icon}</span>
+                      </div>
+
+                      <div className="flex items-center gap-4 relative z-10">
+                        <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center relative">
+                          <span className="text-2xl grayscale opacity-40">{nextBadge.icon}</span>
+                          <div className="absolute -top-1 -right-1">
+                            <Lock className="w-3 h-3 text-muted-foreground" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1">
+                          <h4 className="text-sm font-bold text-foreground mb-0.5">{nextBadge.name}</h4>
+                          <p className="text-[10px] text-muted-foreground leading-tight line-clamp-1">
+                            {nextBadge.description}
+                          </p>
+
+                          <div className="mt-3">
+                            <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-neon-green h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(57,255,20,0.4)]"
+                                style={{ width: `${nextBadge.progress.percent}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <ChevronRight className="w-4 h-4 text-white/20" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Estadísticas */}
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-dark-border">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-neon-green">
-                      {profile.total_reports}
+                <div className="grid grid-cols-3 gap-1 pt-6 border-t border-white/5">
+                  <div className="text-center p-2 rounded-xl bg-white/5 border border-white/5">
+                    <div className="text-xl font-bold text-neon-green">
+                      {gamificationData?.profile?.total_reports ?? profile?.total_reports}
                     </div>
-                    <div className="text-xs text-muted-foreground">Reportes</div>
+                    <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-tighter">Reportes</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-neon-green">
-                      {profile.total_votes}
+                  <div className="text-center p-2 rounded-xl bg-white/5 border border-white/5">
+                    <div className="text-xl font-bold text-neon-green">
+                      {gamificationData?.profile?.total_votes ?? profile?.total_votes}
                     </div>
-                    <div className="text-xs text-muted-foreground">Apoyos</div>
+                    <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-tighter">Apoyos</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-neon-green">
-                      {profile.level}
+                  <div className="text-center p-2 rounded-xl bg-white/5 border border-white/5">
+                    <div className="text-xl font-bold text-neon-green">
+                      {gamificationData?.profile?.total_comments ?? profile?.total_comments}
                     </div>
-                    <div className="text-xs text-muted-foreground">Nivel</div>
+                    <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-tighter">Comentarios</div>
                   </div>
                 </div>
               </div>
@@ -246,33 +316,28 @@ export function Perfil() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Actividad
+                Insignias Obtenidas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="text-sm">
-                  <div className="font-medium mb-1">Miembro desde</div>
-                  <div className="text-muted-foreground">
-                    {new Date(profile.created_at).toLocaleDateString('es-AR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </div>
-                </div>
-                <div className="text-sm">
-                  <div className="font-medium mb-1">Puntos totales</div>
-                  <div className="text-neon-green text-lg font-bold">
-                    {profile.points}
-                  </div>
-                </div>
-                <div className="text-sm">
-                  <div className="font-medium mb-1">Comentarios</div>
-                  <div className="text-neon-green text-lg font-bold">
-                    {profile.total_comments}
-                  </div>
-                </div>
+              <div className="flex flex-wrap gap-2">
+                {(gamificationData?.badges || [])
+                  .filter(b => b.obtained)
+                  .map(badge => (
+                    <div
+                      key={badge.id}
+                      className="p-2 bg-neon-green/10 border border-neon-green/20 rounded-xl flex flex-col items-center justify-center w-16 h-16 group relative"
+                      title={badge.name}
+                    >
+                      <span className="text-2xl mb-1">{badge.icon}</span>
+                      <div className="absolute -bottom-1 -right-1 bg-neon-green text-[8px] text-black font-black px-1 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                        {badge.points}
+                      </div>
+                    </div>
+                  ))}
+                {(gamificationData?.badges || []).filter(b => b.obtained).length === 0 && (
+                  <p className="text-xs text-muted-foreground italic">Aún no has ganado insignias.</p>
+                )}
               </div>
             </CardContent>
           </Card>
