@@ -1,21 +1,25 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride'
 
 export function Onboarding() {
     const [run, setRun] = useState(false)
+    const location = useLocation()
 
     // Detectar si es la primera visita
     useEffect(() => {
         const hasSeenTour = localStorage.getItem('safespot_onboarding_completed')
-        if (!hasSeenTour) {
-            // Esperar 1 segundo para que la página cargue completamente
+        // Solo mostrar en Home page
+        if (!hasSeenTour && location.pathname === '/') {
+            // Esperar 1.5 segundos para que la página cargue completamente
             const timer = setTimeout(() => {
                 setRun(true)
-            }, 1000)
+            }, 1500)
             return () => clearTimeout(timer)
         }
-    }, [])
+    }, [location.pathname])
 
+    // Pasos solo para la página Home
     const steps: Step[] = [
         {
             target: 'body',
@@ -26,7 +30,7 @@ export function Onboarding() {
                         Tu plataforma anónima para reportar y prevenir incidentes de seguridad.
                     </p>
                     <p className="text-sm text-muted-foreground">
-                        Te mostraremos las funciones principales en 5 pasos rápidos.
+                        Te mostraremos las funciones principales en 3 pasos rápidos.
                     </p>
                 </div>
             ),
@@ -51,51 +55,7 @@ export function Onboarding() {
                 </div>
             ),
             placement: 'bottom',
-            spotlightClicks: true,
-        },
-        {
-            target: '.onboarding-gamification',
-            content: (
-                <div className="space-y-2">
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                        <span>🏆</span> Sistema de Gamificación
-                    </h3>
-                    <p className="text-sm">
-                        Gana puntos e insignias por ayudar a la comunidad:
-                    </p>
-                    <ul className="text-xs space-y-1 ml-4 list-disc">
-                        <li><strong>Crear reportes:</strong> 10-50 puntos</li>
-                        <li><strong>Comentar:</strong> 5 puntos</li>
-                        <li><strong>Votar reportes útiles:</strong> 2 puntos</li>
-                    </ul>
-                    <p className="text-xs text-neon-green mt-2">
-                        ¡Desbloquea 50 insignias únicas hasta nivel 50!
-                    </p>
-                </div>
-            ),
-            placement: 'left',
-        },
-        {
-            target: '.onboarding-zones',
-            content: (
-                <div className="space-y-2">
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                        <span>📍</span> Zonas de Alerta
-                    </h3>
-                    <p className="text-sm">
-                        Configura lugares importantes para recibir notificaciones:
-                    </p>
-                    <ul className="text-xs space-y-1 ml-4 list-disc">
-                        <li><strong>Casa:</strong> Tu hogar</li>
-                        <li><strong>Trabajo:</strong> Tu oficina</li>
-                        <li><strong>Frecuentes:</strong> Lugares que visitas seguido</li>
-                    </ul>
-                    <p className="text-xs text-muted-foreground mt-2">
-                        Te avisaremos cuando haya reportes cerca de estas zonas.
-                    </p>
-                </div>
-            ),
-            placement: 'top',
+            disableBeacon: true,
         },
         {
             target: '.onboarding-create-report',
@@ -105,7 +65,7 @@ export function Onboarding() {
                         <span>📝</span> Crear tu Primer Reporte
                     </h3>
                     <p className="text-sm">
-                        ¡Listo! Ahora puedes crear tu primer reporte y empezar a ganar puntos.
+                        Reporta incidentes de seguridad y ayuda a tu comunidad.
                     </p>
                     <div className="bg-neon-green/10 border border-neon-green/30 rounded-lg p-2 mt-2">
                         <p className="text-xs text-neon-green font-semibold">
@@ -115,9 +75,13 @@ export function Onboarding() {
                             No guardamos datos personales, solo un ID único.
                         </p>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                        💡 <strong>Tip:</strong> Visita tu <strong>Perfil</strong> para ver el sistema de gamificación y configurar zonas de alerta.
+                    </p>
                 </div>
             ),
             placement: 'bottom',
+            disableBeacon: true,
         },
     ]
 
@@ -138,6 +102,8 @@ export function Onboarding() {
             continuous
             showProgress
             showSkipButton
+            disableOverlayClose
+            spotlightPadding={8}
             callback={handleJoyrideCallback}
             styles={{
                 options: {
@@ -146,13 +112,22 @@ export function Onboarding() {
                     arrowColor: '#1a1a1a',
                     backgroundColor: '#1a1a1a',
                     textColor: '#ffffff',
+                    overlayColor: 'rgba(0, 0, 0, 0.8)',
+                },
+                overlay: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                },
+                spotlight: {
+                    borderRadius: '12px',
+                    boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.8), 0 0 30px 10px rgba(57, 255, 20, 0.5)',
                 },
                 tooltip: {
                     backgroundColor: '#1a1a1a',
                     borderRadius: '16px',
                     color: '#ffffff',
                     padding: '20px',
-                    border: '1px solid rgba(57, 255, 20, 0.2)',
+                    border: '2px solid rgba(57, 255, 20, 0.3)',
+                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(57, 255, 20, 0.2)',
                 },
                 tooltipContainer: {
                     textAlign: 'left',
@@ -162,18 +137,19 @@ export function Onboarding() {
                     color: '#000000',
                     borderRadius: '8px',
                     fontWeight: 'bold',
-                    padding: '8px 16px',
+                    padding: '10px 20px',
                     fontSize: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
                 },
                 buttonBack: {
                     color: '#39FF14',
-                    marginRight: '8px',
+                    marginRight: '10px',
+                    padding: '10px 16px',
                 },
                 buttonSkip: {
                     color: '#888888',
-                },
-                spotlight: {
-                    borderRadius: '12px',
+                    padding: '10px 16px',
                 },
             }}
             locale={{

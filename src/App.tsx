@@ -4,7 +4,6 @@ import { Layout } from '@/components/layout/Layout'
 import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteLoadingFallback'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { lazyRetry } from '@/lib/lazyRetry'
-import { Onboarding } from '@/components/Onboarding'
 
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
 const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home })), 'Home')
@@ -28,7 +27,6 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
-      <Onboarding />
       <Layout>
         <ChunkErrorBoundary>
           <Suspense fallback={<RouteLoadingFallback />}>
