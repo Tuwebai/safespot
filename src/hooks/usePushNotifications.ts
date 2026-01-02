@@ -9,7 +9,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ensureAnonymousId } from '@/lib/identity';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
 
 // ============================================
 // TYPES
