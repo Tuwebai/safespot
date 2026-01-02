@@ -169,26 +169,22 @@ export function createReportNotificationPayload(report, distanceMeters) {
 
     // Map categories to icons (assuming these exist, otherwise fallback to main icon)
     // Custom icons should be placed in public/icons/
-    let icon = '/icons/icon-192x192.png';
+    let icon = '/favicon.svg';
     const category = (report.category || '').toLowerCase();
 
     // Simple category mapping (could be expanded)
-    if (category.includes('polic') || category.includes('robo') || category.includes('seguridad')) {
-        icon = '/icons/icon-192x192.png'; // Use specific if available, e.g. /icons/security.png
-    } else if (category.includes('fuego') || category.includes('incendio')) {
-        icon = '/icons/icon-192x192.png';
-    }
+    // For now, keep using the main logo for consistency unless specific icons are added
 
     return {
         title: '⚠️ Nuevo reporte cerca tuyo',
         body: `${report.category || 'Incidente'} · ${distanceText}\n${report.title || ''}`,
         icon: icon,
-        badge: '/icons/badge-72x72.png',
+        badge: '/favicon.svg',
         tag: `report-${report.id}`, // Groups updates for this specific report
         renotify: true,
         data: {
             reportId: report.id,
-            url: `/mapa?focus=${report.id}`,
+            url: `/explorar?reportId=${report.id}`,
             timestamp: Date.now()
         },
         actions: [
@@ -206,18 +202,11 @@ export function createReportNotificationPayload(report, distanceMeters) {
 
 /**
  * Create notification payload for social activity (likes/comments)
- * 
- * @param {Object} data - Activity data
- * @param {string} data.type - 'like' | 'comment' | 'reply'
- * @param {string} data.title - Notification title
- * @param {string} data.message - Notification body
- * @param {string} data.reportId - Related report ID
- * @param {string} data.entityId - ID of specific entity (comment/like)
- * @returns {NotificationPayload}
+ * ...
  */
 export function createActivityNotificationPayload({ type, title, message, reportId, entityId }) {
     let url = `/reporte/${reportId}`;
-    let icon = '/icons/icon-192x192.png';
+    let icon = '/favicon.svg';
 
     // Different actions based on type
     const actions = [
@@ -235,7 +224,7 @@ export function createActivityNotificationPayload({ type, title, message, report
         title: title,
         body: message,
         icon: icon,
-        badge: '/icons/badge-72x72.png',
+        badge: '/favicon.svg',
         tag: `${type}-${entityId}`,
         renotify: true,
         data: {

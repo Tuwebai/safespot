@@ -96,15 +96,15 @@ self.addEventListener('notificationclick', (event: any) => {
     }
 
     // 2. Determine functionality based on action or default URL
-    let url = event.notification.data?.url || '/';
+    let url = event.notification.data?.url || '/explorar';
 
     // Explicit actions (override URL logic if needed)
     if (event.action === 'map') {
         // Ensure it goes to map (data.url usually has this, but be safe)
         if (event.notification.data?.reportId) {
-            url = `/mapa?focus=${event.notification.data.reportId}`;
+            url = `/explorar?reportId=${event.notification.data.reportId}`;
         } else {
-            url = '/mapa';
+            url = '/explorar';
         }
     } else if (event.action === 'view_report') {
         if (event.notification.data?.reportId) {
