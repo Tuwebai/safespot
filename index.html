@@ -1,41 +1,54 @@
 <!doctype html>
 <html lang="es" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
-    
-    <title>SafeSpot - Reportar Robos e Incidentes en Tiempo Real</title>
-    <meta name="description" content="La red comunitaria de seguridad ciudadana más grande. Reporta robos, visualiza alertas de incidentes en tu zona y cuidá a tu barrio con información en tiempo real." />
-    
-    <style>
-      /* Minimal App Shell to prevent white flash */
-      body { background-color: #020617; margin: 0; }
-      #root:empty {
-        background: radial-gradient(circle at top center, #0f172a 0%, #020617 100%);
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+
+  <title>SafeSpot - Reportar Robos e Incidentes en Tiempo Real</title>
+  <meta name="description"
+    content="La red comunitaria de seguridad ciudadana más grande. Reporta robos, visualiza alertas de incidentes en tu zona y cuidá a tu barrio con información en tiempo real." />
+
+  <style>
+    /* Minimal App Shell to prevent white flash */
+    body {
+      background-color: #020617;
+      margin: 0;
+    }
+
+    #root:empty {
+      background: radial-gradient(circle at top center, #0f172a 0%, #020617 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #root:empty::after {
+      content: "";
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(0, 255, 136, 0.1);
+      border-radius: 50%;
+      border-top-color: #00ff88;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
       }
-      #root:empty::after {
-        content: "";
-        width: 48px;
-        height: 48px;
-        border: 3px solid rgba(0, 255, 136, 0.1);
-        border-radius: 50%;
-        border-top-color: #00ff88;
-        animation: spin 1s ease-in-out infinite;
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>
