@@ -97,7 +97,16 @@ export const getReportPreview = async (req, res) => {
     const ogDescription = escapeHtml(`${location} · ${humanDate} · Ayudá compartiendo`);
     const targetUrl = `${frontendUrl}/reporte/${id}`;
 
-    // Professional HTML response for crawlers
+    // Detect if request is from a browser (not a bot)
+    const userAgent = req.headers['user-agent'] || '';
+    const isBrowser = !userAgent.match(/(bot|crawler|spider|facebook|twitter|whatsapp|telegram)/i);
+
+    // If it's a real browser, redirect immediately (no HTML)
+    if (isBrowser) {
+      return res.redirect(302, targetUrl);
+    }
+
+    // For bots: serve HTML with Open Graph tags
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -119,12 +128,10 @@ export const getReportPreview = async (req, res) => {
   <meta name="twitter:title" content="${ogTitle}" />
   <meta name="twitter:description" content="${ogDescription}" />
   <meta name="twitter:image" content="${ogImage}" />
-
-  <!-- Meta Refresh for Browsers -->
-  <meta http-equiv="refresh" content="0; url=${targetUrl}">
 </head>
 <body>
-  <p>Redirigiendo a <a href="${targetUrl}">SafeSpot</a>...</p>
+  <h1>${ogTitle}</h1>
+  <p>${ogDescription}</p>
 </body>
 </html>`;
 
