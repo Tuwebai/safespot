@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle, Clock } from 'lucide-react'
+import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle } from 'lucide-react'
 import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
@@ -108,11 +108,11 @@ const FeaturesSection = memo(() => {
           <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">
             ¿Por qué elegir SafeSpot?
           </h2>
-          <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
+          <p className="text-lg text-foreground/70 max-w-2xl mx-auto">
             Nuestra plataforma está diseñada para hacer que reportar robos sea fácil, seguro y efectivo.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((feature, index) => (
             <FeatureCard key={index} {...feature} />
           ))}
@@ -125,8 +125,8 @@ const FeaturesSection = memo(() => {
 const StatCard = memo(({ label, value, icon: Icon, color, loading }: { label: string, value: string, icon: any, color: string, loading: boolean }) => (
   <Card className="bg-dark-card border-dark-border card-glow">
     <CardContent className="p-6 text-center">
-      <Icon className={`w-8 h-8 ${color} mx-auto mb-3`} />
-      <div className="text-3xl font-bold text-foreground mb-2">
+      <Icon className={`h-8 w-8 mx-auto mb-4 ${color}`} />
+      <div className={`text-3xl font-bold mb-2 ${color}`}>
         {loading ? <Skeleton height={36} width={60} /> : value}
       </div>
       <div className="text-sm text-foreground/70">{label}</div>
@@ -135,17 +135,19 @@ const StatCard = memo(({ label, value, icon: Icon, color, loading }: { label: st
 ))
 
 const CategoryCard = memo(({ name, color, count }: { name: string, color: string, count: string }) => (
-  <Card className="bg-dark-card border-dark-border card-glow hover:border-neon-green/50 transition-colors cursor-pointer">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={`w-4 h-4 rounded-full ${color}`}></div>
-          <div className="text-base font-medium text-foreground">{name}</div>
+  <Link to={`/reportes?category=${encodeURIComponent(name)}`}>
+    <Card className="bg-dark-card border-dark-border card-glow hover:border-neon-green/50 transition-all cursor-pointer hover:scale-105">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-4 h-4 rounded-full ${color}`}></div>
+            <div className="text-base font-medium text-foreground">{name}</div>
+          </div>
+          <div className="text-2xl font-bold text-neon-green">{count}</div>
         </div>
-        <div className="text-2xl font-bold text-neon-green">{count}</div>
-      </div>
-    </CardContent>
-  </Card>
+      </CardContent>
+    </Card>
+  </Link>
 ))
 
 // ============================================
@@ -178,25 +180,19 @@ export function Home() {
       icon: Users,
       color: 'text-blue-400'
     },
-    {
-      label: 'Usuarios Este Mes',
-      value: error ? '0' : (stats?.active_users_month?.toString() || '0'),
-      icon: Clock,
-      color: 'text-yellow-400'
-    },
   ]
 
   const categories = [
     { name: 'Celulares', color: 'bg-blue-500' },
     { name: 'Bicicletas', color: 'bg-green-500' },
-    { name: 'Motos', color: 'bg-yellow-400' },
+    { name: 'Motos', color: 'bg-yellow-500' },
     { name: 'Autos', color: 'bg-red-500' },
     { name: 'Laptops', color: 'bg-purple-500' },
     { name: 'Carteras', color: 'bg-pink-500' },
   ]
 
   const seo = generateSEOTags({
-    title: 'SafeSpot – Reportes Ciudadanos en Tiempo Real',
+    title: 'SafeSpot - Reporta y Previene Robos en tu Zona',
     description: 'Reporta y visualiza incidentes de seguridad en tu zona. Mapa colaborativo de la comunidad para moverte más seguro por la ciudad.',
     canonical: 'https://safespot.netlify.app/',
     type: 'website'
@@ -220,7 +216,7 @@ export function Home() {
       {/* Statistics Section */}
       <section className="bg-dark-card py-16">
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {statsDisplay.map((stat, index) => (
               <StatCard key={index} {...stat} loading={loading} />
             ))}

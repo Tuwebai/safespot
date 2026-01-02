@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { generateSEOTags } from '@/lib/seo'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
@@ -78,11 +78,20 @@ const formatDate = (dateString: string) => {
 export function Reportes() {
   const toast = useToast()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+
+  // Read category from URL params on mount
+  useEffect(() => {
+    const categoryParam = searchParams.get('category')
+    if (categoryParam) {
+      setSelectedCategory(categoryParam)
+    }
+  }, [searchParams])
 
   // Flag dialog state
   const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
