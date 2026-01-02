@@ -169,7 +169,7 @@ export function Header() {
       {/* Mobile Drawer */}
       <div
         className={cn(
-          "fixed top-0 right-0 h-full w-[80%] max-w-[320px] bg-dark-card border-l border-dark-border z-50 md:hidden",
+          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] bg-dark-card border-l border-dark-border z-[100] md:hidden shadow-2xl safe-area-bottom",
           "transform transition-transform duration-300 ease-in-out",
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         )}
