@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
-import { TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
+import { TrendingUp, Calendar, FileText, ThumbsUp, Palette } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
@@ -18,9 +18,11 @@ import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection'
 import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuery'
 import { Lock, ChevronRight, Award } from 'lucide-react'
 import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export function Perfil() {
   const toast = useToast()
+  const { openCustomizer } = useTheme()
 
   // Use React Query for real-time gamification data
   const {
@@ -109,6 +111,31 @@ export function Perfil() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna Principal */}
         <div className="lg:col-span-2 space-y-6">
+
+          {/* Personalización de Apariencia */}
+          <div className="bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none" />
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-inner">
+                <Palette size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Personaliza tu Experiencia</h3>
+                <p className="text-sm text-muted-foreground">
+                  Elige entre temas oscuros, claros o minimalistas y tu color favorito.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={openCustomizer}
+              size="lg"
+              className="w-full sm:w-auto glow-effect font-semibold relative z-10"
+            >
+              <Palette className="mr-2 h-4 w-4" />
+              Cambiar Apariencia
+            </Button>
+          </div>
+
           {/* Información del Usuario */}
           <Card className="bg-dark-card border-dark-border card-glow">
             <CardHeader>

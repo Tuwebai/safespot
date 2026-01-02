@@ -19,6 +19,9 @@ const TerminosPage = lazyRetry(() => import('@/pages/TerminosPage'), 'Terminos')
 const PrivacidadPage = lazyRetry(() => import('@/pages/PrivacidadPage'), 'Privacidad')
 const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), 'Notifications')
 
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
+
 function App() {
   return (
     <BrowserRouter
@@ -27,33 +30,36 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
-      <Layout>
-        <ChunkErrorBoundary>
-          <Suspense fallback={<RouteLoadingFallback />}>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/reportes" element={<Reportes />} />
-              <Route path="/crear-reporte" element={<CrearReporte />} />
-              <Route
-                path="/reporte/:id"
-                element={
-                  <Suspense fallback={<DetailLoadingFallback />}>
-                    <DetalleReporte />
-                  </Suspense>
-                }
-              />
-              <Route path="/explorar" element={<Explorar />} />
-              <Route path="/gamificacion" element={<Gamificacion />} />
-              <Route path="/perfil" element={<Perfil />} />
-              <Route path="/favoritos" element={<MisFavoritos />} />
-              <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
-              <Route path="/notificaciones" element={<NotificationsPage />} />
-              <Route path="/terminos" element={<TerminosPage />} />
-              <Route path="/privacidad" element={<PrivacidadPage />} />
-            </Routes>
-          </Suspense>
-        </ChunkErrorBoundary>
-      </Layout>
+      <ThemeProvider>
+        <FirstTimeOnboardingTheme />
+        <Layout>
+          <ChunkErrorBoundary>
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/reportes" element={<Reportes />} />
+                <Route path="/crear-reporte" element={<CrearReporte />} />
+                <Route
+                  path="/reporte/:id"
+                  element={
+                    <Suspense fallback={<DetailLoadingFallback />}>
+                      <DetalleReporte />
+                    </Suspense>
+                  }
+                />
+                <Route path="/explorar" element={<Explorar />} />
+                <Route path="/gamificacion" element={<Gamificacion />} />
+                <Route path="/perfil" element={<Perfil />} />
+                <Route path="/favoritos" element={<MisFavoritos />} />
+                <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
+                <Route path="/notificaciones" element={<NotificationsPage />} />
+                <Route path="/terminos" element={<TerminosPage />} />
+                <Route path="/privacidad" element={<PrivacidadPage />} />
+              </Routes>
+            </Suspense>
+          </ChunkErrorBoundary>
+        </Layout>
+      </ThemeProvider>
     </BrowserRouter>
   )
 }

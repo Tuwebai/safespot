@@ -8,41 +8,42 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "hsl(220 13% 1%)",
-        foreground: "hsl(210 40% 98%)",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
         card: {
-          DEFAULT: "hsl(220 13% 9%)",
-          foreground: "hsl(210 40% 98%)",
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
         },
         primary: {
-          DEFAULT: "hsl(142 100% 50%)",
-          foreground: "hsl(220 13% 1%)",
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
-          DEFAULT: "hsl(220 13% 9%)",
-          foreground: "hsl(210 40% 98%)",
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
         },
         destructive: {
-          DEFAULT: "hsl(0 84.2% 60.2%)",
-          foreground: "hsl(210 40% 98%)",
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
         },
         muted: {
-          DEFAULT: "hsl(220 13% 9%)",
-          foreground: "hsl(215 20.2% 65.1%)",
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "hsl(220 13% 18%)",
-          foreground: "hsl(210 40% 98%)",
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
         },
-        border: "hsl(220 13% 18%)",
-        input: "hsl(220 13% 18%)",
-        ring: "hsl(142 100% 50%)",
-        // Colores personalizados SafeSpot
-        "neon-green": "#00ff88",
-        "neon-blue": "#0f172a",
-        "dark-bg": "#020617",
-        "dark-card": "#0f172a",
-        "dark-border": "#1e293b",
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        // Colores personalizados SafeSpot - Mapped to potential variables for theming, or kept static if brand identity
+        // Converting these to variables too allows full theme switching
+        "neon-green": "hsl(var(--neon-green))", // Was #00ff88 -> hsl(152, 100%, 50%)
+        "neon-blue": "hsl(var(--neon-blue))",   // Was #0f172a -> hsl(222, 47%, 11%)
+        "dark-bg": "hsl(var(--dark-bg))",       // Was #020617 -> hsl(222, 84%, 5%)
+        "dark-card": "hsl(var(--dark-card))",   // Was #0f172a -> hsl(222, 47%, 11%)
+        "dark-border": "hsl(var(--dark-border))", // Was #1e293b -> hsl(215, 32%, 17%)
       },
       borderRadius: {
         lg: "0.5rem",

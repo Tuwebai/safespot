@@ -90,7 +90,11 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
           total_votes: 0,
           points: 0,
           level: 1,
+          points: 0,
+          level: 1,
           avatar_url: null,
+          theme: 'default',
+          accent_color: 'green',
           recent_reports: []
         },
         warning: 'No pudimos encontrar tus datos guardados.'
@@ -127,7 +131,11 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
         total_votes: 0,
         points: 0,
         level: 1,
+        points: 0,
+        level: 1,
         avatar_url: null,
+        theme: 'default',
+        accent_color: 'green',
         recent_reports: []
       },
       error: 'Failed to fetch user profile'
@@ -142,18 +150,40 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
 router.put('/profile', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { avatar_url } = req.body;
+    const { avatar_url, theme, accent_color } = req.body;
 
-    // Validate if avatar_url is provided (allow null to reset)
-    if (avatar_url === undefined) {
+    // Validate if any field is provided
+    if (avatar_url === undefined && theme === undefined && accent_color === undefined) {
       return res.status(400).json({ error: 'No fields to update provided' });
     }
+
+    // Dynamic query construction
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (avatar_url !== undefined) {
+      updates.push(`avatar_url = $${paramIndex++}`);
+      values.push(avatar_url);
+    }
+    if (theme !== undefined) {
+      updates.push(`theme = $${paramIndex++}`);
+      values.push(theme);
+    }
+    if (accent_color !== undefined) {
+      updates.push(`accent_color = $${paramIndex++}`);
+      values.push(accent_color);
+    }
+
+    values.push(anonymousId);
+
+    const query = `UPDATE anonymous_users SET ${updates.join(', ')} WHERE anonymous_id = $${paramIndex} RETURNING *`;
 
     // Update query
     const result = await queryWithRLS(
       anonymousId,
-      `UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2 RETURNING avatar_url`,
-      [avatar_url, anonymousId]
+      query,
+      values
     );
 
     if (result.rows.length === 0) {
@@ -162,7 +192,7 @@ router.put('/profile', requireAnonymousId, async (req, res) => {
 
     res.json({
       success: true,
-      data: { avatar_url: result.rows[0].avatar_url },
+      data: result.rows[0],
       message: 'Perfil actualizado correctamente'
     });
 

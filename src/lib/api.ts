@@ -580,6 +580,8 @@ export interface UserProfile {
   points: number;
   level: number;
   avatar_url?: string | null;
+  theme?: string;
+  accent_color?: string;
   recent_reports?: Report[];
 }
 
@@ -608,9 +610,9 @@ export const usersApi = {
   },
 
   /**
-   * Update user profile (e.g. avatar)
+   * Update user profile (e.g. avatar, theme)
    */
-  updateProfile: async (data: { avatar_url?: string | null }): Promise<UserProfile> => {
+  updateProfile: async (data: { avatar_url?: string | null, theme?: string, accent_color?: string }): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
