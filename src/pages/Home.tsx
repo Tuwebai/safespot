@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { RippleButton } from '@/components/ui/RippleButton'
 import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle } from 'lucide-react'
 import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -32,22 +32,24 @@ const HeroSection = memo(() => (
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/crear-reporte">
-            <Button
+            <RippleButton
               variant="neon"
               className="px-8 py-6 text-lg h-auto neon-glow"
+              rippleColor="rgba(57, 255, 20, 0.6)"
             >
               <MapPin className="mr-2 h-5 w-5" />
               Crear Reporte
-            </Button>
+            </RippleButton>
           </Link>
           <Link to="/explorar">
-            <Button
+            <RippleButton
               variant="outline"
               className="px-8 py-6 text-lg h-auto border-neon-green text-neon-green hover:bg-neon-green/10"
+              rippleColor="rgba(57, 255, 20, 0.3)"
             >
               <Eye className="mr-2 h-5 w-5" />
               Ver Mapa
-            </Button>
+            </RippleButton>
           </Link>
         </div>
 

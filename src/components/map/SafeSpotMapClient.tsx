@@ -474,21 +474,25 @@ export function SafeSpotMapClient({
         if ('geolocation' in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    if (pos.coords.latitude && pos.coords.longitude) {
+                    if (pos.coords.latitude && pos.coords.longitude && map) {
                         map.setView([pos.coords.latitude, pos.coords.longitude], 13)
                         hasCenteredRef.current = true
                     }
                 },
                 () => {
                     // 5. Fallback: Buenos Aires
-                    map.setView([-34.6037, -58.3816], 12)
-                    hasCenteredRef.current = true
+                    if (map) {
+                        map.setView([-34.6037, -58.3816], 12)
+                        hasCenteredRef.current = true
+                    }
                 },
                 { timeout: 5000 }
             )
         } else {
-            map.setView([-34.6037, -58.3816], 12)
-            hasCenteredRef.current = true
+            if (map) {
+                map.setView([-34.6037, -58.3816], 12)
+                hasCenteredRef.current = true
+            }
         }
     }, [isMapReady, zones, initialFocus, activeZoneType])
 

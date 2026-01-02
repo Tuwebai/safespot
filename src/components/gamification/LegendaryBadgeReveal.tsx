@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useConfetti } from '@/hooks/useConfetti'
 
 interface LegendaryBadgeRevealProps {
     badge: {
@@ -16,12 +17,22 @@ interface LegendaryBadgeRevealProps {
 
 export function LegendaryBadgeReveal({ badge, onClose }: LegendaryBadgeRevealProps) {
     const [visible, setVisible] = useState(false)
+    const { fireLegendaryConfetti } = useConfetti()
 
     useEffect(() => {
         // Trigger entrance animation
         const timer = setTimeout(() => setVisible(true), 100)
-        return () => clearTimeout(timer)
-    }, [])
+
+        // Fire confetti after a short delay
+        const confettiTimer = setTimeout(() => {
+            fireLegendaryConfetti()
+        }, 800)
+
+        return () => {
+            clearTimeout(timer)
+            clearTimeout(confettiTimer)
+        }
+    }, [fireLegendaryConfetti])
 
     if (badge.rarity !== 'legendary') return null
 

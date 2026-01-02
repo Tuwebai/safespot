@@ -210,7 +210,6 @@ export const NotificationService = {
                         ns.similar_reports = true
                         AND ns.anonymous_id != $2
                         AND ns.notifications_today < ns.max_notifications_per_day
-                        AND (ns.categories_of_interest IS NULL OR $1::text = ANY(ns.categories_of_interest))
                         AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, ${NOTIFICATIONS.SIMILAR_REPORTS_RADIUS_METERS})
                 )
                 INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
