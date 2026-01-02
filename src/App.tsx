@@ -21,6 +21,7 @@ const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), '
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
+import { UpdateNotification } from '@/components/UpdateNotification'
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
     >
       <ThemeProvider>
         <FirstTimeOnboardingTheme />
+        <UpdateNotification />
         <Layout>
           <ChunkErrorBoundary>
             <Suspense fallback={<RouteLoadingFallback />}>

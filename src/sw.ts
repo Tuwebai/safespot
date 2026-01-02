@@ -16,6 +16,13 @@ cleanupOutdatedCaches();
 // This variable is injected by VitePWA at build time
 precacheAndRoute(self.__WB_MANIFEST);
 
+// 3.5. Listen for SKIP_WAITING message from client
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
 // 4. SPA Navigation Routing
 // Serve index.html for all navigation requests, EXCEPT API and static assets
 // This fixes "Router is responding to /api/..." issues
