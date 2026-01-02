@@ -12,9 +12,9 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
         queryKey: queryKeys.comments.byReportPaginated(reportId ?? '', cursor),
         queryFn: () => commentsApi.getByReportId(reportId!, limit, cursor),
         enabled: !!reportId,
-        staleTime: 60 * 1000,
-        refetchOnWindowFocus: true, // Refetch only when user returns to the tab (efficient)
-        refetchInterval: 5000, // Poll every 5s for real-time updates
+        staleTime: 30 * 1000, // Consider data stale after 30s
+        refetchOnWindowFocus: true, // Refetch when user returns to the tab
+        refetchInterval: 2000, // Poll every 2s for near-instant updates
     })
 }
 
@@ -30,9 +30,11 @@ export function useCreateCommentMutation() {
         onMutate: async (newCommentData) => {
             // Cancel outgoing refetches
             await queryClient.cancelQueries({ queryKey: queryKeys.comments.byReport(newCommentData.report_id) })
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.detail(newCommentData.report_id) })
 
-            // Snapshot previous value
+            // Snapshot previous values
             const previousComments = queryClient.getQueryData<any>(queryKeys.comments.byReport(newCommentData.report_id))
+            const previousReport = queryClient.getQueryData<any>(queryKeys.reports.detail(newCommentData.report_id))
 
             // Create temporary optimistic comment
             const optimisticComment = {
@@ -46,7 +48,7 @@ export function useCreateCommentMutation() {
                 anonymous_id: 'Tú', // Needed for getUserInitials
             }
 
-            // Update cache using fuzzy matching to catch all paginated queries
+            // Update comments cache
             queryClient.setQueriesData(
                 { queryKey: queryKeys.comments.byReport(newCommentData.report_id) },
                 (old: any) => {
@@ -71,14 +73,44 @@ export function useCreateCommentMutation() {
                 }
             )
 
-            return { previousComments, reportId: newCommentData.report_id }
+            // INSTANT COUNTER UPDATE: Optimistically increment comment count in report
+            queryClient.setQueryData(
+                queryKeys.reports.detail(newCommentData.report_id),
+                (old: any) => {
+                    if (!old) return old
+                    // Handle both { data: report } and direct report object
+                    if (old.data) {
+                        return {
+                            ...old,
+                            data: {
+                                ...old.data,
+                                comments_count: (old.data.comments_count || 0) + 1
+                            }
+                        }
+                    }
+                    return {
+                        ...old,
+                        comments_count: (old.comments_count || 0) + 1
+                    }
+                }
+            )
+
+            return { previousComments, previousReport, reportId: newCommentData.report_id }
         },
         onError: (_, _variables, context) => {
             if (context?.reportId) {
+                // Restore comments
                 queryClient.setQueriesData(
                     { queryKey: queryKeys.comments.byReport(context.reportId) },
                     context.previousComments
                 )
+                // Restore report data (including comment count)
+                if (context.previousReport) {
+                    queryClient.setQueryData(
+                        queryKeys.reports.detail(context.reportId),
+                        context.previousReport
+                    )
+                }
             }
         },
         onSuccess: (newComment, _variables) => {

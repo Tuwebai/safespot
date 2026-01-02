@@ -44,7 +44,7 @@ router.get('/:reportId', async (req, res) => {
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        WHERE c.report_id = $1 AND c.deleted_at IS NULL
-       ORDER BY c.created_at ASC
+       ORDER BY c.created_at DESC
        LIMIT $2 OFFSET $3`,
       [reportId, limitNum, offset]
     );
