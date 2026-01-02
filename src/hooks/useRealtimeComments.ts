@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`
 
 interface RealtimeComment {
     type: 'new-comment' | 'comment-update' | 'comment-delete' | 'connected'
