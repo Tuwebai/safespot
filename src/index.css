@@ -444,3 +444,26 @@
 .hamburger-line.open:nth-child(3) {
   transform: translateY(-9px) rotate(-45deg);
 }
+
+/* Mobile Map Controls Optimization */
+@media (max-width: 768px) {
+  .leaflet-touch .leaflet-bar a {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+    font-size: 22px !important;
+  }
+  .leaflet-control-zoom-in, .leaflet-control-zoom-out {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+  }
+}
+
+/* Scrollbar Reset for Mobile */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 0px;
+    background: transparent; /* make scrollbar transparent */
+  }
+}

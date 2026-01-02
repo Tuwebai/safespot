@@ -49,7 +49,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
     return (
         <div className="flex-1 space-y-3">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight">
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight break-words">
                     {report.title}
                 </h1>
                 <Badge className={cn("px-2.5 py-0.5 text-xs font-semibold", getStatusColor(report.status))}>

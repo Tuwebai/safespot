@@ -251,7 +251,7 @@ export function DetalleReporte() {
         </script>
       </Helmet>
 
-      <div className="min-h-screen bg-dark-bg pb-24 md:pb-8">
+      <div className="min-h-screen bg-dark-bg pb-24 md:pb-8 overflow-x-hidden">
         <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 md:py-8">
           {/* Top Navigation */}
           <div className="flex items-center justify-between mb-6">

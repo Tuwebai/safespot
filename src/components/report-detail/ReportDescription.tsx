@@ -175,7 +175,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                             </div>
                         </div>
                     ) : (
-                        <p className="text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                        <p className="text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">
                             {report.description}
                         </p>
                     )}
