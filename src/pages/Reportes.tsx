@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
+// Force IDE refresh
 import { Helmet } from 'react-helmet-async'
 import { generateSEOTags } from '@/lib/seo'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -22,6 +23,7 @@ import { SmartLink } from '@/components/SmartLink'
 import { useReportsQuery } from '@/hooks/queries'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
 
 // ============================================
@@ -648,7 +650,18 @@ export function Reportes() {
 
                         {/* D. Meta Footer (Date & Stats) */}
                         <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                          <span>{formatDate(report.created_at)}</span>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6 border border-white/10 shrink-0">
+                              <AvatarImage
+                                src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                alt="Avatar"
+                              />
+                              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                                {report.anonymous_id.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-xs">{formatDate(report.created_at)}</span>
+                          </div>
                           <div className="flex items-center space-x-4">
                             <div className="flex items-center gap-1" title="Hilos">
                               <GitBranch className="h-4 w-4" />

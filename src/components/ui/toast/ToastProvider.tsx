@@ -16,10 +16,11 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   const addToast = useCallback(
     (message: string, type: ToastType, duration?: number) => {
-      // Prevenir duplicados: si ya existe un toast idéntico creado en los últimos 500ms, no agregarlo
       const now = Date.now()
+      const id = `${type}-${now}-${Math.random().toString(36).substring(2, 9)}`
 
       setToasts((prev) => {
+        // Prevenir duplicados: si ya existe un toast idéntico creado en los últimos 500ms, no agregarlo
         const isDuplicate = prev.some(
           (toast) =>
             toast.message === message &&
@@ -31,7 +32,6 @@ export function ToastProvider({ children }: ToastProviderProps) {
           return prev
         }
 
-        const id = `${type}-${now}-${Math.random().toString(36).substring(2, 9)}`
         const newToast: Toast = {
           id,
           message,
@@ -42,34 +42,36 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
         return [...prev, newToast]
       })
+
+      return id;
     },
     []
   )
 
   const success = useCallback(
     (message: string, duration?: number) => {
-      addToast(message, 'success', duration)
+      return addToast(message, 'success', duration)
     },
     [addToast]
   )
 
   const error = useCallback(
     (message: string, duration?: number) => {
-      addToast(message, 'error', duration)
+      return addToast(message, 'error', duration)
     },
     [addToast]
   )
 
   const info = useCallback(
     (message: string, duration?: number) => {
-      addToast(message, 'info', duration)
+      return addToast(message, 'info', duration)
     },
     [addToast]
   )
 
   const warning = useCallback(
     (message: string, duration?: number) => {
-      addToast(message, 'warning', duration)
+      return addToast(message, 'warning', duration)
     },
     [addToast]
   )

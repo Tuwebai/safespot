@@ -1,11 +1,28 @@
 import express from 'express';
+import multer from 'multer';
 import { queryWithRLS } from '../utils/rls.js';
-import { requireAnonymousId } from '../utils/validation.js';
+import { requireAnonymousId, validateImageBuffer } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import supabase from '../config/supabase.js';
+import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
+
+// Multer config for avatar uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB max for avatars
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Archivo de imagen inválido. Solo JPG, PNG o WEBP.'), false);
+    }
+  },
+});
 
 /**
  * GET /api/users/profile
@@ -44,6 +61,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
           total_votes: 0,
           points: 0,
           level: 1,
+          avatar_url: null,
           recent_reports: []
         },
         warning: 'Usando perfil temporal por error de conexión.'
@@ -53,7 +71,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     // Get user stats
     const userResult = await queryWithRLS(
       anonymousId,
-      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level 
+      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url 
        FROM anonymous_users WHERE anonymous_id = $1`,
       [anonymousId]
     ).catch(e => {
@@ -72,6 +90,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
           total_votes: 0,
           points: 0,
           level: 1,
+          avatar_url: null,
           recent_reports: []
         },
         warning: 'No pudimos encontrar tus datos guardados.'
@@ -108,10 +127,116 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
         total_votes: 0,
         points: 0,
         level: 1,
+        avatar_url: null,
         recent_reports: []
       },
       error: 'Failed to fetch user profile'
     });
+  }
+});
+
+/**
+ * PUT /api/users/profile
+ * Update user profile (specifically avatar_url)
+ */
+router.put('/profile', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+    const { avatar_url } = req.body;
+
+    // Validate if avatar_url is provided (allow null to reset)
+    if (avatar_url === undefined) {
+      return res.status(400).json({ error: 'No fields to update provided' });
+    }
+
+    // Update query
+    const result = await queryWithRLS(
+      anonymousId,
+      `UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2 RETURNING avatar_url`,
+      [avatar_url, anonymousId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      data: { avatar_url: result.rows[0].avatar_url },
+      message: 'Perfil actualizado correctamente'
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+/**
+ * POST /api/users/avatar
+ * Upload a custom avatar
+ */
+router.post('/avatar', requireAnonymousId, upload.single('avatar'), async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No image provided' });
+    }
+
+    // Validate Image Content
+    try {
+      await validateImageBuffer(file.buffer);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid image data' });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Storage service not configured' });
+    }
+
+    // Use 'report-images' bucket but in 'avatars' folder
+    const bucketName = 'report-images';
+    const fileExt = file.originalname.split('.').pop() || 'jpg';
+    // Use timestamp to prevent browser caching issues and simple uniqueness
+    const fileName = `avatars/${anonymousId}/avatar-${Date.now()}.${fileExt}`;
+
+    // Upload to Supabase
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      .from(bucketName)
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true, // Overwrite previous avatar
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabaseAdmin.storage
+      .from(bucketName)
+      .getPublicUrl(fileName);
+
+    const publicUrl = urlData.publicUrl;
+
+    // Update DB
+    const result = await queryWithRLS(
+      anonymousId,
+      `UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2 RETURNING avatar_url`,
+      [publicUrl, anonymousId]
+    );
+
+    res.json({
+      success: true,
+      data: { avatar_url: publicUrl },
+      message: 'Avatar actualizado correctamente'
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to upload avatar', details: error.message });
   }
 });
 

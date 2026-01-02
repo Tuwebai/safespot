@@ -4,9 +4,10 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomContr
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
 import { getMarkerIcon } from '@/lib/map-utils'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import type { Report, ZoneType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
-import { Navigation, Calendar, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
+import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useUserZones } from '@/hooks/useUserZones'
@@ -675,9 +676,17 @@ export function SafeSpotMapClient({
                                         )}
                                     </div>
                                     <h4 className="font-bold text-sm mb-1 line-clamp-2">{report.title}</h4>
-                                    <div className="flex items-center text-xs text-muted-foreground mb-3">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        {new Date(report.created_at).toLocaleDateString()}
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                                        <Avatar className="h-5 w-5 border border-white/10 shrink-0">
+                                            <AvatarImage
+                                                src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                                alt="Avatar"
+                                            />
+                                            <AvatarFallback className="bg-dark-bg text-[8px] text-gray-400 flex items-center justify-center">
+                                                {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <span>{new Date(report.created_at).toLocaleDateString()}</span>
                                     </div>
                                     <Link to={`/reporte/${report.id}`}>
                                         <Button size="sm" variant="neon" className="w-full h-8 text-xs">Ver Detalles</Button>

@@ -1,6 +1,10 @@
 import { memo } from 'react'
+// Force IDE refresh
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { MapPin } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/api'
 
@@ -60,6 +64,26 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
             <div className="flex items-center text-foreground/50 text-sm md:text-base bg-dark-card/30 w-fit px-3 py-1.5 rounded-full border border-dark-border/30">
                 <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
                 <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+                <Avatar className="h-8 w-8 border border-white/10">
+                    <AvatarImage
+                        src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                        alt="Avatar"
+                    />
+                    <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                        {report.anonymous_id.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground/90 leading-none">
+                        Usuario {report.anonymous_id.substring(0, 6)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}
+                    </span>
+                </div>
             </div>
         </div>
     )

@@ -31,41 +31,28 @@ router.get('/:reportId', async (req, res) => {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20)); // Max 50, default 20
     const offset = (pageNum - 1) * limitNum;
 
-    // Build base query for counting total comments (without pagination)
-    const countQuery = supabase
-      .from('comments')
-      .select('id', { count: 'exact', head: true })
-      .eq('report_id', reportId)
-      .is('deleted_at', null);
+    // Execute queries in parallel using raw SQL for better control and JOIN support
+    const countPromise = queryWithRLS(
+      anonymousId || 'anon', // Use 'anon' if no ID provided for RLS context
+      `SELECT COUNT(*) as count FROM comments WHERE report_id = $1 AND deleted_at IS NULL`,
+      [reportId]
+    );
 
-    // Build query for fetching comments (with pagination)
-    let dataQuery = supabase
-      .from('comments')
-      .select('id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread')
-      .eq('report_id', reportId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true })
-      .range(offset, offset + limitNum - 1);
+    const dataPromise = queryWithRLS(
+      anonymousId || 'anon',
+      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.parent_id, c.is_thread, u.avatar_url
+       FROM comments c
+       LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
+       WHERE c.report_id = $1 AND c.deleted_at IS NULL
+       ORDER BY c.created_at ASC
+       LIMIT $2 OFFSET $3`,
+      [reportId, limitNum, offset]
+    );
 
-    // Execute both queries in parallel
-    const [{ count: totalItems, error: countError }, { data: comments, error: commentsError }] = await Promise.all([
-      countQuery,
-      dataQuery
-    ]);
+    const [countResult, dataResult] = await Promise.all([countPromise, dataPromise]);
 
-    if (countError) {
-      logError(countError, req);
-      return res.status(500).json({
-        error: 'Failed to fetch comments'
-      });
-    }
-
-    if (commentsError) {
-      logError(commentsError, req);
-      return res.status(500).json({
-        error: 'Failed to fetch comments'
-      });
-    }
+    const totalItems = parseInt(countResult.rows[0].count, 10);
+    const comments = dataResult.rows;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil((totalItems || 0) / limitNum);

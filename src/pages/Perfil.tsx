@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
-import { User, TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
+import { TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
@@ -110,15 +110,96 @@ export function Perfil() {
           {/* Información del Usuario */}
           <Card className="bg-dark-card border-dark-border card-glow">
             <CardHeader>
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-neon-green/20 flex items-center justify-center">
-                  <User className="h-8 w-8 text-neon-green" />
+              <div className="flex items-center gap-6">
+                <div className="relative group">
+                  {/* Avatar Circle */}
+                  <div className="h-24 w-24 rounded-full bg-neon-green/10 flex items-center justify-center overflow-hidden border-2 border-neon-green/30 group-hover:border-neon-green/80 transition-all shadow-[0_0_15px_rgba(0,255,136,0.1)]">
+                    <img
+                      src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  {/* Actions Overlay / Buttons */}
+                  <div className="absolute -bottom-2 -right-2 flex space-x-1">
+                    {/* Regenerate Random */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
+                      onClick={async () => {
+                        try {
+                          toast.info("Generando nuevo avatar...");
+                          const randomSeed = Math.random().toString(36).substring(7);
+                          const newAvatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}-${randomSeed}`;
+                          await usersApi.updateProfile({ avatar_url: newAvatarUrl });
+                          setProfile(prev => prev ? { ...prev, avatar_url: newAvatarUrl } : null);
+                          toast.success("¡Avatar actualizado!");
+                        } catch (err) {
+                          handleError(err, toast.error, 'Perfil.regenerateAvatar');
+                        }
+                      }}
+                      title="Generar aleatorio"
+                    >
+                      <span className="text-xs">🎲</span>
+                    </Button>
+
+                    {/* Upload Custom */}
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        id="avatar-upload"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+
+                          try {
+                            const toastId = toast.info("Subiendo imagen...", 9999); // Persistent until success
+                            const { avatar_url } = await usersApi.uploadAvatar(file);
+
+                            toast.removeToast(toastId);
+
+                            setProfile(prev => prev ? { ...prev, avatar_url } : null);
+                            toast.success("Foto de perfil actualizada");
+                          } catch (err) {
+                            handleError(err, toast.error, 'Perfil.uploadAvatar');
+                          } finally {
+                            // Reset input
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
+                        onClick={() => document.getElementById('avatar-upload')?.click()}
+                        title="Subir imagen"
+                      >
+                        <span className="text-xs">📷</span>
+                      </Button>
+                    </div>
+                  </div>
                 </div>
+
                 <div>
-                  <CardTitle className="text-2xl">Usuario Anónimo</CardTitle>
-                  <CardDescription className="text-base">
+                  <CardTitle className="text-2xl flex items-center gap-2">
+                    Usuario Anónimo
+                    {profile?.avatar_url && (
+                      <span className="text-[10px] bg-neon-green/20 text-neon-green px-2 py-0.5 rounded-full border border-neon-green/30">
+                        Personalizado
+                      </span>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-base font-mono">
                     ID: {anonymousId}
                   </CardDescription>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-[250px] leading-tight">
+                    Tu identidad permanece anónima. La foto solo es visible en tu perfil.
+                  </p>
                 </div>
               </div>
             </CardHeader>

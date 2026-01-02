@@ -10,11 +10,11 @@ export interface Toast {
 
 export interface ToastContextValue {
   toasts: Toast[]
-  addToast: (message: string, type: ToastType, duration?: number) => void
+  addToast: (message: string, type: ToastType, duration?: number) => string
   removeToast: (id: string) => void
-  success: (message: string, duration?: number) => void
-  error: (message: string, duration?: number) => void
-  info: (message: string, duration?: number) => void
-  warning: (message: string, duration?: number) => void
+  success: (message: string, duration?: number) => string
+  error: (message: string, duration?: number) => string
+  info: (message: string, duration?: number) => string
+  warning: (message: string, duration?: number) => string
 }
 

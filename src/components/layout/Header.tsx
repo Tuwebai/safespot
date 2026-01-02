@@ -6,11 +6,16 @@ import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
 import { BetaBadge } from '@/components/ui/BetaBadge'
 import { useState, useEffect } from 'react'
+import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
+import { getAnonymousIdSafe } from '@/lib/identity'
 
 export function Header() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { data: profile } = useProfileQuery()
+  const anonymousId = getAnonymousIdSafe()
 
   const isActive = (path: string) => location.pathname === path
 
@@ -118,17 +123,25 @@ export function Header() {
           <div className="hidden md:flex items-center space-x-4">
             <NotificationBell />
             <Link to="/perfil">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "rounded-full hover:bg-neon-green/10 hover:text-neon-green",
-                  isActive('/perfil') && "text-neon-green bg-neon-green/10"
-                )}
+              <div className={cn(
+                "flex items-center justify-center h-9 w-9 rounded-full border transition-all hover:bg-neon-green/10 cursor-pointer overflow-hidden",
+                isActive('/perfil')
+                  ? "border-neon-green bg-neon-green/10"
+                  : "border-transparent hover:border-neon-green/50"
+              )}
                 title="Mi Perfil"
               >
-                <User className="h-5 w-5" />
-              </Button>
+                <Avatar className="h-full w-full">
+                  <AvatarImage
+                    src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`}
+                    alt="Avatar"
+                    className="object-cover"
+                  />
+                  <AvatarFallback className="bg-transparent text-foreground/70">
+                    <User className="h-5 w-5" />
+                  </AvatarFallback>
+                </Avatar>
+              </div>
             </Link>
             <Link to="/crear-reporte">
               <Button
@@ -247,7 +260,17 @@ export function Header() {
                   : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
               )}
             >
-              <User className="mr-3 h-5 w-5" />
+              <div className="mr-3 h-8 w-8 rounded-full border border-dark-border overflow-hidden">
+                <Avatar className="h-full w-full">
+                  <AvatarImage
+                    src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`}
+                    alt="Avatar"
+                  />
+                  <AvatarFallback className="bg-transparent">
+                    <User className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+              </div>
               <span className="font-medium">Mi Perfil y Logros</span>
             </Link>
           </div>

@@ -177,6 +177,7 @@ export interface UserZone {
 export interface Report {
   id: string;
   anonymous_id: string;
+  avatar_url?: string;
   title: string;
   description: string;
   category: string;
@@ -406,6 +407,7 @@ export interface Comment {
   department?: string;
   priority_zone?: 'home' | 'work' | 'frequent';
   newBadges?: NewBadge[]; // Newly awarded badges in this action
+  avatar_url?: string;
 }
 
 export interface CreateCommentData {
@@ -577,6 +579,7 @@ export interface UserProfile {
   total_votes: number;
   points: number;
   level: number;
+  avatar_url?: string | null;
   recent_reports?: Report[];
 }
 
@@ -602,6 +605,44 @@ export const usersApi = {
    */
   getProfile: async (): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile');
+  },
+
+  /**
+   * Update user profile (e.g. avatar)
+   */
+  updateProfile: async (data: { avatar_url?: string | null }): Promise<UserProfile> => {
+    return apiRequest<UserProfile>('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Upload user avatar
+   */
+  uploadAvatar: async (file: File): Promise<{ avatar_url: string }> => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const anonymousId = ensureAnonymousId();
+
+    const response = await fetch(`${API_BASE_URL}/users/avatar`, {
+      method: 'POST',
+      headers: {
+        'X-Anonymous-Id': anonymousId, // Do NOT set Content-Type for FormData, browser does it with boundary
+      },
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({
+      error: 'Unknown error',
+    }));
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Failed to upload avatar');
+    }
+
+    return data.data;
   },
 
   /**

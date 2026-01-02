@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TipTapRenderer } from '@/components/ui/tiptap-renderer'
 import { useToast } from '@/components/ui/toast'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import {
   MessageCircle,
   ThumbsUp,
@@ -194,7 +195,7 @@ export const EnhancedComment = memo(function EnhancedComment({
   const isThread = comment.is_thread === true
 
   // Adjust visual styling based on depth
-  const avatarSize = depth === 0 ? 'w-10 h-10' : depth === 1 ? 'w-8 h-8' : 'w-7 h-7'
+
   const cardPadding = depth === 0 ? 'p-6' : depth === 1 ? 'p-4' : 'p-3'
   const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
 
@@ -209,11 +210,15 @@ export const EnhancedComment = memo(function EnhancedComment({
           {/* Left Side (User & Meta) */}
           <div className="flex items-start gap-3 flex-1">
             {/* Avatar */}
-            <div className={`${avatarSize} rounded-full bg-neon-green text-dark-bg flex items-center justify-center ${depth === 0 ? 'font-semibold' : 'font-medium text-sm'} hover:ring-2 hover:ring-neon-green/50 transition-all cursor-pointer`}>
-              {getUserInitials(comment.anonymous_id)}
-            </div>
-
-            {/* User Details */}
+            <Avatar className="h-8 w-8 border border-white/10 shrink-0">
+              <AvatarImage
+                src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`}
+                alt={`Usuario ${comment.anonymous_id}`}
+              />
+              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                {getUserInitials(comment.anonymous_id)}
+              </AvatarFallback>
+            </Avatar>      {/* User Details */}
             <div className="flex-1 min-w-0">
               {/* Name Row */}
               <div className="flex items-center gap-2 flex-wrap mb-1">
