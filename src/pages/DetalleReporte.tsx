@@ -12,6 +12,7 @@ import { ShareButton } from '@/components/ShareButton'
 import { useReportDetail } from '@/hooks/useReportDetail'
 import { useReportEditor } from '@/hooks/useReportEditor'
 import { useFlagManager } from '@/hooks/useFlagManager'
+import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 
 // Components
 import {
@@ -89,6 +90,9 @@ export function DetalleReporte() {
       navigate('/')
     },
   })
+
+  // REALTIME: Subscribe to instant comment updates via SSE
+  useRealtimeComments(id)
 
   // Local comments count for optimistic updates
   const [commentsCount, setCommentsCount] = useState(0)

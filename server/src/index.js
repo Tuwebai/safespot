@@ -20,6 +20,7 @@ import pushRouter from './routes/push.js';
 import sitemapRouter from './routes/sitemap.js';
 import seoRouter from './routes/seo.js';
 import notificationsRouter from './routes/notifications.js';
+import realtimeRouter from './routes/realtime.js';
 
 // Load environment variables
 dotenv.config();
@@ -169,6 +170,7 @@ app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/realtime', realtimeRouter);
 app.use('/api/user-zones', userZonesRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency

@@ -11,6 +11,7 @@ import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
 import { NotificationService } from '../utils/notificationService.js';
+import { realtimeEvents } from '../utils/eventEmitter.js';
 
 const router = express.Router();
 
@@ -309,6 +310,14 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
 
     } catch (err) {
       // Ignore notification errors to not break comment creation
+    }
+
+    // REALTIME: Broadcast new comment to all connected clients
+    try {
+      realtimeEvents.emitNewComment(req.body.report_id, data);
+    } catch (err) {
+      // Ignore realtime errors to not break comment creation
+      logError(err, { context: 'realtimeEvents.emitNewComment', reportId: req.body.report_id });
     }
 
     res.status(201).json({
