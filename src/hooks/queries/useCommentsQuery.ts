@@ -14,7 +14,7 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
         enabled: !!reportId,
         staleTime: 60 * 1000,
         refetchOnWindowFocus: true, // Refetch only when user returns to the tab (efficient)
-        // refetchInterval: 30000, // Disabled to prevent main thread blocking on older devices
+        refetchInterval: 5000, // Poll every 5s for real-time updates
     })
 }
 
