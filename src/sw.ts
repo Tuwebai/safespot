@@ -86,52 +86,65 @@ self.addEventListener('push', (event) => {
 });
 
 self.addEventListener('notificationclick', (event: any) => {
-    console.log('[SW] Notification click:', event.action);
+    console.log('[SW] Notification click - action:', event.action, 'data:', event.notification.data);
     event.notification.close();
 
-    // 1. Handle "Dismiss" action (Entendido)
+    // 1. Handle "Dismiss" action (Entendido) - ONLY if explicitly clicked
     if (event.action === 'dismiss' || event.action === 'mark-read') {
-        // Just close (already closed above) and return
+        console.log('[SW] Dismiss action - closing notification only');
         return;
     }
 
-    // 2. Determine functionality based on action or default URL
+    // 2. Determine URL based on action or default
     let url = event.notification.data?.url || '/explorar';
 
-    // Explicit actions (override URL logic if needed)
-    if (event.action === 'map') {
-        // Ensure it goes to map (data.url usually has this, but be safe)
+    // Handle specific actions
+    if (event.action === 'map' || event.action === '') {
+        // 'map' button OR clicking notification body (empty string)
         if (event.notification.data?.reportId) {
             url = `/explorar?reportId=${event.notification.data.reportId}`;
         } else {
             url = '/explorar';
         }
+        console.log('[SW] Navigating to map:', url);
     } else if (event.action === 'view_report') {
         if (event.notification.data?.reportId) {
             url = `/reporte/${event.notification.data.reportId}`;
         }
+        console.log('[SW] Navigating to report:', url);
     }
 
     const fullUrl = new URL(url, self.location.origin).href;
+    console.log('[SW] Full URL:', fullUrl);
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then((windowClients) => {
+                console.log('[SW] Found', windowClients.length, 'window clients');
+
                 // Check if there is already a window/tab open with the target URL
                 for (const client of windowClients) {
                     if (client.url === fullUrl && 'focus' in client) {
+                        console.log('[SW] Focusing existing window with exact URL');
                         return client.focus();
                     }
                 }
+
                 // Check if there is any window open for this origin to focus and navigate
                 for (const client of windowClients) {
                     if (client.url.includes(self.location.origin) && 'focus' in client) {
-                        return client.focus().then(async (c: any) => {
-                            if ('navigate' in c) return c.navigate(fullUrl);
+                        console.log('[SW] Focusing existing window and navigating');
+                        return client.focus().then((c: any) => {
+                            if ('navigate' in c) {
+                                console.log('[SW] Navigating client to:', fullUrl);
+                                return c.navigate(fullUrl);
+                            }
                         });
                     }
                 }
+
                 // Otherwise open new window
+                console.log('[SW] Opening new window');
                 if (self.clients.openWindow) {
                     return self.clients.openWindow(fullUrl);
                 }
