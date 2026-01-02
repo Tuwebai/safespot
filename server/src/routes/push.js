@@ -336,24 +336,36 @@ router.post('/test', requireAnonymousId, async (req, res) => {
     try {
         const anonymousId = req.headers['x-anonymous-id'];
 
-        // 1. Get user subscription
-        const { data: sub } = await supabaseAdmin
+        // 1. Get user subscription (ALLOW MULTIPLE, take newest)
+        const { data: subs, error: dbError } = await supabaseAdmin
             .from('push_subscriptions')
             .select('*')
             .eq('anonymous_id', anonymousId)
             .eq('is_active', true)
-            .single();
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (dbError) {
+            console.error('DB Error in /test:', dbError);
+            return res.status(500).json({ success: false, error: 'Database error searching subscription' });
+        }
+
+        const sub = subs && subs.length > 0 ? subs[0] : null;
 
         if (!sub) {
-            return res.status(404).json({ success: false, error: 'No active subscription found for your ID.' });
+            return res.status(404).json({
+                success: false,
+                error: `No active subscription found for ID: ${anonymousId.substring(0, 8)}...`,
+                debug_id: anonymousId
+            });
         }
 
         // 2. Create Payload
         const payload = {
             title: '🧪 Pruebas de Notificación',
             body: 'Si ves esto, las acciones rápidas y los iconos están funcionando.',
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/badge-72x72.png',
+            icon: '/icons/icon-192.png',
+            badge: '/icons/badge.png',
             tag: 'test-notification',
             actions: [
                 { action: 'view', title: '👀 Ver Mapa' },
