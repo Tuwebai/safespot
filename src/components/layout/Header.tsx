@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, Menu, X, Heart, User } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -38,6 +38,29 @@ export function Header() {
     }
   }, [mobileMenuOpen, queryClient])
 
+  // Close menu on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [mobileMenuOpen])
+
+  // Prevent body scroll when menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [mobileMenuOpen])
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-dark-border bg-dark-card">
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -64,19 +87,14 @@ export function Header() {
                     // Prefetch data for "instant" feel
                     if (item.path === '/reportes' || item.path === '/explorar') {
                       queryClient.prefetchQuery({
-                        queryKey: ['reports', 'list'], // Matches queryKeys.reports.list()
+                        queryKey: ['reports', 'list'],
                         queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
                       })
                     } else if (item.path === '/gamificacion') {
                       queryClient.prefetchQuery({
-                        queryKey: ['gamification', 'summary'], // Matches queryKeys.gamification.summary
+                        queryKey: ['gamification', 'summary'],
                         queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
                       })
-                    } else if (item.path === '/favoritos') {
-                      // Note: Favorites page logic might vary, assuming it uses favorites endpoint
-                      // But checking usage, it likely uses a filtered report list or specific endpoint.
-                      // Let's stick to standard report list or just skip if unsure to avoid over-fetching.
-                      // Actually, let's prefetch reports list as it's the main content.
                     }
                   }}
                 >
@@ -122,78 +140,114 @@ export function Header() {
             </Link>
           </div>
 
-          {/* Menú Móvil */}
+          {/* Mobile Menu Button */}
           <div className="flex md:hidden items-center space-x-4">
             <NotificationBell />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-foreground/70 hover:text-neon-green"
+              className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
+              aria-label="Toggle menu"
             >
-              {mobileMenuOpen ? (
-                <X className="h-6 w-6" />
-              ) : (
-                <Menu className="h-6 w-6" />
-              )}
+              <div className="hamburger-icon">
+                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
+                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
+                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
+              </div>
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Menú Móvil Desplegable */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-dark-border py-4">
-            <nav className="flex flex-col space-y-2">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                const active = isActive(item.path)
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      'text-sm font-medium px-3 py-2 rounded-md transition-colors flex items-center',
-                      active
-                        ? 'text-neon-green bg-neon-green/10'
-                        : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
-                    )}
-                  >
-                    <Icon className="mr-2 h-4 w-4" />
-                    {item.label}
-                  </Link>
-                )
-              })}
+      {/* Mobile Drawer Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-300"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
 
-              <div className="pt-2 mt-2 border-t border-dark-border">
-                <Link
-                  to="/perfil"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={cn(
-                    'text-sm font-medium px-3 py-3 rounded-md transition-colors flex items-center',
-                    isActive('/perfil')
-                      ? 'text-neon-green bg-neon-green/10'
-                      : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
-                  )}
-                >
-                  <User className="mr-2 h-4 w-4 text-neon-green" />
-                  Mi Perfil y Logros
-                </Link>
-              </div>
-
-              <Link
-                to="/crear-reporte"
-                onClick={() => setMobileMenuOpen(false)}
-                className="mt-4"
-              >
-                <Button
-                  className="w-full neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Crear Reporte
-                </Button>
-              </Link>
-            </nav>
-          </div>
+      {/* Mobile Drawer */}
+      <div
+        className={cn(
+          "fixed top-0 right-0 h-full w-[80%] max-w-[320px] bg-dark-card border-l border-dark-border z-50 md:hidden",
+          "transform transition-transform duration-300 ease-in-out",
+          mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         )}
+      >
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between p-4 border-b border-dark-border">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center">
+              <MapPin className="w-5 h-5 text-dark-bg" />
+            </div>
+            <div className="text-lg font-bold gradient-text">SafeSpot</div>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
+          >
+            <div className="hamburger-icon">
+              <span className="hamburger-line open" />
+              <span className="hamburger-line open" />
+              <span className="hamburger-line open" />
+            </div>
+          </button>
+        </div>
+
+        {/* Drawer Content */}
+        <nav className="flex flex-col p-4 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const active = isActive(item.path)
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setMobileMenuOpen(false)}
+                className={cn(
+                  'flex items-center px-4 py-3 rounded-lg transition-all duration-200',
+                  'active:scale-95',
+                  active
+                    ? 'text-neon-green bg-neon-green/10'
+                    : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+                )}
+              >
+                <Icon className="mr-3 h-5 w-5" />
+                <span className="font-medium">{item.label}</span>
+              </Link>
+            )
+          })}
+
+          <div className="pt-4 mt-4 border-t border-dark-border">
+            <Link
+              to="/perfil"
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center px-4 py-3 rounded-lg transition-all duration-200',
+                'active:scale-95',
+                isActive('/perfil')
+                  ? 'text-neon-green bg-neon-green/10'
+                  : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+              )}
+            >
+              <User className="mr-3 h-5 w-5" />
+              <span className="font-medium">Mi Perfil y Logros</span>
+            </Link>
+          </div>
+
+          <Link
+            to="/crear-reporte"
+            onClick={() => setMobileMenuOpen(false)}
+            className="mt-4"
+          >
+            <Button
+              className="w-full neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg py-6"
+            >
+              <Plus className="mr-2 h-5 w-5" />
+              Crear Reporte
+            </Button>
+          </Link>
+        </nav>
       </div>
     </header>
   )

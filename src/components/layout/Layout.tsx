@@ -1,5 +1,6 @@
 import { Header } from './Header'
 import { Footer } from './Footer'
+import { BottomNav } from './BottomNav'
 import { ToastProvider } from '@/components/ui/toast'
 import { BadgeNotificationManager } from '@/components/BadgeNotificationManager'
 import { NetworkStatusIndicator } from '@/components/NetworkStatusIndicator'
@@ -20,7 +21,7 @@ export function Layout({ children }: LayoutProps) {
       <NetworkStatusIndicator />
       <div className="flex min-h-screen flex-col bg-dark-bg text-white selection:bg-neon-green/30">
         <Header />
-        <main className="flex-1 flex flex-col min-h-[60vh] bg-dark-bg">
+        <main className="flex-1 flex flex-col min-h-[60vh] bg-dark-bg pb-16 md:pb-0">
           <ErrorBoundary fallbackTitle="Ocurrió un error inesperado">
             <div className="flex-1 animate-in fade-in duration-500 fill-mode-both">
               {children}
@@ -28,6 +29,7 @@ export function Layout({ children }: LayoutProps) {
           </ErrorBoundary>
         </main>
         <Footer />
+        <BottomNav />
       </div>
     </ToastProvider>
   )
