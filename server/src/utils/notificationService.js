@@ -191,6 +191,33 @@ export const NotificationService = {
                 entity_id: entityId, // Original entity (comment_id or report_id for shares)
                 report_id: reportId
             });
+            console.log(`[Notify] Notification stored for activity ${type} on report ${reportId}`);
+
+            // 4. Send Push Notification
+            if (isPushConfigured()) {
+                const subscriptionsResult = await db.query(`
+                    SELECT * FROM push_subscriptions 
+                    WHERE anonymous_id = $1 AND is_active = true
+                `, [report.anonymous_id]);
+
+                if (subscriptionsResult.rows.length > 0) {
+                    const payload = createActivityNotificationPayload({
+                        type: type, // 'comment', 'sighting', 'share'
+                        title: title,
+                        message: message,
+                        reportId: reportId,
+                        entityId: entityId
+                    });
+
+                    // Send to all active subscriptions of user
+                    for (const sub of subscriptionsResult.rows) {
+                        sendPushNotification(
+                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+                            payload
+                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                    }
+                }
+            }
         } catch (err) {
             logError(err, { context: 'notifyActivity', reportId, type });
         }
