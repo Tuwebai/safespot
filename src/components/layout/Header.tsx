@@ -173,6 +173,23 @@ export function Header() {
           "transform transition-transform duration-300 ease-in-out",
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         )}
+        onTouchStart={(e) => {
+          const touch = e.touches[0]
+          // @ts-ignore
+          e.currentTarget.dataset.startX = touch.clientX.toString()
+        }}
+        onTouchMove={(e) => {
+          const touch = e.touches[0]
+          // @ts-ignore
+          const startX = parseFloat(e.currentTarget.dataset.startX || '0')
+          const currentX = touch.clientX
+          const diff = currentX - startX
+
+          // If swiping right (diff > 0) significantly, we could animate/close
+          if (diff > 50) {
+            setMobileMenuOpen(false)
+          }
+        }}
       >
         {/* Drawer Header */}
         <div className="flex items-center justify-between p-4 border-b border-dark-border">

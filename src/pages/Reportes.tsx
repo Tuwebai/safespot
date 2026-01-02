@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase } from 'lucide-react'
+import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase, ChevronDown, ChevronUp, RotateCcw, Calendar, X } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { OptimizedImage } from '@/components/OptimizedImage'
@@ -22,6 +22,7 @@ import { SmartLink } from '@/components/SmartLink'
 import { useReportsQuery } from '@/hooks/queries'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
+import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -85,6 +86,39 @@ export function Reportes() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
 
+  // Advanced Filter State
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'oldest'>('recent')
+
+  // Address Autocomplete State
+  const [addressQuery, setAddressQuery] = useState('')
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([])
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number, lng: number, label: string } | null>(null)
+
+  const debouncedAddressQuery = useDebounce(addressQuery, 500)
+
+  // Fetch address suggestions
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (debouncedAddressQuery.length < 3) {
+        setAddressSuggestions([])
+        return
+      }
+
+      // Don't search if the query matches the selected location label (user just selected it)
+      if (selectedLocation && debouncedAddressQuery === selectedLocation.label) {
+        return
+      }
+
+      const results = await searchAddresses(debouncedAddressQuery)
+      setAddressSuggestions(results)
+    }
+
+    fetchSuggestions()
+  }, [debouncedAddressQuery, selectedLocation])
+
   // Read category from URL params on mount
   useEffect(() => {
     const categoryParam = searchParams.get('category')
@@ -107,8 +141,21 @@ export function Reportes() {
     if (selectedCategory !== 'all') f.category = selectedCategory
     if (selectedStatus !== 'all') f.status = selectedStatus
     if (debouncedSearchTerm.trim()) f.search = debouncedSearchTerm.trim()
+
+    // Advanced Filters
+    if (startDate) f.startDate = startDate
+    if (endDate) f.endDate = endDate
+    if (sortBy !== 'recent') f.sortBy = sortBy
+
+    // Location Filter
+    if (selectedLocation) {
+      f.lat = selectedLocation.lat
+      f.lng = selectedLocation.lng
+      f.radius = 2000 // 2km radius hardcoded for now, could be dynamic
+    }
+
     return Object.keys(f).length > 0 ? f : undefined
-  }, [selectedCategory, selectedStatus, debouncedSearchTerm])
+  }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading: loading, error: queryError, refetch } = useReportsQuery(filters)
@@ -272,17 +319,41 @@ export function Reportes() {
 
       {/* Filtros */}
       <Card className="mb-8 bg-dark-card border-dark-border">
-        <CardContent className="p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Filter className="h-5 w-5 text-neon-green" />
-            <h2 className="text-xl font-semibold">Filtros</h2>
+        <CardHeader className="pb-3 border-b border-dark-border/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="h-5 w-5 text-neon-green" />
+              <h2 className="text-xl font-semibold">Filtros</h2>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className="text-muted-foreground hover:text-neon-green"
+            >
+              {showAdvancedFilters ? (
+                <>
+                  <span className="mr-2">Menos filtros</span>
+                  <ChevronUp className="h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  <span className="mr-2">Más filtros</span>
+                  <ChevronDown className="h-4 w-4" />
+                </>
+              )}
+            </Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Búsqueda */}
+        </CardHeader>
+
+        <CardContent className="p-6">
+          {/* Filtros Básicos (Siempre visibles) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Búsqueda Global */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar reportes..."
+                placeholder="Buscar por título, desc..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -310,7 +381,139 @@ export function Reportes() {
                 <option key={status.value} value={status.value}>{status.label}</option>
               ))}
             </Select>
+
+            {/* Ordenar Por (Movido a básico por utilidad) */}
+            <Select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+            >
+              <option value="recent">Más Recientes</option>
+              <option value="popular">Más Populares</option>
+              <option value="oldest">Más Antiguos</option>
+            </Select>
           </div>
+
+          {/* Filtros Avanzados (Colapsables) */}
+          {showAdvancedFilters && (
+            <div className="pt-4 border-t border-dark-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Buscador de Dirección / Lugar */}
+                <div className="relative z-20">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Ubicación
+                  </label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar dirección..."
+                      value={addressQuery}
+                      onChange={(e) => {
+                        setAddressQuery(e.target.value)
+                        if (selectedLocation && e.target.value !== selectedLocation.label) {
+                          setSelectedLocation(null) // Reset location filter if user types
+                        }
+                      }}
+                      className={`pl-10 ${selectedLocation ? 'ring-1 ring-neon-green/50 border-neon-green/50' : ''}`}
+                    />
+                    {selectedLocation && (
+                      <button
+                        onClick={() => {
+                          setSelectedLocation(null)
+                          setAddressQuery('')
+                        }}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-white/10 rounded-full"
+                      >
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Suggestions Dropdown */}
+                  {addressSuggestions.length > 0 && !selectedLocation && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-dark-card border border-dark-border rounded-md shadow-xl z-50 max-h-60 overflow-y-auto">
+                      {addressSuggestions.map((suggestion, idx) => (
+                        <button
+                          key={`${suggestion.normalized}-${idx}`}
+                          className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm flex flex-col transition-colors border-b border-white/5 last:border-0"
+                          onClick={() => {
+                            setSelectedLocation({
+                              lat: suggestion.location.lat,
+                              lng: suggestion.location.lng,
+                              label: suggestion.original
+                            })
+                            setAddressQuery(suggestion.original)
+                            setAddressSuggestions([])
+                          }}
+                        >
+                          <span className="font-medium text-foreground">{suggestion.original}</span>
+                          <span className="text-xs text-muted-foreground">{suggestion.locality}, {suggestion.province}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedLocation && (
+                    <p className="text-xs text-neon-green mt-1 flex items-center">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      Filtrando a 2km de esta ubicación
+                    </p>
+                  )}
+                </div>
+
+                {/* Fechas */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Fecha Desde
+                  </label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="pl-10 [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Fecha Hasta
+                  </label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="pl-10 [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones de filtro */}
+              <div className="flex justify-end mt-4 pt-4 border-t border-dark-border/30">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSearchTerm('')
+                    setSelectedCategory('all')
+                    setSelectedStatus('all')
+                    setSortBy('recent')
+                    setStartDate('')
+                    setEndDate('')
+                    setAddressQuery('')
+                    setSelectedLocation(null)
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Limpiar Filtros
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

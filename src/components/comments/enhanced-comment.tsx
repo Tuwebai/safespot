@@ -1,4 +1,4 @@
-import { useState, memo } from 'react'
+import { useState, memo, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,10 +48,46 @@ export const EnhancedComment = memo(function EnhancedComment({
   onLikeChange,
   onPin,
   onUnpin,
-  depth = 0
-}: EnhancedCommentProps) {
+  depth = 0,
+  activeMenuId = null,
+  onMenuOpen,
+}: EnhancedCommentProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
   const toast = useToast()
-  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
+  // Use props if available, otherwise fall back to local state (though we intend to use props)
+  const [localIsContextMenuOpen, setLocalIsContextMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const isContextMenuOpen = onMenuOpen ? activeMenuId === comment.id : localIsContextMenuOpen
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isContextMenuOpen && menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        closeMenu()
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isContextMenuOpen, activeMenuId]) // activeMenuId dependency ensures fresh closure if using global state logic
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onMenuOpen) {
+      onMenuOpen(isContextMenuOpen ? null : comment.id)
+    } else {
+      setLocalIsContextMenuOpen(!localIsContextMenuOpen)
+    }
+  }
+
+  const closeMenu = () => {
+    if (onMenuOpen) {
+      onMenuOpen(null)
+    } else {
+      setLocalIsContextMenuOpen(false)
+    }
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', {
@@ -127,10 +163,12 @@ export const EnhancedComment = memo(function EnhancedComment({
     }
   }
 
+  // ... (rest of methods)
+
   const handleCopyText = async () => {
     try {
       await navigator.clipboard.writeText(comment.content)
-      setIsContextMenuOpen(false)
+      closeMenu()
       toast.success('Texto copiado al portapapeles')
     } catch (error) {
       toast.error('No se pudo copiar el texto al portapapeles')
@@ -142,7 +180,7 @@ export const EnhancedComment = memo(function EnhancedComment({
     try {
       await navigator.clipboard.writeText(url)
       toast.success('Enlace copiado')
-      setIsContextMenuOpen(false)
+      closeMenu()
     } catch (error) {
       toast.error('No se pudo copiar el enlace')
     }
@@ -236,12 +274,12 @@ export const EnhancedComment = memo(function EnhancedComment({
           </div>
 
           {/* Right Side (Context Menu) */}
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <Button
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0"
-              onClick={() => setIsContextMenuOpen(!isContextMenuOpen)}
+              onClick={handleToggleMenu}
               title="Más opciones"
             >
               <MoreHorizontal className="h-4 w-4" />
@@ -250,12 +288,6 @@ export const EnhancedComment = memo(function EnhancedComment({
             {/* Context Menu Dropdown */}
             {isContextMenuOpen && (
               <>
-                {/* Backdrop para cerrar al hacer click fuera */}
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setIsContextMenuOpen(false)}
-                />
-
                 {/* Menu */}
                 <div className="absolute right-0 top-8 z-20 w-48 bg-dark-card border border-dark-border rounded-lg shadow-lg py-1">
                   {/* General User Actions */}
@@ -281,7 +313,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                       <button
                         onClick={() => {
                           onEdit?.(comment.id)
-                          setIsContextMenuOpen(false)
+                          closeMenu()
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
                       >
@@ -291,7 +323,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                       <button
                         onClick={() => {
                           onDelete?.(comment.id)
-                          setIsContextMenuOpen(false)
+                          closeMenu()
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-dark-bg flex items-center gap-2"
                       >
@@ -308,7 +340,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                       <button
                         onClick={() => {
                           onEdit?.(comment.id)
-                          setIsContextMenuOpen(false)
+                          closeMenu()
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
                       >
@@ -318,7 +350,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                       <button
                         onClick={() => {
                           onDelete?.(comment.id)
-                          setIsContextMenuOpen(false)
+                          closeMenu()
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-dark-bg flex items-center gap-2"
                       >
@@ -329,7 +361,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                         <button
                           onClick={() => {
                             onUnpin?.(comment.id)
-                            setIsContextMenuOpen(false)
+                            closeMenu()
                           }}
                           className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
                         >
@@ -340,7 +372,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                         <button
                           onClick={() => {
                             onPin?.(comment.id)
-                            setIsContextMenuOpen(false)
+                            closeMenu()
                           }}
                           className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
                         >

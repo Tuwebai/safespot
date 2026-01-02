@@ -31,6 +31,9 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
 
+    // Global state for comment context menus (only one can be open)
+    const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
+
     const commentsManager = useCommentsManager({
         reportId,
         onCommentCountChange,
@@ -268,6 +271,8 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                                             onEditSubmit={submitEdit}
                                             onEditCancel={cancelEdit}
                                             submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
+                                            activeMenuId={activeMenuId}
+                                            onMenuOpen={setActiveMenuId}
                                         />
                                     )
                                 })}
@@ -333,6 +338,8 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                     onReplySubmit={submitReply}
                     onReplyCancel={cancelReply}
                     submittingReply={submitting === 'reply'}
+                    activeMenuId={activeMenuId}
+                    onMenuOpen={setActiveMenuId}
                 />
             )}
 

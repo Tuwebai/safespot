@@ -222,6 +222,15 @@ export interface ReportFilters {
   search?: string;
   limit?: number;
   offset?: number;
+  // Advanced filters
+  startDate?: string;
+  endDate?: string;
+  sortBy?: 'recent' | 'popular' | 'oldest';
+  province?: string;
+  // Location filters
+  lat?: number;
+  lng?: number;
+  radius?: number; // meters
 }
 
 export const reportsApi = {

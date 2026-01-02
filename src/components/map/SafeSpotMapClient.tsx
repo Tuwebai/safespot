@@ -629,6 +629,7 @@ export function SafeSpotMapClient({
                 scrollWheelZoom={true}
                 dragging={true}
                 doubleClickZoom={true}
+                touchZoom={true}
                 zoomControl={false}
                 className={`w-full h-full ${activeZoneType ? 'map-placement-mode' : ''}`}
             >

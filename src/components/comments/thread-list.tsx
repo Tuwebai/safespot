@@ -68,8 +68,10 @@ export const ThreadList = memo(function ThreadList({
   onReplyTextChange,
   onReplySubmit,
   onReplyCancel,
-  submittingReply = false
-}: ThreadListProps) {
+  submittingReply = false,
+  activeMenuId,
+  onMenuOpen
+}: ThreadListProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [threadType, setThreadType] = useState<ThreadType>('all')
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
@@ -261,6 +263,8 @@ export const ThreadList = memo(function ThreadList({
                 onEditSubmit={onEditSubmit}
                 onEditCancel={onEditCancel}
                 submittingEdit={submittingEdit}
+                activeMenuId={activeMenuId}
+                onMenuOpen={onMenuOpen}
               />
             )
           })

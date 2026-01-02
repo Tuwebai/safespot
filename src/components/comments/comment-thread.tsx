@@ -62,8 +62,10 @@ export const CommentThread = memo(function CommentThread({
     onEditTextChange,
     onEditSubmit,
     onEditCancel,
-    submittingEdit = false
-}: CommentThreadProps) {
+    submittingEdit = false,
+    activeMenuId,
+    onMenuOpen,
+}: CommentThreadProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
     // Find direct replies to this comment
     const replies = allComments.filter(c => c.parent_id === comment.id)
 
@@ -121,6 +123,8 @@ export const CommentThread = memo(function CommentThread({
                     onPin={onPin}
                     onUnpin={onUnpin}
                     depth={depth}
+                    activeMenuId={activeMenuId}
+                    onMenuOpen={onMenuOpen}
                 />
 
                 {/* Edit Editor (Inline) */}
@@ -199,6 +203,8 @@ export const CommentThread = memo(function CommentThread({
                                 onEditSubmit={onEditSubmit}
                                 onEditCancel={onEditCancel}
                                 submittingEdit={submittingEdit}
+                                activeMenuId={activeMenuId}
+                                onMenuOpen={onMenuOpen}
                             />
                         )
                     })}
