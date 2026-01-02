@@ -173,14 +173,14 @@ export const NotificationService = {
             }
 
             // 3. Check for similar recent notification to group/prevent spam
-            const recent = await db.query(`
-                SELECT id FROM notifications 
-                WHERE anonymous_id = $1 AND type = 'activity' AND entity_id = $2 
-                  AND created_at > NOW() - INTERVAL '1 hour'
-                LIMIT 1
-            `, [report.anonymous_id, reportId]);
+            // const recent = await db.query(`
+            //     SELECT id FROM notifications 
+            //     WHERE anonymous_id = $1 AND type = 'activity' AND entity_id = $2 
+            //       AND created_at > NOW() - INTERVAL '1 hour'
+            //     LIMIT 1
+            // `, [report.anonymous_id, reportId]);
 
-            if (recent.rows.length > 0 && type !== 'sighting') return; // Group shares/comments
+            // if (recent.rows.length > 0 && type !== 'sighting') return; // Group shares/comments
 
             await this.createNotification({
                 anonymous_id: report.anonymous_id,
@@ -401,14 +401,14 @@ export const NotificationService = {
             if (owner.notifications_today >= owner.max_notifications_per_day) return;
 
             // Prevent Spam: limit 1 "like" notification per entity per hour
-            const recent = await db.query(`
-                SELECT id FROM notifications 
-                WHERE anonymous_id = $1 AND type = 'like' AND entity_id = $2 
-                  AND created_at > NOW() - INTERVAL '1 hour'
-                LIMIT 1
-            `, [owner.anonymous_id, targetId]);
+            // const recent = await db.query(`
+            //     SELECT id FROM notifications 
+            //     WHERE anonymous_id = $1 AND type = 'like' AND entity_id = $2 
+            //       AND created_at > NOW() - INTERVAL '1 hour'
+            //     LIMIT 1
+            // `, [owner.anonymous_id, targetId]);
 
-            if (recent.rows.length > 0) return;
+            // if (recent.rows.length > 0) return;
 
             // 2. Create Notification
             const title = targetType === 'report' ? '❤️ A alguien le gustó tu reporte' : '❤️ A alguien le gustó tu comentario';
