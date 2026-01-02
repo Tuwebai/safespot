@@ -333,7 +333,7 @@ export function DetalleReporte() {
             {/* 6. Comments Section */}
             <CommentsSection
               reportId={id!}
-              totalCount={commentsCount}
+              totalCount={initialReport?.comments_count || 0}
               onCommentCountChange={handleCommentCountChange}
             />
 
