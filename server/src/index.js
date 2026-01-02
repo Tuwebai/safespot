@@ -129,13 +129,13 @@ const actionLimiter = rateLimit({
   skipSuccessfulRequests: false, // Count all attempts (even failed ones) against the limit
 });
 
-app.use('/api/', globalLimiter);
-app.use(['/api/reports', '/api/comments'], (req, res, next) => {
-  if (req.method === 'POST') {
-    return actionLimiter(req, res, next);
-  }
-  next();
-});
+// app.use('/api/', globalLimiter);
+// app.use(['/api/reports', '/api/comments'], (req, res, next) => {
+//   if (req.method === 'POST') {
+//     return actionLimiter(req, res, next);
+//   }
+//   next();
+// });
 
 // ============================================
 // HEALTH CHECK

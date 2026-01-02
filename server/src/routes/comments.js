@@ -494,7 +494,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * Requires: X-Anonymous-Id header
  * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
+router.post('/:id/like', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -624,7 +624,7 @@ router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
  * Requires: X-Anonymous-Id header
  * Rate limited: 30 per minute, 200 per hour
  */
-router.delete('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
+router.delete('/:id/like', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -704,7 +704,7 @@ router.delete('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => 
  * Requires: X-Anonymous-Id header
  * Rate limited: 5 flags per minute per anonymous ID
  */
-router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) => {
+router.post('/:id/flag', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
