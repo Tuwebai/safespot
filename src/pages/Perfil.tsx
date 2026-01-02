@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usersApi } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
 import { TrendingUp, Calendar, FileText, ThumbsUp } from 'lucide-react'
@@ -113,13 +115,16 @@ export function Perfil() {
               <div className="flex items-center gap-6">
                 <div className="relative group">
                   {/* Avatar Circle */}
-                  <div className="h-24 w-24 rounded-full bg-neon-green/10 flex items-center justify-center overflow-hidden border-2 border-neon-green/30 group-hover:border-neon-green/80 transition-all shadow-[0_0_15px_rgba(0,255,136,0.1)]">
-                    <img
+                  <Avatar className="h-24 w-24 border-2 border-neon-green/30 group-hover:border-neon-green/80 transition-all shadow-[0_0_15px_rgba(0,255,136,0.1)]">
+                    <AvatarImage
                       src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`}
                       alt="Avatar"
-                      className="w-full h-full object-cover"
+                      className="object-cover"
                     />
-                  </div>
+                    <AvatarFallback className="bg-neon-green/10 text-neon-green text-3xl font-bold flex items-center justify-center">
+                      {anonymousId.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
 
                   {/* Actions Overlay / Buttons */}
                   <div className="absolute -bottom-2 -right-2 flex space-x-1">
@@ -127,20 +132,28 @@ export function Perfil() {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
-                      onClick={async () => {
-                        try {
-                          toast.info("Generando nuevo avatar...");
-                          const randomSeed = Math.random().toString(36).substring(7);
-                          const newAvatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}-${randomSeed}`;
-                          await usersApi.updateProfile({ avatar_url: newAvatarUrl });
-                          setProfile(prev => prev ? { ...prev, avatar_url: newAvatarUrl } : null);
-                          toast.success("¡Avatar actualizado!");
-                        } catch (err) {
-                          handleError(err, toast.error, 'Perfil.regenerateAvatar');
-                        }
+                      className={cn(
+                        "h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
+                      )}
+                      onClick={() => {
+                        // Optimistic Update: Update UI immediately
+                        const randomSeed = Math.random().toString(36).substring(7);
+                        const newAvatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}-${randomSeed}`;
+
+                        // 1. Update local state immediately
+                        const previousProfile = profile;
+                        setProfile(prev => prev ? { ...prev, avatar_url: newAvatarUrl } : null);
+
+                        // 2. Persist in background (fire and forget from UI perspective, handle error)
+                        usersApi.updateProfile({ avatar_url: newAvatarUrl })
+                          .catch((err) => {
+                            // Revert on error
+                            setProfile(previousProfile);
+                            handleError(err, toast.error, 'Perfil.regenerateAvatar');
+                          });
                       }}
                       title="Generar aleatorio"
+                      disabled={loading}
                     >
                       <span className="text-xs">🎲</span>
                     </Button>
@@ -422,6 +435,6 @@ export function Perfil() {
           </Card>
         </div>
       </div>
-    </div>
+    </div >
   )
 }

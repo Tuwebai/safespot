@@ -47,6 +47,14 @@ const AvatarImage = React.forwardRef<
         // Actually, simply creating a new Image object detects status.
         const img = new Image()
         img.src = src
+
+        // Check if image is already cached/loaded
+        if (img.complete) {
+            context?.onImageLoadingStatusChange('loaded')
+            // Even if complete, we attach error just in case, but usually unnecessary
+            return
+        }
+
         img.onload = () => context?.onImageLoadingStatusChange('loaded')
         img.onerror = () => context?.onImageLoadingStatusChange('error')
 
