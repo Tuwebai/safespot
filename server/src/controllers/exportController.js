@@ -70,6 +70,8 @@ const drawLogo = (doc, x, y, size = 32) => {
  * Main PDF Export Controller
  */
 export const exportReportPDF = async (req, res) => {
+    console.log('[PDF] Starting generation for Report ID:', req.params.id); // DEBUG LOG
+
     try {
         const { id } = req.params;
         const db = DB.public();
@@ -86,19 +88,44 @@ export const exportReportPDF = async (req, res) => {
             imageUrls = Array.isArray(report.image_urls) ? report.image_urls : JSON.parse(report.image_urls || '[]');
         } catch (e) { imageUrls = []; }
 
-        // 2. Setup Document (A4, Professional Margins)
+        // 2. Setup Document
+        // Margins: top/left/right 50. Bottom 90 to reserve distinct footer space.
         const doc = new PDFDocument({
-            margin: 50,
+            margins: { top: 50, bottom: 90, left: 50, right: 50 },
             size: 'A4',
-            bufferPages: true
+            bufferPages: true,
+            autoFirstPage: true
         });
 
         const safeTitle = (report.category || 'General').replace(/\s+/g, '_');
-        const filename = `Reporte_SafeSpot_${safeTitle}_${id.substring(0, 8)}.pdf`;
+        // Add timestamp to filename to prevent browser caching
+        const filename = `Reporte_SafeSpot_${safeTitle}_${id.substring(0, 8)}_${Date.now()}.pdf`;
 
+        // Explicit Cache-Control Headers
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
         doc.pipe(res);
+
+        // Constants for Layout
+        // A4 Height ~841.89 pt
+        // Content limit excludes the bottom margin (90pt reserved for footer)
+        const CONTENT_BOTTOM_LIMIT = doc.page.height - doc.page.margins.bottom;
+
+        // Current Y Tracker
+        let currentY = 50;
+
+        const checkPageBreak = (neededHeight) => {
+            // Check if adding neededHeight would exceed limit
+            if (currentY + neededHeight > CONTENT_BOTTOM_LIMIT) {
+                console.log('[PDF] Adding new page due to overflow');
+                doc.addPage();
+                currentY = 50; // Reset Y to top margin
+            }
+        };
 
         // --- HEADER ---
         drawLogo(doc, 50, 50, 36);
@@ -107,7 +134,7 @@ export const exportReportPDF = async (req, res) => {
 
         doc.moveTo(50, 100).lineTo(545, 100).strokeColor(COLORS.BORDER).lineWidth(1).stroke();
 
-        let currentY = 130;
+        currentY = 130;
 
         // --- REPORT TITLE & CATEGORY ---
         doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(18).text(report.title, 50, currentY);
@@ -116,8 +143,9 @@ export const exportReportPDF = async (req, res) => {
         doc.fillColor(COLORS.PRIMARY).fontSize(11).text(report.category.toUpperCase(), 50, currentY);
         currentY += 30;
 
-        // --- INFO GRID (Layout clean like frontend) ---
+        // --- INFO GRID ---
         const drawMetadata = (label, value) => {
+            checkPageBreak(40);
             doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text(label.toUpperCase(), 50, currentY);
             doc.fillColor(COLORS.DARK).font('Helvetica-Bold').fontSize(11).text(value || 'No especificado', 50, currentY + 12);
             currentY += 40;
@@ -132,25 +160,34 @@ export const exportReportPDF = async (req, res) => {
         drawMetadata('ID Único del Reporte', report.id);
 
         // --- DESCRIPTION ---
+        checkPageBreak(20);
         doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text('DESCRIPCIÓN DE LOS HECHOS', 50, currentY);
         currentY += 15;
 
-        doc.fillColor(COLORS.TEXT).font('Helvetica').fontSize(11).text(report.description || 'Sin descripción detallada.', 50, currentY, {
-            width: 495,
-            align: 'justify',
-            lineGap: 4
-        });
+        // Calculate description height
+        doc.font('Helvetica').fontSize(11);
+        const descText = report.description || 'Sin descripción detallada.';
+        const descOptions = { width: 495, align: 'justify', lineGap: 4 };
+        const descHeight = doc.heightOfString(descText, descOptions);
 
-        currentY = doc.y + 40;
-
-        // --- IMAGES SECTION ---
-        if (imageUrls.length > 0) {
-            // Check if we need a new page
-            if (currentY > 700) {
+        if (currentY + descHeight > CONTENT_BOTTOM_LIMIT) {
+            // If fits on a fresh page, move it there.
+            if (descHeight < (CONTENT_BOTTOM_LIMIT - 50)) {
                 doc.addPage();
                 currentY = 50;
             }
+            // else: let flow
+        }
 
+        doc.fillColor(COLORS.TEXT).text(descText, 50, currentY, descOptions);
+
+        // Sync Y after text block
+        currentY = doc.y + 30;
+
+
+        // --- IMAGES SECTION ---
+        if (imageUrls.length > 0) {
+            checkPageBreak(30);
             doc.fillColor(COLORS.MUTED).font('Helvetica').fontSize(9).text('EVIDENCIA FOTOGRÁFICA', 50, currentY);
             currentY += 20;
 
@@ -160,11 +197,7 @@ export const exportReportPDF = async (req, res) => {
             for (const imgUrl of imageUrls) {
                 const buffer = await processImage(imgUrl);
                 if (buffer) {
-                    // Check for page overflow
-                    if (currentY + imgHeight > 750) {
-                        doc.addPage();
-                        currentY = 50;
-                    }
+                    checkPageBreak(imgHeight + 20);
 
                     try {
                         doc.image(buffer, 50, currentY, {
@@ -178,26 +211,80 @@ export const exportReportPDF = async (req, res) => {
                 }
             }
         } else {
+            checkPageBreak(20);
             doc.fillColor(COLORS.MUTED).font('Helvetica-Oblique').fontSize(10).text('Este reporte no contiene imágenes adjuntas.', 50, currentY);
+            currentY += 20;
         }
 
-        // --- FOOTER (All pages) ---
+        // --- LEGAL BLOCK (Validation + Disclaimer) ---
+        const legalHeight = 80;
+        checkPageBreak(legalHeight);
+
+        // Divider
+        doc.moveTo(50, currentY).lineTo(545, currentY).strokeColor(COLORS.BORDER).lineWidth(0.5).stroke();
+        currentY += 15;
+
+        // Validation Link
+        doc.fillColor(COLORS.PRIMARY).font('Helvetica').fontSize(9)
+            .text(`Validar en: https://safespot.tuweb-ai.com/reporte/${report.id}`, 50, currentY, {
+                link: `https://safespot.tuweb-ai.com/reporte/${report.id}`,
+                underline: false
+            });
+        currentY += 15;
+
+        // Disclaimer
+        doc.fillColor(COLORS.MUTED).font('Helvetica-Bold').fontSize(8)
+            .text('Este documento no reemplaza una denuncia policial formal. SafeSpot es una herramienta de participación ciudadana.', 50, currentY, {
+                align: 'left',
+                width: 495
+            });
+
+
+        // --- PAGE FOOTER (Global Loop) ---
         const range = doc.bufferedPageRange();
+        console.log(`[PDF] Total pages: ${range.count}`); // DEBUG
+
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
 
-            const footerY = 790;
-            doc.moveTo(50, footerY - 10).lineTo(545, footerY - 10).strokeColor(COLORS.BORDER).lineWidth(0.5).stroke();
+            // SAVE STATE
+            doc.save();
 
-            doc.fillColor(COLORS.MUTED).fontSize(8)
-                .text('Documento generado automáticamente por SafeSpot.', 50, footerY, { align: 'left' })
-                .text(`Página ${i + 1} de ${range.count}`, 50, footerY, { align: 'right' });
+            // TEMPORARILY DISABLE BOTTOM MARGIN to allow writing in the footer zone
+            // This prevents auto-addPage when text is near the bottom
+            const oldBottomMargin = doc.page.margins.bottom;
+            doc.page.margins.bottom = 0;
 
-            doc.text(`Validar en: https://safespot.tuweb-ai.com/reporte/${report.id}`, 50, footerY + 12);
-            doc.font('Helvetica-Bold').text('Este documento no reemplaza una denuncia policial formal.', 50, footerY + 24, { align: 'center' });
+            // Fixed Footer position: 50pt from bottom
+            const footerY = doc.page.height - 50;
+
+            // Draw Divider
+            doc.moveTo(50, footerY - 15).lineTo(545, footerY - 15).strokeColor(COLORS.BORDER).lineWidth(0.5).stroke();
+
+            // Left Text
+            doc.fillColor(COLORS.MUTED).fontSize(8).font('Helvetica')
+                .text('Documento generado automáticamente por SafeSpot.', 50, footerY, {
+                    width: 300,
+                    align: 'left',
+                    baseline: 'bottom'
+                });
+
+            // Right Text
+            doc.text(`Página ${i + 1} de ${range.count}`, 50, footerY, {
+                width: 495, // 545 - 50
+                align: 'right',
+                baseline: 'bottom'
+            });
+
+            // RESTORE MARGIN
+            doc.page.margins.bottom = oldBottomMargin;
+
+            // RESTORE STATE
+            doc.restore();
         }
 
         doc.end();
+        console.log('[PDF] Generation complete');
 
     } catch (error) {
         logError(error, req);
