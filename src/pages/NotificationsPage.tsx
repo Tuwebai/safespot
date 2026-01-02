@@ -8,14 +8,12 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { useToast } from '@/components/ui/toast';
-import { getAnonymousIdSafe } from '@/lib/identity';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
+
+
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
-    const toast = useToast();
     const { data: notifications = [], isLoading: loading } = useNotificationsQuery();
     const markAsReadMutation = useMarkNotificationReadMutation();
     const markAllReadMutation = useMarkAllNotificationsReadMutation();
@@ -23,26 +21,7 @@ export default function NotificationsPage() {
     // Push Notification Logic
     const { isSupported, isSubscribed, subscribe, permission } = usePushNotifications();
 
-    const handleTestNotification = async () => {
-        try {
-            const anonymousId = getAnonymousIdSafe();
-            const res = await fetch(`${API_BASE}/api/push/test`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-anonymous-id': anonymousId
-                }
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast.success('Notificación enviada: Deberías recibirla en unos segundos.');
-            } else {
-                toast.error(data.error || 'No se pudo enviar la notificación.');
-            }
-        } catch (error) {
-            toast.error('Fallo de conexión.');
-        }
-    };
+
 
     const handleMarkAsRead = async (id: string) => {
         markAsReadMutation.mutate(id);
@@ -108,18 +87,7 @@ export default function NotificationsPage() {
                 </div>
                 <div className="flex gap-2">
                     {/* TEST BUTTON - VISIBLE IF SUBSCRIBED */}
-                    {isSubscribed && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleTestNotification}
-                            className="border-neon-green/30 text-neon-green hover:bg-neon-green/10"
-                            title="Enviar notificación de prueba"
-                        >
-                            <Bell className="h-4 w-4 mr-2" />
-                            Probar
-                        </Button>
-                    )}
+
 
                     <Button
                         variant="ghost"

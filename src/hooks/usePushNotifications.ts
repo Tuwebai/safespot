@@ -118,106 +118,111 @@ export function usePushNotifications() {
                 return false;
             }
 
-            // 2. Request geolocation
-            let location: { lat: number; lng: number } | null = null;
-            try {
-                const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        enableHighAccuracy: false,
-                        timeout: 10000,
-                        maximumAge: 300000 // 5 min cache
-                    });
-                });
-                location = {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                };
-            } catch (geoError) {
-                toast.error('Necesitamos tu ubicación para alertas cercanas');
-                setStatus(prev => ({ ...prev, isLoading: false }));
-                return false;
-            }
-
-            // 3. Wait for service worker (registered by VitePWA)
-            const registration = await navigator.serviceWorker.ready;
-
-            if (!registration.active) {
-                throw new Error('Service Worker no activo. Recarga la página.');
-            }
-
-            // 4. Get VAPID public key
-            const vapidResponse = await fetch(`${API_BASE}/api/push/vapid-key`);
-            if (!vapidResponse.ok) {
-                throw new Error('Push no configurado en el servidor');
-            }
-            const { publicKey } = await vapidResponse.json();
-
-            console.log('[Push] Using VAPID Public Key:', publicKey ? publicKey.substring(0, 10) + '...' : 'null');
-
-            if (!publicKey) throw new Error('VAPID Key is missing');
-
-            // DEBUG: Verify Key Format
-            const convertedKey = urlBase64ToUint8Array(publicKey);
-            console.log('[Push] Converted Key Length:', convertedKey.length); // Should be 65 for P-256
-
-            // DEBUG: Verify Manifest
-            try {
-                const manifestRes = await fetch('/manifest.webmanifest');
-                const manifest = await manifestRes.json();
-                console.log('[Push] Loaded Manifest:', manifest);
-            } catch (e) {
-                console.warn('[Push] Could not load manifest for debugging', e);
-            }
-
-            // 5. Check for (and remove) existing subscription to avoid key mismatch
-            const existingSub = await registration.pushManager.getSubscription();
-            if (existingSub) {
-                console.log('[Push] Unsubscribing old subscription...');
-                await existingSub.unsubscribe();
-            }
-
-            const subscribeOptions = {
-                userVisibleOnly: true,
-                applicationServerKey: convertedKey as BufferSource
-            };
-            console.log('[Push] Subscribe Options:', subscribeOptions);
-
-            // 6. Subscribe to push
-            const subscription = await registration.pushManager.subscribe(subscribeOptions);
-
-            // 7. Send subscription to backend
-            const anonymousId = ensureAnonymousId();
-            const response = await fetch(`${API_BASE}/api/push/subscribe`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Anonymous-Id': anonymousId
-                },
-                body: JSON.stringify({
-                    subscription: subscription.toJSON(),
-                    location,
-                    radius
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Error guardando suscripción');
-            }
-
-            toast.success('¡Alertas activadas! Te avisaremos de reportes cercanos.');
-
+            // OPTIMISTIC UPDATE: Permission granted, show as subscribed immediately while initializing in background
             setStatus(prev => ({
                 ...prev,
                 isSubscribed: true,
                 permission: 'granted',
-                radius,
-                hasLocation: true,
-                isLoading: false
+                isLoading: false // Stop loading spinner so UI updates "instantly"
             }));
+
+            // Continue with registration in background...
+            (async () => {
+                try {
+                    // 2. Request geolocation
+                    let location: { lat: number; lng: number } | null = null;
+                    try {
+                        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                enableHighAccuracy: false,
+                                timeout: 10000,
+                                maximumAge: 300000 // 5 min cache
+                            });
+                        });
+                        location = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                    } catch (geoError) {
+                        // Continue without location if it fails, but better to have it
+                        console.warn('Location failed for push setup', geoError);
+                    }
+
+                    // 3. Wait for service worker (registered by VitePWA)
+                    const registration = await navigator.serviceWorker.ready;
+
+                    if (!registration.active) {
+                        throw new Error('Service Worker no activo. Recarga la página.');
+                    }
+
+                    // 4. Get VAPID public key
+                    const vapidResponse = await fetch(`${API_BASE}/api/push/vapid-key`);
+                    if (!vapidResponse.ok) {
+                        throw new Error('Push no configurado en el servidor');
+                    }
+                    const { publicKey } = await vapidResponse.json();
+
+                    if (!publicKey) throw new Error('VAPID Key is missing');
+
+                    // 5. Check for (and remove) existing subscription to avoid key mismatch
+                    const existingSub = await registration.pushManager.getSubscription();
+                    if (existingSub) {
+                        await existingSub.unsubscribe();
+                    }
+
+                    const subscribeOptions = {
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource
+                    };
+
+                    // 6. Subscribe to push
+                    const subscription = await registration.pushManager.subscribe(subscribeOptions);
+
+                    // 7. Send subscription to backend
+                    const anonymousId = ensureAnonymousId();
+                    const response = await fetch(`${API_BASE}/api/push/subscribe`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Anonymous-Id': anonymousId
+                        },
+                        body: JSON.stringify({
+                            subscription: subscription.toJSON(),
+                            location,
+                            radius
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Error guardando suscripción');
+                    }
+
+                    toast.success('¡Alertas activadas correctamente!');
+
+                    // Final state update (just to confirm data, though UI is already green)
+                    setStatus(prev => ({
+                        ...prev,
+                        hasLocation: !!location,
+                        // Update other fields if needed
+                    }));
+
+                } catch (backgroundError) {
+                    console.error('Background subscription failed:', backgroundError);
+
+                    // Revert optimistic update
+                    setStatus(prev => ({
+                        ...prev,
+                        isSubscribed: false,
+                        error: 'Error de conexión. Intenta de nuevo.'
+                    }));
+
+                    toast.error('Hubo un problema activando las alertas. Por favor reintentá.');
+                }
+            })();
 
             return true;
         } catch (error) {
-            console.error('Error subscribing to push:', error);
+            console.error('Error starting subscription:', error);
             const message = error instanceof Error ? error.message : 'Error activando alertas';
             toast.error(message);
             setStatus(prev => ({ ...prev, isLoading: false, error: message }));

@@ -197,6 +197,17 @@ router.post('/', requireAnonymousId, validate(voteSchema), async (req, res) => {
       syncGamification(ownerId).catch(err => {
         logError(err, req);
       });
+
+      // Notify Owner of Like/Vote
+      const targetType = report_id ? 'report' : 'comment';
+      const targetId = report_id || comment_id;
+
+      // Import dynamically service if needed, OR assume NotificationService is imported (it wasn't imported in votes.js, need to add import)
+      import('../utils/notificationService.js').then(({ NotificationService }) => {
+        NotificationService.notifyLike(targetType, targetId, anonymousId).catch(err => {
+          logError(err, { context: 'notifyLike.vote', targetId });
+        });
+      });
     }
 
     res.status(201).json({

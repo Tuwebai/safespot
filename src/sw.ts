@@ -85,24 +85,56 @@ self.addEventListener('push', (event) => {
     );
 });
 
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', (event: any) => {
     console.log('[SW] Notification click:', event.action);
     event.notification.close();
 
-    const url = event.notification.data?.url || '/mapa';
+    // 1. Handle "Dismiss" action (Entendido)
+    if (event.action === 'dismiss' || event.action === 'mark-read') {
+        // Just close (already closed above) and return
+        return;
+    }
+
+    // 2. Determine functionality based on action or default URL
+    let url = event.notification.data?.url || '/';
+
+    // Explicit actions (override URL logic if needed)
+    if (event.action === 'map') {
+        // Ensure it goes to map (data.url usually has this, but be safe)
+        if (event.notification.data?.reportId) {
+            url = `/mapa?focus=${event.notification.data.reportId}`;
+        } else {
+            url = '/mapa';
+        }
+    } else if (event.action === 'view_report') {
+        if (event.notification.data?.reportId) {
+            url = `/reporte/${event.notification.data.reportId}`;
+        }
+    }
+
     const fullUrl = new URL(url, self.location.origin).href;
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then((windowClients) => {
+                // Check if there is already a window/tab open with the target URL
+                for (const client of windowClients) {
+                    if (client.url === fullUrl && 'focus' in client) {
+                        return client.focus();
+                    }
+                }
+                // Check if there is any window open for this origin to focus and navigate
                 for (const client of windowClients) {
                     if (client.url.includes(self.location.origin) && 'focus' in client) {
-                        return client.focus().then(async (c) => {
+                        return client.focus().then(async (c: any) => {
                             if ('navigate' in c) return c.navigate(fullUrl);
                         });
                     }
                 }
-                return self.clients.openWindow(fullUrl);
+                // Otherwise open new window
+                if (self.clients.openWindow) {
+                    return self.clients.openWindow(fullUrl);
+                }
             })
     );
 });

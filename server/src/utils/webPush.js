@@ -193,14 +193,57 @@ export function createReportNotificationPayload(report, distanceMeters) {
         },
         actions: [
             {
-                action: 'view',
+                action: 'map',
                 title: '📍 Ver en Mapa'
             },
             {
-                action: 'mark-read',
+                action: 'dismiss',
                 title: '✅ Entendido'
             }
         ]
+    };
+}
+
+/**
+ * Create notification payload for social activity (likes/comments)
+ * 
+ * @param {Object} data - Activity data
+ * @param {string} data.type - 'like' | 'comment' | 'reply'
+ * @param {string} data.title - Notification title
+ * @param {string} data.message - Notification body
+ * @param {string} data.reportId - Related report ID
+ * @param {string} data.entityId - ID of specific entity (comment/like)
+ * @returns {NotificationPayload}
+ */
+export function createActivityNotificationPayload({ type, title, message, reportId, entityId }) {
+    let url = `/reporte/${reportId}`;
+    let icon = '/icons/icon-192x192.png';
+
+    // Different actions based on type
+    const actions = [
+        {
+            action: 'view_report',
+            title: '📄 Abrir Reporte'
+        },
+        {
+            action: 'dismiss',
+            title: '✅ Entendido'
+        }
+    ];
+
+    return {
+        title: title,
+        body: message,
+        icon: icon,
+        badge: '/icons/badge-72x72.png',
+        tag: `${type}-${entityId}`,
+        renotify: true,
+        data: {
+            url: url,
+            reportId: reportId,
+            timestamp: Date.now()
+        },
+        actions: actions
     };
 }
 

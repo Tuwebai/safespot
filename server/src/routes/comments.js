@@ -295,9 +295,18 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
       const isSighting = content.includes('"type":"sighting"');
       const activityType = isSighting ? 'sighting' : 'comment';
 
+      // 1. Notify Report Owner
       NotificationService.notifyActivity(req.body.report_id, activityType, data.id, anonymousId).catch(err => {
         logError(err, { context: 'notifyActivity.comment', reportId: req.body.report_id });
       });
+
+      // 2. Notify Parent Comment Author (if reply)
+      if (parentId) {
+        NotificationService.notifyCommentReply(parentId, data.id, anonymousId).catch(err => {
+          logError(err, { context: 'notifyCommentReply', parentId });
+        });
+      }
+
     } catch (err) {
       // Ignore notification errors to not break comment creation
     }
@@ -560,6 +569,11 @@ router.post('/:id/like', likeLimiter, requireAnonymousId, async (req, res) => {
         .select('upvotes_count')
         .eq('id', id)
         .single();
+
+      // Trigger Notification for Like (Async)
+      NotificationService.notifyLike('comment', id, anonymousId).catch(err => {
+        logError(err, { context: 'notifyLike.comment', commentId: id });
+      });
 
       return res.json({
         success: true,

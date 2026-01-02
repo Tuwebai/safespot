@@ -1,6 +1,11 @@
 import { DB } from './db.js';
 import { logError } from './logger.js';
 import { NOTIFICATIONS } from '../config/constants.js';
+import {
+    sendPushNotification,
+    createActivityNotificationPayload,
+    isPushConfigured
+} from './webPush.js';
 
 /**
  * NotificationService
@@ -262,6 +267,165 @@ export const NotificationService = {
             });
         } catch (err) {
             logError(err, { context: 'notifyBadgeEarned', anonymousId, badge: badge.name });
+        }
+    },
+
+    /**
+     * Notify parent comment author of a reply
+     */
+    async notifyCommentReply(parentCommentId, replyId, triggerAnonymousId) {
+        console.log(`[Notify] Event: notifyCommentReply parent=${parentCommentId} reply=${replyId}`);
+        try {
+            const db = DB.public();
+
+            // 1. Get parent comment owner
+            const parentResult = await db.query(`
+                SELECT c.anonymous_id, c.report_id, c.content, ns.notifications_today, ns.max_notifications_per_day
+                FROM comments c
+                LEFT JOIN notification_settings ns ON ns.anonymous_id = c.anonymous_id
+                WHERE c.id = $1
+            `, [parentCommentId]);
+
+            if (parentResult.rows.length === 0) return;
+            const parent = parentResult.rows[0];
+
+            // Don't notify self
+            if (parent.anonymous_id === triggerAnonymousId) return;
+
+            // Check limits
+            if (parent.notifications_today >= parent.max_notifications_per_day) return;
+
+            // 2. Create Notification
+            await this.createNotification({
+                anonymous_id: parent.anonymous_id,
+                type: 'activity',
+                title: '↩️ Respondieron a tu comentario',
+                message: `Alguien respondió a tu comentario en un reporte.`,
+                entity_type: 'comment', // The reply
+                entity_id: replyId,
+                report_id: parent.report_id
+            });
+            console.log(`[Notify] Notification sent to parent comment author ${parent.anonymous_id}`);
+
+            // 3. Send Push Notification
+            if (isPushConfigured()) {
+                const subscriptionsResult = await db.query(`
+                    SELECT * FROM push_subscriptions 
+                    WHERE anonymous_id = $1 AND is_active = true
+                `, [parent.anonymous_id]);
+
+                if (subscriptionsResult.rows.length > 0) {
+                    const payload = createActivityNotificationPayload({
+                        type: 'reply',
+                        title: '↩️ Nuevo comentario',
+                        message: 'Alguien respondió a tu comentario.',
+                        reportId: parent.report_id,
+                        entityId: replyId
+                    });
+
+                    // Send to all active subscriptions of user
+                    for (const sub of subscriptionsResult.rows) {
+                        sendPushNotification(
+                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+                            payload
+                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                    }
+                }
+            }
+
+        } catch (err) {
+            logError(err, { context: 'notifyCommentReply', parentCommentId });
+        }
+    },
+
+    /**
+     * Notify author of a like/vote
+     */
+    async notifyLike(targetType, targetId, triggerAnonymousId) {
+        console.log(`[Notify] Event: notifyLike type=${targetType} id=${targetId}`);
+        try {
+            const db = DB.public();
+            let ownerQuery = '';
+
+            if (targetType === 'report') {
+                ownerQuery = `
+                    SELECT r.anonymous_id, r.title as content, ns.notifications_today, ns.max_notifications_per_day, r.id as report_id
+                    FROM reports r
+                    LEFT JOIN notification_settings ns ON ns.anonymous_id = r.anonymous_id
+                    WHERE r.id = $1
+                `;
+            } else {
+                ownerQuery = `
+                    SELECT c.anonymous_id, c.content, ns.notifications_today, ns.max_notifications_per_day, c.report_id
+                    FROM comments c
+                    LEFT JOIN notification_settings ns ON ns.anonymous_id = c.anonymous_id
+                    WHERE c.id = $1
+                `;
+            }
+
+            const ownerResult = await db.query(ownerQuery, [targetId]);
+            if (ownerResult.rows.length === 0) return;
+            const owner = ownerResult.rows[0];
+
+            // Don't notify self
+            if (owner.anonymous_id === triggerAnonymousId) return;
+
+            // Check limits
+            if (owner.notifications_today >= owner.max_notifications_per_day) return;
+
+            // Prevent Spam: limit 1 "like" notification per entity per hour
+            const recent = await db.query(`
+                SELECT id FROM notifications 
+                WHERE anonymous_id = $1 AND type = 'like' AND entity_id = $2 
+                  AND created_at > NOW() - INTERVAL '1 hour'
+                LIMIT 1
+            `, [owner.anonymous_id, targetId]);
+
+            if (recent.rows.length > 0) return;
+
+            // 2. Create Notification
+            const title = targetType === 'report' ? '❤️ A alguien le gustó tu reporte' : '❤️ A alguien le gustó tu comentario';
+            const message = targetType === 'report'
+                ? `Tu reporte recibe apoyo de la comunidad.`
+                : `Tu comentario está siendo útil.`;
+
+            await this.createNotification({
+                anonymous_id: owner.anonymous_id,
+                type: 'like', // New type specific for likes
+                title,
+                message,
+                entity_type: targetType,
+                entity_id: targetId,
+                report_id: owner.report_id
+            });
+
+            // 3. Send Push Notification
+            if (isPushConfigured()) {
+                const subscriptionsResult = await db.query(`
+                    SELECT * FROM push_subscriptions 
+                    WHERE anonymous_id = $1 AND is_active = true
+                `, [owner.anonymous_id]);
+
+                if (subscriptionsResult.rows.length > 0) {
+                    const payload = createActivityNotificationPayload({
+                        type: 'like',
+                        title: title,
+                        message: message,
+                        reportId: owner.report_id,
+                        entityId: targetId
+                    });
+
+                    for (const sub of subscriptionsResult.rows) {
+                        sendPushNotification(
+                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+                            payload
+                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                    }
+                }
+            }
+
+        } catch (err) {
+            logError(err, { context: 'notifyLike', targetType, targetId });
         }
     },
 
