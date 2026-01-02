@@ -80,11 +80,11 @@ export const createReportLimiter = dbRateLimiter({
   message: 'Has alcanzado el límite de reportes permitidos. Intenta de nuevo en unos minutos.'
 });
 
-// Comments: 5 per minute, 30 per hour
+// Comments: 10 per minute, 50 per hour
 export const createCommentLimiter = dbRateLimiter({
   action: 'create_comment',
-  limitMinute: 5,
-  limitHour: 30,
+  limitMinute: 10,
+  limitHour: 50,
   message: 'Estás enviando demasiados comentarios. Por favor, espera un momento.'
 });
 
