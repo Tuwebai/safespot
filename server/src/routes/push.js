@@ -12,6 +12,7 @@ import { ZONES } from '../config/constants.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import {
     sendBatchNotifications,
+    sendPushNotification,
     createReportNotificationPayload,
     getVapidPublicKey,
     isPushConfigured
@@ -326,5 +327,56 @@ export async function notifyNearbyUsers(report) {
         return { sent: 0, error: error.message };
     }
 }
+
+// ============================================
+// POST /api/push/test
+// Helper to test notifications on demand
+// ============================================
+router.post('/test', requireAnonymousId, async (req, res) => {
+    try {
+        const anonymousId = req.headers['x-anonymous-id'];
+
+        // 1. Get user subscription
+        const { data: sub } = await supabaseAdmin
+            .from('push_subscriptions')
+            .select('*')
+            .eq('anonymous_id', anonymousId)
+            .eq('is_active', true)
+            .single();
+
+        if (!sub) {
+            return res.status(404).json({ success: false, error: 'No active subscription found for your ID.' });
+        }
+
+        // 2. Create Payload
+        const payload = {
+            title: '🧪 Pruebas de Notificación',
+            body: 'Si ves esto, las acciones rápidas y los iconos están funcionando.',
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/badge-72x72.png',
+            tag: 'test-notification',
+            actions: [
+                { action: 'view', title: '👀 Ver Mapa' },
+                { action: 'mark-read', title: '✅ Funciona' }
+            ],
+            data: { url: '/mapa' }
+        };
+
+        // 3. Send
+        const result = await sendPushNotification(
+            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+            payload
+        );
+
+        if (result.success) {
+            res.json({ success: true, message: 'Notification sent!' });
+        } else {
+            res.status(500).json({ success: false, error: result.error });
+        }
+    } catch (error) {
+        logError(error, req);
+        res.status(500).json({ success: false, error: 'Server Test Error' });
+    }
+});
 
 export default router;

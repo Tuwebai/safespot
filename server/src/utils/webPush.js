@@ -45,6 +45,7 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
  * @property {string} [badge]
  * @property {string} [tag]
  * @property {Object} [data]
+ * @property {Array} [actions]
  */
 
 // ============================================
@@ -166,17 +167,40 @@ export function createReportNotificationPayload(report, distanceMeters) {
         ? `a ${Math.round(distanceMeters)}m`
         : `a ${(distanceMeters / 1000).toFixed(1)}km`;
 
+    // Map categories to icons (assuming these exist, otherwise fallback to main icon)
+    // Custom icons should be placed in public/icons/
+    let icon = '/icons/icon-192x192.png';
+    const category = (report.category || '').toLowerCase();
+
+    // Simple category mapping (could be expanded)
+    if (category.includes('polic') || category.includes('robo') || category.includes('seguridad')) {
+        icon = '/icons/icon-192x192.png'; // Use specific if available, e.g. /icons/security.png
+    } else if (category.includes('fuego') || category.includes('incendio')) {
+        icon = '/icons/icon-192x192.png';
+    }
+
     return {
         title: '⚠️ Nuevo reporte cerca tuyo',
-        body: `${report.category || 'Incidente'} · ${distanceText}`,
-        icon: '/icons/icon-192x192.png',
+        body: `${report.category || 'Incidente'} · ${distanceText}\n${report.title || ''}`,
+        icon: icon,
         badge: '/icons/badge-72x72.png',
-        tag: `report-${report.id}`, // Prevents duplicate notifications
+        tag: `report-${report.id}`, // Groups updates for this specific report
+        renotify: true,
         data: {
             reportId: report.id,
             url: `/mapa?focus=${report.id}`,
             timestamp: Date.now()
-        }
+        },
+        actions: [
+            {
+                action: 'view',
+                title: '📍 Ver en Mapa'
+            },
+            {
+                action: 'mark-read',
+                title: '✅ Entendido'
+            }
+        ]
     };
 }
 

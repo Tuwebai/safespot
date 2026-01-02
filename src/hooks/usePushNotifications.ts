@@ -138,9 +138,12 @@ export function usePushNotifications() {
                 return false;
             }
 
-            // 3. Register service worker
-            const registration = await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
+            // 3. Wait for service worker (registered by VitePWA)
+            const registration = await navigator.serviceWorker.ready;
+
+            if (!registration.active) {
+                throw new Error('Service Worker no activo. Recarga la página.');
+            }
 
             // 4. Get VAPID public key
             const vapidResponse = await fetch(`${API_BASE}/api/push/vapid-key`);
@@ -149,13 +152,40 @@ export function usePushNotifications() {
             }
             const { publicKey } = await vapidResponse.json();
 
-            // 5. Subscribe to push
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource
-            });
+            console.log('[Push] Using VAPID Public Key:', publicKey ? publicKey.substring(0, 10) + '...' : 'null');
 
-            // 6. Send subscription to backend
+            if (!publicKey) throw new Error('VAPID Key is missing');
+
+            // DEBUG: Verify Key Format
+            const convertedKey = urlBase64ToUint8Array(publicKey);
+            console.log('[Push] Converted Key Length:', convertedKey.length); // Should be 65 for P-256
+
+            // DEBUG: Verify Manifest
+            try {
+                const manifestRes = await fetch('/manifest.webmanifest');
+                const manifest = await manifestRes.json();
+                console.log('[Push] Loaded Manifest:', manifest);
+            } catch (e) {
+                console.warn('[Push] Could not load manifest for debugging', e);
+            }
+
+            // 5. Check for (and remove) existing subscription to avoid key mismatch
+            const existingSub = await registration.pushManager.getSubscription();
+            if (existingSub) {
+                console.log('[Push] Unsubscribing old subscription...');
+                await existingSub.unsubscribe();
+            }
+
+            const subscribeOptions = {
+                userVisibleOnly: true,
+                applicationServerKey: convertedKey as BufferSource
+            };
+            console.log('[Push] Subscribe Options:', subscribeOptions);
+
+            // 6. Subscribe to push
+            const subscription = await registration.pushManager.subscribe(subscribeOptions);
+
+            // 7. Send subscription to backend
             const anonymousId = ensureAnonymousId();
             const response = await fetch(`${API_BASE}/api/push/subscribe`, {
                 method: 'POST',

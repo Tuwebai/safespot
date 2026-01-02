@@ -4,15 +4,45 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Notification } from '@/lib/api';
 import { useNotificationsQuery, useMarkNotificationReadMutation, useMarkAllNotificationsReadMutation } from '@/hooks/queries/useNotificationsQuery';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/toast';
+import { getAnonymousIdSafe } from '@/lib/identity';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
+    const toast = useToast();
     const { data: notifications = [], isLoading: loading } = useNotificationsQuery();
     const markAsReadMutation = useMarkNotificationReadMutation();
     const markAllReadMutation = useMarkAllNotificationsReadMutation();
+
+    // Push Notification Logic
+    const { isSupported, isSubscribed, subscribe, permission } = usePushNotifications();
+
+    const handleTestNotification = async () => {
+        try {
+            const anonymousId = getAnonymousIdSafe();
+            const res = await fetch(`${API_BASE}/api/push/test`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-anonymous-id': anonymousId
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Notificación enviada: Deberías recibirla en unos segundos.');
+            } else {
+                toast.error(data.error || 'No se pudo enviar la notificación.');
+            }
+        } catch (error) {
+            toast.error('Fallo de conexión.');
+        }
+    };
 
     const handleMarkAsRead = async (id: string) => {
         markAsReadMutation.mutate(id);
@@ -59,6 +89,9 @@ export default function NotificationsPage() {
 
     const unreadCount = notifications.filter(n => !n.is_read).length;
 
+    // Logic to show banner
+    const showPushBanner = isSupported && !isSubscribed && permission !== 'denied';
+
     return (
         <div className="container mx-auto max-w-2xl px-4 py-8">
             <div className="flex items-center justify-between mb-6">
@@ -74,6 +107,20 @@ export default function NotificationsPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {/* TEST BUTTON - VISIBLE IF SUBSCRIBED */}
+                    {isSubscribed && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleTestNotification}
+                            className="border-neon-green/30 text-neon-green hover:bg-neon-green/10"
+                            title="Enviar notificación de prueba"
+                        >
+                            <Bell className="h-4 w-4 mr-2" />
+                            Probar
+                        </Button>
+                    )}
+
                     <Button
                         variant="ghost"
                         size="sm"
@@ -96,6 +143,41 @@ export default function NotificationsPage() {
                     )}
                 </div>
             </div>
+
+            {/* PUSH SUBSCRIPTION BANNER */}
+            {showPushBanner && (
+                <Card className="mb-6 bg-gradient-to-r from-neon-green/10 to-transparent border-neon-green/30 animate-in fade-in slide-in-from-top-4">
+                    <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h3 className="font-bold text-foreground flex items-center gap-2">
+                                <Bell className="h-4 w-4 text-neon-green fill-neon-green" />
+                                Activar Alertas en tu Dispositivo
+                            </h3>
+                            <p className="text-sm text-muted-foreground mt-1">
+                                Recibí avisos de seguridad cercanos incluso con la app cerrada.
+                            </p>
+                        </div>
+                        <Button
+                            size="sm"
+                            onClick={() => subscribe()}
+                            className="neon-glow bg-neon-green text-dark-bg hover:bg-neon-green/90 font-bold whitespace-nowrap w-full sm:w-auto"
+                        >
+                            Activar Ahora
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* ERROR BANNER FOR DENIED PERMISSION */}
+            {permission === 'denied' && (
+                <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-200 flex gap-3 items-start">
+                    <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+                    <p>
+                        Las notificaciones están bloqueadas en tu navegador.
+                        Para recibirlas, hacé clic en el candado 🔒 de la barra de dirección y permití "Notificaciones".
+                    </p>
+                </div>
+            )}
 
             {loading ? (
                 <div className="space-y-4">
