@@ -382,7 +382,7 @@ export function RichTextEditor({
               disabled={disabled || !editor.getText().trim()}
               className="bg-neon-green text-dark-bg hover:bg-neon-green/90"
             >
-              {disabled ? 'Enviando...' : 'Enviar'}
+              Enviar
             </Button>
           )}
         </div>
