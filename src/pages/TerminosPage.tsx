@@ -11,7 +11,7 @@ export default function TerminosPage() {
     return (
         <div className="min-h-screen bg-dark-bg">
             {/* Header */}
-            <header className="sticky top-0 z-10 bg-dark-card/95 backdrop-blur border-b border-dark-border">
+            <header className="sticky top-0 z-10 bg-zinc-950 border-b border-dark-border">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex items-center gap-4">
                         <Link

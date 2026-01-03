@@ -298,10 +298,12 @@ router.get('/search', async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
+    console.log(`[SEARCH] Query: "${q}"`);
+
     // Search users with aliases matching query
     // We only select necessary public info
     const result = await queryWithRLS(
-      'system', // Use system level query or validated user
+      '', // Use empty string for system level query (sets app.anonymous_id = '')
       `SELECT alias, avatar_url, anonymous_id 
        FROM anonymous_users 
        WHERE alias ILIKE $1 
@@ -309,6 +311,8 @@ router.get('/search', async (req, res) => {
        LIMIT 5`,
       [`%${q}%`]
     );
+
+    console.log(`[SEARCH] Found ${result.rows.length} users`);
 
     res.json({
       success: true,

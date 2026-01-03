@@ -87,7 +87,7 @@ export function FirstTimeOnboardingTheme() {
     if (showBottomBar) {
         return (
             <div className="fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4 animate-in slide-in-from-bottom-10 fade-in duration-300 pointer-events-none">
-                <div className="bg-card/90 backdrop-blur-xl border border-border/50 shadow-2xl p-4 rounded-2xl flex flex-col md:flex-row items-center gap-6 max-w-5xl w-full pointer-events-auto">
+                <div className="bg-zinc-950 border border-border/50 shadow-2xl p-4 rounded-2xl flex flex-col md:flex-row items-center gap-6 max-w-5xl w-full pointer-events-auto">
 
                     <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
                         <div className="flex flex-wrap justify-center gap-2">
@@ -153,7 +153,7 @@ export function FirstTimeOnboardingTheme() {
     return (
         <div
             className={cn(
-                "fixed inset-0 z-[100] bg-background/95 backdrop-blur-xl flex items-center justify-center p-4 transition-opacity duration-300",
+                "fixed inset-0 z-[100] bg-zinc-950 flex items-center justify-center p-4 transition-opacity duration-300",
                 isVisible && showFullModal ? "opacity-100" : "opacity-0"
             )}
         >

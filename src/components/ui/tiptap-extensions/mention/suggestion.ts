@@ -55,6 +55,10 @@ export default {
                     return
                 }
 
+                if (popup?.[0]?.state?.isDestroyed) {
+                    return
+                }
+
                 popup?.[0].setProps({
                     getReferenceClientRect: props.clientRect,
                 })
