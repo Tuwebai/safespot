@@ -288,7 +288,7 @@ export function Perfil() {
                           width: `${calculateLevelProgress(
                             gamificationData?.profile?.points ?? profile?.points ?? 0,
                             gamificationData?.profile?.level ?? profile?.level ?? 1
-                          )}%`
+                          ).progressPercent}%`
                         }}
                       />
                     </div>
@@ -302,7 +302,7 @@ export function Perfil() {
                       <span className="text-[10px] font-bold text-neon-green/60">{Math.round(calculateLevelProgress(
                         gamificationData?.profile?.points ?? profile?.points ?? 0,
                         gamificationData?.profile?.level ?? profile?.level ?? 1
-                      ))}%</span>
+                      ).progressPercent)}%</span>
                     </div>
                   </div>
 

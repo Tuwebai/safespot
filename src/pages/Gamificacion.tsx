@@ -294,7 +294,7 @@ export function Gamificacion() {
                     <motion.div
                       className="bg-gradient-to-r from-neon-green to-blue-500 h-full rounded-full relative"
                       initial={{ width: 0 }}
-                      animate={{ width: `${animatedProgress}%` }}
+                      animate={{ width: `${animatedProgress.progressPercent}%` }}
                       transition={{ duration: 1, ease: "easeOut" }}
                     >
                       {/* Shimmer effect on progress bar */}
