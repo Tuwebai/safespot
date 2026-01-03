@@ -46,8 +46,9 @@ async function testConnection() {
     console.log('✅ Database connection test successful');
     console.log('   Database time:', result.rows[0].now);
 
-    // Ensure rate_limits table exists
-    await pool.query(`
+    // SQL for required tables
+    const initSql = `
+      -- 1. Rate Limiting Table
       CREATE TABLE IF NOT EXISTS rate_limits (
         key TEXT PRIMARY KEY,
         hits_minute INTEGER DEFAULT 0,
@@ -57,15 +58,60 @@ async function testConnection() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_hour ON rate_limits(reset_hour);
-    `);
-    console.log('✅ Rate limiting table prepared');
+
+      -- 2. Follow System Table
+      CREATE TABLE IF NOT EXISTS followers (
+        follower_id UUID NOT NULL,
+        following_id UUID NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (follower_id, following_id),
+        CONSTRAINT fk_follower FOREIGN KEY (follower_id) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
+        CONSTRAINT fk_following FOREIGN KEY (following_id) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
+        CONSTRAINT no_self_follow CHECK (follower_id <> following_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_followers_following ON followers(following_id);
+
+      -- 3. Add columns to anonymous_users if they don't exist
+      ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS followers_count INTEGER DEFAULT 0;
+      ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
+
+      -- 4. Triggers to keep counts in sync
+      CREATE OR REPLACE FUNCTION update_follow_counts()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          IF TG_OP = 'INSERT' THEN
+              UPDATE anonymous_users SET following_count = following_count + 1 WHERE anonymous_id = NEW.follower_id;
+              UPDATE anonymous_users SET followers_count = followers_count + 1 WHERE anonymous_id = NEW.following_id;
+          ELSIF TG_OP = 'DELETE' THEN
+              UPDATE anonymous_users SET following_count = GREATEST(0, following_count - 1) WHERE anonymous_id = OLD.follower_id;
+              UPDATE anonymous_users SET followers_count = GREATEST(0, followers_count - 1) WHERE anonymous_id = OLD.following_id;
+          END IF;
+          RETURN COALESCE(NEW, OLD);
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trigger_update_follow_counts ON followers;
+      CREATE TRIGGER trigger_update_follow_counts
+          AFTER INSERT OR DELETE ON followers
+          FOR EACH ROW
+          EXECUTE FUNCTION update_follow_counts();
+
+      -- 5. Initial sync for follow counts
+      UPDATE anonymous_users u
+      SET 
+        followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
+        following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
+    `;
+
+    await pool.query(initSql);
+    console.log('✅ Core database tables prepared (rate_limits, followers)');
 
     // Test if tables exist
     const tablesCheck = await pool.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
-      AND table_name IN ('anonymous_users', 'reports', 'comments', 'votes')
+      AND table_name IN ('anonymous_users', 'reports', 'comments', 'votes', 'followers')
       ORDER BY table_name
     `);
 
@@ -76,42 +122,17 @@ async function testConnection() {
     }
   } catch (error) {
     // No mostrar error si es ENOTFOUND - puede ser un problema temporal de DNS
-    // El pool se creará cuando se haga la primera query real
     if (error.code === 'ENOTFOUND') {
       console.warn('⚠️  No se pudo resolver DNS en el test inicial.');
-      console.warn('   El servidor continuará. La conexión se establecerá cuando se haga la primera query.');
-      console.warn('   Si las queries fallan, verifica tu conexión a internet.\n');
     } else {
       console.error('❌ Database connection test failed:');
       console.error('   Error:', error.message);
       console.error('   Code:', error.code);
-
-      if (error.code === 'ECONNREFUSED') {
-        console.error('   → Conexión rechazada');
-        console.error('   → Verifica que la base de datos esté accesible');
-        console.error('   → Verifica el puerto (5432 para PostgreSQL)');
-      } else if (error.code === '28P01') {
-        console.error('   → Error de autenticación');
-        console.error('   → Verifica usuario y contraseña en DATABASE_URL');
-      } else if (error.code === '3D000') {
-        console.error('   → La base de datos no existe');
-        console.error('   → Créala primero o verifica el nombre');
-      } else if (error.code === 'ETIMEDOUT') {
-        console.error('   → Timeout de conexión');
-        console.error('   → Verifica que la base de datos esté accesible');
-        console.error('   → Para Supabase, verifica que el proyecto esté activo');
-      }
-
-      console.error('\n⚠️  El servidor continuará, pero las operaciones pueden fallar.');
-      console.error('   Verifica tu archivo server/.env\n');
     }
   }
 }
 
-// Run test asynchronously (no bloquea el inicio del servidor)
-testConnection().catch(() => {
-  // Ignorar errores del test - el pool se creará cuando se necesite
-});
+// Run test asynchronously
+testConnection().catch(() => { });
 
 export default pool;
-

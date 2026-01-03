@@ -407,6 +407,14 @@ router.get('/', async (req, res) => {
         }
       }
 
+      // Filter by Followed Users ("Mi Círculo")
+      const followedOnly = req.query.followed_only === 'true';
+      if (followedOnly && anonymousId) {
+        conds.push(`r.anonymous_id IN (SELECT following_id FROM followers WHERE follower_id = $${idx})`);
+        vals.push(anonymousId);
+        idx++;
+      }
+
       return { conds, vals, nextIdx: idx, searchIdx };
     };
 

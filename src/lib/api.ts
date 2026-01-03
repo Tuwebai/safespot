@@ -233,6 +233,7 @@ export interface ReportFilters {
   lat?: number;
   lng?: number;
   radius?: number; // meters
+  followed_only?: boolean;
 }
 
 export const reportsApi = {
@@ -586,6 +587,10 @@ export interface UserProfile {
   theme?: string;
   accent_color?: string;
   recent_reports?: Report[];
+  // Follow stats
+  followers_count?: number;
+  following_count?: number;
+  is_following?: boolean;
 }
 
 export interface GlobalStats {
@@ -683,6 +688,24 @@ export const usersApi = {
    */
   getPublicProfile: async (alias: string): Promise<UserProfile> => {
     return apiRequest<UserProfile>(`/users/public/${encodeURIComponent(alias)}`);
+  },
+
+  /**
+   * Follow a user
+   */
+  follow: async (followingId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Unfollow a user
+   */
+  unfollow: async (followingId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
+      method: 'DELETE',
+    });
   },
 };
 

@@ -421,7 +421,7 @@ router.get('/public/:alias', async (req, res) => {
     // Public query - get user data
     const result = await queryWithRLS(
       '',
-      `SELECT alias, avatar_url, level, points, total_reports, created_at
+      `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
        FROM anonymous_users 
        WHERE alias = $1`,
       [alias]
@@ -469,30 +469,113 @@ router.get('/public/:alias', async (req, res) => {
        FROM reports 
        WHERE anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
        AND deleted_at IS NULL
-       ORDER BY created_at DESC 
+       ORDER BY created_at DESC
        LIMIT 10`,
       [alias]
     );
 
+    // 3. Get follow counts and trust score from stats (now using denormalized columns)
+    const followStatsResult = await queryWithRLS(
+      req.headers['x-anonymous-id'],
+      `SELECT
+           followers_count,
+           following_count
+         FROM anonymous_users
+         WHERE anonymous_id = $1`,
+      [publicProfile.anonymous_id]
+    );
+
+    const isFollowingResult = await queryWithRLS(
+      req.headers['x-anonymous-id'],
+      `SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = $1 AND following_id = $2) as is_following`,
+      [req.headers['x-anonymous-id'], publicProfile.anonymous_id]
+    );
+
+    const followStats = followStatsResult.rows[0] || { followers_count: 0, following_count: 0 };
+    const isFollowing = isFollowingResult.rows[0]?.is_following || false;
+
+    // 4. Combine everything
+    const profileData = {
+      ...publicProfile,
+      badges: badgesResult.rows,
+      stats: {
+        trust_score: Math.floor(trustScore),
+        likes_received: parseInt(stats.report_likes) + parseInt(stats.comment_likes),
+        active_days_30: parseInt(stats.active_days_30),
+        followers_count: parseInt(followStats.followers_count) || 0,
+        following_count: parseInt(followStats.following_count) || 0,
+        is_following: isFollowing
+      },
+      recent_reports: reportsResult.rows
+    };
+
     res.json({
       success: true,
-      data: {
-        ...publicProfile,
-        badges: badgesResult.rows,
-        stats: {
-          trust_score: Math.floor(trustScore),
-          likes_received: parseInt(stats.report_likes) + parseInt(stats.comment_likes),
-          active_days_30: parseInt(stats.active_days_30)
-        },
-        recent_reports: reportsResult.rows
-      }
+      data: profileData
     });
-
   } catch (error) {
     logError(error, req);
     res.status(500).json({ error: 'Failed to fetch public profile' });
   }
 });
+
+/**
+ * POST /api/users/follow/:followingId
+ * Follow a user
+ */
+router.post('/follow/:followingId', requireAnonymousId, async (req, res) => {
+  try {
+    const followerId = req.anonymousId;
+    const { followingId } = req.params;
+
+    if (followerId === followingId) {
+      return res.status(400).json({ error: 'No puedes seguirte a ti mismo' });
+    }
+
+    // Ensure users exist
+    await ensureAnonymousUser(followerId);
+
+    // Check if followingId exists
+    const userCheck = await queryWithRLS('', 'SELECT 1 FROM anonymous_users WHERE anonymous_id = $1', [followingId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'El usuario a seguir no existe' });
+    }
+
+    await queryWithRLS(
+      followerId,
+      'INSERT INTO followers (follower_id, following_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [followerId, followingId]
+    );
+
+    res.json({ success: true, message: 'Usuario seguido' });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error al seguir usuario' });
+  }
+});
+
+/**
+ * DELETE /api/users/follow/:followingId
+ * Unfollow a user
+ */
+router.delete('/follow/:followingId', requireAnonymousId, async (req, res) => {
+  try {
+    const followerId = req.anonymousId;
+    const { followingId } = req.params;
+
+    await queryWithRLS(
+      followerId,
+      'DELETE FROM followers WHERE follower_id = $1 AND following_id = $2',
+      [followerId, followingId]
+    );
+
+    res.json({ success: true, message: 'Dejaste de seguir al usuario' });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error al dejar de seguir' });
+  }
+});
+
 
 export default router;
 

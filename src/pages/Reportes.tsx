@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase, ChevronDown, ChevronUp, RotateCcw, Calendar, X } from 'lucide-react'
+import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { AnimatedCard } from '@/components/ui/animated'
@@ -98,6 +98,7 @@ export function Reportes() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'oldest'>('recent')
+  const [followedOnly, setFollowedOnly] = useState(false)
 
   // Address Autocomplete State
   const [addressQuery, setAddressQuery] = useState('')
@@ -161,15 +162,16 @@ export function Reportes() {
     if (endDate) f.endDate = endDate
     if (sortBy !== 'recent') f.sortBy = sortBy
 
-    // Location Filter
     if (selectedLocation) {
       f.lat = selectedLocation.lat
       f.lng = selectedLocation.lng
       f.radius = 2000 // 2km radius hardcoded for now, could be dynamic
     }
 
+    if (followedOnly) f.followed_only = true
+
     return Object.keys(f).length > 0 ? f : undefined
-  }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation])
+  }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading, isFetching, error: queryError, refetch } = useReportsQuery(filters)
@@ -433,7 +435,6 @@ export function Reportes() {
               ))}
             </Select>
 
-            {/* Ordenar Por (Movido a básico por utilidad) */}
             <Select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
@@ -442,6 +443,21 @@ export function Reportes() {
               <option value="popular">Más Populares</option>
               <option value="oldest">Más Antiguos</option>
             </Select>
+
+            {/* Círculo de Confianza (Followed Only) */}
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-dark-border bg-dark-card/50 hover:bg-dark-card transition-colors cursor-pointer group"
+              onClick={() => setFollowedOnly(!followedOnly)}
+            >
+              <div className="flex items-center gap-2">
+                <Users className={`h-4 w-4 transition-colors ${followedOnly ? 'text-neon-green' : 'text-zinc-500 group-hover:text-zinc-400'}`} />
+                <span className={`text-sm font-medium transition-colors ${followedOnly ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-400'}`}>
+                  Mi Círculo
+                </span>
+              </div>
+              <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-zinc-800'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${followedOnly ? 'right-0.5 bg-neon-green shadow-[0_0_8px_rgba(33,255,140,0.5)]' : 'left-0.5 bg-zinc-600'}`} />
+              </div>
+            </div>
           </div>
 
           {/* Filtros Avanzados (Colapsables) */}
@@ -632,7 +648,6 @@ export function Reportes() {
 
           {/* Ordenar Por */}
           <div>
-            <label className="text-sm font-medium mb-2 block">Ordenar por</label>
             <Select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
@@ -641,6 +656,25 @@ export function Reportes() {
               <option value="popular">Más Populares</option>
               <option value="oldest">Más Antiguos</option>
             </Select>
+          </div>
+
+          {/* Mi Círculo Mobile */}
+          <div
+            className={`flex items-center justify-between p-4 rounded-xl border transition-all ${followedOnly ? 'bg-neon-green/5 border-neon-green/30 shadow-[0_0_15px_rgba(33,255,140,0.05)]' : 'bg-zinc-900/50 border-zinc-800'}`}
+            onClick={() => setFollowedOnly(!followedOnly)}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${followedOnly ? 'bg-neon-green text-black' : 'bg-zinc-800 text-zinc-500'}`}>
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <div className={`font-bold transition-colors ${followedOnly ? 'text-white' : 'text-zinc-400'}`}>Mi Círculo</div>
+                <div className="text-xs text-zinc-600">Solo reportes de gente que sigues</div>
+              </div>
+            </div>
+            <div className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-zinc-800'}`}>
+              <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-300 ${followedOnly ? 'right-1 bg-neon-green' : 'left-1 bg-zinc-600'}`} />
+            </div>
           </div>
 
           {/* Reset Button */}
@@ -670,13 +704,14 @@ export function Reportes() {
             Aplicar Filtros
           </Button>
         </div>
-      </BottomSheet>
+      </BottomSheet >
 
       {/* Listado de Reportes */}
-      <PullToRefresh
+      < PullToRefresh
         onRefresh={async () => {
           await queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
-        }}
+        }
+        }
         className="mb-8"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pt-4">
@@ -690,231 +725,232 @@ export function Reportes() {
           </Link>
         </div>
 
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <ReportCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : error ? (
-          <Card className="bg-dark-card border-dark-border">
-            <CardContent className="py-12 text-center">
-              <p className="text-destructive mb-4">{error}</p>
-              <Button onClick={() => refetch()} variant="outline">
-                Reintentar
-              </Button>
-            </CardContent>
-          </Card>
-        ) : reports.length === 0 ? (
-          <Card className="bg-dark-card border-dark-border">
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">
-                No se encontraron reportes con los filtros seleccionados.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div
-            ref={parentRef}
-            className="w-full"
-          >
+        {
+          isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <ReportCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : error ? (
+            <Card className="bg-dark-card border-dark-border">
+              <CardContent className="py-12 text-center">
+                <p className="text-destructive mb-4">{error}</p>
+                <Button onClick={() => refetch()} variant="outline">
+                  Reintentar
+                </Button>
+              </CardContent>
+            </Card>
+          ) : reports.length === 0 ? (
+            <Card className="bg-dark-card border-dark-border">
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">
+                  No se encontraron reportes con los filtros seleccionados.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
             <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                width: '100%',
-                position: 'relative',
-              }}
+              ref={parentRef}
+              className="w-full"
             >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
-                const validReports = reports.filter((report) => {
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
+                  const validReports = reports.filter((report) => {
+                    return (
+                      report != null &&
+                      typeof report === 'object' &&
+                      report.id != null &&
+                      typeof report.id === 'string' &&
+                      report.title != null &&
+                      typeof report.title === 'string'
+                    )
+                  })
+                  const startIndex = virtualRow.index * columns
+                  const rowItems = validReports.slice(startIndex, startIndex + columns)
+
                   return (
-                    report != null &&
-                    typeof report === 'object' &&
-                    report.id != null &&
-                    typeof report.id === 'string' &&
-                    report.title != null &&
-                    typeof report.title === 'string'
-                  )
-                })
-                const startIndex = virtualRow.index * columns
-                const rowItems = validReports.slice(startIndex, startIndex + columns)
-
-                return (
-                  <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
-                    ref={(el) => {
-                      if (el) {
-                        // Defer measurement to avoid flushSync warning during render
-                        requestAnimationFrame(() => {
-                          rowVirtualizer.measureElement(el)
-                        })
-                      }
-                    }}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
-                  >
-                    {rowItems.map((report) => (
-                      <SmartLink
-                        key={report.id}
-                        to={`/reporte/${report.id}`}
-                        prefetchReportId={report.id}
-                        prefetchRoute="DetalleReporte"
-                        className="block h-full no-underline"
-                      >
-                        <AnimatedCard className="h-full">
-                          <Card className={`group bg-zinc-950 border-zinc-800 hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
-                            {report.priority_zone && (
-                              <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
-                                report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
-                                  'bg-amber-500 text-white'
-                                }`}>
-                                {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                                {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                                {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                                {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
-                              </div>
-                            )}
-
-                            <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
-                              {/* Imagen optimizada */}
-                              {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
-                                <div className="relative overflow-hidden">
-                                  <OptimizedImage
-                                    src={report.image_urls[0]}
-                                    alt={report.title}
-                                    aspectRatio={16 / 9}
-                                    priority={false}
-                                    className="w-full"
-                                  />
-                                  <div className="absolute top-2 right-2 flex gap-2 z-10">
-                                    <Badge className={getStatusColor(report.status)}>
-                                      {getStatusLabel(report.status)}
-                                    </Badge>
-                                  </div>
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={(el) => {
+                        if (el) {
+                          // Defer measurement to avoid flushSync warning during render
+                          requestAnimationFrame(() => {
+                            rowVirtualizer.measureElement(el)
+                          })
+                        }
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
+                    >
+                      {rowItems.map((report) => (
+                        <SmartLink
+                          key={report.id}
+                          to={`/reporte/${report.id}`}
+                          prefetchReportId={report.id}
+                          prefetchRoute="DetalleReporte"
+                          className="block h-full no-underline"
+                        >
+                          <AnimatedCard className="h-full">
+                            <Card className={`group bg-zinc-950 border-zinc-800 hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
+                              {report.priority_zone && (
+                                <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                                  report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
+                                    'bg-amber-500 text-white'
+                                  }`}>
+                                  {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
+                                  {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
+                                  {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
+                                  {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
                                 </div>
                               )}
-                            </div>
 
-                            <CardContent className="p-6 flex-1 flex flex-col">
-                              <div className="flex items-start justify-between mb-2">
-                                <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                                  {report.title}
-                                </h3>
-                                {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
-                                  <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                                    {getStatusLabel(report.status)}
-                                  </Badge>
+                              <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                                {/* Imagen optimizada */}
+                                {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
+                                  <div className="relative overflow-hidden">
+                                    <OptimizedImage
+                                      src={report.image_urls[0]}
+                                      alt={report.title}
+                                      aspectRatio={16 / 9}
+                                      priority={false}
+                                      className="w-full"
+                                    />
+                                    <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                      <Badge className={getStatusColor(report.status)}>
+                                        {getStatusLabel(report.status)}
+                                      </Badge>
+                                    </div>
+                                  </div>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                                <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                                <span>{report.category}</span>
-                              </div>
 
-                              <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                                {report.description}
-                              </p>
+                              <CardContent className="p-6 flex-1 flex flex-col">
+                                <div className="flex items-start justify-between mb-2">
+                                  <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                                    {report.title}
+                                  </h3>
+                                  {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
+                                    <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                                      {getStatusLabel(report.status)}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                                  <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                                  <span>{report.category}</span>
+                                </div>
 
-                              <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
-                                <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                                <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                              </div>
+                                <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                                  {report.description}
+                                </p>
 
-                              <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                                    <AvatarImage
-                                      src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
-                                      alt="Avatar"
+                                <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                                  <MapPin className="h-4 w-4 mr-1 text-neon-green" />
+                                  <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-6 w-6 border border-white/10 shrink-0">
+                                      <AvatarImage
+                                        src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                        alt="Avatar"
+                                      />
+                                      <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                                        {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex flex-col">
+                                      {report.alias && (
+                                        <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
+                                      )}
+                                      <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-4">
+                                    <div className="flex items-center gap-1" title="Hilos">
+                                      <GitBranch className="h-4 w-4" />
+                                      <span>{report.threads_count ?? 0}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1" title="Comentarios">
+                                      <MessageCircle className="h-4 w-4" />
+                                      <span>{report.comments_count}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
+                                  <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
+                                  <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                                    <FavoriteButton
+                                      reportId={report.id}
+                                      isFavorite={report.is_favorite ?? false}
+                                      onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
                                     />
-                                    <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
-                                      {report.anonymous_id.substring(0, 2).toUpperCase()}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex flex-col">
-                                    {report.alias && (
-                                      <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
-                                    )}
-                                    <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-4">
-                                  <div className="flex items-center gap-1" title="Hilos">
-                                    <GitBranch className="h-4 w-4" />
-                                    <span>{report.threads_count ?? 0}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1" title="Comentarios">
-                                    <MessageCircle className="h-4 w-4" />
-                                    <span>{report.comments_count}</span>
-                                  </div>
-                                </div>
-                              </div>
+                                    {(() => {
+                                      const currentAnonymousId = getAnonymousIdSafe()
+                                      const isOwner = report?.anonymous_id === currentAnonymousId
+                                      const isFlagged = report?.is_flagged ?? false
+                                      const isFlagging = flaggingReports.has(report.id)
 
-                              <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
-                                <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                                <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                                  <FavoriteButton
-                                    reportId={report.id}
-                                    isFavorite={report.is_favorite ?? false}
-                                    onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
-                                  />
-                                  {(() => {
-                                    const currentAnonymousId = getAnonymousIdSafe()
-                                    const isOwner = report?.anonymous_id === currentAnonymousId
-                                    const isFlagged = report?.is_flagged ?? false
-                                    const isFlagging = flaggingReports.has(report.id)
+                                      if (isOwner) return null
 
-                                    if (isOwner) return null
+                                      if (isFlagged) {
+                                        return (
+                                          <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                            Denunciado
+                                          </span>
+                                        )
+                                      }
 
-                                    if (isFlagged) {
                                       return (
-                                        <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                          Denunciado
-                                        </span>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            handleFlag(e, report.id)
+                                          }}
+                                          disabled={isFlagging}
+                                          className="hover:text-yellow-400"
+                                          title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
+                                        >
+                                          {isFlagging ? (
+                                            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                          ) : (
+                                            <Flag className="h-4 w-4" />
+                                          )}
+                                        </Button>
                                       )
-                                    }
-
-                                    return (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          handleFlag(e, report.id)
-                                        }}
-                                        disabled={isFlagging}
-                                        className="hover:text-yellow-400"
-                                        title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                                      >
-                                        {isFlagging ? (
-                                          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                        ) : (
-                                          <Flag className="h-4 w-4" />
-                                        )}
-                                      </Button>
-                                    )
-                                  })()}
+                                    })()}
+                                  </div>
                                 </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </AnimatedCard>
-                      </SmartLink>
-                    ))}
-                  </div>
-                )
-              })}
+                              </CardContent>
+                            </Card>
+                          </AnimatedCard>
+                        </SmartLink>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        )
+          )
         }
       </PullToRefresh >
 

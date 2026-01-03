@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { usersApi } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
@@ -13,8 +13,11 @@ import { PrefetchLink } from '@/components/PrefetchLink'
 import { handleError } from '@/lib/errorHandler'
 import { calculateLevelProgress } from '@/lib/levelCalculation'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Users, UserCircle } from 'lucide-react'
+import { getAnonymousIdSafe } from '@/lib/identity'
 
 interface PublicUserProfile {
+    anonymous_id: string
     alias: string
     avatar_url: string | null
     level: number
@@ -33,6 +36,9 @@ interface PublicUserProfile {
         trust_score: number
         likes_received: number
         active_days_30: number
+        followers_count: number
+        following_count: number
+        is_following: boolean
     }
     recent_reports: Array<{
         id: string
@@ -52,6 +58,7 @@ export function PublicProfile() {
     const [profile, setProfile] = useState<PublicUserProfile | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const currentAnonymousId = useMemo(() => getAnonymousIdSafe(), [])
 
     const loadProfile = useCallback(async () => {
         if (!alias) return
@@ -67,6 +74,45 @@ export function PublicProfile() {
             setLoading(false)
         }
     }, [alias, toast.error])
+
+    const [followLoading, setFollowLoading] = useState(false)
+
+    const handleFollowToggle = async () => {
+        if (!profile || followLoading) return
+
+        try {
+            setFollowLoading(true)
+            const anonymousId = profile.anonymous_id;
+
+            if (profile.stats.is_following) {
+                await usersApi.unfollow(anonymousId)
+                setProfile(prev => prev ? {
+                    ...prev,
+                    stats: {
+                        ...prev.stats,
+                        is_following: false,
+                        followers_count: Math.max(0, (prev.stats.followers_count || 0) - 1)
+                    }
+                } : null)
+                toast.success(`Dejaste de seguir a @${profile.alias}`)
+            } else {
+                await usersApi.follow(anonymousId)
+                setProfile(prev => prev ? {
+                    ...prev,
+                    stats: {
+                        ...prev.stats,
+                        is_following: true,
+                        followers_count: (prev.stats.followers_count || 0) + 1
+                    }
+                } : null)
+                toast.success(`Ahora sigues a @${profile.alias}`)
+            }
+        } catch (error) {
+            handleError(error, toast.error, 'PublicProfile.follow')
+        } finally {
+            setFollowLoading(false)
+        }
+    }
 
     useEffect(() => {
         loadProfile()
@@ -142,10 +188,37 @@ export function PublicProfile() {
                                     @{profile.alias}
                                     {profile.stats.trust_score >= 90 && <Shield className="w-6 h-6 text-green-400 fill-green-400/20" />}
                                 </h1>
-                                <p className="text-zinc-400 text-sm flex items-center justify-center md:justify-start gap-2">
+                                <p className="text-zinc-400 text-sm flex items-center justify-center md:justify-start gap-2 mb-4">
                                     <Calendar className="w-3.5 h-3.5" />
                                     Miembro desde {new Date(profile.created_at).toLocaleDateString()}
                                 </p>
+
+                                {/* Follow Button */}
+                                {profile.anonymous_id !== currentAnonymousId ? (
+                                    <div className="flex justify-center md:justify-start">
+                                        <Button
+                                            onClick={handleFollowToggle}
+                                            disabled={followLoading}
+                                            variant={profile.stats.is_following ? "outline" : "default"}
+                                            className={`
+                                                rounded-full px-8 font-bold transition-all duration-300
+                                                ${profile.stats.is_following
+                                                    ? 'border-white/10 hover:border-red-500/50 hover:text-red-500 hover:bg-red-500/5'
+                                                    : 'bg-neon-green text-black hover:bg-neon-green/90 shadow-[0_0_15px_rgba(33,255,140,0.3)]'}
+                                            `}
+                                        >
+                                            <Users className="w-4 h-4 mr-2" />
+                                            {profile.stats.is_following ? 'Siguiendo' : 'Seguir'}
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-center md:justify-start">
+                                        <Badge variant="outline" className="px-4 py-1.5 border-blue-500/30 bg-blue-500/10 text-blue-400 gap-2 rounded-full">
+                                            <UserCircle className="w-3.5 h-3.5" />
+                                            Tu Perfil (Vista Pública)
+                                        </Badge>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Stats Chips */}
@@ -205,6 +278,20 @@ export function PublicProfile() {
                                         {profile.stats.active_days_30}<span className="text-sm text-zinc-600 font-normal">d</span>
                                     </div>
                                     <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Activo (30d)</div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 divide-x divide-zinc-900 border-t border-zinc-900">
+                                <div className="p-4 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
+                                    <div className="text-xl font-bold text-white mb-0.5">
+                                        {profile.stats.followers_count || 0}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Seguidores</div>
+                                </div>
+                                <div className="p-4 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
+                                    <div className="text-xl font-bold text-white mb-0.5">
+                                        {profile.stats.following_count || 0}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Siguiendo</div>
                                 </div>
                             </div>
                         </CardContent>
