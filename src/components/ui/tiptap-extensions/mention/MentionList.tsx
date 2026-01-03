@@ -1,5 +1,5 @@
 
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { UserProfile } from '@/lib/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar'
 
