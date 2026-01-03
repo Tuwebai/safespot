@@ -2,7 +2,7 @@
   command = "npm install --legacy-peer-deps && npm run build"
   publish = "dist"
 
-  NODE_VERSION = "18"
+  NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
 
 # NOTE: Social Share redirects are handled in public/_redirects
