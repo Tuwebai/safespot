@@ -523,7 +523,7 @@ export function Reportes() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold">
-            Reportes {loading ? '...' : `(${reports.length})`}
+            Reportes {isFetching ? '...' : `(${reports.length})`}
           </h2>
           <Link to="/crear-reporte">
             <Button variant="neon">
@@ -532,7 +532,7 @@ export function Reportes() {
           </Link>
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <ReportCardSkeleton key={i} />
