@@ -130,7 +130,6 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
             key={index}
             className="mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer inline-flex items-center gap-0.5"
           >
-            <AtSign className="w-3 h-3" />
             @{label}
           </span>
         )
