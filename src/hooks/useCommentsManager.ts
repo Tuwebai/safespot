@@ -196,7 +196,11 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             return
         }
 
+
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'comment' } })
+
+        // Clear input IMMEDIATELY for instant feedback
+        dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'comment' })
 
         try {
             await createMutation.mutateAsync({
@@ -204,7 +208,6 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
                 content: rich || plain, // Try rich first, fallback to plain
             })
 
-            dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'comment' })
             onCommentCountChange?.(1)
             triggerBadgeCheck()
         } catch (error) {
