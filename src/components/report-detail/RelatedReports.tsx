@@ -36,22 +36,40 @@ export function RelatedReports({ reportId }: { reportId: string }) {
     useEffect(() => {
         if (!reportId) return;
         setLoading(true);
-        // Use relative path for API, assumes proxy or base URL handled by global config if exists, 
-        // but here hardcoding based on context or using VITE_API_URL
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+        // Normalize API URL to ensure /api prefix
+        const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        const apiUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 
         fetch(`${apiUrl}/reports/${reportId}/related`, {
             headers: {
                 'Content-Type': 'application/json'
             }
         })
-            .then(res => res.json())
+            .then(res => {
+                // Handle 404 gracefully - endpoint might not exist yet
+                if (res.status === 404) {
+                    setReports([]);
+                    return null;
+                }
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+            })
             .then(data => {
-                if (data.success && Array.isArray(data.data)) {
+                if (data && data.success && Array.isArray(data.data)) {
                     setReports(data.data);
+                } else if (data === null) {
+                    // 404 case - no related reports endpoint
+                    setReports([]);
                 }
             })
-            .catch(err => console.error('Failed to load related reports', err))
+            .catch(err => {
+                // Silently fail - related reports are optional
+                console.warn('Related reports not available:', err.message);
+                setReports([]);
+            })
             .finally(() => setLoading(false));
     }, [reportId]);
 

@@ -197,10 +197,16 @@ export function useDeleteCommentMutation() {
     return useMutation({
         mutationFn: ({ id }: { id: string; reportId: string }) =>
             commentsApi.delete(id),
-        onMutate: async ({ id }) => {
+        onMutate: async ({ id, reportId }) => {
+            // Cancel outgoing queries
             await queryClient.cancelQueries({ queryKey: ['comments'] })
-            const previousComments = queryClient.getQueriesData({ queryKey: ['comments'] })
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.detail(reportId) })
 
+            // Snapshot previous state for rollback
+            const previousComments = queryClient.getQueriesData({ queryKey: ['comments'] })
+            const previousReport = queryClient.getQueryData(queryKeys.reports.detail(reportId))
+
+            // Optimistically remove comment from all comment queries
             queryClient.setQueriesData<any>(
                 { queryKey: ['comments'] },
                 (old: any) => {
@@ -227,13 +233,29 @@ export function useDeleteCommentMutation() {
                 }
             )
 
-            return { previousComments }
+            // Optimistically decrement comment count in report
+            queryClient.setQueryData(
+                queryKeys.reports.detail(reportId),
+                (old: any) => {
+                    if (!old) return old
+                    return {
+                        ...old,
+                        comments_count: Math.max(0, (old.comments_count || 0) - 1)
+                    }
+                }
+            )
+
+            return { previousComments, previousReport }
         },
-        onError: (_err, _vars, context) => {
+        onError: (_err, { reportId }, context) => {
+            // Rollback on error
             if (context?.previousComments) {
                 context.previousComments.forEach(([queryKey, data]) => {
                     queryClient.setQueryData(queryKey, data)
                 })
+            }
+            if (context?.previousReport) {
+                queryClient.setQueryData(queryKeys.reports.detail(reportId), context.previousReport)
             }
         },
         onSettled: (_, __, { reportId }) => {

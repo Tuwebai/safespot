@@ -299,14 +299,14 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
 
         try {
             await deleteMutation.mutateAsync({ id: commentId, reportId })
-            onCommentCountChange?.(-1)
-            toast.success('Comentario eliminado')
+            // No toast needed - optimistic update makes it feel instant
+            // onCommentCountChange handled by optimistic update in mutation
         } catch (error) {
             handleErrorWithMessage(error, 'Error al eliminar comentario', toast.error, 'useCommentsManager.deleteComment')
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [state.submitting, reportId, deleteMutation, onCommentCountChange, toast])
+    }, [state.submitting, reportId, deleteMutation, toast])
 
     const flagComment = useCallback(async (commentId: string) => {
         const comment = comments.find(c => c.id === commentId)
