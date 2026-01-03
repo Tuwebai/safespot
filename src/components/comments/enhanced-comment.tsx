@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TipTapRenderer } from '@/components/ui/tiptap-renderer'
 import { useToast } from '@/components/ui/toast'
+import { Link } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import {
   MessageCircle,

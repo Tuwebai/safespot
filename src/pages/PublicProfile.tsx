@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { usersApi } from '@/lib/api'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,6 @@ import { FileText, Calendar, ArrowLeft } from 'lucide-react'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { handleError } from '@/lib/errorHandler'
-import { getAnonymousIdSafe } from '@/lib/identity'
 import { calculateLevelProgress } from '@/lib/levelCalculation'
 
 interface PublicUserProfile {

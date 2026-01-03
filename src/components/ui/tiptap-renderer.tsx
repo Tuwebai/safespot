@@ -1,4 +1,4 @@
-import { MapPin as MapPinIcon, Link as LinkIcon, AtSign } from 'lucide-react'
+import { MapPin, AtSign, Type } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { MarkdownRenderer } from './markdown-renderer'
 import { TipTapDoc, TipTapNode, TipTapMark } from '@/types/tiptap'
