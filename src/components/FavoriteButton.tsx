@@ -1,7 +1,9 @@
 import { Heart } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useFavorite } from '@/hooks/useFavorite'
+import { useToggleFavoriteMutation } from '@/hooks/queries/useReportsQuery'
+import { useToast } from '@/components/ui/toast'
 
 interface FavoriteButtonProps {
     reportId: string
@@ -18,7 +20,7 @@ interface FavoriteButtonProps {
 
 export function FavoriteButton({
     reportId,
-    isFavorite: initialIsFavorite,
+    isFavorite,
     onToggle,
     className,
     size = 'sm',
@@ -28,36 +30,54 @@ export function FavoriteButton({
     label,
     disabled = false
 }: FavoriteButtonProps) {
-    const { isFavorite, isLoading, toggleFavorite } = useFavorite({
-        reportId,
-        initialState: initialIsFavorite,
-        onToggle
-    })
+    const toast = useToast()
+    const { mutate: toggleFavorite } = useToggleFavoriteMutation()
 
-    // Determine optimistic count display (if needed)
-    const displayCount = showCount
-        ? count + (isFavorite && !initialIsFavorite ? 1 : (!isFavorite && initialIsFavorite ? -1 : 0))
-        : 0
+    const handleClick = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        if (disabled) return
+
+        // Optimistic update handled by mutation
+        toggleFavorite(reportId, {
+            onError: (error) => {
+                const message = error instanceof Error ? error.message : 'Error al actualizar favorito'
+                toast.error(message)
+            },
+            onSuccess: () => {
+                onToggle?.(!isFavorite)
+            }
+        })
+    }
 
     return (
         <Button
             variant={variant}
             size={size}
-            onClick={toggleFavorite}
-            disabled={isLoading || disabled}
+            onClick={handleClick}
+            disabled={disabled}
             className={cn(
                 isFavorite ? 'text-red-400 hover:text-red-300' : '',
                 className
             )}
-            title={isLoading ? 'Guardando...' : (isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos')}
+            title={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
         >
-            {isLoading ? (
-                <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
-            ) : (
+            <motion.div
+                whileTap={{ scale: 0.85 }}
+                whileHover={{ scale: 1.1 }}
+                animate={{
+                    scale: isFavorite ? [1, 1.2, 1] : 1
+                }}
+                transition={{
+                    duration: 0.3,
+                    ease: "easeOut"
+                }}
+            >
                 <Heart className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} />
-            )}
+            </motion.div>
             {label && <span>{label}</span>}
-            {showCount && !label && <span className="ml-1">{displayCount}</span>}
+            {showCount && !label && <span className="ml-1">{count}</span>}
         </Button>
     )
 }

@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase, ChevronDown, ChevronUp, RotateCcw, Calendar, X } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
+import { AnimatedCard } from '@/components/ui/animated'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { SmartLink } from '@/components/SmartLink'
@@ -586,148 +587,150 @@ export function Reportes() {
                     prefetchRoute="DetalleReporte"
                     className="block h-full no-underline"
                   >
-                    <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
-                      {report.priority_zone && (
-                        <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
-                          report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
-                            'bg-amber-500 text-white'
-                          }`}>
-                          {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                          {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                          {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                          {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
-                        </div>
-                      )}
-
-                      <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
-                        {hasImage && (
-                          <div className="relative overflow-hidden">
-                            <OptimizedImage
-                              src={imageUrls[0]}
-                              alt={report.title}
-                              aspectRatio={16 / 9}
-                              priority={false}
-                              className="w-full"
-                            />
-                            {/* Overlays (Top Right) */}
-                            <div className="absolute top-2 right-2 flex gap-2 z-10">
-                              <Badge className={getStatusColor(report.status)}>
-                                {getStatusLabel(report.status)}
-                              </Badge>
-                            </div>
+                    <AnimatedCard className="h-full">
+                      <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
+                        {report.priority_zone && (
+                          <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                            report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
+                              'bg-amber-500 text-white'
+                            }`}>
+                            {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
+                            {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
+                            {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
+                            {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
                           </div>
                         )}
-                      </div>
 
-                      {/* 2.3 Content Section (Bottom) */}
-                      <CardContent className="p-6 flex-1 flex flex-col">
-                        {/* A. Header (Title & Category) */}
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                            {report.title}
-                          </h3>
-                          {!hasImage && (
-                            <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                              {getStatusLabel(report.status)}
-                            </Badge>
+                        <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                          {hasImage && (
+                            <div className="relative overflow-hidden">
+                              <OptimizedImage
+                                src={imageUrls[0]}
+                                alt={report.title}
+                                aspectRatio={16 / 9}
+                                priority={false}
+                                className="w-full"
+                              />
+                              {/* Overlays (Top Right) */}
+                              <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                <Badge className={getStatusColor(report.status)}>
+                                  {getStatusLabel(report.status)}
+                                </Badge>
+                              </div>
+                            </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                          <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                          <span>{report.category}</span>
-                        </div>
 
-                        {/* B. Description */}
-                        <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                          {report.description}
-                        </p>
-
-                        {/* C. Location */}
-                        <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
-                          <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                          <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                        </div>
-
-                        {/* D. Meta Footer (Date & Stats) */}
-                        <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                              <AvatarImage
-                                src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
-                                alt="Avatar"
-                              />
-                              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
-                                {report.anonymous_id.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-xs">{formatDate(report.created_at)}</span>
+                        {/* 2.3 Content Section (Bottom) */}
+                        <CardContent className="p-6 flex-1 flex flex-col">
+                          {/* A. Header (Title & Category) */}
+                          <div className="flex items-start justify-between mb-2">
+                            <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                              {report.title}
+                            </h3>
+                            {!hasImage && (
+                              <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                                {getStatusLabel(report.status)}
+                              </Badge>
+                            )}
                           </div>
-                          <div className="flex items-center space-x-4">
-                            <div className="flex items-center gap-1" title="Hilos">
-                              <GitBranch className="h-4 w-4" />
-                              <span>{report.threads_count ?? 0}</span>
-                            </div>
-                            <div className="flex items-center gap-1" title="Comentarios">
-                              <MessageCircle className="h-4 w-4" />
-                              <span>{report.comments_count}</span>
-                            </div>
+                          <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                            <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                            <span>{report.category}</span>
                           </div>
-                        </div>
 
-                        {/* E. Action Bar (Bottom) */}
-                        <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
-                          <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                          <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                            {(() => {
-                              if (!report || !report.id) return null
-                              return (
-                                <FavoriteButton
-                                  reportId={report.id}
-                                  isFavorite={report.is_favorite ?? false}
-                                  onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
+                          {/* B. Description */}
+                          <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                            {report.description}
+                          </p>
+
+                          {/* C. Location */}
+                          <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                            <MapPin className="h-4 w-4 mr-1 text-neon-green" />
+                            <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                          </div>
+
+                          {/* D. Meta Footer (Date & Stats) */}
+                          <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-6 w-6 border border-white/10 shrink-0">
+                                <AvatarImage
+                                  src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                  alt="Avatar"
                                 />
-                              )
-                            })()}
-                            {(() => {
-                              const currentAnonymousId = getAnonymousIdSafe()
-                              const isOwner = report?.anonymous_id === currentAnonymousId
-                              const isFlagged = report?.is_flagged ?? false
-                              const isFlagging = flaggingReports.has(report.id)
-
-                              if (isOwner) return null
-
-                              if (isFlagged) {
-                                return (
-                                  <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                    Denunciado
-                                  </span>
-                                )
-                              }
-
-                              return (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    handleFlag(e, report.id)
-                                  }}
-                                  disabled={isFlagging}
-                                  className="hover:text-yellow-400"
-                                  title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                                >
-                                  {isFlagging ? (
-                                    <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                  ) : (
-                                    <Flag className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )
-                            })()}
+                                <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                                  {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs">{formatDate(report.created_at)}</span>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                              <div className="flex items-center gap-1" title="Hilos">
+                                <GitBranch className="h-4 w-4" />
+                                <span>{report.threads_count ?? 0}</span>
+                              </div>
+                              <div className="flex items-center gap-1" title="Comentarios">
+                                <MessageCircle className="h-4 w-4" />
+                                <span>{report.comments_count}</span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+
+                          {/* E. Action Bar (Bottom) */}
+                          <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
+                            <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
+                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                if (!report || !report.id) return null
+                                return (
+                                  <FavoriteButton
+                                    reportId={report.id}
+                                    isFavorite={report.is_favorite ?? false}
+                                    onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
+                                  />
+                                )
+                              })()}
+                              {(() => {
+                                const currentAnonymousId = getAnonymousIdSafe()
+                                const isOwner = report?.anonymous_id === currentAnonymousId
+                                const isFlagged = report?.is_flagged ?? false
+                                const isFlagging = flaggingReports.has(report.id)
+
+                                if (isOwner) return null
+
+                                if (isFlagged) {
+                                  return (
+                                    <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                      Denunciado
+                                    </span>
+                                  )
+                                }
+
+                                return (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      handleFlag(e, report.id)
+                                    }}
+                                    disabled={isFlagging}
+                                    className="hover:text-yellow-400"
+                                    title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
+                                  >
+                                    {isFlagging ? (
+                                      <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                    ) : (
+                                      <Flag className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </AnimatedCard>
                   </SmartLink>
                 )
               })
