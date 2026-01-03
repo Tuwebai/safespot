@@ -122,6 +122,20 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
         )
       }
 
+      case 'mention': {
+        const id = (node.attrs?.id as string) || ''
+        const label = (node.attrs?.label as string) || id
+        return (
+          <span
+            key={index}
+            className="mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer inline-flex items-center gap-0.5"
+          >
+            <AtSign className="w-3 h-3" />
+            @{label}
+          </span>
+        )
+      }
+
       case 'bulletList':
         return (
           <ul key={index} className="list-disc list-inside mb-2 space-y-1 ml-4">
