@@ -475,24 +475,37 @@ export function SafeSpotMapClient({
         if ('geolocation' in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    if (pos.coords.latitude && pos.coords.longitude && map) {
-                        map.setView([pos.coords.latitude, pos.coords.longitude], 13)
-                        hasCenteredRef.current = true
+                    // Validate map still exists before calling setView
+                    if (pos.coords.latitude && pos.coords.longitude && map && map.getContainer()) {
+                        try {
+                            map.setView([pos.coords.latitude, pos.coords.longitude], 13)
+                            hasCenteredRef.current = true
+                        } catch (e) {
+                            console.warn('[Map] setView failed - map may be unmounted', e)
+                        }
                     }
                 },
                 () => {
                     // 5. Fallback: Buenos Aires
-                    if (map) {
-                        map.setView([-34.6037, -58.3816], 12)
-                        hasCenteredRef.current = true
+                    if (map && map.getContainer()) {
+                        try {
+                            map.setView([-34.6037, -58.3816], 12)
+                            hasCenteredRef.current = true
+                        } catch (e) {
+                            console.warn('[Map] setView failed - map may be unmounted', e)
+                        }
                     }
                 },
                 { timeout: 5000 }
             )
         } else {
-            if (map) {
-                map.setView([-34.6037, -58.3816], 12)
-                hasCenteredRef.current = true
+            if (map && map.getContainer()) {
+                try {
+                    map.setView([-34.6037, -58.3816], 12)
+                    hasCenteredRef.current = true
+                } catch (e) {
+                    console.warn('[Map] setView failed - map may be unmounted', e)
+                }
             }
         }
     }, [isMapReady, zones, initialFocus, activeZoneType])
