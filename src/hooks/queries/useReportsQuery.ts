@@ -59,12 +59,49 @@ export function useCreateReportMutation() {
     return useMutation({
         mutationFn: (data: CreateReportData) => reportsApi.create(data),
         onMutate: async (newReportData) => {
-            // Standard Optimistic UI for stats
+            // Cancel outgoing queries
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
             await queryClient.cancelQueries({ queryKey: queryKeys.stats.global })
             await queryClient.cancelQueries({ queryKey: queryKeys.stats.categories })
 
+            // Snapshot previous state for rollback
+            const previousReports = queryClient.getQueriesData({ queryKey: ['reports', 'list'] })
             const previousGlobalStats = queryClient.getQueryData(queryKeys.stats.global)
             const previousCategoryStats = queryClient.getQueryData(queryKeys.stats.categories)
+
+            // Generate temporary ID for optimistic report
+            const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+            // Create optimistic report object
+            const optimisticReport: Report = {
+                id: tempId,
+                title: newReportData.title,
+                description: newReportData.description,
+                category: newReportData.category,
+                zone: newReportData.zone || '',
+                address: newReportData.address || '',
+                latitude: newReportData.latitude,
+                longitude: newReportData.longitude,
+                status: newReportData.status || 'pendiente',
+                incident_date: newReportData.incident_date,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                image_urls: [], // Images upload separately
+                comments_count: 0,
+                threads_count: 0,
+                is_favorite: false,
+                is_flagged: false,
+                anonymous_id: '', // Will be set by server
+                avatar_url: null,
+                // Optimistic flag to identify temp reports
+                _isOptimistic: true
+            } as any
+
+            // Add optimistic report to ALL report lists
+            queryClient.setQueriesData<Report[]>(
+                { queryKey: ['reports', 'list'] },
+                (old) => old ? [optimisticReport, ...old] : [optimisticReport]
+            )
 
             // Update global count
             if (previousGlobalStats) {
@@ -85,9 +122,29 @@ export function useCreateReportMutation() {
                 )
             }
 
-            return { previousGlobalStats, previousCategoryStats }
+            return { previousReports, previousGlobalStats, previousCategoryStats, tempId }
+        },
+        onSuccess: (serverReport, _variables, context) => {
+            // Replace temporary report with real server report
+            if (context?.tempId) {
+                queryClient.setQueriesData<Report[]>(
+                    { queryKey: ['reports', 'list'] },
+                    (old) => old?.map(r =>
+                        r.id === context.tempId ? { ...serverReport, _isOptimistic: undefined } : r
+                    )
+                )
+            }
         },
         onError: (_err, _newReport, context) => {
+            // Rollback: Remove optimistic report
+            if (context?.tempId) {
+                queryClient.setQueriesData<Report[]>(
+                    { queryKey: ['reports', 'list'] },
+                    (old) => old?.filter(r => r.id !== context.tempId)
+                )
+            }
+
+            // Rollback stats
             if (context?.previousGlobalStats) {
                 queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
             }

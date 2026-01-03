@@ -185,47 +185,55 @@ export function useCreateReportForm() {
             return
         }
 
-        try {
-            const payload = {
-                title: data.title,
-                description: data.description,
-                category: data.category,
-                zone: data.location.zone || '',
-                address: data.location.location_name,
-                latitude: data.location.latitude,
-                longitude: data.location.longitude,
-                status: 'pendiente' as const,
-                incident_date: data.incidentDate
-            }
-
-            // 1. Create the report record (Fast JSON operation)
-            const newReport = await createReport(payload)
-
-            // 2. Immediate feedback & Navigation
-            // WE DON'T WAIT FOR IMAGES TO NAVIGATE
-            toast.success('¡Reporte creado!')
-            navigate(`/reporte/${newReport.id}`)
-            triggerBadgeCheck(newReport.newBadges)
-            queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
-
-            // 3. Background Image Upload
-            if (imageFiles.length > 0) {
-                // We fire and forget this, but handle errors gracefully
-                reportsApi.uploadImages(newReport.id, imageFiles)
-                    .then(() => {
-                        // Refresh the list cache in the background since images are now available
-                        queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
-                    })
-                    .catch((error) => {
-                        handleErrorSilently(error, 'useCreateReportForm.uploadImages.bg')
-                        toast.warning('Ocurrió un error al subir las imágenes, pero tu reporte se guardó.')
-                    })
-            }
-
-        } catch (error) {
-            handleErrorSilently(error, 'useCreateReportForm.submit')
-            // useCreateReportMutation's error state will also be updated
+        const payload = {
+            title: data.title,
+            description: data.description,
+            category: data.category,
+            zone: data.location.zone || '',
+            address: data.location.location_name,
+            latitude: data.location.latitude,
+            longitude: data.location.longitude,
+            status: 'pendiente' as const,
+            incident_date: data.incidentDate
         }
+
+        // INSTANT FEEDBACK - Clear form and navigate immediately
+        form.reset()
+        setImageFiles([])
+        setImagePreviews([])
+        toast.success('¡Reporte creado!')
+
+        // Navigate INSTANTLY to reports list (optimistic report already visible there)
+        navigate('/reportes')
+
+        // Fire mutation WITHOUT awaiting - let optimistic update handle it
+        createReport(payload)
+            .then((newReport) => {
+                // Background: Navigate to detail page after short delay
+                setTimeout(() => {
+                    navigate(`/reporte/${newReport.id}`, { replace: true })
+                }, 800) // Let user see the report in the list first
+
+                // Trigger badge check
+                triggerBadgeCheck(newReport.newBadges)
+                queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
+
+                // Background Image Upload
+                if (imageFiles.length > 0) {
+                    reportsApi.uploadImages(newReport.id, imageFiles)
+                        .then(() => {
+                            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+                        })
+                        .catch((error) => {
+                            handleErrorSilently(error, 'useCreateReportForm.uploadImages.bg')
+                            toast.warning('Ocurrió un error al subir las imágenes, pero tu reporte se guardó.')
+                        })
+                }
+            })
+            .catch((error) => {
+                handleErrorSilently(error, 'useCreateReportForm.submit')
+                toast.error('Error al crear el reporte. Intentá de nuevo.')
+            })
     })
 
     return {
