@@ -1,4 +1,5 @@
-import { MapPin, Type, AtSign } from 'lucide-react'
+import { MapPin as MapPinIcon, Link as LinkIcon, AtSign } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { MarkdownRenderer } from './markdown-renderer'
 import { TipTapDoc, TipTapNode, TipTapMark } from '@/types/tiptap'
 
@@ -126,12 +127,13 @@ export function TipTapRenderer({ content, className = '' }: TipTapRendererProps)
         const id = (node.attrs?.id as string) || ''
         const label = (node.attrs?.label as string) || id
         return (
-          <span
+          <Link
             key={index}
-            className="mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer inline-flex items-center gap-0.5"
+            to={`/usuario/${label}`}
+            className="mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer inline-flex items-center gap-0.5 hover:underline"
           >
             @{label}
-          </span>
+          </Link>
         )
       }
 

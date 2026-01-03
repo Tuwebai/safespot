@@ -209,22 +209,29 @@ export const EnhancedComment = memo(function EnhancedComment({
         <div className="flex items-start justify-between mb-3">
           {/* Left Side (User & Meta) */}
           <div className="flex items-start gap-3 flex-1">
-            {/* Avatar */}
-            <Avatar className="h-8 w-8 border border-white/10 shrink-0">
-              <AvatarImage
-                src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`}
-                alt=""
-              />
-              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400" aria-hidden="true">
-                {getUserInitials(comment.anonymous_id)}
-              </AvatarFallback>
-            </Avatar>      {/* User Details */}
+            {/* Avatar linkeable */}
+            <Link to={`/usuario/${comment.alias || 'anonimo'}`} className="cursor-pointer">
+              <Avatar className={cn(
+                "h-8 w-8 sm:h-10 sm:w-10 border border-dark-border group-hover:border-neon-green/50 transition-colors",
+                isOwner && "ring-2 ring-neon-green/20"
+              )}>
+                <AvatarImage src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`} />
+                <AvatarFallback>{comment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
+              </Avatar>
+            </Link>
+
             <div className="flex-1 min-w-0">
               {/* Name Row */}
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="font-medium text-foreground hover:text-neon-green cursor-pointer">
-                  {comment.alias ? <span className="text-neon-green">@{comment.alias}</span> : 'Usuario Anónimo'}
-                </span>
+                {/* Alias linkeable */}
+                <Link to={`/usuario/${comment.alias || 'anonimo'}`} className="hover:underline">
+                  <span className={cn(
+                    "font-semibold text-sm sm:text-base cursor-pointer",
+                    isOwner ? "text-neon-green" : "text-foreground"
+                  )}>
+                    @{comment.alias || 'Usuario Anónimo'}
+                  </span>
+                </Link>
               </div>
 
               {/* Badges Row (Visual Indicators) */}

@@ -406,5 +406,58 @@ router.get('/category-stats', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/users/public/:alias
+ * Get public profile of a user by alias
+ */
+router.get('/public/:alias', async (req, res) => {
+  try {
+    const { alias } = req.params;
+
+    if (!alias) {
+      return res.status(400).json({ error: 'Alias required' });
+    }
+
+    // Public query - using empty string for system access (safe for public read-only data)
+    const result = await queryWithRLS(
+      '',
+      `SELECT alias, avatar_url, level, points, total_reports, created_at
+       FROM anonymous_users 
+       WHERE alias = $1`,
+      [alias]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const publicProfile = result.rows[0];
+
+    // Get public reports (limit to 5 most recent)
+    const reportsResult = await queryWithRLS(
+      '',
+      `SELECT id, title, status, upvotes_count, created_at, category
+       FROM reports 
+       WHERE anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
+       AND deleted_at IS NULL
+       ORDER BY created_at DESC 
+       LIMIT 5`,
+      [alias]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...publicProfile,
+        recent_reports: reportsResult.rows
+      }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch public profile' });
+  }
+});
+
 export default router;
 

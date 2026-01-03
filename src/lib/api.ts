@@ -677,6 +677,13 @@ export const usersApi = {
     // apiRequest already unwraps data.data
     return Array.isArray(response) ? response : [];
   },
+
+  /**
+   * Get public profile by alias
+   */
+  getPublicProfile: async (alias: string): Promise<UserProfile> => {
+    return apiRequest<UserProfile>(`/users/public/${encodeURIComponent(alias)}`);
+  },
 };
 
 // ============================================
