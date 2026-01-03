@@ -13,7 +13,7 @@ interface CommentThreadProps {
     }
     allComments: Comment[]
     depth?: number
-    maxDepth?: number
+    initialExpanded?: boolean
     onReply?: (commentId: string) => void
     onEdit?: (commentId: string) => void
     onDelete?: (commentId: string) => void
@@ -35,13 +35,14 @@ interface CommentThreadProps {
     onEditSubmit?: (commentId: string) => void
     onEditCancel?: () => void
     submittingEdit?: boolean
+    activeMenuId?: string | null
+    onMenuOpen?: (id: string | null) => void
 }
 
 export const CommentThread = memo(function CommentThread({
     comment,
     allComments,
     depth = 0,
-    maxDepth = 5,
     onReply,
     onEdit,
     onDelete,
@@ -65,9 +66,12 @@ export const CommentThread = memo(function CommentThread({
     submittingEdit = false,
     activeMenuId,
     onMenuOpen,
-}: CommentThreadProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
-    // Find direct replies to this comment
-    const replies = allComments.filter(c => c.parent_id === comment.id)
+    initialExpanded = false,
+}: CommentThreadProps) {
+    // Find direct replies to this comment and sort them chronologically (oldest first)
+    const replies = allComments
+        .filter(c => c.parent_id === comment.id)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 
     // Get parent comment for context (if this is a reply)
     const parentComment = comment.parent_id
@@ -77,16 +81,11 @@ export const CommentThread = memo(function CommentThread({
     // Calculate indentation and visual adjustments based on depth
     const indentClass = depth > 0 ? `ml-${Math.min(depth * 6, 18)}` : ''
 
-    // State for handling deep threads expansion
-    const [isExpanded, setIsExpanded] = useState(false)
+    // State for handling accordion expansion - Hidden by default (Twitter style)
+    const [isExpanded, setIsExpanded] = useState(initialExpanded)
 
-    // Determine if comments are too deep and should be hidden by default
-    const isDeepThread = depth >= maxDepth && replies.length > 0
-
-    // Show replies if:
-    // 1. Not deep (standard behavior)
-    // 2. OR Deep but user expanded explicitly
-    const shouldShowReplies = replies.length > 0 && (!isDeepThread || isExpanded)
+    // Show replies if user expanded explicitly via the counter
+    const shouldShowReplies = replies.length > 0 && isExpanded
 
     return (
         <div className={`${indentClass} ${depth > 0 ? 'mt-3' : ''}`}>
@@ -109,10 +108,12 @@ export const CommentThread = memo(function CommentThread({
                     </div>
                 )}
 
-                {/* Enhanced Comment Component */}
+                {/* Enhanced Comment Component: Navigates on root (depth 0), Accordion on nested (depth > 0) */}
                 <EnhancedComment
                     comment={comment}
-                    replies={[]} // We handle replies recursively, so pass empty array
+                    repliesCount={replies.length}
+                    isExpanded={isExpanded}
+                    onToggleReplies={depth > 0 ? () => setIsExpanded(!isExpanded) : undefined}
                     isOwner={isOwner}
                     isMod={isMod}
                     onReply={onReply}
@@ -127,7 +128,7 @@ export const CommentThread = memo(function CommentThread({
                     onMenuOpen={onMenuOpen}
                 />
 
-                {/* Edit Editor (Inline) */}
+                {/* Editors (Inline) */}
                 {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
                     <Card className="mt-3 bg-dark-card border-dark-border">
                         <CardContent className="p-4">
@@ -171,9 +172,9 @@ export const CommentThread = memo(function CommentThread({
                 )}
             </div>
 
-            {/* Recursive Rendering of Replies */}
+            {/* Recursive Rendering of Replies - Hidden behind accordion */}
             {shouldShowReplies && (
-                <div className="space-y-3 mt-3">
+                <div className="space-y-3 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
                     {replies.map((reply) => {
                         return (
                             <CommentThread
@@ -181,7 +182,6 @@ export const CommentThread = memo(function CommentThread({
                                 comment={reply}
                                 allComments={allComments}
                                 depth={depth + 1}
-                                maxDepth={maxDepth}
                                 onReply={onReply}
                                 onEdit={onEdit}
                                 onDelete={onDelete}
@@ -208,23 +208,6 @@ export const CommentThread = memo(function CommentThread({
                             />
                         )
                     })}
-                </div>
-            )}
-
-            {/* Collapsed state for very deep threads - Toggle Button */}
-            {isDeepThread && (
-                <div className={`ml-6 mt-2 ${isExpanded ? 'mb-4' : ''}`}>
-                    <button
-                        type="button"
-                        onClick={() => setIsExpanded(prev => !prev)}
-                        className="text-xs text-neon-green hover:underline focus:outline-none focus:ring-1 focus:ring-neon-green rounded px-1 transition-colors"
-                        aria-expanded={isExpanded}
-                    >
-                        {isExpanded
-                            ? 'Ocultar respuestas'
-                            : `Ver ${replies.length} ${replies.length === 1 ? 'respuesta más' : 'respuestas más'}`
-                        }
-                    </button>
                 </div>
             )}
         </div>

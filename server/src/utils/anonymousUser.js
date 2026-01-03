@@ -1,6 +1,11 @@
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 import { logError, logSuccess } from './logger.js';
 
+// Local cache to avoid redundant Supabase lookups for existence check
+// UUID keys are small, but we use a Map to keep it simple.
+const existenceCache = new Map();
+const CACHE_LIMIT = 5000;
+
 /**
  * Ensure anonymous user exists in anonymous_users table
  * This function is idempotent - safe to call multiple times
@@ -12,6 +17,11 @@ import { logError, logSuccess } from './logger.js';
 export async function ensureAnonymousUser(anonymousId) {
   if (!anonymousId) {
     throw new Error('anonymousId is required');
+  }
+
+  // Check cache first (saves 150-300ms HTTP round-trip)
+  if (existenceCache.has(anonymousId)) {
+    return true;
   }
 
   try {
@@ -32,6 +42,7 @@ export async function ensureAnonymousUser(anonymousId) {
 
     // If user exists, return early (idempotent)
     if (existingUser) {
+      existenceCache.set(anonymousId, true);
       return true;
     }
 
@@ -55,6 +66,7 @@ export async function ensureAnonymousUser(anonymousId) {
       // If error is due to duplicate (race condition), that's okay
       if (insertError.code === '23505') {
         logSuccess('Anonymous user already exists (race condition)', { anonymousId });
+        existenceCache.set(anonymousId, true);
         return true;
       }
 
@@ -63,6 +75,15 @@ export async function ensureAnonymousUser(anonymousId) {
     }
 
     logSuccess('Anonymous user created', { anonymousId });
+
+    // Manage cache size
+    if (existenceCache.size >= CACHE_LIMIT) {
+      // Very simple eviction: clear the first one (Iterator of keys)
+      const firstKey = existenceCache.keys().next().value;
+      existenceCache.delete(firstKey);
+    }
+    existenceCache.set(anonymousId, true);
+
     return true;
   } catch (error) {
     logError(error, null);

@@ -18,6 +18,7 @@ interface RichTextEditorProps {
     hideHelp?: boolean
     showCancel?: boolean
     onCancel?: () => void
+    hideSubmitButton?: boolean
 }
 
 /**

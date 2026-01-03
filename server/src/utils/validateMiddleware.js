@@ -25,14 +25,17 @@ export const validate = (schema, target = 'body') => async (req, res, next) => {
         next();
     } catch (error) {
         if (error.name === 'ZodError') {
-            const firstError = error.errors[0];
-            const message = `${firstError.path.join('.')}: ${firstError.message}`;
+            const issues = error.errors || error.issues || [];
+            const firstError = issues[0];
+            const message = firstError
+                ? `${firstError.path.join('.')}: ${firstError.message}`
+                : 'Error de validación desconocido';
 
             return res.status(422).json({
                 error: true,
                 code: 'VALIDATION_ERROR',
                 message: message,
-                details: error.errors
+                details: issues
             });
         }
 

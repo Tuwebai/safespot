@@ -63,29 +63,20 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       throw error;
     }
 
-    // CRITICAL FIX: Set anonymous_id using safe literal interpolation
-    // We CANNOT use $1 here because it conflicts with $1 in the main query
-    // Since anonymousId is a validated UUID that we control, we can safely interpolate it
+    // FIX: Execute SET LOCAL and the main query separately.
+    // The pg driver does NOT allow multiple commands in a prepared statement (one with parameters).
     if (anonymousId && anonymousId.trim() !== '') {
-      // Validate it's a UUID format for safety (extra check)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(anonymousId)) {
         throw new Error(`Invalid UUID format for anonymousId: ${anonymousId}`);
       }
-      // Escape single quotes in UUID (though UUIDs shouldn't have them, this is defensive)
-      // Replace single quotes with double single quotes (SQL standard escaping)
       const escapedId = anonymousId.replace(/'/g, "''");
-      // Use direct interpolation with single quotes - safe because we validated UUID format
-      // This prevents parameter conflict with $1, $2, etc. in the main query
       await client.query(`SET LOCAL app.anonymous_id = '${escapedId}'`);
     } else {
-      // For public/system queries, set to empty string
-      // The current_anonymous_id() function will return NULL for empty strings
       await client.query("SET LOCAL app.anonymous_id = ''");
     }
 
     // Execute the actual query with its own parameters
-    // Now $1, $2, etc. in the main query work correctly because SET LOCAL doesn't use parameters
     const result = await client.query(queryText, cleanParams);
     return result;
   } catch (error) {

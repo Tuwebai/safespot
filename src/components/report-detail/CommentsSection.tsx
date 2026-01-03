@@ -11,6 +11,7 @@ import { MessageCircle } from 'lucide-react'
 import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
+import { ReplyModal } from '@/components/comments/ReplyModal'
 
 // ============================================
 // TYPES
@@ -159,6 +160,11 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
         return { sightings: sightingsList, discussionComments: discussionList }
     }, [comments])
 
+    // Find the comment being replied to for the modal
+    const parentCommentToReply = useMemo(() =>
+        replyingTo ? comments.find(c => c.id === replyingTo) || null : null
+        , [replyingTo, comments])
+
     return (
         <div>
             {/* Header Row */}
@@ -251,7 +257,6 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                                             comment={comment}
                                             allComments={comments} // Original comments array for threading context
                                             depth={0}
-                                            maxDepth={5}
                                             onReply={startReply}
                                             onEdit={startEdit}
                                             onDelete={handleDeleteComment}
@@ -343,13 +348,23 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                 />
             )}
 
-            {/* Sighting Form Modal */}
             <SightingFormDialog
                 isOpen={!!sightingModalType}
                 type={sightingModalType}
                 onClose={() => setSightingModalType(null)}
                 onSubmit={handleSightingSubmit}
                 submitting={isSubmittingSighting}
+            />
+
+            {/* Reply Modal (Twitter-style) */}
+            <ReplyModal
+                isOpen={!!replyingTo}
+                onClose={cancelReply}
+                parentComment={parentCommentToReply}
+                replyText={replyText}
+                onReplyTextChange={setReplyText}
+                onReplySubmit={submitReply}
+                submitting={submitting === 'reply'}
             />
         </div>
     )

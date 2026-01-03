@@ -40,6 +40,7 @@ interface RichTextEditorProps {
   hideHelp?: boolean // Si es true, oculta textos de ayuda y footer con shortcuts
   showCancel?: boolean // Si es true, muestra botón Cancelar
   onCancel?: () => void // Callback para cancelar
+  hideSubmitButton?: boolean
 }
 
 export function RichTextEditor({
@@ -51,7 +52,8 @@ export function RichTextEditor({
   maxLength = 2000,
   hideHelp = false,
   showCancel = false,
-  onCancel
+  onCancel,
+  hideSubmitButton = false
 }: RichTextEditorProps) {
   // Memoizar las extensiones para evitar recrearlas en cada render
   const extensions = useMemo(() => [
@@ -384,7 +386,7 @@ export function RichTextEditor({
               Cancelar
             </Button>
           )}
-          {onSubmit && (
+          {onSubmit && !hideSubmitButton && (
             <Button
               type="button"
               onClick={() => onSubmit?.()}

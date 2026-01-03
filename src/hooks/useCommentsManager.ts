@@ -228,6 +228,9 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'reply', id: parentId } })
 
+        // Clear input and close form IMMEDIATELY for instant feedback
+        dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'reply' })
+
         try {
             await createMutation.mutateAsync({
                 report_id: reportId,
@@ -235,7 +238,6 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
                 parent_id: parentId,
             })
 
-            dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'reply' })
             onCommentCountChange?.(1)
             triggerBadgeCheck()
         } catch (error) {

@@ -1,10 +1,10 @@
-import { useState, memo, useRef, useEffect } from 'react'
+import { useState, memo, useRef, useEffect, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TipTapRenderer } from '@/components/ui/tiptap-renderer'
 import { useToast } from '@/components/ui/toast'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import {
@@ -37,6 +37,10 @@ interface EnhancedCommentProps {
   onPin?: (commentId: string) => void
   onUnpin?: (commentId: string) => void
   depth?: number
+  repliesCount?: number
+  onToggleReplies?: () => void
+  isExpanded?: boolean
+  isThreadView?: boolean
 }
 
 export const EnhancedComment = memo(function EnhancedComment({
@@ -52,9 +56,14 @@ export const EnhancedComment = memo(function EnhancedComment({
   onPin,
   onUnpin,
   depth = 0,
+  repliesCount = 0,
+  onToggleReplies,
+  isExpanded = false,
+  isThreadView = false,
   activeMenuId = null,
   onMenuOpen,
 }: EnhancedCommentProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
+  const navigate = useNavigate()
   const toast = useToast()
   // Use props if available, otherwise fall back to local state (though we intend to use props)
   const [localIsContextMenuOpen, setLocalIsContextMenuOpen] = useState(false)
@@ -199,20 +208,54 @@ export const EnhancedComment = memo(function EnhancedComment({
   const cardPadding = depth === 0 ? 'p-6' : depth === 1 ? 'p-4' : 'p-3'
   const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
 
+  const isEdited = useMemo(() => {
+    if (!comment.updated_at || !comment.created_at) return false
+    const created = new Date(comment.created_at).getTime()
+    const updated = new Date(comment.updated_at).getTime()
+    // Solo mostrar "editado" si la diferencia es mayor a 2 segundos
+    // Esto evita que likes o sincronización milisegundos activen el flag
+    return Math.abs(updated - created) > 2000
+  }, [comment.created_at, comment.updated_at])
+
+  const handleCardClick = () => {
+    if (isThreadView) return // Already in thread view, don't navigate
+
+    if (onToggleReplies) {
+      onToggleReplies()
+    } else {
+      navigate(`/reporte/${comment.report_id}/hilo/${comment.id}`)
+    }
+  }
+
   return (
-    <Card className={`card-glow transition-all duration-200 ${textOpacity} ${isThread
-      ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
-      : 'border-dark-border hover:border-neon-green/30 bg-zinc-900'
-      }`}>
+    <Card
+      onClick={handleCardClick}
+      className={cn(
+        "card-glow transition-all duration-300 cursor-pointer group relative overflow-hidden",
+        textOpacity,
+        isThread
+          ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
+          : isThreadView
+            ? 'border-neon-green/60 bg-zinc-900/60 ring-2 ring-neon-green/20'
+            : isExpanded
+              ? 'border-neon-green/40 bg-zinc-900/90 ring-1 ring-neon-green/10'
+              : 'border-dark-border hover:border-neon-green/20 bg-zinc-900',
+        comment.is_optimistic ? 'opacity-70 grayscale-[20%]' : ''
+      )}
+    >
       <CardContent className={cardPadding}>
         {/* Header Section */}
         <div className="flex items-start justify-between mb-3">
           {/* Left Side (User & Meta) */}
           <div className="flex items-start gap-3 flex-1">
             {/* Avatar linkeable */}
-            <Link to={`/usuario/${comment.alias || 'anonimo'}`} className="cursor-pointer">
+            <Link
+              to={`/usuario/${comment.alias || 'anonimo'}`}
+              className="cursor-pointer z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
               <Avatar className={cn(
-                "h-8 w-8 sm:h-10 sm:w-10 border border-dark-border group-hover:border-neon-green/50 transition-colors",
+                "h-8 w-8 sm:h-10 sm:w-10 border border-dark-border group-hover:border-neon-green/40 transition-colors",
                 isOwner && "ring-2 ring-neon-green/20"
               )}>
                 <AvatarImage src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`} />
@@ -224,7 +267,11 @@ export const EnhancedComment = memo(function EnhancedComment({
               {/* Name Row */}
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 {/* Alias linkeable */}
-                <Link to={`/usuario/${comment.alias || 'anonimo'}`} className="hover:underline">
+                <Link
+                  to={`/usuario/${comment.alias || 'anonimo'}`}
+                  className="hover:underline z-10"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <span className={cn(
                     "font-semibold text-sm sm:text-base cursor-pointer",
                     isOwner ? "text-neon-green" : "text-foreground"
@@ -275,7 +322,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                     <span>{replies.length} {replies.length === 1 ? 'respuesta' : 'respuestas'}</span>
                   </>
                 )}
-                {comment.updated_at && comment.updated_at !== comment.created_at && (
+                {isEdited && (
                   <>
                     <span>•</span>
                     <span>(editado)</span>
@@ -286,7 +333,7 @@ export const EnhancedComment = memo(function EnhancedComment({
           </div>
 
           {/* Right Side (Context Menu) */}
-          <div className="relative" ref={menuRef}>
+          <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="sm"
@@ -409,16 +456,21 @@ export const EnhancedComment = memo(function EnhancedComment({
         {/* Action Bar (Footer) */}
         <div className="flex items-center justify-between pt-3 border-t border-dark-border">
           {/* Left Actions (Interactions) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onReply?.(comment.id)}
-              className="text-foreground/60 hover:text-foreground"
+              className={cn(
+                "transition-all duration-200",
+                isExpanded
+                  ? "text-neon-green bg-neon-green/10"
+                  : "text-foreground/60 hover:text-foreground"
+              )}
               aria-label="Responder a este comentario"
             >
-              <MessageCircle className="h-4 w-4 mr-1" aria-hidden="true" />
-              Responder
+              <MessageCircle className={cn("h-4 w-4 mr-1", isExpanded && "fill-current")} aria-hidden="true" />
+              {repliesCount > 0 ? repliesCount : 'Responder'}
             </Button>
             <Button
               variant="ghost"
@@ -429,13 +481,13 @@ export const EnhancedComment = memo(function EnhancedComment({
             >
               <>
                 <ThumbsUp className={`h-4 w-4 mr-1 ${comment.liked_by_me ? 'fill-current' : ''}`} aria-hidden="true" />
-                Me gusta {comment.upvotes_count > 0 && `(${comment.upvotes_count})`}
+                {comment.upvotes_count > 0 ? comment.upvotes_count : 'Me gusta'}
               </>
             </Button>
           </div>
 
           {/* Right Actions (Moderation) */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {isMod && (
               <>
                 <Button

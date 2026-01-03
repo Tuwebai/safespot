@@ -145,74 +145,71 @@ router.get('/:reportId', async (req, res) => {
 router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
+    let isHidden = false; // Shadow ban status
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
-    try {
-      await ensureAnonymousUser(anonymousId);
-    } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user'
-      });
-    }
-
-    // Verify report exists using Supabase
-    const { data: reportCheck, error: reportError } = await supabase
-      .from('reports')
-      .select('id')
-      .eq('id', req.body.report_id)
-      .maybeSingle();
-
-    if (reportError) {
-      logError(reportError, req);
-      return res.status(500).json({
-        error: 'Failed to verify report'
-      });
-    }
-
-    if (!reportCheck) {
-      logError(new Error('Report not found'), req);
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    // Validate thread rules: if is_thread is true, parent_id must be null
+    // 0. Parallel Verification: Run all initial checks at once to save round-trips
     const isThread = req.body.is_thread === true;
     const hasParentId = req.body.parent_id !== undefined && req.body.parent_id !== null;
 
+    try {
+      const verificationPromises = [
+        ensureAnonymousUser(anonymousId),
+        supabase.from('reports').select('id').eq('id', req.body.report_id).maybeSingle()
+      ];
+
+      if (hasParentId) {
+        verificationPromises.push(
+          supabase.from('comments').select('id, report_id').eq('id', req.body.parent_id).maybeSingle()
+        );
+      }
+
+      // Add Trust Score check to the parallel batch (since we moved it from being a separate await later)
+      verificationPromises.push(checkContentVisibility(anonymousId));
+
+      const results = await Promise.all(verificationPromises);
+
+      // Extract results based on position
+      const reportResult = results[1];
+      const parentResult = hasParentId ? results[2] : null;
+      const visibilityResult = hasParentId ? results[3] : results[2];
+
+      // Handle Report Check Result
+      if (reportResult.error) throw reportResult.error;
+      if (!reportResult.data) {
+        return res.status(404).json({ error: 'Report not found' });
+      }
+
+      // Handle Parent Check Result
+      if (hasParentId) {
+        if (parentResult.error) throw parentResult.error;
+        if (!parentResult.data) {
+          return res.status(404).json({ error: 'Parent comment not found' });
+        }
+        if (parentResult.data.report_id !== req.body.report_id) {
+          return res.status(400).json({ error: 'Parent comment must belong to the same report' });
+        }
+      }
+
+      // Handle Visibility (Shadow Ban) Result
+      if (visibilityResult.isHidden) {
+        isHidden = true;
+        logSuccess('Shadow ban applied to comment', { anonymousId, action: visibilityResult.moderationAction });
+      }
+
+    } catch (error) {
+      logError(error, req);
+      return res.status(500).json({
+        error: 'Failed to verify comment dependencies',
+        details: error.message
+      });
+    }
+
+    // Validate thread rules
     if (isThread && hasParentId) {
       return res.status(400).json({
         error: 'Threads cannot have a parent_id (threads must be top-level)'
       });
-    }
-
-    // If parent_id is provided, verify it exists and belongs to the same report
-    if (hasParentId) {
-      const { data: parentComment, error: parentError } = await supabase
-        .from('comments')
-        .select('id, report_id')
-        .eq('id', req.body.parent_id)
-        .maybeSingle();
-
-      if (parentError) {
-        logError(parentError, req);
-        return res.status(500).json({
-          error: 'Failed to verify parent comment'
-        });
-      }
-
-      if (!parentComment) {
-        return res.status(404).json({
-          error: 'Parent comment not found'
-        });
-      }
-
-      if (parentComment.report_id !== req.body.report_id) {
-        return res.status(400).json({
-          error: 'Parent comment must belong to the same report'
-        });
-      }
     }
 
     // Context for logging suspicious content
@@ -237,18 +234,7 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
     // CRITICAL: Normalize parent_id - must be explicit null, never undefined
     const parentId = (hasParentId && !isThread) ? req.body.parent_id : null;
 
-    // NEW: Check Trust Score & Shadow Ban Status
-    let isHidden = false;
-    try {
-      const visibility = await checkContentVisibility(anonymousId);
-      if (visibility.isHidden) {
-        isHidden = true;
-        logSuccess('Shadow ban applied to comment', { anonymousId, action: visibility.moderationAction });
-      }
-    } catch (checkError) {
-      logError(checkError, req);
-      // Fail open
-    }
+    // normal lifecycle continues...
 
     // Insert comment using queryWithRLS for RLS enforcement
     const insertQuery = `

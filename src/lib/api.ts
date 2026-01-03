@@ -404,6 +404,7 @@ export interface Comment {
   is_thread?: boolean; // Si es un hilo (thread) - debe ser top-level (parent_id null)
   liked_by_me?: boolean; // Si el usuario actual dio like
   is_flagged?: boolean;
+  is_optimistic?: boolean;
   province?: string;
   locality?: string;
   department?: string;

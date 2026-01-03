@@ -246,8 +246,11 @@ app.use((err, req, res, next) => {
   if (err.name === 'ZodError') {
     status = 422;
     code = 'VALIDATION_ERROR';
-    const firstError = err.errors[0];
-    message = `${firstError.path.join('.')}: ${firstError.message}`;
+    const issues = err.errors || err.issues || [];
+    const firstError = issues[0];
+    message = firstError
+      ? `${firstError.path.join('.')}: ${firstError.message}`
+      : 'Error de validación';
   } else if (err.name === 'CustomError') {
     status = err.status;
     code = err.code;

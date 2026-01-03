@@ -20,6 +20,7 @@ const TerminosPage = lazyRetry(() => import('@/pages/TerminosPage'), 'Terminos')
 const PrivacidadPage = lazyRetry(() => import('@/pages/PrivacidadPage'), 'Privacidad')
 const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), 'Notifications')
 const PublicProfile = lazyRetry(() => import('@/pages/PublicProfile').then(m => ({ default: m.PublicProfile })), 'PublicProfile')
+const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ default: m.ThreadPage })), 'ThreadPage')
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
@@ -60,6 +61,7 @@ function App() {
                 <Route path="/terminos" element={<TerminosPage />} />
                 <Route path="/privacidad" element={<PrivacidadPage />} />
                 <Route path="/usuario/:alias" element={<PublicProfile />} />
+                <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
               </Routes>
             </Suspense>
           </ChunkErrorBoundary>
