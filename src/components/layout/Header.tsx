@@ -4,7 +4,6 @@ import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart } from 'lucide-re
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
-import { BetaBadge } from '@/components/ui/BetaBadge'
 import { useState, useEffect } from 'react'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
@@ -76,7 +75,6 @@ export function Header() {
               <MapPin className="w-5 h-5 text-dark-bg" />
             </div>
             <div className="text-xl font-bold gradient-text">SafeSpot</div>
-            <BetaBadge className="ml-1" />
           </Link>
 
           {/* Navegación Desktop */}
