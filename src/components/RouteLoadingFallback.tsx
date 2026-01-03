@@ -19,7 +19,7 @@ export function RouteLoadingFallback() {
             {/* Content grid skeleton */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3].map((i) => (
-                    <Card key={i} className="bg-dark-card border-dark-border">
+                    <Card key={i} className="bg-card border-border">
                         <CardHeader>
                             <Skeleton height={24} width="80%" className="mb-2" />
                             <Skeleton height={16} width="60%" />
@@ -66,7 +66,7 @@ export function DetailLoadingFallback() {
             </div>
 
             {/* Description card */}
-            <Card className="bg-dark-card border-dark-border mb-6">
+            <Card className="bg-card border-border mb-6">
                 <CardHeader>
                     <Skeleton height={20} width={120} />
                 </CardHeader>
@@ -80,7 +80,7 @@ export function DetailLoadingFallback() {
             {/* Meta grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 {[1, 2, 3, 4].map((i) => (
-                    <Card key={i} className="bg-dark-card border-dark-border">
+                    <Card key={i} className="bg-card border-border">
                         <CardContent className="p-4 text-center">
                             <Skeleton height={32} width={48} className="mx-auto mb-2" />
                             <Skeleton height={14} width={60} className="mx-auto" />

@@ -122,14 +122,23 @@ export async function initializeIdentity(): Promise<string> {
   if (cachedId) return cachedId;
   if (typeof window === 'undefined') return '';
 
-  // 1. Read all layers
-  const l1 = localStorage.getItem(L1_KEY);
-  const l2 = getCookie(L2_KEY);
-  const l3 = await getIDB('current_id');
+  // 1. Read all layers (with timeout to prevent hang)
+  const timeoutPromise = new Promise<{ l1: string | null, l2: string | null, l3: string | null }>((resolve) => {
+    setTimeout(() => resolve({ l1: null, l2: null, l3: null }), 1000);
+  });
+
+  const loadLayersPromise = async () => {
+    const l1 = localStorage.getItem(L1_KEY);
+    const l2 = getCookie(L2_KEY);
+    const l3 = await getIDB('current_id');
+    return { l1, l2, l3 };
+  };
+
+  const { l1, l2, l3 } = await Promise.race([loadLayersPromise(), timeoutPromise]);
 
   // 2. Identify candidates (removing version prefix if any)
   const candidates = [l1, l2, l3]
-    .filter(isValidUUID)
+    .filter((id): id is string => id !== null && isValidUUID(id))
     .map(id => id.includes('|') ? id.split('|')[1] : id);
 
   let winner: string;
@@ -151,17 +160,20 @@ export async function initializeIdentity(): Promise<string> {
     winner = fallbackWinner;
   } else {
     // Absolute loss: Generate new
+    // Check if we already have a cached one (e.g. from previous run in memory?)
+    // No, cachedId is checked at start of function.
     winner = generateUUID();
   }
 
-  // 3. Normalize and Broadcast (Synchronization)
+  // 3. Normalize and Broadcast (Synchronization) - Fire and difference
   cachedId = winner;
   const versionedId = `${ID_VERSION}|${winner}`;
 
+  // Don't await writing, just do it
   try {
-    localStorage.setItem(L1_KEY, winner); // We keep v4 without prefix in L1 for backward compatibility
+    localStorage.setItem(L1_KEY, winner);
     setCookie(L2_KEY, versionedId);
-    await setIDB('current_id', versionedId);
+    setIDB('current_id', versionedId).catch(console.error);
   } catch (e) {
     console.debug('[Identity] Failed to sync all layers', e);
   }
