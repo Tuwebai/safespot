@@ -21,6 +21,9 @@ import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuer
 import { Lock, ChevronRight, Award } from 'lucide-react'
 import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
 import { useTheme } from '@/contexts/ThemeContext'
+import { EditAliasModal } from '@/components/profile/EditAliasModal'
+import { PencilIcon } from 'lucide-react'
+import { queryKeys } from '@/lib/queryKeys'
 
 export function Perfil() {
   const toast = useToast()
@@ -38,6 +41,7 @@ export function Perfil() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isAliasModalOpen, setIsAliasModalOpen] = useState(false)
 
   const loadProfile = useCallback(async () => {
     try {
@@ -238,7 +242,20 @@ export function Perfil() {
 
                   <div className="flex-1">
                     <CardTitle className="text-xl sm:text-2xl flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                      Usuario Anónimo
+                      <span className={profile?.alias ? "text-neon-green" : ""}>
+                        {profile?.alias ? `@${profile.alias}` : 'Usuario Anónimo'}
+                      </span>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-full opacity-50 hover:opacity-100 hover:bg-white/10"
+                        onClick={() => setIsAliasModalOpen(true)}
+                        title="Editar Alias"
+                      >
+                        <PencilIcon className="h-3 w-3" />
+                      </Button>
+
                       {profile?.avatar_url && (
                         <span className="text-[10px] bg-neon-green/20 text-neon-green px-2 py-0.5 rounded-full border border-neon-green/30">
                           Personalizado
@@ -474,6 +491,18 @@ export function Perfil() {
           </div>
         </div>
       </div >
+
+      <EditAliasModal
+        isOpen={isAliasModalOpen}
+        onClose={() => setIsAliasModalOpen(false)}
+        currentAlias={profile?.alias}
+        onSuccess={(newAlias) => {
+          setProfile(prev => prev ? { ...prev, alias: newAlias } : null)
+          // Invalidar query global para actualizar Header y otros componentes
+          queryClient.invalidateQueries({ queryKey: queryKeys.user.profile })
+        }}
+      />
     </PullToRefresh>
   )
 }
+

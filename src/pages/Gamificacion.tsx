@@ -553,7 +553,7 @@ export function Gamificacion() {
                                           Progreso
                                         </span>
                                         <span className="text-muted-foreground">
-                                          {badge.progress.percent}%
+                                          {badge.progress.current} / {badge.progress.required}
                                         </span>
                                       </div>
                                       <div className="w-full bg-dark-bg/50 rounded-full h-1.5 overflow-hidden border border-dark-border/10">

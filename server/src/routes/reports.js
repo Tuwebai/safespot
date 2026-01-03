@@ -182,7 +182,8 @@ router.get('/', async (req, res) => {
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
             r.threads_count,
             uz.type as priority_zone,
-            u.avatar_url
+            u.avatar_url,
+            u.alias
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
@@ -247,7 +248,8 @@ router.get('/', async (req, res) => {
             r.created_at, r.updated_at, r.incident_date, r.image_urls,
             ST_Distance(r.location, ul.point) AS distance_meters,
             r.threads_count,
-            u.avatar_url
+            u.avatar_url,
+            u.alias
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
@@ -467,6 +469,7 @@ router.get('/', async (req, res) => {
         SELECT 
           r.*,
           u.avatar_url,
+          u.alias,
           CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
           CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
           uz.type as priority_zone
@@ -512,7 +515,7 @@ router.get('/', async (req, res) => {
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
 
       dataQuery = `
-        SELECT r.*, u.avatar_url
+        SELECT r.*, u.avatar_url, u.alias
         FROM reports r 
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id 
         ${whereClause}
@@ -599,7 +602,7 @@ router.get('/:id', async (req, res) => {
 
     // threads_count is now a denormalized column (no subquery needed)
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT r.*, u.avatar_url
+      SELECT r.*, u.avatar_url, u.alias
       FROM reports r 
       LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
       WHERE r.id = $1

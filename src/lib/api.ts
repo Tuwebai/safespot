@@ -202,6 +202,7 @@ export interface Report {
   department?: string; // e.g., "La Plata", "Capital"
   priority_zone?: ZoneType;
   newBadges?: NewBadge[]; // Newly awarded badges in this action
+  alias?: string | null;
 }
 
 export interface CreateReportData {
@@ -408,6 +409,7 @@ export interface Comment {
   priority_zone?: 'home' | 'work' | 'frequent';
   newBadges?: NewBadge[]; // Newly awarded badges in this action
   avatar_url?: string;
+  alias?: string | null;
 }
 
 export interface CreateCommentData {
@@ -579,6 +581,7 @@ export interface UserProfile {
   total_votes: number;
   points: number;
   level: number;
+  alias?: string | null;
   avatar_url?: string | null;
   theme?: string;
   accent_color?: string;
@@ -612,7 +615,7 @@ export const usersApi = {
   /**
    * Update user profile (e.g. avatar, theme)
    */
-  updateProfile: async (data: { avatar_url?: string | null, theme?: string, accent_color?: string }): Promise<UserProfile> => {
+  updateProfile: async (data: { avatar_url?: string | null, theme?: string, accent_color?: string, alias?: string }): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),

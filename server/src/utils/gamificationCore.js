@@ -61,7 +61,7 @@ export async function calculateUserMetrics(anonymousId) {
         const row = result.rows[0];
         const totalFlags = (parseInt(row.r_flags) || 0) + (parseInt(row.c_flags) || 0);
 
-        return {
+        const metrics = {
             reports_created: parseInt(row.reports_created) || 0,
             comments_created: parseInt(row.comments_created) || 0,
             votes_cast: parseInt(row.votes_cast) || 0,
@@ -70,6 +70,14 @@ export async function calculateUserMetrics(anonymousId) {
             has_verified_report: row.has_verified_report ? 1 : 0,
             is_good_citizen: (totalFlags === 0 && (row.reports_created > 0 || row.comments_created > 0)) ? 1 : 0
         };
+
+        // Add semantic aliases to match potential DB target_metric values
+        metrics.total_reports = metrics.reports_created;
+        metrics.total_comments = metrics.comments_created;
+        metrics.total_votes = metrics.votes_cast;
+        metrics.count = metrics.reports_created; // Default fallback for generic 'count'
+
+        return metrics;
     } catch (error) {
         logError(error, { context: 'calculateUserMetrics.sql', anonymousId });
         throw error;

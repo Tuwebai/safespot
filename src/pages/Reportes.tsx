@@ -834,7 +834,12 @@ export function Reportes() {
                                       {report.anonymous_id.substring(0, 2).toUpperCase()}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span className="text-xs">{formatDate(report.created_at)}</span>
+                                  <div className="flex flex-col">
+                                    {report.alias && (
+                                      <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
+                                    )}
+                                    <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
+                                  </div>
                                 </div>
                                 <div className="flex items-center space-x-4">
                                   <div className="flex items-center gap-1" title="Hilos">
@@ -904,8 +909,9 @@ export function Reportes() {
               })}
             </div>
           </div>
-        )}
-      </PullToRefresh>
+        )
+        }
+      </PullToRefresh >
 
       {/* Flag Dialog */}
       {

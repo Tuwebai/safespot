@@ -104,7 +104,7 @@ export const CommentThread = memo(function CommentThread({
                     <div className="mb-2 text-xs text-foreground/60 flex items-center gap-1 ml-1">
                         <span>Respondiendo a</span>
                         <span className="text-neon-green font-medium">
-                            Usuario Anónimo {parentComment.anonymous_id.substring(0, 2).toUpperCase()}
+                            {parentComment.alias ? `@${parentComment.alias}` : `Usuario Anónimo ${parentComment.anonymous_id.substring(0, 2).toUpperCase()}`}
                         </span>
                     </div>
                 )}
@@ -153,7 +153,7 @@ export const CommentThread = memo(function CommentThread({
                                 <CornerDownRight className="h-3 w-3" />
                                 <span>Respondiendo a</span>
                                 <span className="text-neon-green font-medium">
-                                    Usuario Anónimo {comment.anonymous_id.substring(0, 2).toUpperCase()}
+                                    {comment.alias ? `@${comment.alias}` : `Usuario Anónimo ${comment.anonymous_id.substring(0, 2).toUpperCase()}`}
                                 </span>
                             </div>
                             <RichTextEditor

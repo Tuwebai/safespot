@@ -78,7 +78,11 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 </Avatar>
                 <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground/90 leading-none">
-                        Usuario {report.anonymous_id.substring(0, 6)}
+                        {report.alias ? (
+                            <span className="text-neon-green">@{report.alias}</span>
+                        ) : (
+                            `Usuario ${report.anonymous_id.substring(0, 6)}`
+                        )}
                     </span>
                     <span className="text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}

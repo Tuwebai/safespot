@@ -71,7 +71,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     // Get user stats
     const userResult = await queryWithRLS(
       anonymousId,
-      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url 
+      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url, alias 
        FROM anonymous_users WHERE anonymous_id = $1`,
       [anonymousId]
     ).catch(e => {
@@ -150,10 +150,10 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
 router.put('/profile', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { avatar_url, theme, accent_color } = req.body;
+    const { avatar_url, theme, accent_color, alias } = req.body;
 
     // Validate if any field is provided
-    if (avatar_url === undefined && theme === undefined && accent_color === undefined) {
+    if (avatar_url === undefined && theme === undefined && accent_color === undefined && alias === undefined) {
       return res.status(400).json({ error: 'No fields to update provided' });
     }
 
@@ -173,6 +173,14 @@ router.put('/profile', requireAnonymousId, async (req, res) => {
     if (accent_color !== undefined) {
       updates.push(`accent_color = $${paramIndex++}`);
       values.push(accent_color);
+    }
+    if (alias !== undefined) {
+      // Basic validation for alias
+      if (typeof alias !== 'string' || alias.length > 20) {
+        return res.status(400).json({ error: 'Alias inválido (máx 20 caracteres)' });
+      }
+      updates.push(`alias = $${paramIndex++}`);
+      values.push(alias);
     }
 
     values.push(anonymousId);

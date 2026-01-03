@@ -41,7 +41,7 @@ router.get('/:reportId', async (req, res) => {
 
     const dataPromise = queryWithRLS(
       anonymousId || 'anon',
-      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.parent_id, c.is_thread, u.avatar_url
+      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.parent_id, c.is_thread, u.avatar_url, u.alias
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        WHERE c.report_id = $1 AND c.deleted_at IS NULL

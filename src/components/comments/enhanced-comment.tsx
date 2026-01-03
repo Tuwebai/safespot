@@ -223,7 +223,7 @@ export const EnhancedComment = memo(function EnhancedComment({
               {/* Name Row */}
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="font-medium text-foreground hover:text-neon-green cursor-pointer">
-                  Usuario Anónimo
+                  {comment.alias ? <span className="text-neon-green">@{comment.alias}</span> : 'Usuario Anónimo'}
                 </span>
               </div>
 
