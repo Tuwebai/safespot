@@ -160,7 +160,7 @@ export function Reportes() {
   }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation])
 
   // React Query - cached, deduplicated, background refetch
-  const { data: reports = [], isLoading: loading, error: queryError, refetch } = useReportsQuery(filters)
+  const { data: reports = [], isLoading, isFetching, error: queryError, refetch } = useReportsQuery(filters)
 
   // ============================================
   // HANDLERS (memoized with useCallback)
