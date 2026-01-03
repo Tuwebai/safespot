@@ -7,6 +7,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/api'
+import { PrefetchLink } from '@/components/PrefetchLink'
 
 // ============================================
 // TYPES
@@ -66,18 +67,25 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
-                <Avatar className="h-8 w-8 border border-white/10">
-                    <AvatarImage
-                        src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
-                        alt="Avatar"
-                    />
-                    <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
-                        {report.anonymous_id.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                </Avatar>
+            <PrefetchLink
+                to={`/usuario/${report.alias || report.anonymous_id}`}
+                prefetchRoute="PublicProfile"
+                className="flex items-center gap-3 pt-2 w-fit group/author"
+            >
+                <div className="relative">
+                    <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">
+                        <AvatarImage
+                            src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                            alt="Avatar"
+                        />
+                        <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                            {report.anonymous_id.substring(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute inset-0 bg-neon-green/10 rounded-full opacity-0 group-hover/author:opacity-100 blur-[2px] transition-opacity" />
+                </div>
                 <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground/90 leading-none">
+                    <span className="text-sm font-medium text-foreground/90 leading-none group-hover/author:text-white transition-colors">
                         {report.alias ? (
                             <span className="text-neon-green">@{report.alias}</span>
                         ) : (
@@ -88,7 +96,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                         {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}
                     </span>
                 </div>
-            </div>
+            </PrefetchLink>
         </div>
     )
 })

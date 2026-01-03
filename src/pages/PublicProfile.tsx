@@ -75,42 +75,42 @@ export function PublicProfile() {
         }
     }, [alias, toast.error])
 
-    const [followLoading, setFollowLoading] = useState(false)
 
     const handleFollowToggle = async () => {
-        if (!profile || followLoading) return
+        if (!profile) return
+
+        const isFollowing = profile.stats.is_following
+        const anonymousId = profile.anonymous_id
+
+        // Optimistic Update
+        setProfile(prev => prev ? {
+            ...prev,
+            stats: {
+                ...prev.stats,
+                is_following: !isFollowing,
+                followers_count: Math.max(0, (prev.stats.followers_count || 0) + (isFollowing ? -1 : 1))
+            }
+        } : null)
 
         try {
-            setFollowLoading(true)
-            const anonymousId = profile.anonymous_id;
-
-            if (profile.stats.is_following) {
+            if (isFollowing) {
                 await usersApi.unfollow(anonymousId)
-                setProfile(prev => prev ? {
-                    ...prev,
-                    stats: {
-                        ...prev.stats,
-                        is_following: false,
-                        followers_count: Math.max(0, (prev.stats.followers_count || 0) - 1)
-                    }
-                } : null)
                 toast.success(`Dejaste de seguir a @${profile.alias}`)
             } else {
                 await usersApi.follow(anonymousId)
-                setProfile(prev => prev ? {
-                    ...prev,
-                    stats: {
-                        ...prev.stats,
-                        is_following: true,
-                        followers_count: (prev.stats.followers_count || 0) + 1
-                    }
-                } : null)
                 toast.success(`Ahora sigues a @${profile.alias}`)
             }
         } catch (error) {
+            // Rollback on error
+            setProfile(prev => prev ? {
+                ...prev,
+                stats: {
+                    ...prev.stats,
+                    is_following: isFollowing,
+                    followers_count: Math.max(0, (prev.stats.followers_count || 0) + (isFollowing ? 1 : -1))
+                }
+            } : null)
             handleError(error, toast.error, 'PublicProfile.follow')
-        } finally {
-            setFollowLoading(false)
         }
     }
 
@@ -198,7 +198,6 @@ export function PublicProfile() {
                                     <div className="flex justify-center md:justify-start">
                                         <Button
                                             onClick={handleFollowToggle}
-                                            disabled={followLoading}
                                             variant={profile.stats.is_following ? "outline" : "default"}
                                             className={`
                                                 rounded-full px-8 font-bold transition-all duration-300
