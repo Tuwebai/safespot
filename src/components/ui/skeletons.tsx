@@ -1,70 +1,96 @@
 import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 
-export function ReportSkeleton() {
+/**
+ * Enhanced Skeleton Screens with realistic structure and smooth shimmer
+ */
+
+// Base shimmer class for all skeletons
+const shimmerClass = "shimmer rounded"
+
+export function ReportCardSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border max-w-4xl mx-auto overflow-hidden">
-            {/* Image Placeholder */}
-            <Skeleton height={400} width="100%" />
+        <Card className="bg-dark-card border-dark-border overflow-hidden h-full flex flex-col animate-in fade-in duration-300">
+            {/* Image placeholder - matches aspect-video */}
+            <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                <div className={`w-full h-full ${shimmerClass}`} />
+            </div>
 
-            <CardContent className="p-8">
+            <CardContent className="p-6 flex-1 flex flex-col">
                 {/* Title */}
-                <Skeleton height={40} width="70%" className="mb-4" />
+                <div className={`h-6 ${shimmerClass} w-3/4 mb-3`} />
 
-                {/* Meta Row */}
-                <div className="flex items-center gap-4 mb-8">
-                    <Skeleton height={24} width={100} radius="9999px" />
-                    <Skeleton height={24} width={150} />
+                {/* Category badge */}
+                <div className="flex items-center gap-2 mb-4">
+                    <div className={`h-3 w-3 rounded-full ${shimmerClass}`} />
+                    <div className={`h-4 ${shimmerClass} w-24`} />
                 </div>
 
-                {/* Content Block */}
-                <div className="space-y-4 mb-12">
-                    <Skeleton height={20} width="100%" />
-                    <Skeleton height={20} width="95%" />
-                    <Skeleton height={20} width="80%" />
+                {/* Description lines */}
+                <div className="space-y-2 mb-6">
+                    <div className={`h-4 ${shimmerClass} w-full`} />
+                    <div className={`h-4 ${shimmerClass} w-11/12`} />
+                    <div className={`h-4 ${shimmerClass} w-4/5`} />
                 </div>
 
-                {/* Stats Row */}
-                <div className="flex justify-between pt-6 border-t border-dark-border">
-                    <Skeleton height={20} width={120} />
-                    <Skeleton height={20} width={180} />
+                {/* Location */}
+                <div className="flex items-center gap-2 mb-4 mt-auto">
+                    <div className={`h-4 w-4 ${shimmerClass}`} />
+                    <div className={`h-4 ${shimmerClass} w-32`} />
+                </div>
+
+                {/* Footer - Date and stats */}
+                <div className="flex items-center justify-between pt-4 border-t border-dark-border">
+                    <div className="flex items-center gap-2">
+                        <div className={`h-6 w-6 rounded-full ${shimmerClass}`} />
+                        <div className={`h-3 ${shimmerClass} w-20`} />
+                    </div>
+                    <div className="flex gap-4">
+                        <div className={`h-4 ${shimmerClass} w-8`} />
+                        <div className={`h-4 ${shimmerClass} w-8`} />
+                    </div>
                 </div>
             </CardContent>
         </Card>
     )
 }
 
-export function ReportCardSkeleton() {
+export function ReportDetailSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border overflow-hidden h-full flex flex-col">
-            {/* Image section placeholder */}
-            <Skeleton height={200} width="100%" />
+        <Card className="bg-dark-card border-dark-border max-w-4xl mx-auto overflow-hidden animate-in fade-in duration-300">
+            {/* Hero Image */}
+            <div className="relative w-full h-96 bg-dark-bg/50">
+                <div className={`w-full h-full ${shimmerClass}`} />
+            </div>
 
-            <CardContent className="p-6 flex-1">
-                {/* Header */}
-                <div className="flex justify-between mb-3">
-                    <Skeleton height={24} width="75%" />
+            <CardContent className="p-8">
+                {/* Title */}
+                <div className={`h-10 ${shimmerClass} w-2/3 mb-6`} />
+
+                {/* Meta badges */}
+                <div className="flex items-center gap-4 mb-8">
+                    <div className={`h-6 ${shimmerClass} w-24 rounded-full`} />
+                    <div className={`h-6 ${shimmerClass} w-32 rounded-full`} />
+                    <div className={`h-6 ${shimmerClass} w-28`} />
                 </div>
 
-                {/* Category */}
-                <div className="flex items-center gap-2 mb-4">
-                    <Skeleton height={12} width={12} radius="50%" />
-                    <Skeleton height={16} width={100} />
+                {/* Description */}
+                <div className="space-y-3 mb-12">
+                    <div className={`h-5 ${shimmerClass} w-full`} />
+                    <div className={`h-5 ${shimmerClass} w-full`} />
+                    <div className={`h-5 ${shimmerClass} w-11/12`} />
+                    <div className={`h-5 ${shimmerClass} w-4/5`} />
                 </div>
 
-                {/* Description Snippet */}
-                <div className="space-y-2 mb-6">
-                    <Skeleton height={14} width="100%" />
-                    <Skeleton height={14} width="90%" />
+                {/* Location section */}
+                <div className="mb-8">
+                    <div className={`h-6 ${shimmerClass} w-32 mb-4`} />
+                    <div className={`h-48 ${shimmerClass} w-full rounded-lg`} />
                 </div>
 
-                {/* Footer Meta */}
-                <div className="flex justify-between items-center pt-4 border-t border-dark-border mt-auto">
-                    <Skeleton height={32} width={100} radius="0.375rem" />
-                    <div className="flex gap-2">
-                        <Skeleton height={32} width={32} radius="50%" />
-                        <Skeleton height={32} width={32} radius="50%" />
-                    </div>
+                {/* Stats */}
+                <div className="flex justify-between pt-6 border-t border-dark-border">
+                    <div className={`h-5 ${shimmerClass} w-32`} />
+                    <div className={`h-5 ${shimmerClass} w-40`} />
                 </div>
             </CardContent>
         </Card>
@@ -73,23 +99,83 @@ export function ReportCardSkeleton() {
 
 export function CommentSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border">
-            <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                    {/* Avatar */}
-                    <Skeleton height={40} width={40} radius="9999px" />
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+                {/* Avatar */}
+                <div className={`h-10 w-10 rounded-full ${shimmerClass} flex-shrink-0`} />
 
-                    <div className="flex-1">
-                        {/* User name */}
-                        <Skeleton height={16} width={120} className="mb-2" />
-
-                        {/* Comment text */}
-                        <Skeleton height={14} width="100%" className="mb-1" />
-                        <Skeleton height={14} width="90%" className="mb-1" />
-                        <Skeleton height={14} width="60%" />
+                <div className="flex-1">
+                    {/* Username and timestamp */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <div className={`h-4 ${shimmerClass} w-24`} />
+                        <div className={`h-3 ${shimmerClass} w-16`} />
                     </div>
+
+                    {/* Comment text */}
+                    <div className="space-y-2">
+                        <div className={`h-4 ${shimmerClass} w-full`} />
+                        <div className={`h-4 ${shimmerClass} w-5/6`} />
+                        <div className={`h-4 ${shimmerClass} w-2/3`} />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-4 mt-3">
+                        <div className={`h-8 ${shimmerClass} w-16 rounded`} />
+                        <div className={`h-8 ${shimmerClass} w-20 rounded`} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+export function StatCardSkeleton() {
+    return (
+        <Card className="bg-dark-card border-dark-border animate-in fade-in duration-300">
+            <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                        <div className={`h-4 ${shimmerClass} w-24 mb-3`} />
+                        <div className={`h-8 ${shimmerClass} w-16`} />
+                    </div>
+                    <div className={`h-12 w-12 rounded-full ${shimmerClass}`} />
                 </div>
             </CardContent>
         </Card>
+    )
+}
+
+export function ListItemSkeleton() {
+    return (
+        <div className="flex items-center gap-4 p-4 bg-dark-card border border-dark-border rounded-lg animate-in fade-in duration-200">
+            <div className={`h-16 w-16 rounded ${shimmerClass} flex-shrink-0`} />
+            <div className="flex-1">
+                <div className={`h-5 ${shimmerClass} w-3/4 mb-2`} />
+                <div className={`h-4 ${shimmerClass} w-1/2`} />
+            </div>
+            <div className={`h-8 w-8 rounded-full ${shimmerClass}`} />
+        </div>
+    )
+}
+
+// Grid of report cards (for Reportes page)
+export function ReportGridSkeleton({ count = 6 }: { count?: number }) {
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: count }).map((_, i) => (
+                <ReportCardSkeleton key={i} />
+            ))}
+        </div>
+    )
+}
+
+// List of comments (for DetalleReporte page)
+export function CommentsListSkeleton({ count = 3 }: { count?: number }) {
+    return (
+        <div className="space-y-4">
+            {Array.from({ length: count }).map((_, i) => (
+                <CommentSkeleton key={i} />
+            ))}
+        </div>
     )
 }

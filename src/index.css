@@ -263,17 +263,29 @@
 
   /* Skeleton */
   .skeleton {
-    @apply animate-pulse bg-foreground/10 rounded;
+    @apply bg-foreground/10 rounded;
   }
 
-  /* Shimmer Effect */
+  /* Enhanced Shimmer Effect for Skeletons */
   .shimmer {
-    background: linear-gradient(90deg,
-        #1e293b 25%,
-        #334155 50%,
-        #1e293b 75%);
-    background-size: 200px 100%;
-    animation: shimmer 1.5s infinite;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--dark-card)) 0%,
+      hsl(var(--dark-border)) 20%,
+      hsl(var(--dark-card)) 40%,
+      hsl(var(--dark-card)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-slide 2s ease-in-out infinite;
+  }
+
+  @keyframes shimmer-slide {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 
   /* Badge Unlock Animation */
