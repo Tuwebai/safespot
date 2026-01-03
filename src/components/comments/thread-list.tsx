@@ -243,7 +243,6 @@ export const ThreadList = memo(function ThreadList({
                 comment={comment}
                 allComments={comments}
                 depth={0}
-                maxDepth={5}
                 onReply={onReply}
                 onEdit={onEdit}
                 onDelete={onDelete}

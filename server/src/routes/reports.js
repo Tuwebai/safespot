@@ -915,7 +915,7 @@ router.get('/:id/related', async (req, res) => {
 
     // 1. Get reference report
     const referenceResult = await queryWithRLS(anonymousId, `
-      SELECT category, latitude, longitude, zone 
+      SELECT category, latitude, longitude, zone, locality, province 
       FROM reports WHERE id = $1
     `, [id]);
 
@@ -923,33 +923,48 @@ router.get('/:id/related', async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    const { category, latitude, longitude, zone } = referenceResult.rows[0];
+    const { category, latitude, longitude, zone, locality, province } = referenceResult.rows[0];
 
     let query = '';
     let params = [];
 
     // 2. Query related
-    if (latitude && longitude) {
-      // PostGIS KNN search by location
-      // MODIFIED: Removes strict category filter to ensure results. 
-      // Orders by Category Match first, then Distance.
+    // PRIORITY: Locality (Same City) > Zone (Same Neighborhood/Zone Name)
+    if (locality) {
+      // STRICT FILTER: Only reports in the same city
       query = `
-        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at
+        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
+        FROM reports
+        WHERE id != $2
+          AND is_hidden = false
+          AND deleted_at IS NULL
+          AND locality = $5
+        ORDER BY
+          (category = $1) DESC, -- Best matches (same category) first
+          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest within city
+        LIMIT 5
+      `;
+      params = [category, id, latitude || 0, longitude || 0, locality];
+
+    } else if (latitude && longitude) {
+      // PostGIS KNN search by location (Fallback if no locality data)
+      query = `
+        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
         FROM reports
         WHERE id != $2
           AND is_hidden = false
           AND deleted_at IS NULL
           AND location IS NOT NULL
         ORDER BY
-          (category = $1) DESC, -- Best matches (same category) first
-          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest
+          (category = $1) DESC, 
+          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC 
         LIMIT 5
       `;
       params = [category, id, latitude, longitude];
     } else {
-      // Fallback: Same zone
+      // Fallback: Same zone (Text match)
       query = `
-        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at
+        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
         FROM reports
         WHERE id != $2
           AND is_hidden = false
@@ -967,9 +982,9 @@ router.get('/:id/related', async (req, res) => {
 
     // Initial Dev Log to verify results
     if (result.rows.length === 0) {
-      console.log(`[RELATED] No related reports found for Report ${id} (Lat: ${latitude}, Lng: ${longitude}, Zone: ${zone}, Cat: ${category})`);
+      console.log(`[RELATED] No related reports found for Report ${id} (Locality: ${locality}, Zone: ${zone})`);
     } else {
-      console.log(`[RELATED] Found ${result.rows.length} related reports for Report ${id}`);
+      console.log(`[RELATED] Found ${result.rows.length} related reports for Report ${id} (Locality: ${locality})`);
     }
 
     res.json({
