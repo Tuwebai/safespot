@@ -128,7 +128,7 @@ export function Perfil() {
           <div className="lg:col-span-2 space-y-6">
 
             {/* Personalización de Apariencia */}
-            <div className="bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
+            <div className="bg-zinc-950 border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
               <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none" />
               <div className="flex items-center gap-4 relative z-10">
                 <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-inner">

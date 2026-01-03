@@ -69,7 +69,7 @@ const HeroSection = memo(() => (
 ))
 
 const FeatureCard = memo(({ title, description, icon: Icon }: { title: string, description: string, icon: any }) => (
-  <Card className="bg-dark-card/50 border-dark-border hover:border-neon-green/30 transition-all group overflow-hidden">
+  <Card className="bg-dark-card border-dark-border hover:border-neon-green/30 transition-all group overflow-hidden">
     <CardContent className="p-6">
       <div className="p-3 bg-neon-green/10 rounded-xl w-fit mb-4 group-hover:scale-110 transition-transform">
         <Icon className="w-6 h-6 text-neon-green" />

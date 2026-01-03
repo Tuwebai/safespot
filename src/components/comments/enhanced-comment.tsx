@@ -202,7 +202,7 @@ export const EnhancedComment = memo(function EnhancedComment({
   return (
     <Card className={`card-glow transition-all duration-200 ${textOpacity} ${isThread
       ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
-      : 'border-dark-border hover:border-neon-green/30 bg-dark-card/60'
+      : 'border-dark-border hover:border-neon-green/30 bg-zinc-900'
       }`}>
       <CardContent className={cardPadding}>
         {/* Header Section */}

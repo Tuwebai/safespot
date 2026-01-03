@@ -174,7 +174,7 @@ export default function NotificationsPage() {
                             key={notif.id}
                             className={cn(
                                 "cursor-pointer transition-all hover:border-dark-border/80 group overflow-hidden",
-                                notif.is_read ? "bg-dark-card/50 border-dark-border/50" : "bg-dark-card border-neon-green/30 shadow-lg shadow-neon-green/5"
+                                notif.is_read ? "bg-dark-card border-dark-border/50" : "bg-dark-card border-neon-green/30 shadow-lg shadow-neon-green/5"
                             )}
                             onClick={() => handleNotificationClick(notif)}
                         >

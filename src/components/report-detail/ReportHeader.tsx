@@ -61,7 +61,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 </Badge>
             </div>
 
-            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-dark-card/30 w-fit px-3 py-1.5 rounded-full border border-dark-border/30">
+            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-zinc-950 w-fit px-3 py-1.5 rounded-full border border-dark-border/30">
                 <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
                 <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
             </div>

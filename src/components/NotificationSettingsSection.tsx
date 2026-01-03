@@ -199,7 +199,7 @@ export function NotificationSettingsSection() {
 
     return (
         <Card id="notificaciones" className="bg-dark-card border-dark-border overflow-hidden">
-            <CardHeader className="border-b border-dark-border bg-dark-card/50">
+            <CardHeader className="border-b border-dark-border bg-dark-card">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-neon-green/10">
                         <Bell className="h-5 w-5 text-neon-green" />
