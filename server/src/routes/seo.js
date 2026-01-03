@@ -16,10 +16,10 @@ router.get('/zones', getZones);
 router.get('/reporte/:id', getReportPreview);
 
 /**
- * GET /seo/card/:id.png
+ * GET /seo/card/:id.jpg
  * Serves dynamic social card image
  */
-router.get('/card/:id.png', getSocialCard);
+router.get('/card/:id.jpg', getSocialCard);
 
 /**
  * GET /seo/zone/:slug

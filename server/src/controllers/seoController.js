@@ -88,8 +88,9 @@ export const getReportPreview = async (req, res) => {
     }
 
     // IMAGE LOGIC: Point to our NEW dynamic social card generator
-    // This makes the link look professional in WhatsApp/Twitter
-    const ogImage = `${frontendUrl}/api/seo/card/${id}.png`;
+    // We point DIRECTLY to the backend to ensure bots can reach it instantly
+    const backendUrl = 'https://safespot-6e51.onrender.com';
+    const ogImage = `${backendUrl}/api/seo/card/${id}.jpg`;
 
     const humanDate = formatHumanDate(report.created_at);
     const location = report.zone || report.address || 'Ubicación desconocida';
@@ -122,8 +123,15 @@ export const getReportPreview = async (req, res) => {
   <meta property="og:title" content="${ogTitle}" />
   <meta property="og:description" content="${ogDescription}" />
   <meta property="og:image" content="${ogImage}" />
+  <meta property="og:image:secure_url" content="${ogImage}" />
+  <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="${ogTitle}" />
+  <meta itemprop="image" content="${ogImage}" />
+  
+  <!-- Fallback image (original) in case the dynamic card fails to load -->
+  ${images.length > 0 ? `<meta property="og:image" content="${images[0]}" /><meta property="og:image:secure_url" content="${images[0]}" />` : ''}
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
@@ -174,9 +182,9 @@ export const getSocialCard = async (req, res) => {
     // Generate the image buffer
     const buffer = await generateReportSocialCard(report);
 
-    // Serve as PNG
+    // Serve as JPEG
     res.set({
-      'Content-Type': 'image/png',
+      'Content-Type': 'image/jpeg',
       'Cache-Control': 'public, max-age=86400', // Cache for 24h
     });
     res.send(buffer);

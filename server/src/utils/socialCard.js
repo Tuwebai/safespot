@@ -14,34 +14,37 @@ export async function generateReportSocialCard(report) {
     const primaryColor = isFound ? '#22c55e' : '#f43f5e'; // Green for found/solved, Red for danger
     const accentColor = '#00ff88'; // SafeSpot Neon Green
 
-    // 2. Prepare background
-    // If no image, use a dark gradient. If image exists, blur it as background.
-    let background;
-    const mainImage = (report.image_urls && report.image_urls.length > 0) ? report.image_urls[0] : null;
+    // 2. Fetch image only once if it exists
+    let mainImageBuffer = null;
+    const mainImageUrl = (report.image_urls && report.image_urls.length > 0) ? report.image_urls[0] : null;
 
-    if (mainImage && mainImage.startsWith('http')) {
+    if (mainImageUrl && mainImageUrl.startsWith('http')) {
         try {
-            const resp = await fetch(mainImage);
+            const resp = await fetch(mainImageUrl, { signal: AbortSignal.timeout(5000) });
             if (resp.ok) {
-                const imageBuffer = await resp.arrayBuffer();
-                background = sharp(Buffer.from(imageBuffer))
-                    .resize(width, height, { fit: 'cover' })
-                    .blur(20) // Blur it heavily for background
-                    .composite([{
-                        input: Buffer.from(`<svg><rect x="0" y="0" width="${width}" height="${height}" fill="rgba(2, 6, 23, 0.85)"/></svg>`),
-                        blend: 'over'
-                    }]);
-            } else {
-                background = createGradientBackground(width, height);
+                const arrayBuffer = await resp.arrayBuffer();
+                mainImageBuffer = Buffer.from(arrayBuffer);
             }
         } catch (e) {
-            background = createGradientBackground(width, height);
+            console.error('[SocialCard] Failed to fetch image:', mainImageUrl, e.message);
         }
+    }
+
+    // 3. Prepare background
+    let background;
+    if (mainImageBuffer) {
+        background = sharp(mainImageBuffer)
+            .resize(width, height, { fit: 'cover' })
+            .blur(30) // Blur it heavily for background
+            .composite([{
+                input: Buffer.from(`<svg><rect x="0" y="0" width="${width}" height="${height}" fill="rgba(2, 6, 23, 0.85)"/></svg>`),
+                blend: 'over'
+            }]);
     } else {
         background = createGradientBackground(width, height);
     }
 
-    // 3. Create SVG Overlay for Text and Branding
+    // 4. Create SVG Overlay for Text and Branding
     const escapedTitle = escapeXml(report.title || 'Alerta de Seguridad');
     const escapedZone = escapeXml(report.zone || 'Ubicación Desconocida');
     const escapedCategory = escapeXml(report.category || 'Incidente');
@@ -60,8 +63,8 @@ export async function generateReportSocialCard(report) {
       <rect x="0" y="${height - 180}" width="${width}" height="180" fill="rgba(15, 23, 42, 0.9)" />
       
       <!-- Top Left Badge -->
-      <rect x="40" y="40" width="300" height="40" rx="20" fill="${primaryColor}" />
-      <text x="190" y="67" font-family="sans-serif" font-size="20" font-weight="bold" fill="white" text-anchor="middle">${badgeText}</text>
+      <rect x="40" y="40" width="300" height="46" rx="23" fill="${primaryColor}" />
+      <text x="190" y="71" font-family="sans-serif" font-size="22" font-weight="bold" fill="white" text-anchor="middle">${badgeText}</text>
 
       <!-- Main Title -->
       <text x="40" y="${height - 110}" font-family="sans-serif" font-size="54" font-weight="900" fill="white">${truncate(escapedTitle, 40)}</text>
@@ -78,39 +81,36 @@ export async function generateReportSocialCard(report) {
     </svg>
   `;
 
-    // 4. Composite everything
-    // If we have a main image, we also show it in a rounded box
+    // 5. Composite everything
     const compositions = [{ input: Buffer.from(svgOverlay), top: 0, left: 0 }];
 
-    if (mainImage) {
+    if (mainImageBuffer) {
         try {
-            const imageBuffer = await fetch(mainImage).then(res => res.arrayBuffer());
-            const thumbnail = await sharp(Buffer.from(imageBuffer))
-                .resize(500, 300, { fit: 'cover' })
+            const thumbnail = await sharp(mainImageBuffer)
+                .resize(500, 310, { fit: 'cover' })
                 .composite([{
-                    input: Buffer.from(`<svg><rect x="0" y="0" width="500" height="300" rx="20" ry="20" /></svg>`),
+                    input: Buffer.from(`<svg><rect x="0" y="0" width="500" height="310" rx="24" ry="24" /></svg>`),
                     blend: 'dest-in'
                 }])
                 .toBuffer();
 
             compositions.push({
                 input: thumbnail,
-                top: 100,
+                top: 105,
                 left: 40
             });
         } catch (e) {
-            console.error('Error fetching/processing main image for preview:', e);
+            console.error('[SocialCard] Failed to create thumbnail:', e.message);
         }
     }
 
     return await background
         .composite(compositions)
-        .png()
+        .jpeg({ quality: 80, progressive: true }) // Optimizar peso para WhatsApp (<300KB)
         .toBuffer();
 }
 
 function createGradientBackground(width, height) {
-    // Simple dark noise-like background or deep blue
     return sharp({
         create: {
             width,

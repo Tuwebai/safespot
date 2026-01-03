@@ -11,6 +11,7 @@ https://safespotar.netlify.app/*  https://safespot.tuweb-ai.com/:splat  301!
 /alertas      https://safespot-6e51.onrender.com/seo/general            200!
 /alertas/     https://safespot-6e51.onrender.com/seo/general            200!
 /alertas/*    https://safespot-6e51.onrender.com/seo/zone/:splat        200!
+/api/*        https://safespot-6e51.onrender.com/api/:splat            200!
 
 # ===============================================
 # SAFE-SPOT UNIVERSAL SEO REWRITE
