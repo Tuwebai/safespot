@@ -36,6 +36,9 @@ export function useCreateCommentMutation() {
             const previousComments = queryClient.getQueryData<any>(queryKeys.comments.byReport(newCommentData.report_id))
             const previousReport = queryClient.getQueryData<any>(queryKeys.reports.detail(newCommentData.report_id))
 
+            // Get current user profile for accurate optimistic UI
+            const userProfile = queryClient.getQueryData<any>(queryKeys.user.profile)
+
             // Create temporary optimistic comment
             const optimisticComment = {
                 id: `temp-${Date.now()}`,
@@ -44,8 +47,10 @@ export function useCreateCommentMutation() {
                 is_optimistic: true, // Helper to show a "sending" state if needed
                 upvotes_count: 0,
                 liked_by_me: false,
-                author: 'Tú', // Generic for instant feedback
-                anonymous_id: 'Tú', // Needed for getUserInitials
+                author: userProfile?.alias ? `@${userProfile.alias}` : 'Tú',
+                anonymous_id: userProfile?.anonymous_id || 'Tú', // Use real ID if available
+                alias: userProfile?.alias, // Inject real alias
+                avatar_url: userProfile?.avatar_url, // Inject real avatar
             }
 
             // Update comments cache
