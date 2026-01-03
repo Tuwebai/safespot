@@ -75,7 +75,8 @@ export function useLocationSearch(query: string) {
             setError(null)
 
             try {
-                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+                const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+                const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`
                 const url = new URL(`${API_BASE_URL}/geocode/search`)
                 url.searchParams.set('q', query.trim())
                 url.searchParams.set('limit', '5')
