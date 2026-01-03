@@ -56,7 +56,12 @@ export function SightingFormDialog({ isOpen, onClose, onSubmit, type, submitting
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+        <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sighting-dialog-title"
+        >
             <Card className="w-full max-w-md bg-dark-card border-dark-border shadow-xl relative">
                 <Button
                     variant="ghost"
@@ -64,17 +69,18 @@ export function SightingFormDialog({ isOpen, onClose, onSubmit, type, submitting
                     className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:text-foreground"
                     onClick={onClose}
                     disabled={submitting}
+                    aria-label="Cerrar formulario"
                 >
-                    <X className="h-4 w-4" />
+                    <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
 
                 <CardHeader>
                     <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-full bg-dark-bg border border-dark-border ${config.color}`}>
+                        <div className={`p-2 rounded-full bg-dark-bg border border-dark-border ${config.color}`} aria-hidden="true">
                             <Icon className="h-5 w-5" />
                         </div>
                         <div>
-                            <CardTitle className="text-lg">{config.title}</CardTitle>
+                            <CardTitle id="sighting-dialog-title" className="text-lg">{config.title}</CardTitle>
                             <CardDescription>{config.description}</CardDescription>
                         </div>
                     </div>

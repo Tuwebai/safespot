@@ -179,3 +179,31 @@ export function CommentsListSkeleton({ count = 3 }: { count?: number }) {
         </div>
     )
 }
+export function RichTextEditorSkeleton() {
+    return (
+        <div className="space-y-3 animate-in fade-in duration-200">
+            {/* Toolbar skeleton */}
+            <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-dark-bg/50 rounded-lg border border-dark-border/50">
+                <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className={`h-8 w-8 ${shimmerClass}`} />
+                    ))}
+                </div>
+                <div className="flex items-center gap-1 border-l border-dark-border/30 pl-2">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className={`h-8 w-8 ${shimmerClass}`} />
+                    ))}
+                </div>
+            </div>
+
+            {/* Editor area skeleton */}
+            <div className={`min-h-[200px] w-full bg-dark-bg/50 border border-dark-border/50 rounded-lg ${shimmerClass}`} />
+
+            {/* Footer skeleton */}
+            <div className="flex items-center justify-end gap-3">
+                <div className={`h-8 w-24 ${shimmerClass}`} />
+                <div className={`h-8 w-24 ${shimmerClass}`} />
+            </div>
+        </div>
+    )
+}

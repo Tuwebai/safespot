@@ -26,10 +26,15 @@ export function FlagReportDialog({ isOpen, flagging, onSubmit, onCancel }: FlagR
     if (!isOpen) return null
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flag-dialog-title"
+        >
             <Card className="w-full max-w-md bg-dark-card border-dark-border">
                 <CardHeader>
-                    <CardTitle>Reportar Contenido</CardTitle>
+                    <CardTitle id="flag-dialog-title">Reportar Contenido</CardTitle>
                     <CardDescription>
                         ¿Por qué quieres reportar este contenido?
                     </CardDescription>
@@ -43,10 +48,11 @@ export function FlagReportDialog({ isOpen, flagging, onSubmit, onCancel }: FlagR
                                 className="w-full justify-start"
                                 onClick={() => onSubmit(reason)}
                                 disabled={flagging}
+                                aria-label={`Reportar por ${reason}`}
                             >
                                 {flagging ? (
                                     <>
-                                        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                                        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" aria-hidden="true" />
                                         Reportando...
                                     </>
                                 ) : (

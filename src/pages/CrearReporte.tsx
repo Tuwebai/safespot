@@ -65,6 +65,7 @@ export function CrearReporte() {
                 placeholder="Ej: Robo de bicicleta roja en el centro"
                 className={errors.title ? 'border-destructive' : ''}
                 disabled={isSubmitting}
+                autoComplete="off"
               />
               {errors.title && (
                 <div className="flex items-center gap-1 mt-1 text-sm text-destructive">

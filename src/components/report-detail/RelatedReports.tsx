@@ -6,6 +6,7 @@ import { MapPin, Calendar, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { STATUS_OPTIONS } from '@/lib/constants';
+import { OptimizedImage } from '@/components/OptimizedImage';
 
 interface RelatedReport {
     id: string;
@@ -118,11 +119,11 @@ export function RelatedReports({ reportId }: { reportId: string }) {
                                 {/* Image / Map */}
                                 <div className="h-32 w-full bg-black relative overflow-hidden shrink-0">
                                     {imageUrl ? (
-                                        <img
+                                        <OptimizedImage
                                             src={imageUrl}
                                             alt={report.title}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                            loading="lazy"
+                                            aspectRatio={16 / 9}
+                                            className="w-full h-full transition-transform duration-500 group-hover:scale-105"
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center bg-dark-bg text-muted-foreground">

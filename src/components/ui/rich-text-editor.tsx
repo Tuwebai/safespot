@@ -416,6 +416,7 @@ export function RichTextEditor({
                   onKeyDown={handleInputModalKeyDown}
                   placeholder="Escribe aquí..."
                   className="w-full"
+                  autoComplete="off"
                 />
                 <div className="flex items-center justify-end gap-2">
                   <Button

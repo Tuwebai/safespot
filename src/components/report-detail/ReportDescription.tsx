@@ -137,6 +137,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                                                 src={URL.createObjectURL(file)}
                                                 alt="Preview"
                                                 className="w-full h-full object-cover"
+                                                decoding="async"
                                             />
                                             <button
                                                 onClick={() => removeNewImage(index)}

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
+import { PullToRefresh } from '@/components/ui/PullToRefresh'
 import { reportsApi } from '@/lib/api'
 import type { Report } from '@/lib/api'
 import { MapLayout } from '@/layouts/MapLayout'
@@ -72,28 +73,35 @@ export function Explorar() {
         <meta name="description" content="Explora reportes de seguridad en el mapa interactivo de SafeSpot" />
       </Helmet>
 
-      <MapLayout>
-        <Suspense fallback={<MapLoadingFallback />}>
-          <SafeSpotMap
-            reports={reports}
-            initialFocus={initialFocus}
-            activateZoneType={activateZoneType}
-            onSearchArea={handleSearchInArea}
-            isSearching={isFetching}
-          />
-        </Suspense>
+      <PullToRefresh
+        onRefresh={async () => {
+          await queryClient.invalidateQueries({ queryKey: ['reports'] })
+        }}
+        className="h-screen w-screen"
+      >
+        <MapLayout>
+          <Suspense fallback={<MapLoadingFallback />}>
+            <SafeSpotMap
+              reports={reports}
+              initialFocus={initialFocus}
+              activateZoneType={activateZoneType}
+              onSearchArea={handleSearchInArea}
+              isSearching={isFetching}
+            />
+          </Suspense>
 
-        {/* Floating button to go to list view */}
-        <div className="absolute bottom-6 left-6 z-[1000]">
-          <Button
-            onClick={() => navigate('/reportes')}
-            className="bg-dark-card hover:bg-dark-card/90 text-foreground shadow-lg"
-          >
-            <List className="h-5 w-5 mr-2" />
-            Ver Lista
-          </Button>
-        </div>
-      </MapLayout>
+          {/* Floating button to go to list view */}
+          <div className="absolute bottom-20 left-4 z-[1000] md:bottom-6 md:left-6">
+            <Button
+              onClick={() => navigate('/reportes')}
+              className="bg-dark-card hover:bg-dark-card/90 text-foreground shadow-lg h-12"
+            >
+              <List className="h-5 w-5 mr-2" />
+              Ver Lista
+            </Button>
+          </div>
+        </MapLayout>
+      </PullToRefresh>
     </>
   )
 }

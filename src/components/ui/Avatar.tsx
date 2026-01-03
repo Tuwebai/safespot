@@ -73,6 +73,8 @@ const AvatarImage = React.forwardRef<
             ref={ref}
             src={src}
             className={cn("aspect-square h-full w-full", className)}
+            loading="lazy"
+            decoding="async"
             {...props}
         />
     )

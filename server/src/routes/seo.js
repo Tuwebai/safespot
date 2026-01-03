@@ -1,5 +1,5 @@
 import express from 'express';
-import { getReportPreview, getZones, getZonePreview, getGeneralAlertsPreview } from '../controllers/seoController.js';
+import { getReportPreview, getZones, getZonePreview, getGeneralAlertsPreview, getSocialCard } from '../controllers/seoController.js';
 
 const router = express.Router();
 
@@ -14,6 +14,12 @@ router.get('/zones', getZones);
  * Serves static HTML for report sharing
  */
 router.get('/reporte/:id', getReportPreview);
+
+/**
+ * GET /seo/card/:id.png
+ * Serves dynamic social card image
+ */
+router.get('/card/:id.png', getSocialCard);
 
 /**
  * GET /seo/zone/:slug

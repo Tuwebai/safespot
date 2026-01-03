@@ -32,7 +32,7 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
             if (!isMounted) return
 
             try {
-                console.log(`[SSE] Connecting to realtime comments for report ${reportId}`)
+                // console.log(`[SSE] Connecting to realtime comments for report ${reportId}`)
 
                 const eventSource = new EventSource(
                     `${API_BASE_URL}/realtime/comments/${reportId}`
@@ -40,21 +40,21 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                 eventSourceRef.current = eventSource
 
                 eventSource.onopen = () => {
-                    console.log(`[SSE] Connected to report ${reportId}`)
+                    // console.log(`[SSE] Connected to report ${reportId}`)
                 }
 
                 eventSource.onmessage = (event) => {
                     try {
                         const data: RealtimeComment = JSON.parse(event.data)
-                        console.log('[SSE] Received event:', data.type)
+                        // console.log('[SSE] Received event:', data.type)
 
                         switch (data.type) {
                             case 'connected':
-                                console.log('[SSE] Connection confirmed')
+                                // console.log('[SSE] Connection confirmed')
                                 break
 
                             case 'new-comment':
-                                console.log('[SSE] New comment received, invalidating queries')
+                                // console.log('[SSE] New comment received, invalidating queries')
                                 // Invalidate comments to trigger refetch
                                 queryClient.invalidateQueries({
                                     queryKey: queryKeys.comments.byReport(reportId)
@@ -66,14 +66,14 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                                 break
 
                             case 'comment-update':
-                                console.log('[SSE] Comment updated, invalidating queries')
+                                // console.log('[SSE] Comment updated, invalidating queries')
                                 queryClient.invalidateQueries({
                                     queryKey: queryKeys.comments.byReport(reportId)
                                 })
                                 break
 
                             case 'comment-delete':
-                                console.log('[SSE] Comment deleted, invalidating queries')
+                                // console.log('[SSE] Comment deleted, invalidating queries')
                                 queryClient.invalidateQueries({
                                     queryKey: queryKeys.comments.byReport(reportId)
                                 })
@@ -93,7 +93,7 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
 
                     // Attempt to reconnect after 5 seconds
                     if (isMounted) {
-                        console.log('[SSE] Reconnecting in 5 seconds...')
+                        // console.log('[SSE] Reconnecting in 5 seconds...')
                         reconnectTimeoutRef.current = setTimeout(() => {
                             connect()
                         }, 5000)
@@ -110,7 +110,7 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
         // Cleanup
         return () => {
             isMounted = false
-            console.log(`[SSE] Disconnecting from report ${reportId}`)
+            // console.log(`[SSE] Disconnecting from report ${reportId}`)
 
             if (eventSourceRef.current) {
                 eventSourceRef.current.close()

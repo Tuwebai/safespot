@@ -61,6 +61,7 @@ export function FavoriteButton({
                 isFavorite ? 'text-red-400 hover:text-red-300' : '',
                 className
             )}
+            aria-label={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
             title={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
         >
             <motion.div
@@ -74,7 +75,7 @@ export function FavoriteButton({
                     ease: "easeOut"
                 }}
             >
-                <Heart className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} />
+                <Heart className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} aria-hidden="true" />
             </motion.div>
             {label && <span>{label}</span>}
             {showCount && !label && <span className="ml-1">{count}</span>}

@@ -1,6 +1,9 @@
+import { motion, AnimatePresence } from 'framer-motion'
+import { Zap, Trophy } from 'lucide-react'
+
 /**
- * Points Feedback Component
- * Shows animated feedback when points are added or level increases
+ * Componente de retroalimentación de puntos y nivel
+ * Muestra animaciones fluidas cuando se ganan puntos o se sube de nivel
  */
 
 interface PointsAddedFeedbackProps {
@@ -19,34 +22,25 @@ export function PointsAddedFeedback({
   badgeIcon,
   visible
 }: PointsAddedFeedbackProps) {
-  if (!visible || points <= 0) return null
-
   return (
-    <div
-      className={`
-        absolute -top-12 left-1/2 transform -translate-x-1/2
-        flex items-center gap-2
-        bg-neon-green/20 backdrop-blur-sm
-        border border-neon-green/40
-        rounded-full px-4 py-2
-        text-neon-green font-bold text-sm
-        shadow-lg shadow-neon-green/20
-        z-50
-        transition-all duration-500
-        ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
-      `}
-      style={{
-        animation: visible ? 'pointsAdded 0.6s ease-out' : 'none'
-      }}
-    >
-      {badgeIcon && <span className="text-base">{badgeIcon}</span>}
-      <span>+{points} puntos</span>
-      {badgeName && (
-        <span className="text-xs font-normal opacity-80">
-          ({badgeName})
-        </span>
+    <AnimatePresence>
+      {visible && points > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20, x: '-50%', scale: 0.8 }}
+          animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+          exit={{ opacity: 0, y: -40, x: '-50%', scale: 1.1 }}
+          className="absolute -top-16 left-1/2 flex items-center gap-2 bg-neon-green text-dark-bg font-bold text-sm px-4 py-2 rounded-full shadow-[0_0_20px_rgba(0,255,136,0.4)] z-50 whitespace-nowrap"
+        >
+          <Zap className="h-4 w-4 fill-current" />
+          <span>+{points} XP</span>
+          {badgeName && (
+            <span className="text-xs font-normal opacity-90 border-l border-dark-bg/20 pl-2 ml-1">
+              {badgeIcon} {badgeName}
+            </span>
+          )}
+        </motion.div>
       )}
-    </div>
+    </AnimatePresence>
   )
 }
 
@@ -59,33 +53,33 @@ interface LevelUpFeedbackProps {
  * Component to show level up feedback
  */
 export function LevelUpFeedback({ newLevel, visible }: LevelUpFeedbackProps) {
-  if (!visible) return null
-
   return (
-    <div
-      className={`
-        absolute -top-20 left-1/2 transform -translate-x-1/2
-        bg-gradient-to-r from-neon-green/30 to-blue-500/30
-        backdrop-blur-sm
-        border-2 border-neon-green/60
-        rounded-xl px-6 py-3
-        text-center
-        shadow-2xl shadow-neon-green/40
-        z-50
-        min-w-[200px]
-        ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
-      `}
-      style={{
-        animation: visible ? 'levelUp 0.5s ease-out' : 'none'
-      }}
-    >
-      <div className="text-2xl font-bold text-neon-green mb-1">
-        🎉 ¡Subiste a Nivel {newLevel}!
-      </div>
-      <div className="text-xs text-foreground/80">
-        ¡Seguí participando para seguir subiendo!
-      </div>
-    </div>
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.5, y: 40, x: '-50%' }}
+          animate={{ opacity: 1, scale: 1, y: 0, x: '-50%' }}
+          exit={{ opacity: 0, scale: 1.2, y: -40, x: '-50%' }}
+          className="absolute -top-32 left-1/2 bg-gradient-to-r from-neon-green to-blue-500 rounded-2xl p-6 shadow-[0_0_50px_rgba(0,255,136,0.5)] z-50 text-center border-2 border-white/20 min-w-[280px]"
+        >
+          <motion.div
+            animate={{ rotate: [0, -10, 10, -10, 10, 0] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+          >
+            <Trophy className="h-12 w-12 text-white mx-auto mb-2 drop-shadow-lg" />
+          </motion.div>
+          <div className="text-3xl font-black text-white mb-1 uppercase tracking-tighter">
+            ¡NIVEL {newLevel}!
+          </div>
+          <div className="text-white/80 text-xs font-bold uppercase tracking-widest">
+            Has desbloqueado nuevos desafíos
+          </div>
+
+          {/* Animated sparkles around the toast */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-neon-green via-blue-400 to-purple-500 rounded-2xl blur opacity-30 animate-pulse -z-10" />
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 

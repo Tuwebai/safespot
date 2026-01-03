@@ -141,6 +141,8 @@ export function LocationSelector({ value, onChange, error }: LocationSelectorPro
             }}
             placeholder="Ej: Av. Colón 1200, Córdoba"
             className={`pl-10 h-12 text-lg ${error ? 'border-destructive' : ''} ${isConfirmed ? 'pr-10 border-neon-green/50 bg-neon-green/5' : ''}`}
+            inputMode="search"
+            autoComplete="street-address"
           />
           {isConfirmed && searchQuery && (
             <button

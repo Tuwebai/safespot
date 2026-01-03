@@ -75,7 +75,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Anonymous-Id']
+  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'Cache-Control']
 }));
 
 // ============================================

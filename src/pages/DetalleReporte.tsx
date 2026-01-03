@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async'
 import { generateSEOTags, generateReportStructuredData } from '@/lib/seo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { ReportSkeleton } from '@/components/ui/skeletons'
+import { ReportCardSkeleton as ReportSkeleton } from '@/components/ui/skeletons'
 import { ArrowLeft, MapPin } from 'lucide-react'
 import { ShareButton } from '@/components/ShareButton'
 
@@ -344,7 +344,7 @@ export function DetalleReporte() {
 
         {/* STICKY MOBILE SHARE CTA */}
         {!editor.isEditing && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 p-4 md:hidden bg-gradient-to-t from-dark-bg via-dark-bg/95 to-transparent pt-8">
+          <div className="fixed bottom-16 left-0 right-0 z-[45] p-4 md:hidden bg-gradient-to-t from-dark-bg via-dark-bg/95 to-transparent pt-8">
             <ShareButton
               category={report.category}
               zone={report.address || report.zone || 'Ubicación desconocida'}

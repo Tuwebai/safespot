@@ -19,9 +19,12 @@ export function Layout({ children }: LayoutProps) {
     <ToastProvider>
       <BadgeNotificationManager />
       <NetworkStatusIndicator />
+      <a href="#main-content" className="skip-link">
+        Saltar al contenido principal
+      </a>
       <div className="flex min-h-screen flex-col bg-dark-bg text-white selection:bg-neon-green/30">
         <Header />
-        <main className="flex-1 flex flex-col min-h-[60vh] bg-dark-bg pb-16 md:pb-0">
+        <main id="main-content" className="flex-1 flex flex-col min-h-[60vh] bg-dark-bg pb-16 md:pb-0">
           <ErrorBoundary fallbackTitle="Ocurrió un error inesperado">
             <div className="flex-1 animate-in fade-in duration-500 fill-mode-both">
               {children}

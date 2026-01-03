@@ -30,6 +30,7 @@ export function BottomNav() {
                         <Link
                             key={item.path}
                             to={item.path}
+                            aria-current={isActive ? 'page' : undefined}
                             className={cn(
                                 'flex flex-col items-center justify-center flex-1 h-full transition-all duration-200',
                                 'active:scale-95',
@@ -38,10 +39,13 @@ export function BottomNav() {
                                     : 'text-foreground/60 hover:text-foreground active:text-neon-green/80'
                             )}
                         >
-                            <Icon className={cn(
-                                'h-6 w-6 transition-transform',
-                                isActive && 'scale-110'
-                            )} />
+                            <Icon
+                                className={cn(
+                                    'h-6 w-6 transition-transform',
+                                    isActive && 'scale-110'
+                                )}
+                                aria-hidden="true"
+                            />
                             <span className={cn(
                                 'text-xs mt-1 font-medium transition-all',
                                 isActive && 'text-neon-green'

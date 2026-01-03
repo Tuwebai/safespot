@@ -100,8 +100,17 @@
     --neon-green: 142 100% 50%;
     --neon-blue: 222 47% 11%;
     --dark-bg: 222 84% 5%;
-    --dark-card: 222 47% 11%;
     --dark-border: 215 32% 17%;
+
+    /* Badge Semantic Colors (Light/Dark adaptive) */
+    --badge-investigation: 45 100% 50%;
+    /* Golden yellow */
+    --badge-evidence: 210 100% 50%;
+    /* Clear blue */
+    --badge-coordination: 142 100% 45%;
+    /* Stronger green */
+    --badge-testimony: 0 100% 60%;
+    /* Accessible red */
   }
 
   * {
@@ -114,6 +123,17 @@
     min-height: 100vh;
     background-color: hsl(var(--background));
     transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Focus Visible Global (WCAG) */
+  :focus-visible {
+    outline: 2px solid hsl(var(--neon-green));
+    outline-offset: 2px;
+  }
+
+  /* Accessibility: Skip to main content (Hidden but focusable) */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-neon-green focus:text-dark-bg focus:rounded-md focus:font-bold focus:shadow-lg;
   }
 
   /* --- THEMING SYSTEM --- */
@@ -143,6 +163,18 @@
     --dark-bg: 300 10% 98%;
     --dark-card: 0 0% 100%;
     --dark-border: 220 13% 90%;
+
+    /* Stronger contrast for light themes */
+    --muted-foreground: 220 13% 35%;
+    /* Ratio > 4.5:1 on light bg */
+    --badge-investigation: 35 100% 30%;
+    /* Darker golden */
+    --badge-evidence: 210 100% 35%;
+    /* Darker blue */
+    --badge-coordination: 142 100% 25%;
+    /* Darker green */
+    --badge-testimony: 0 100% 40%;
+    /* Darker red */
   }
 
   /* Minimal Theme */
@@ -170,6 +202,13 @@
     --dark-bg: 0 0% 100%;
     --dark-card: 0 0% 100%;
     --dark-border: 0 0% 80%;
+
+    /* Stronger contrast for minimal white theme */
+    --muted-foreground: 0 0% 30%;
+    --badge-investigation: 0 0% 20%;
+    --badge-evidence: 0 0% 20%;
+    --badge-coordination: 0 0% 20%;
+    --badge-testimony: 0 0% 20%;
   }
 
   /* --- ACCENT COLORS --- */
@@ -268,13 +307,11 @@
 
   /* Enhanced Shimmer Effect for Skeletons */
   .shimmer {
-    background: linear-gradient(
-      90deg,
-      hsl(var(--dark-card)) 0%,
-      hsl(var(--dark-border)) 20%,
-      hsl(var(--dark-card)) 40%,
-      hsl(var(--dark-card)) 100%
-    );
+    background: linear-gradient(90deg,
+        hsl(var(--dark-card)) 0%,
+        hsl(var(--dark-border)) 20%,
+        hsl(var(--dark-card)) 40%,
+        hsl(var(--dark-card)) 100%);
     background-size: 200% 100%;
     animation: shimmer-slide 2s ease-in-out infinite;
   }
@@ -283,6 +320,7 @@
     0% {
       background-position: -200% 0;
     }
+
     100% {
       background-position: 200% 0;
     }

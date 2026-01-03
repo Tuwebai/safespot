@@ -1,5 +1,6 @@
 import { DB } from '../utils/db.js';
 import { logError } from '../utils/logger.js';
+import { generateReportSocialCard } from '../utils/socialCard.js';
 
 // Helper to escape HTML special characters in meta tags
 const escapeHtml = (text) => {
@@ -86,8 +87,9 @@ export const getReportPreview = async (req, res) => {
       }
     }
 
-    // Image logic: First report image or professional fallback
-    const ogImage = images.length > 0 ? images[0] : `${frontendUrl}/og-default.png`;
+    // IMAGE LOGIC: Point to our NEW dynamic social card generator
+    // This makes the link look professional in WhatsApp/Twitter
+    const ogImage = `${frontendUrl}/api/seo/card/${id}.png`;
 
     const humanDate = formatHumanDate(report.created_at);
     const location = report.zone || report.address || 'Ubicación desconocida';
@@ -140,6 +142,48 @@ export const getReportPreview = async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).send('Error interno');
+  }
+};
+
+/**
+ * Endpoint that serves the actual binary image for the social card
+ */
+export const getSocialCard = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = DB.public();
+
+    // Fetch report data for the card
+    const result = await db.query(`
+      SELECT title, category, zone, status, image_urls
+      FROM reports 
+      WHERE id = $1
+    `, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).send('Not Found');
+    }
+
+    const report = result.rows[0];
+
+    // Normalize images
+    if (report.image_urls && typeof report.image_urls === 'string') {
+      try { report.image_urls = JSON.parse(report.image_urls); } catch (e) { report.image_urls = []; }
+    }
+
+    // Generate the image buffer
+    const buffer = await generateReportSocialCard(report);
+
+    // Serve as PNG
+    res.set({
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400', // Cache for 24h
+    });
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('[SocialCard Error]', error);
+    res.status(500).send('Error generating card');
   }
 };
 

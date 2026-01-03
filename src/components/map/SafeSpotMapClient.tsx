@@ -250,14 +250,14 @@ const ZoneMarkers = () => {
 
 const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType | null, setActiveType: (t: ZoneType | null) => void }) => {
     return (
-        <div className="absolute top-20 left-4 z-[1000] flex flex-col gap-2">
-            <div className="bg-dark-card/95 backdrop-blur-md p-3 rounded-2xl border border-neon-green/20 shadow-[0_0_30px_rgba(0,0,0,0.4)] flex flex-col gap-3 min-w-[200px]">
-                <div className="flex items-center justify-between gap-4 px-1">
+        <div className="absolute top-2 sm:top-20 left-2 sm:left-4 z-[1000] flex flex-col gap-2 scale-90 sm:scale-100 origin-top-left">
+            <div className="bg-dark-card/95 backdrop-blur-md p-2 sm:p-3 rounded-2xl border border-neon-green/20 shadow-[0_0_30px_rgba(0,0,0,0.4)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px]">
+                <div className="flex items-center justify-between gap-2 sm:gap-4 px-1">
                     <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-neon-green/10 rounded-lg">
-                            <ShieldAlert className="w-4 h-4 text-neon-green" />
+                        <div className="p-1 sm:p-1.5 bg-neon-green/10 rounded-lg">
+                            <ShieldAlert className="w-3.5 h-3.5 sm:w-4 h-4 text-neon-green" />
                         </div>
-                        <span className="font-bold text-xs text-foreground tracking-tight">MODO ALERTA</span>
+                        <span className="font-bold text-[10px] sm:text-xs text-foreground tracking-tight">MODO ALERTA</span>
                     </div>
                     {activeType && (
                         <Button
@@ -624,9 +624,9 @@ export function SafeSpotMapClient({
             <AlertZoneControl activeType={activeZoneType} setActiveType={setActiveZoneType} />
 
             {/* Persistent Zone Status Overlay - FIXED POSITION, INDEPENDENT OF MAP */}
-            <div className="absolute bottom-6 left-4 z-[500] pointer-events-none">
-                <div className="bg-dark-card/95 backdrop-blur-md p-3 rounded-xl border border-neon-green/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] pointer-events-auto min-w-[160px]">
-                    <p className="text-[10px] uppercase tracking-widest text-neon-green/60 font-black mb-2 px-1">Zonas Configuradas</p>
+            <div className="absolute bottom-6 left-2 sm:left-4 z-[500] pointer-events-none scale-90 sm:scale-100 origin-bottom-left">
+                <div className="bg-dark-card/95 backdrop-blur-md p-2 sm:p-3 rounded-xl border border-neon-green/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] pointer-events-auto min-w-[140px] sm:min-w-[160px]">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-neon-green/60 font-black mb-1 sm:mb-2 px-1">Zonas Configuradas</p>
                     <div className="flex flex-col gap-2">
                         {['home', 'work', 'frequent'].map(type => {
                             const zone = zones.find(z => z.type === type)

@@ -35,7 +35,12 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
     const provincialLink = province ? PROVINCIAL_LINKS[province] : null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="emergency-modal-title"
+        >
             <div
                 className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full shadow-2xl"
                 onClick={e => e.stopPropagation()}
@@ -44,15 +49,16 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                 <div className="flex items-center justify-between p-4 border-b border-dark-border">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-red-500/20 rounded-lg">
-                            <Phone className="h-5 w-5 text-red-400" />
+                            <Phone className="h-5 w-5 text-red-400" aria-hidden="true" />
                         </div>
-                        <h2 className="text-lg font-semibold">Denunciar a la Policía</h2>
+                        <h2 id="emergency-modal-title" className="text-lg font-semibold">Denunciar a la Policía</h2>
                     </div>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-dark-bg rounded-lg transition-colors"
+                        aria-label="Cerrar diálogo de emergencia"
                     >
-                        <X className="h-5 w-5" />
+                        <X className="h-5 w-5" aria-hidden="true" />
                     </button>
                 </div>
 
@@ -142,6 +148,7 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                     <button
                         onClick={onClose}
                         className="w-full py-3 bg-dark-bg hover:bg-dark-border rounded-lg transition-colors font-medium"
+                        aria-label="Cerrar y volver"
                     >
                         Cerrar
                     </button>

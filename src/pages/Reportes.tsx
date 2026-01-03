@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 // Force IDE refresh
 import { Helmet } from 'react-helmet-async'
 import { generateSEOTags } from '@/lib/seo'
@@ -27,6 +27,9 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
+import { PullToRefresh } from '@/components/ui/PullToRefresh'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -139,6 +142,12 @@ export function Reportes() {
 
   // Debounce search term to avoid excessive API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500)
+
+  // Keyboard Shortcuts: '/' to search
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useKeyboardShortcuts('/', () => {
+    searchInputRef.current?.focus()
+  })
 
   // Build filters object (memoized to prevent unnecessary query refetches)
   const filters = useMemo<ReportFilters | undefined>(() => {
@@ -288,6 +297,46 @@ export function Reportes() {
     type: 'website'
   })
 
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const [columns, setColumns] = useState(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
+  const [scrollMargin, setScrollMargin] = useState(0)
+
+  useEffect(() => {
+    const handleLayoutUpdate = () => {
+      setColumns(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
+      if (parentRef.current) {
+        setScrollMargin(parentRef.current.offsetTop)
+      }
+    }
+
+    // Calcular inicial
+    handleLayoutUpdate()
+
+    // Observar cambios de tamaño
+    window.addEventListener('resize', handleLayoutUpdate)
+
+    // Pequeño delay para asegurar que el DOM se ha asentado tras renderizados (especialmente filtros)
+    const timeout = setTimeout(handleLayoutUpdate, 100)
+
+    return () => {
+      window.removeEventListener('resize', handleLayoutUpdate)
+      clearTimeout(timeout)
+    }
+  }, [showAdvancedFilters, reports.length])
+
+  // Virtualizer setup using window scroll
+  const rowVirtualizer = useWindowVirtualizer({
+    count: Math.ceil(reports.length / columns),
+    estimateSize: () => 480, // Ajustado para incluir padding y gap
+    overscan: 5,
+    scrollMargin,
+  })
+
+  useEffect(() => {
+    rowVirtualizer.measure()
+  }, [columns, rowVirtualizer])
+
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       <Helmet>
@@ -327,25 +376,21 @@ export function Reportes() {
         <CardHeader className="pb-3 border-b border-dark-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Filter className="h-5 w-5 text-neon-green" />
+              <Filter className="h-5 w-5 text-neon-green" aria-hidden="true" />
               <h2 className="text-xl font-semibold">Filtros</h2>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className="text-muted-foreground hover:text-neon-green"
+              className="mt-1 flex items-center gap-2 hover:bg-neon-green/10 hover:text-neon-green"
+              aria-expanded={showAdvancedFilters}
+              aria-label={showAdvancedFilters ? "Ocultar filtros avanzados" : "Mostrar filtros avanzados"}
             >
               {showAdvancedFilters ? (
-                <>
-                  <span className="mr-2">Menos filtros</span>
-                  <ChevronUp className="h-4 w-4" />
-                </>
+                <>Ocultar Filtros <ChevronUp className="h-4 w-4" aria-hidden="true" /></>
               ) : (
-                <>
-                  <span className="mr-2">Más filtros</span>
-                  <ChevronDown className="h-4 w-4" />
-                </>
+                <>Filtros Avanzados <ChevronDown className="h-4 w-4" aria-hidden="true" /></>
               )}
             </Button>
           </div>
@@ -356,12 +401,16 @@ export function Reportes() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             {/* Búsqueda Global */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <Input
-                placeholder="Buscar por título, desc..."
+                ref={searchInputRef}
+                placeholder="Buscar por título, desc... (Presiona /)"
+                aria-label="Buscar reportes por título o descripción"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
+                inputMode="search"
+                autoComplete="off"
               />
             </div>
 
@@ -408,9 +457,10 @@ export function Reportes() {
                     Ubicación
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     <Input
                       placeholder="Buscar dirección..."
+                      aria-label="Buscar por dirección o lugar"
                       value={addressQuery}
                       onChange={(e) => {
                         setAddressQuery(e.target.value)
@@ -419,6 +469,8 @@ export function Reportes() {
                         }
                       }}
                       className={`pl-10 ${selectedLocation ? 'ring-1 ring-neon-green/50 border-neon-green/50' : ''}`}
+                      inputMode="search"
+                      autoComplete="address-line1"
                     />
                     {selectedLocation && (
                       <button
@@ -427,8 +479,9 @@ export function Reportes() {
                           setAddressQuery('')
                         }}
                         className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-white/10 rounded-full"
+                        aria-label="Limpiar selección de ubicación"
                       >
-                        <X className="h-3 w-3 text-muted-foreground" />
+                        <X className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -547,6 +600,8 @@ export function Reportes() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
+              inputMode="search"
+              autoComplete="off"
             />
           </div>
 
@@ -621,13 +676,18 @@ export function Reportes() {
       </BottomSheet>
 
       {/* Listado de Reportes */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-semibold">
+      <PullToRefresh
+        onRefresh={async () => {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        }}
+        className="mb-8"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pt-4">
+          <h2 className="text-xl sm:text-2xl font-semibold">
             Reportes {isFetching ? '...' : `(${reports.length})`}
           </h2>
-          <Link to="/crear-reporte">
-            <Button variant="neon">
+          <Link to="/crear-reporte" className="w-full sm:w-auto">
+            <Button variant="neon" className="w-full">
               Crear Nuevo Reporte
             </Button>
           </Link>
@@ -657,241 +717,250 @@ export function Reportes() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {reports
-              .filter((report) => {
-                // Defensive: filter out any invalid reports
-                return (
-                  report != null &&
-                  typeof report === 'object' &&
-                  report.id != null &&
-                  typeof report.id === 'string' &&
-                  report.title != null &&
-                  typeof report.title === 'string'
-                )
-              })
-              .map((report) => {
-                // Additional defensive check inside map
-                if (!report || !report.id) {
-                  return null
-                }
+          <div
+            ref={parentRef}
+            className="w-full"
+          >
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
+                const validReports = reports.filter((report) => {
+                  return (
+                    report != null &&
+                    typeof report === 'object' &&
+                    report.id != null &&
+                    typeof report.id === 'string' &&
+                    report.title != null &&
+                    typeof report.title === 'string'
+                  )
+                })
+                const startIndex = virtualRow.index * columns
+                const rowItems = validReports.slice(startIndex, startIndex + columns)
 
-                const imageUrls: string[] = Array.isArray(report.image_urls) ? report.image_urls : []
-                const hasImage = imageUrls.length > 0
-
                 return (
-                  <SmartLink
-                    key={report.id}
-                    to={`/reporte/${report.id}`}
-                    prefetchReportId={report.id}
-                    prefetchRoute="DetalleReporte"
-                    className="block h-full no-underline"
+                  <div
+                    key={virtualRow.key}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                   >
-                    <AnimatedCard className="h-full">
-                      <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
-                        {report.priority_zone && (
-                          <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
-                            report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
-                              'bg-amber-500 text-white'
-                            }`}>
-                            {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                            {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                            {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                            {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
-                          </div>
-                        )}
-
-                        <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
-                          {hasImage && (
-                            <div className="relative overflow-hidden">
-                              <OptimizedImage
-                                src={imageUrls[0]}
-                                alt={report.title}
-                                aspectRatio={16 / 9}
-                                priority={false}
-                                className="w-full"
-                              />
-                              {/* Overlays (Top Right) */}
-                              <div className="absolute top-2 right-2 flex gap-2 z-10">
-                                <Badge className={getStatusColor(report.status)}>
-                                  {getStatusLabel(report.status)}
-                                </Badge>
+                    {rowItems.map((report) => (
+                      <SmartLink
+                        key={report.id}
+                        to={`/reporte/${report.id}`}
+                        prefetchReportId={report.id}
+                        prefetchRoute="DetalleReporte"
+                        className="block h-full no-underline"
+                      >
+                        <AnimatedCard className="h-full">
+                          <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
+                            {report.priority_zone && (
+                              <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                                report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
+                                  'bg-amber-500 text-white'
+                                }`}>
+                                {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
+                                {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
+                                {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
+                                {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
                               </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 2.3 Content Section (Bottom) */}
-                        <CardContent className="p-6 flex-1 flex flex-col">
-                          {/* A. Header (Title & Category) */}
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                              {report.title}
-                            </h3>
-                            {!hasImage && (
-                              <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                                {getStatusLabel(report.status)}
-                              </Badge>
                             )}
-                          </div>
-                          <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                            <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                            <span>{report.category}</span>
-                          </div>
 
-                          {/* B. Description */}
-                          <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                            {report.description}
-                          </p>
-
-                          {/* C. Location */}
-                          <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
-                            <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                            <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                          </div>
-
-                          {/* D. Meta Footer (Date & Stats) */}
-                          <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                            <div className="flex items-center gap-2">
-                              <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                                <AvatarImage
-                                  src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
-                                  alt="Avatar"
-                                />
-                                <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
-                                  {report.anonymous_id.substring(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="text-xs">{formatDate(report.created_at)}</span>
+                            <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                              {/* Imagen optimizada */}
+                              {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
+                                <div className="relative overflow-hidden">
+                                  <OptimizedImage
+                                    src={report.image_urls[0]}
+                                    alt={report.title}
+                                    aspectRatio={16 / 9}
+                                    priority={false}
+                                    className="w-full"
+                                  />
+                                  <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                    <Badge className={getStatusColor(report.status)}>
+                                      {getStatusLabel(report.status)}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex items-center space-x-4">
-                              <div className="flex items-center gap-1" title="Hilos">
-                                <GitBranch className="h-4 w-4" />
-                                <span>{report.threads_count ?? 0}</span>
-                              </div>
-                              <div className="flex items-center gap-1" title="Comentarios">
-                                <MessageCircle className="h-4 w-4" />
-                                <span>{report.comments_count}</span>
-                              </div>
-                            </div>
-                          </div>
 
-                          {/* E. Action Bar (Bottom) */}
-                          <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
-                            <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                              {(() => {
-                                if (!report || !report.id) return null
-                                return (
+                            <CardContent className="p-6 flex-1 flex flex-col">
+                              <div className="flex items-start justify-between mb-2">
+                                <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                                  {report.title}
+                                </h3>
+                                {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
+                                  <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                                    {getStatusLabel(report.status)}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                                <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                                <span>{report.category}</span>
+                              </div>
+
+                              <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                                {report.description}
+                              </p>
+
+                              <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                                <MapPin className="h-4 w-4 mr-1 text-neon-green" />
+                                <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                              </div>
+
+                              <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-6 w-6 border border-white/10 shrink-0">
+                                    <AvatarImage
+                                      src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                      alt="Avatar"
+                                    />
+                                    <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                                      {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-xs">{formatDate(report.created_at)}</span>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                  <div className="flex items-center gap-1" title="Hilos">
+                                    <GitBranch className="h-4 w-4" />
+                                    <span>{report.threads_count ?? 0}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1" title="Comentarios">
+                                    <MessageCircle className="h-4 w-4" />
+                                    <span>{report.comments_count}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
+                                <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
+                                <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                                   <FavoriteButton
                                     reportId={report.id}
                                     isFavorite={report.is_favorite ?? false}
                                     onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
                                   />
-                                )
-                              })()}
-                              {(() => {
-                                const currentAnonymousId = getAnonymousIdSafe()
-                                const isOwner = report?.anonymous_id === currentAnonymousId
-                                const isFlagged = report?.is_flagged ?? false
-                                const isFlagging = flaggingReports.has(report.id)
+                                  {(() => {
+                                    const currentAnonymousId = getAnonymousIdSafe()
+                                    const isOwner = report?.anonymous_id === currentAnonymousId
+                                    const isFlagged = report?.is_flagged ?? false
+                                    const isFlagging = flaggingReports.has(report.id)
 
-                                if (isOwner) return null
+                                    if (isOwner) return null
 
-                                if (isFlagged) {
-                                  return (
-                                    <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                      Denunciado
-                                    </span>
-                                  )
-                                }
+                                    if (isFlagged) {
+                                      return (
+                                        <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                          Denunciado
+                                        </span>
+                                      )
+                                    }
 
-                                return (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      handleFlag(e, report.id)
-                                    }}
-                                    disabled={isFlagging}
-                                    className="hover:text-yellow-400"
-                                    title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                                  >
-                                    {isFlagging ? (
-                                      <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                    ) : (
-                                      <Flag className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </AnimatedCard>
-                  </SmartLink>
+                                    return (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.preventDefault()
+                                          handleFlag(e, report.id)
+                                        }}
+                                        disabled={isFlagging}
+                                        className="hover:text-yellow-400"
+                                        title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
+                                      >
+                                        {isFlagging ? (
+                                          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                        ) : (
+                                          <Flag className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    )
+                                  })()}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </AnimatedCard>
+                      </SmartLink>
+                    ))}
+                  </div>
                 )
-              })
-              .filter(Boolean) // Remove any null entries from map
-            }
+              })}
+            </div>
           </div>
         )}
-      </div>
+      </PullToRefresh>
 
       {/* Flag Dialog */}
-      {isFlagDialogOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
-          setIsFlagDialogOpen(false)
-          setFlaggingReportId(null)
-        }}>
-          <Card className="w-full max-w-md bg-dark-card border-dark-border" onClick={(e) => e.stopPropagation()}>
-            <CardHeader>
-              <CardTitle>Reportar Contenido</CardTitle>
-              <CardDescription>
-                ¿Por qué quieres reportar este contenido?
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
-                  const isFlagging = flaggingReports.has(flaggingReportId ?? '')
-                  return (
-                    <Button
-                      key={reason}
-                      variant="outline"
-                      className="w-full justify-start"
-                      onClick={() => handleFlagSubmit(reason)}
-                      disabled={isFlagging}
-                    >
-                      {isFlagging ? (
-                        <>
-                          <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
-                          Reportando...
-                        </>
-                      ) : (
-                        reason
-                      )}
-                    </Button>
-                  )
-                })}
-                <Button
-                  variant="ghost"
-                  className="w-full mt-4"
-                  onClick={() => {
-                    setIsFlagDialogOpen(false)
-                    setFlaggingReportId(null)
-                  }}
-                  disabled={flaggingReports.has(flaggingReportId ?? '')}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
+      {
+        isFlagDialogOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+            setIsFlagDialogOpen(false)
+            setFlaggingReportId(null)
+          }}>
+            <Card className="w-full max-w-md bg-dark-card border-dark-border" onClick={(e) => e.stopPropagation()}>
+              <CardHeader>
+                <CardTitle>Reportar Contenido</CardTitle>
+                <CardDescription>
+                  ¿Por qué quieres reportar este contenido?
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
+                    const isFlagging = flaggingReports.has(flaggingReportId ?? '')
+                    return (
+                      <Button
+                        key={reason}
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => handleFlagSubmit(reason)}
+                        disabled={isFlagging}
+                      >
+                        {isFlagging ? (
+                          <>
+                            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                            Reportando...
+                          </>
+                        ) : (
+                          reason
+                        )}
+                      </Button>
+                    )
+                  })}
+                  <Button
+                    variant="ghost"
+                    className="w-full mt-4"
+                    onClick={() => {
+                      setIsFlagDialogOpen(false)
+                      setFlaggingReportId(null)
+                    }}
+                    disabled={flaggingReports.has(flaggingReportId ?? '')}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
+      }
+    </div >
   )
 }

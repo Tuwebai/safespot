@@ -10,6 +10,9 @@ import type { Report } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
+import { OptimizedImage } from '@/components/OptimizedImage'
+import { useRef } from 'react'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
@@ -158,6 +161,47 @@ export function MisFavoritos() {
     )
   }
 
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const [columns, setColumns] = useState(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
+  const [scrollMargin, setScrollMargin] = useState(0)
+
+  useEffect(() => {
+    const handleLayoutUpdate = () => {
+      setColumns(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
+      if (parentRef.current) {
+        setScrollMargin(parentRef.current.offsetTop)
+      }
+    }
+
+    // Calcular inicial
+    handleLayoutUpdate()
+
+    // Observar cambios de tamaño
+    window.addEventListener('resize', handleLayoutUpdate)
+
+    // Pequeño delay para asegurar que el DOM se ha asentado
+    const timeout = setTimeout(handleLayoutUpdate, 100)
+
+    return () => {
+      window.removeEventListener('resize', handleLayoutUpdate)
+      clearTimeout(timeout)
+    }
+  }, [reports.length])
+
+  // Virtualizer setup using window scroll
+  const rowVirtualizer = useWindowVirtualizer({
+    count: Math.ceil(reports.length / columns),
+    estimateSize: () => 480,
+    overscan: 5,
+    scrollMargin,
+  })
+
+  // Resize listener
+  useEffect(() => {
+    rowVirtualizer.measure()
+  }, [columns, rowVirtualizer])
+
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-8">
@@ -167,124 +211,138 @@ export function MisFavoritos() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {reports
-          .filter((report) => {
-            // Defensive: filter out any invalid reports
-            return (
-              report != null &&
-              typeof report === 'object' &&
-              report.id != null &&
-              typeof report.id === 'string' &&
-              report.title != null &&
-              typeof report.title === 'string'
-            )
-          })
-          .map((report) => {
-            // Additional defensive check inside map
-            if (!report || !report.id) {
-              return null
-            }
+      <div
+        ref={parentRef}
+        className="w-full"
+      >
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const startIndex = virtualRow.index * columns
+            const rowItems = reports
+              .filter((report) => {
+                return (
+                  report != null &&
+                  typeof report === 'object' &&
+                  report.id != null &&
+                  typeof report.id === 'string' &&
+                  report.title != null &&
+                  typeof report.title === 'string'
+                )
+              })
+              .slice(startIndex, startIndex + columns)
 
-            const imageUrls: string[] = Array.isArray(report.image_urls) ? report.image_urls : []
-            const hasImage = imageUrls.length > 0
-
             return (
-              <Card
-                key={report.id}
-                className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
-                onMouseEnter={() => {
-                  prefetchRouteChunk('DetalleReporte')
-                  prefetchReport(report.id)
+              <div
+                key={virtualRow.key}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
                 }}
-                onClick={() => navigate(`/reporte/${report.id}`)}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
               >
-                {/* Image Section (Top) */}
-                {hasImage && (
-                  <div className="relative h-48 w-full overflow-hidden rounded-t-lg">
-                    <img
-                      src={imageUrls[0]}
-                      alt={report.title}
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Overlays (Top Right) */}
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      <Badge className={getStatusColor(report.status)}>
-                        {getStatusLabel(report.status)}
-                      </Badge>
-                    </div>
-                  </div>
-                )}
-
-                {/* Content Section (Bottom) */}
-                <CardContent className="p-6">
-                  {/* Header (Title & Category) */}
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                      {report.title}
-                    </h3>
-                    {!hasImage && (
-                      <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                        {getStatusLabel(report.status)}
-                      </Badge>
+                {rowItems.map((report) => (
+                  <Card
+                    key={report.id}
+                    className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
+                    onMouseEnter={() => {
+                      prefetchRouteChunk('DetalleReporte')
+                      prefetchReport(report.id)
+                    }}
+                    onClick={() => navigate(`/reporte/${report.id}`)}
+                  >
+                    {/* Image Section (Top) */}
+                    {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
+                      <div className="relative h-48 w-full overflow-hidden rounded-t-lg bg-dark-bg/50">
+                        <OptimizedImage
+                          src={report.image_urls[0]}
+                          alt={report.title}
+                          aspectRatio={16 / 9}
+                          className="w-full h-full"
+                        />
+                        <div className="absolute top-2 right-2 flex gap-2">
+                          <Badge className={getStatusColor(report.status)}>
+                            {getStatusLabel(report.status)}
+                          </Badge>
+                        </div>
+                      </div>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                    <span className="text-xs text-muted-foreground">{report.category}</span>
-                  </div>
 
-                  {/* Description */}
-                  <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                    {report.description}
-                  </p>
-
-                  {/* Location */}
-                  <div className="flex items-center text-sm text-foreground/60 mb-4">
-                    <MapPin className="h-4 w-4 mr-1" />
-                    <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                  </div>
-
-                  {/* Meta Footer (Date & Stats) */}
-                  <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                    <span>{formatDate(report.created_at)}</span>
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center gap-1" title="Hilos">
-                        <GitBranch className="h-4 w-4" />
-                        <span>{report.threads_count ?? 0}</span>
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                          {report.title}
+                        </h3>
+                        {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
+                          <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                            {getStatusLabel(report.status)}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1" title="Comentarios">
-                        <MessageCircle className="h-4 w-4" />
-                        <span>{report.comments_count}</span>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                        <span className="text-xs text-muted-foreground">{report.category}</span>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Action Bar (Bottom) */}
-                  <div className="flex items-center justify-between pt-4 border-t border-dark-border">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-neon-green text-neon-green hover:bg-neon-green/10"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        navigate(`/reporte/${report.id}`)
-                      }}
-                    >
-                      Ver Detalles
-                    </Button>
-                    <div className="flex items-center">
-                      <FavoriteButton
-                        reportId={report.id}
-                        isFavorite={true}
-                        onToggle={(newState) => handleFavoriteToggle(report.id, newState)}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                      <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                        {report.description}
+                      </p>
+
+                      <div className="flex items-center text-sm text-foreground/60 mb-4">
+                        <MapPin className="h-4 w-4 mr-1" />
+                        <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                        <span>{formatDate(report.created_at)}</span>
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center gap-1" title="Hilos">
+                            <GitBranch className="h-4 w-4" />
+                            <span>{report.threads_count ?? 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1" title="Comentarios">
+                            <MessageCircle className="h-4 w-4" />
+                            <span>{report.comments_count}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-dark-border">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-neon-green text-neon-green hover:bg-neon-green/10"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            navigate(`/reporte/${report.id}`)
+                          }}
+                        >
+                          Ver Detalles
+                        </Button>
+                        <div className="flex items-center">
+                          <FavoriteButton
+                            reportId={report.id}
+                            isFavorite={true}
+                            onToggle={(newState) => handleFavoriteToggle(report.id, newState)}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             )
           })}
+        </div>
       </div>
     </div>
   )

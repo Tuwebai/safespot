@@ -22,12 +22,17 @@ export function DeleteReportDialog({ isOpen, deleting, onConfirm, onCancel }: De
     if (!isOpen) return null
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+        >
             <Card className="w-full max-w-md bg-dark-card border-dark-border">
                 <CardHeader>
                     <div className="flex items-center gap-3 mb-2">
-                        <AlertTriangle className="h-6 w-6 text-red-400" />
-                        <CardTitle>Eliminar Reporte</CardTitle>
+                        <AlertTriangle className="h-6 w-6 text-red-400" aria-hidden="true" />
+                        <CardTitle id="delete-dialog-title">Eliminar Reporte</CardTitle>
                     </div>
                     <CardDescription>
                         Esta acción no se puede deshacer

@@ -107,13 +107,13 @@ export const EnhancedComment = memo(function EnhancedComment({
   const getThreadTypeColor = (type?: string) => {
     switch (type) {
       case 'investigation':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+        return 'bg-[hsl(var(--badge-investigation)/0.15)] text-[hsl(var(--badge-investigation))] border-[hsl(var(--badge-investigation)/0.3)]'
       case 'evidence':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+        return 'bg-[hsl(var(--badge-evidence)/0.15)] text-[hsl(var(--badge-evidence))] border-[hsl(var(--badge-evidence)/0.3)]'
       case 'coordination':
-        return 'bg-green-500/20 text-green-400 border-green-500/30'
+        return 'bg-[hsl(var(--badge-coordination)/0.15)] text-[hsl(var(--badge-coordination))] border-[hsl(var(--badge-coordination)/0.3)]'
       case 'testimony':
-        return 'bg-red-500/20 text-red-400 border-red-500/30'
+        return 'bg-[hsl(var(--badge-testimony)/0.15)] text-[hsl(var(--badge-testimony))] border-[hsl(var(--badge-testimony)/0.3)]'
       default:
         return ''
     }
@@ -213,9 +213,9 @@ export const EnhancedComment = memo(function EnhancedComment({
             <Avatar className="h-8 w-8 border border-white/10 shrink-0">
               <AvatarImage
                 src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`}
-                alt={`Usuario ${comment.anonymous_id}`}
+                alt=""
               />
-              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+              <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400" aria-hidden="true">
                 {getUserInitials(comment.anonymous_id)}
               </AvatarFallback>
             </Avatar>      {/* User Details */}
@@ -239,8 +239,8 @@ export const EnhancedComment = memo(function EnhancedComment({
                 {/* Pinned Badge */}
                 {comment.is_pinned && (
                   <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                    <Pin className="h-3 w-3 mr-1" />
-                    📌 Fijado
+                    <Pin className="h-3 w-3 mr-1" aria-hidden="true" />
+                    Fijado
                   </Badge>
                 )}
 
@@ -285,9 +285,10 @@ export const EnhancedComment = memo(function EnhancedComment({
               size="sm"
               className="h-8 w-8 p-0"
               onClick={handleToggleMenu}
+              aria-label="Más opciones de comentario"
               title="Más opciones"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
             </Button>
 
             {/* Context Menu Dropdown */}
@@ -407,8 +408,9 @@ export const EnhancedComment = memo(function EnhancedComment({
               size="sm"
               onClick={() => onReply?.(comment.id)}
               className="text-foreground/60 hover:text-foreground"
+              aria-label="Responder a este comentario"
             >
-              <MessageCircle className="h-4 w-4 mr-1" />
+              <MessageCircle className="h-4 w-4 mr-1" aria-hidden="true" />
               Responder
             </Button>
             <Button
@@ -416,9 +418,10 @@ export const EnhancedComment = memo(function EnhancedComment({
               size="sm"
               onClick={handleLike}
               className={comment.liked_by_me ? "text-yellow-400 font-medium" : "text-foreground/60 hover:text-foreground"}
+              aria-label={comment.liked_by_me ? `Quitar me gusta. Total: ${comment.upvotes_count}` : `Dar me gusta. Total: ${comment.upvotes_count}`}
             >
               <>
-                <ThumbsUp className={`h-4 w-4 mr-1 ${comment.liked_by_me ? 'fill-current' : ''}`} />
+                <ThumbsUp className={`h-4 w-4 mr-1 ${comment.liked_by_me ? 'fill-current' : ''}`} aria-hidden="true" />
                 Me gusta {comment.upvotes_count > 0 && `(${comment.upvotes_count})`}
               </>
             </Button>
@@ -476,9 +479,10 @@ export const EnhancedComment = memo(function EnhancedComment({
                 className={`h-7 w-7 p-0 ${comment.is_flagged ? 'text-yellow-400 opacity-50 cursor-not-allowed' : 'hover:text-yellow-400'}`}
                 onClick={() => onFlag?.(comment.id)}
                 disabled={comment.is_flagged ?? false}
+                aria-label={comment.is_flagged ? 'Ya has reportado este comentario' : 'Reportar contenido inapropiado'}
                 title={comment.is_flagged ? 'Ya has reportado este comentario' : 'Reportar'}
               >
-                <Flag className={`h-4 w-4 ${comment.is_flagged ? 'fill-current' : ''}`} />
+                <Flag className={`h-4 w-4 ${comment.is_flagged ? 'fill-current' : ''}`} aria-hidden="true" />
               </Button>
             )}
           </div>

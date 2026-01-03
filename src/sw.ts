@@ -1,22 +1,91 @@
 /// <reference lib="webworker" />
+// @ts-ignore - Silence Workbox logs in development
+self.__WB_DISABLE_DEV_LOGS = true;
+
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
+import { StaleWhileRevalidate, CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 declare let self: ServiceWorkerGlobalScope;
 
-// 1. Claim clients immediately to control the page ASAP
+// 1. Tomar el control de los clientes inmediatamente
 self.skipWaiting();
 clientsClaim();
 
-// 2. Cleanup old caches
+// 2. Limpiar cachés antiguos
 cleanupOutdatedCaches();
 
-// 3. Precache build assets (HTML, JS, CSS)
-// This variable is injected by VitePWA at build time
+// 3. Pre-caché de assets de construcción (HTML, JS, CSS)
 precacheAndRoute(self.__WB_MANIFEST);
 
-// 3.5. Listen for SKIP_WAITING message from client
+// ---------------------------------------------------------
+// ESTRATEGIAS DE CACHÉ AVANZADAS
+// ---------------------------------------------------------
+
+// A. Imágenes de Reportes (Stale-while-revalidate)
+// Las imágenes se muestran instantáneamente desde caché y se actualizan en segundo plano.
+registerRoute(
+    ({ request }) => request.destination === 'image',
+    new StaleWhileRevalidate({
+        cacheName: 'safespot-images',
+        plugins: [
+            new ExpirationPlugin({
+                maxEntries: 100, // Máximo 100 imágenes en caché
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 días de vida
+            }),
+            new CacheableResponsePlugin({
+                statuses: [0, 200],
+            }),
+        ],
+    })
+);
+
+// B. Fuentes de Google y Assets Estáticos (Cache-first)
+// Las fuentes cambian muy poco, mejor servirlas al instante desde caché.
+registerRoute(
+    ({ request }) =>
+        request.destination === 'font' ||
+        request.url.includes('gstatic.com') ||
+        request.url.includes('googleapis.com'),
+    new CacheFirst({
+        cacheName: 'safespot-static-assets',
+        plugins: [
+            new ExpirationPlugin({
+                maxEntries: 20,
+                maxAgeSeconds: 365 * 24 * 60 * 60, // 1 año
+            }),
+            new CacheableResponsePlugin({
+                statuses: [0, 200],
+            }),
+        ],
+    })
+);
+
+// C. Llamadas a la API (Network-first)
+// Intentar cargar datos frescos, si no hay internet usar la última versión guardada.
+// EXCLUIMOS tiempo real (SSE) porque requiere una conexión abierta que no se puede cachear.
+registerRoute(
+    ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.includes('/realtime/'),
+    new NetworkFirst({
+        cacheName: 'safespot-api-cache',
+        plugins: [
+            new ExpirationPlugin({
+                maxEntries: 50,
+                maxAgeSeconds: 24 * 60 * 60, // 24 horas para datos de API
+            }),
+            new CacheableResponsePlugin({
+                statuses: [0, 200],
+            }),
+        ],
+    })
+);
+
+// ---------------------------------------------------------
+
+// 3.5. Escuchar mensaje SKIP_WAITING
 self.addEventListener('message', (event) => {
     if (event.data?.type === 'SKIP_WAITING') {
         self.skipWaiting();

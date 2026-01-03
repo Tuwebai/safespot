@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import confetti from 'canvas-confetti'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Award, Trophy, Star, Lock } from 'lucide-react'
+import { Award, Trophy, Star, Lock, Zap } from 'lucide-react'
 import type { GamificationBadge, NewBadge } from '@/lib/api'
 import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
@@ -26,6 +28,19 @@ export function Gamificacion() {
   // State for Legendary Reveal
   const [legendaryBadgeToReveal, setLegendaryBadgeToReveal] = useState<{ name: string, icon: string, description: string, rarity: 'legendary' } | null>(null)
 
+  // Use animated points and level
+  const {
+    animatedPoints,
+    animatedLevel,
+    animatedProgress,
+    pointsAdded,
+    levelUp
+  } = usePointsAnimation({
+    currentPoints: profile?.points || 0,
+    currentLevel: profile?.level || 1,
+    animationDuration: 600
+  })
+
   // Handle new badges when data changes
   useEffect(() => {
     if (summary?.newBadges && summary.newBadges.length > 0) {
@@ -39,6 +54,14 @@ export function Gamificacion() {
       }, 2000)
 
       summary.newBadges.forEach((badge: NewBadge) => {
+        // Disparar confetti al obtener una insignia
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#00ff88', '#3b82f6', '#a855f7', '#f59e0b']
+        })
+
         // Find the full badge info
         const fullBadge = summary.badges.find(b => b.code === badge.code)
         if (fullBadge) {
@@ -63,21 +86,32 @@ export function Gamificacion() {
     }
   }, [summary?.newBadges, summary?.badges])
 
+  // Confetti al subir de nivel
+  useEffect(() => {
+    if (levelUp) {
+      const duration = 3 * 1000
+      const animationEnd = Date.now() + duration
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 }
+
+      const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min
+
+      const interval: any = setInterval(function () {
+        const timeLeft = animationEnd - Date.now()
+
+        if (timeLeft <= 0) {
+          return clearInterval(interval)
+        }
+
+        const particleCount = 50 * (timeLeft / duration)
+        // since particles fall down, start a bit higher than random
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } })
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } })
+      }, 250)
+    }
+  }, [levelUp])
+
   // Error message from query
   const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
-
-  // Use animated points and level
-  const {
-    animatedPoints,
-    animatedLevel,
-    animatedProgress,
-    pointsAdded,
-    levelUp
-  } = usePointsAnimation({
-    currentPoints: profile?.points || 0,
-    currentLevel: profile?.level || 1,
-    animationDuration: 600
-  })
 
   // Get latest badge info for points feedback
   const latestBadgeInfo = useMemo(() => {
@@ -172,10 +206,10 @@ export function Gamificacion() {
 
       {/* Header - Always visible immediately */}
       <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">
+        <h1 className="text-3xl sm:text-4xl font-bold mb-2">
           <span className="gradient-text">Gamificación</span>
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm sm:text-base text-muted-foreground">
           Todo lo que podés lograr en SafeSpot. Tu participación suma.
         </p>
       </div>
@@ -221,10 +255,10 @@ export function Gamificacion() {
                     visible={pointsAdded !== null && pointsAdded > 0}
                   />
 
-                  <div className="text-6xl font-bold text-neon-green mb-2 transition-all duration-300">
+                  <div className="text-5xl sm:text-6xl font-bold text-neon-green mb-2 transition-all duration-300">
                     Nivel {animatedLevel}
                   </div>
-                  <div className="text-lg text-muted-foreground mb-4">
+                  <div className="text-base sm:text-lg text-muted-foreground mb-4">
                     <span className="font-semibold text-foreground">{animatedPoints}</span> puntos totales
                   </div>
 
@@ -256,17 +290,19 @@ export function Gamificacion() {
                       {profile.level >= MAX_LEVEL ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
                     </span>
                   </div>
-                  <div className="w-full bg-dark-bg rounded-full h-4 overflow-hidden relative">
-                    <div
-                      className="bg-neon-green h-4 rounded-full transition-all duration-600 ease-out relative"
-                      style={{
-                        width: `${animatedProgress}%`,
-                        transition: 'width 600ms cubic-bezier(0.4, 0, 0.2, 1)'
-                      }}
+                  <div className="w-full bg-dark-bg/50 rounded-full h-5 overflow-hidden relative border border-dark-border/30">
+                    <motion.div
+                      className="bg-gradient-to-r from-neon-green to-blue-500 h-full rounded-full relative"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${animatedProgress}%` }}
+                      transition={{ duration: 1, ease: "easeOut" }}
                     >
                       {/* Shimmer effect on progress bar */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-                    </div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+
+                      {/* Glowing tip */}
+                      <div className="absolute right-0 top-0 bottom-0 w-1 bg-white shadow-[0_0_10px_#fff]" />
+                    </motion.div>
                   </div>
                 </div>
 
@@ -449,18 +485,17 @@ export function Gamificacion() {
                         const isNewlyUnlocked = newlyUnlockedBadgeIds.has(badge.id)
                         const rarityStyle = getRarityStyle(badge.rarity, isUnlocked)
 
-                        const progressPercent = badge.progress.required > 0
-                          ? Math.min(100, (badge.progress.current / badge.progress.required) * 100)
-                          : 0
-
                         return (
-                          <div
+                          <motion.div
                             key={badge.id}
+                            initial={isNewlyUnlocked ? { scale: 0.8, opacity: 0 } : {}}
+                            animate={isNewlyUnlocked ? { scale: 1, opacity: 1 } : {}}
+                            whileHover={{ scale: 1.05, y: -5 }}
                             className={`
-                              p-4 rounded-lg border transition-all relative group
+                              p-4 rounded-lg border transition-all relative group h-full
                               ${rarityStyle}
-                              hover:border-opacity-100 hover:scale-[1.02]
-                              ${isNewlyUnlocked ? 'animate-badge-unlock' : ''}
+                              hover:border-opacity-100
+                              ${isNewlyUnlocked ? 'ring-2 ring-neon-green ring-offset-2 ring-offset-dark-bg' : ''}
                             `}
                           >
                             <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
@@ -477,16 +512,16 @@ export function Gamificacion() {
                               </span>
                             </div>
 
-                            <div className="flex items-start gap-3 mt-1">
+                            <div className="flex items-start gap-4 mt-1">
                               <div className={`
-                                text-4xl transition-transform duration-300
-                                ${isUnlocked ? 'scale-110 drop-shadow-lg' : 'grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-70'}
+                                text-4xl transition-transform duration-500
+                                ${isUnlocked ? 'scale-110 drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]' : 'grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-70'}
                               `}>
                                 {badge.icon}
                               </div>
-                              <div className="flex-1 min-w-0 pr-4">
+                              <div className="flex-1 min-w-0">
                                 <h4 className={`
-                                  font-bold text-sm mb-0.5
+                                  font-bold text-base mb-1
                                   ${isUnlocked
                                     ? (badge.rarity === 'legendary' ? 'text-amber-400 drop-shadow-sm' :
                                       badge.rarity === 'epic' ? 'text-purple-400' :
@@ -496,36 +531,37 @@ export function Gamificacion() {
                                   {badge.name}
                                 </h4>
 
-                                <p className={`text-xs mb-3 line-clamp-2 ${isUnlocked ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}>
+                                <p className={`text-xs mb-4 leading-relaxed ${isUnlocked ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}>
                                   {badge.description}
                                 </p>
 
-                                <div className="mt-auto space-y-2">
+                                <div className="mt-auto flex flex-wrap gap-2">
                                   {badge.points > 0 && (
-                                    <div>
-                                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${isUnlocked
-                                        ? 'text-foreground/80 bg-white/5 border-white/10'
-                                        : 'text-muted-foreground/50 bg-dark-bg border-dark-border/30'
-                                        }`}>
-                                        +{badge.points} pts
-                                      </span>
-                                    </div>
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${isUnlocked
+                                      ? 'text-neon-green bg-neon-green/10 border-neon-green/20'
+                                      : 'text-muted-foreground/50 bg-dark-bg border-dark-border/30'
+                                      }`}>
+                                      <Zap className="h-3 w-3" />
+                                      +{badge.points} XP
+                                    </span>
                                   )}
 
                                   {!isUnlocked && (
-                                    <div className="space-y-1.5">
+                                    <div className="w-full space-y-2 mt-2">
                                       <div className="flex justify-between text-[10px] font-medium">
                                         <span className="text-muted-foreground/80">
                                           Progreso
                                         </span>
                                         <span className="text-muted-foreground">
-                                          {badge.progress.current} / {badge.progress.required}
+                                          {badge.progress.percent}%
                                         </span>
                                       </div>
-                                      <div className="w-full bg-dark-bg/50 rounded-full h-1.5 overflow-hidden border border-dark-border/20">
-                                        <div
-                                          className="h-full rounded-full transition-all duration-1000 bg-white/20"
-                                          style={{ width: `${progressPercent}%` }}
+                                      <div className="w-full bg-dark-bg/50 rounded-full h-1.5 overflow-hidden border border-dark-border/10">
+                                        <motion.div
+                                          className="h-full rounded-full bg-white/20"
+                                          initial={{ width: 0 }}
+                                          animate={{ width: `${badge.progress.percent}%` }}
+                                          transition={{ duration: 1.5, delay: 0.2 }}
                                         />
                                       </div>
                                     </div>
@@ -533,7 +569,7 @@ export function Gamificacion() {
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          </motion.div>
                         )
                       })}
                     </div>

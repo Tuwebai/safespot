@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { RichTextEditor } from '@/components/ui/rich-text-editor'
+import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { EnhancedComment } from './enhanced-comment'
 import { CornerDownRight } from 'lucide-react'
 import type { Comment } from '@/lib/api'

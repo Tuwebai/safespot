@@ -129,6 +129,7 @@ export function Header() {
                   ? "border-neon-green bg-neon-green/10"
                   : "border-transparent hover:border-neon-green/50"
               )}
+                aria-label="Ver mi perfil y logros"
                 title="Mi Perfil"
               >
                 <Avatar className="h-full w-full">
@@ -159,9 +160,9 @@ export function Header() {
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
-              aria-label="Toggle menu"
+              aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
             >
-              <div className="hamburger-icon">
+              <div className="hamburger-icon" aria-hidden="true">
                 <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
                 <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
                 <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
