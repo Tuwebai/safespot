@@ -418,7 +418,7 @@ router.get('/public/:alias', async (req, res) => {
       return res.status(400).json({ error: 'Alias required' });
     }
 
-    // Public query - using empty string for system access (safe for public read-only data)
+    // Public query - get user data
     const result = await queryWithRLS(
       '',
       `SELECT alias, avatar_url, level, points, total_reports, created_at
@@ -433,6 +433,35 @@ router.get('/public/:alias', async (req, res) => {
 
     const publicProfile = result.rows[0];
 
+    // Fetch Badges (Joined with badge details)
+    const badgesResult = await queryWithRLS(
+      '',
+      `SELECT b.code, b.name, b.icon, b.description, b.rarity, ub.awarded_at
+       FROM user_badges ub
+       JOIN badges b ON ub.badge_id = b.id
+       WHERE ub.anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
+       ORDER BY b.level DESC, ub.awarded_at DESC`,
+      [alias]
+    );
+
+    // Calculate detailed stats (This could be cached or pre-calculated in a real high-scale app)
+    // For now, we calculate on the fly for freshness
+    const statsResult = await queryWithRLS(
+      '',
+      `WITH user_id AS (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
+       SELECT 
+         (SELECT COUNT(*) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as total_reports,
+         (SELECT COUNT(*) FROM comments WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as total_comments,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as report_likes,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM comments WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as comment_likes,
+         (SELECT COUNT(DISTINCT created_at::date) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id) AND created_at > NOW() - INTERVAL '30 days') as active_days_30
+       `,
+      [alias]
+    );
+
+    const stats = statsResult.rows[0] || {};
+    const trustScore = Math.min(100, 50 + (parseInt(stats.report_likes) * 2) + (parseInt(stats.comment_likes) * 0.5)); // Simple algo
+
     // Get public reports (limit to 5 most recent)
     const reportsResult = await queryWithRLS(
       '',
@@ -441,7 +470,7 @@ router.get('/public/:alias', async (req, res) => {
        WHERE anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
        AND deleted_at IS NULL
        ORDER BY created_at DESC 
-       LIMIT 5`,
+       LIMIT 10`,
       [alias]
     );
 
@@ -449,6 +478,12 @@ router.get('/public/:alias', async (req, res) => {
       success: true,
       data: {
         ...publicProfile,
+        badges: badgesResult.rows,
+        stats: {
+          trust_score: Math.floor(trustScore),
+          likes_received: parseInt(stats.report_likes) + parseInt(stats.comment_likes),
+          active_days_30: parseInt(stats.active_days_30)
+        },
         recent_reports: reportsResult.rows
       }
     });
