@@ -11,9 +11,10 @@ interface EditAliasModalProps {
     onClose: () => void;
     currentAlias?: string | null;
     onSuccess: (newAlias: string) => void;
+    isForced?: boolean; // New prop for mandatory mode
 }
 
-export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess }: EditAliasModalProps) {
+export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isForced = false }: EditAliasModalProps) {
     const toast = useToast();
     const [alias, setAlias] = useState(currentAlias || '');
     const [submitting, setSubmitting] = useState(false);
@@ -51,10 +52,12 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess }: Edi
             await usersApi.updateProfile({ alias });
             toast.success('Alias actualizado correctamente');
             onSuccess(alias);
-            onClose();
-        } catch (err) {
+            if (!isForced) onClose(); // Only close if not forced (parent might handle closing)
+        } catch (err: any) {
             console.error(err);
-            setError('Error al guardar el alias. Intenta nuevamente.');
+            // Mostrar mensaje específico del backend si existe (ej: "Este alias ya está en uso")
+            const backendMessage = err.response?.data?.message || err.message;
+            setError(backendMessage || 'Error al guardar el alias. Intenta nuevamente.');
         } finally {
             setSubmitting(false);
         }
@@ -62,20 +65,22 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess }: Edi
 
     return (
         <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
         >
             <Card className="w-full max-w-sm bg-dark-card border-dark-border shadow-xl relative animate-in zoom-in-95 duration-200">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:text-foreground"
-                    onClick={onClose}
-                    disabled={submitting}
-                >
-                    <X className="h-4 w-4" />
-                </Button>
+                {!isForced && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={onClose}
+                        disabled={submitting}
+                    >
+                        <X className="h-4 w-4" />
+                    </Button>
+                )}
 
                 <CardHeader>
                     <div className="flex items-center gap-3">
@@ -119,14 +124,16 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess }: Edi
                         </div>
 
                         <div className="flex justify-end gap-2 pt-2">
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={onClose}
-                                disabled={submitting}
-                            >
-                                Cancelar
-                            </Button>
+                            {!isForced && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={onClose}
+                                    disabled={submitting}
+                                >
+                                    Cancelar
+                                </Button>
+                            )}
                             <Button
                                 type="submit"
                                 disabled={!alias.trim() || submitting}

@@ -10,7 +10,8 @@ const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home
 const Reportes = lazyRetry(() => import('@/pages/Reportes').then(m => ({ default: m.Reportes })), 'Reportes')
 const CrearReporte = lazyRetry(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })), 'CrearReporte')
 const DetalleReporte = lazyRetry(() => import('@/pages/DetalleReporte').then(m => ({ default: m.DetalleReporte })), 'DetalleReporte')
-const Explorar = lazyRetry(() => import('@/pages/Explorar').then(m => ({ default: m.Explorar })), 'Explorar')
+// Explorar convertido a import estático para corregir error de Hooks/Context
+import { Explorar } from '@/pages/Explorar'
 const Gamificacion = lazyRetry(() => import('@/pages/Gamificacion').then(m => ({ default: m.Gamificacion })), 'Gamificacion')
 const Perfil = lazyRetry(() => import('@/pages/Perfil').then(m => ({ default: m.Perfil })), 'Perfil')
 const MisFavoritos = lazyRetry(() => import('@/pages/MisFavoritos').then(m => ({ default: m.MisFavoritos })), 'MisFavoritos')

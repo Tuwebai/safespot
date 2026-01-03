@@ -746,12 +746,13 @@ export function Reportes() {
                 return (
                   <div
                     key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
                     style={{
                       position: 'absolute',
                       top: 0,
                       left: 0,
                       width: '100%',
-                      height: `${virtualRow.size}px`,
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -765,7 +766,7 @@ export function Reportes() {
                         className="block h-full no-underline"
                       >
                         <AnimatedCard className="h-full">
-                          <Card className={`group bg-dark-card border-white/5 hover:border-neon-green/30 transition-all duration-300 h-full flex flex-col overflow-hidden relative ${report.priority_zone ? 'ring-1 ring-neon-green/30 border-neon-green/20' : ''}`}>
+                          <Card className={`group bg-zinc-950 border-zinc-800 hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
                             {report.priority_zone && (
                               <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
                                 report.priority_zone === 'work' ? 'bg-blue-500 text-white' :

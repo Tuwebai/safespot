@@ -366,6 +366,70 @@ export const NotificationService = {
     },
 
     /**
+     * Notify user when mentioned in a comment
+     */
+    async notifyMention(targetAnonymousId, commentId, triggerAnonymousId, reportId) {
+        console.log(`[Notify] Event: notifyMention target=${targetAnonymousId} comment=${commentId}`);
+        try {
+            const db = DB.public();
+
+            // 1. Get target settings
+            const targetResult = await db.query(`
+                SELECT ns.notifications_today, ns.max_notifications_per_day
+                FROM notification_settings ns
+                WHERE ns.anonymous_id = $1
+            `, [targetAnonymousId]);
+
+            // If no settings (rare), create default or skip? Let's assume defaults if missing but usually valid users have settings
+            let targetSettings = targetResult.rows[0];
+
+            // Skip limits or strict checks? Mentions are high priority, but let's respect daily limit to avoid spam
+            if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
+                console.log('[Notify] Skipped Mention: Daily limit reached for target');
+                return;
+            }
+
+            // 2. Create Notification
+            await this.createNotification({
+                anonymous_id: targetAnonymousId,
+                type: 'mention', // New type
+                title: '⚡ Te han mencionado',
+                message: 'Alguien te mencionó en un comentario.',
+                entity_type: 'comment',
+                entity_id: commentId,
+                report_id: reportId
+            });
+
+            // 3. Send Push Notification
+            if (isPushConfigured()) {
+                const subscriptionsResult = await db.query(`
+                    SELECT * FROM push_subscriptions 
+                    WHERE anonymous_id = $1 AND is_active = true
+                `, [targetAnonymousId]);
+
+                if (subscriptionsResult.rows.length > 0) {
+                    const payload = createActivityNotificationPayload({
+                        type: 'mention',
+                        title: '⚡ Te han mencionado',
+                        message: 'Alguien te mencionó en un comentario.',
+                        reportId: reportId,
+                        entityId: commentId
+                    });
+
+                    for (const sub of subscriptionsResult.rows) {
+                        sendPushNotification(
+                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+                            payload
+                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                    }
+                }
+            }
+        } catch (err) {
+            logError(err, { context: 'notifyMention', targetAnonymousId, commentId });
+        }
+    },
+
+    /**
      * Notify author of a like/vote
      */
     async notifyLike(targetType, targetId, triggerAnonymousId) {

@@ -205,6 +205,14 @@ router.put('/profile', requireAnonymousId, async (req, res) => {
     });
 
   } catch (error) {
+    // Handle unique constraint violation for alias
+    if (error.code === '23505' && error.constraint === 'anonymous_users_alias_key') {
+      return res.status(409).json({
+        error: 'Alias no disponible',
+        message: 'Este alias ya está en uso. Por favor elige otro.'
+      });
+    }
+
     logError(error, req);
     res.status(500).json({ error: 'Failed to update profile' });
   }
@@ -275,6 +283,40 @@ router.post('/avatar', requireAnonymousId, upload.single('avatar'), async (req, 
   } catch (error) {
     logError(error, req);
     res.status(500).json({ error: 'Failed to upload avatar', details: error.message });
+  }
+});
+
+/**
+ * GET /api/users/search
+ * Search users by alias for mentions
+ */
+router.get('/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || typeof q !== 'string' || q.length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Search users with aliases matching query
+    // We only select necessary public info
+    const result = await queryWithRLS(
+      'system', // Use system level query or validated user
+      `SELECT alias, avatar_url, anonymous_id 
+       FROM anonymous_users 
+       WHERE alias ILIKE $1 
+       AND alias IS NOT NULL 
+       LIMIT 5`,
+      [`%${q}%`]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    logError(error, req);
+    res.json({ success: true, data: [] }); // Fail silently for autocomplete
   }
 });
 

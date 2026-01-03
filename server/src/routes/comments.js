@@ -12,6 +12,7 @@ import supabase from '../config/supabase.js';
 import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
 import { NotificationService } from '../utils/notificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { extractMentions } from '../utils/mentions.js';
 
 const router = express.Router();
 
@@ -306,6 +307,31 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
         NotificationService.notifyCommentReply(parentId, data.id, anonymousId).catch(err => {
           logError(err, { context: 'notifyCommentReply', parentId });
         });
+      }
+
+      // 3. Notify Mentioned Users
+      // Parsing content to find mentions
+      try {
+        // Dynamic import to avoid circular dependency issues or just standard import above?
+        // We'll trust standard import at top of file, but for now we added it.
+        // Wait, I need to add the import at the TOP of the file first. 
+        // Assuming I will add it in a separate step or I can use dynamic import here if needed.
+        // Let's assume I will add the import.
+
+        const mentionedIds = extractMentions(req.body.content);
+        if (mentionedIds.length > 0) {
+          console.log(`[Notify] Found mentions for comment ${data.id}:`, mentionedIds);
+          // Notify each unique mentioned user (except self)
+          mentionedIds.forEach(targetId => {
+            if (targetId !== anonymousId && targetId !== 'Tú') { // 'Tú' is from optimistic updates, shouldn't be here but safe check
+              NotificationService.notifyMention(targetId, data.id, anonymousId, req.body.report_id).catch(err => {
+                console.error('[Notify] Failed to notify mention:', err);
+              });
+            }
+          });
+        }
+      } catch (mentionErr) {
+        console.error('[Notify] Error processing mentions:', mentionErr);
       }
 
     } catch (err) {

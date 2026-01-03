@@ -7,6 +7,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Location } from './tiptap-extensions/safespot-location'
 import { Object as SafeSpotObject } from './tiptap-extensions/safespot-object'
 import { User as SafeSpotUser } from './tiptap-extensions/safespot-user'
+import Mention from '@tiptap/extension-mention'
+import suggestion from './tiptap-extensions/mention/suggestion'
 import { Button } from './button'
 import { Input } from './input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card'
@@ -71,6 +73,12 @@ export function RichTextEditor({
     Location,
     SafeSpotObject,
     SafeSpotUser,
+    Mention.configure({
+      HTMLAttributes: {
+        class: 'mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer',
+      },
+      suggestion,
+    }),
   ], [maxLength, placeholder])
 
   // Normalizar contenido inicial para soportar texto plano legacy

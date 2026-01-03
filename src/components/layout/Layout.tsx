@@ -6,6 +6,9 @@ import { BadgeNotificationManager } from '@/components/BadgeNotificationManager'
 import { NetworkStatusIndicator } from '@/components/NetworkStatusIndicator'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { useLocation } from 'react-router-dom'
+import { useProfileQuery, useInvalidateProfile } from '@/hooks/queries/useProfileQuery'
+import { EditAliasModal } from '@/components/profile/EditAliasModal'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -15,10 +18,34 @@ export function Layout({ children }: LayoutProps) {
   // Enable deterministic scroll restoration
   useScrollRestoration()
 
+  const location = useLocation()
+  const { data: profile, isLoading } = useProfileQuery()
+  const { invalidateProfile } = useInvalidateProfile()
+
+  // Routes where alias is not enforced
+  const publicRoutes = ['/terminos', '/privacidad']
+  const isPublicRoute = publicRoutes.includes(location.pathname)
+
+  // Determine if we should force alias creation
+  // Condición: No está cargando, tenemos perfil, NO tiene alias, y NO es una ruta pública
+  const showForceAlias = !isLoading && profile && !profile.alias && !isPublicRoute
+
   return (
     <ToastProvider>
       <BadgeNotificationManager />
       <NetworkStatusIndicator />
+
+      {/* Forced Alias Modal */}
+      <EditAliasModal
+        isOpen={!!showForceAlias}
+        onClose={() => { }} // No-op, forced mode handles this
+        currentAlias=""
+        onSuccess={() => {
+          invalidateProfile()
+        }}
+        isForced={true}
+      />
+
       <a href="#main-content" className="skip-link">
         Saltar al contenido principal
       </a>

@@ -663,6 +663,20 @@ export const usersApi = {
   getCategoryStats: async (): Promise<CategoryStats> => {
     return apiRequest<CategoryStats>('/users/category-stats');
   },
+
+  /**
+   * Search users by alias for mentions
+   */
+  search: async (query: string): Promise<UserProfile[]> => {
+    // Return empty array if query is too short (client side check as valid safety)
+    if (!query || query.length < 2) return [];
+
+    const response = await apiRequest<{ success: boolean; data: UserProfile[] }>(
+      `/users/search?q=${encodeURIComponent(query)}`
+    );
+    // Handle wrapped response
+    return (response as any).data || [];
+  },
 };
 
 // ============================================

@@ -251,19 +251,19 @@ const ZoneMarkers = () => {
 const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType | null, setActiveType: (t: ZoneType | null) => void }) => {
     return (
         <div className="absolute top-2 sm:top-20 left-2 sm:left-4 z-[1000] flex flex-col gap-2 scale-90 sm:scale-100 origin-top-left">
-            <div className="bg-dark-card/95 backdrop-blur-md p-2 sm:p-3 rounded-2xl border border-neon-green/20 shadow-[0_0_30px_rgba(0,0,0,0.4)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px]">
+            <div className="bg-zinc-950 p-2 sm:p-3 rounded-2xl border border-zinc-800 shadow-[0_0_30px_rgba(0,0,0,0.6)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px]">
                 <div className="flex items-center justify-between gap-2 sm:gap-4 px-1">
                     <div className="flex items-center gap-2">
                         <div className="p-1 sm:p-1.5 bg-neon-green/10 rounded-lg">
                             <ShieldAlert className="w-3.5 h-3.5 sm:w-4 h-4 text-neon-green" />
                         </div>
-                        <span className="font-bold text-[10px] sm:text-xs text-foreground tracking-tight">MODO ALERTA</span>
+                        <span className="font-bold text-[10px] sm:text-xs text-white tracking-tight">MODO ALERTA</span>
                     </div>
                     {activeType && (
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-foreground/40 hover:text-foreground hover:bg-white/5"
+                            className="h-6 w-6 text-zinc-400 hover:text-white hover:bg-white/10"
                             onClick={() => setActiveType(null)}
                         >
                             <X className="w-3.5 h-3.5" />
@@ -275,7 +275,7 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                     <Button
                         variant={activeType === 'home' ? 'default' : 'ghost'}
                         size="sm"
-                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'home' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'hover:bg-emerald-500/10 text-foreground/70 hover:text-emerald-500'}`}
+                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'home' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-emerald-500'}`}
                         onClick={() => setActiveType(activeType === 'home' ? null : 'home')}
                     >
                         <Home className="w-4 h-4" />
@@ -284,7 +284,7 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                     <Button
                         variant={activeType === 'work' ? 'default' : 'ghost'}
                         size="sm"
-                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'work' ? 'bg-blue-500 hover:bg-blue-600 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'hover:bg-blue-500/10 text-foreground/70 hover:text-blue-500'}`}
+                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'work' ? 'bg-blue-500 hover:bg-blue-600 shadow-[0_0_15px_rgba(59,130,246,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-blue-500'}`}
                         onClick={() => setActiveType(activeType === 'work' ? null : 'work')}
                     >
                         <Briefcase className="w-4 h-4" />
@@ -293,7 +293,7 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                     <Button
                         variant={activeType === 'frequent' ? 'default' : 'ghost'}
                         size="sm"
-                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'frequent' ? 'bg-amber-500 hover:bg-amber-600 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'hover:bg-amber-500/10 text-foreground/70 hover:text-amber-500'}`}
+                        className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'frequent' ? 'bg-amber-500 hover:bg-amber-600 shadow-[0_0_15px_rgba(245,158,11,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-amber-500'}`}
                         onClick={() => setActiveType(activeType === 'frequent' ? null : 'frequent')}
                     >
                         <MapPin className="w-4 h-4" />
@@ -625,8 +625,8 @@ export function SafeSpotMapClient({
 
             {/* Persistent Zone Status Overlay - FIXED POSITION, INDEPENDENT OF MAP */}
             <div className="absolute bottom-6 left-2 sm:left-4 z-[500] pointer-events-none scale-90 sm:scale-100 origin-bottom-left">
-                <div className="bg-dark-card/95 backdrop-blur-md p-2 sm:p-3 rounded-xl border border-neon-green/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] pointer-events-auto min-w-[140px] sm:min-w-[160px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-neon-green/60 font-black mb-1 sm:mb-2 px-1">Zonas Configuradas</p>
+                <div className="bg-zinc-950 p-2 sm:p-3 rounded-xl border border-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.6)] pointer-events-auto min-w-[140px] sm:min-w-[160px]">
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-neon-green/80 font-black mb-1 sm:mb-2 px-1">Zonas Configuradas</p>
                     <div className="flex flex-col gap-2">
                         {['home', 'work', 'frequent'].map(type => {
                             const zone = zones.find(z => z.type === type)
@@ -637,12 +637,12 @@ export function SafeSpotMapClient({
                                             type === 'home' ? 'bg-emerald-500/20 text-emerald-500' :
                                                 type === 'work' ? 'bg-blue-500/20 text-blue-500' :
                                                     'bg-amber-500/20 text-amber-500'
-                                        ) : 'bg-white/5 text-muted-foreground'}`}>
+                                        ) : 'bg-white/5 text-zinc-500'}`}>
                                             {type === 'home' && <Home className="w-3 h-3" />}
                                             {type === 'work' && <Briefcase className="w-3 h-3" />}
                                             {type === 'frequent' && <MapPin className="w-3 h-3" />}
                                         </div>
-                                        <span className={`font-medium ${zone ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                        <span className={`font-medium ${zone ? 'text-zinc-200' : 'text-zinc-500'}`}>
                                             {type === 'home' ? 'Casa' : type === 'work' ? 'Trabajo' : 'Zona Frec.'}
                                         </span>
                                     </div>
