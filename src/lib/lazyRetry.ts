@@ -10,30 +10,14 @@ export function lazyRetry<T extends React.ComponentType<any>>(
     name?: string
 ) {
     return lazy(async () => {
-        const pageHasAlreadyBeenForceRefreshed = JSON.parse(
-            window.sessionStorage.getItem('page-has-been-force-refreshed') || 'false'
-        );
 
         try {
             const component = await componentImport();
             return component;
         } catch (error) {
-            if (!pageHasAlreadyBeenForceRefreshed) {
-                // Log the error for tracking
-                console.warn(`[LazyRetry] Failed to load chunk ${name || ''}. Retrying once with reload...`, error);
-
-                // Mark as refreshed to prevent infinite loop
-                window.sessionStorage.setItem('page-has-been-force-refreshed', 'true');
-
-                // Force reload from server
-                window.location.reload();
-
-                // Return a never-resolving promise to stop execution
-                return new Promise(() => { });
-            }
-
-            // If we already tried refreshing once, throw the error to be caught by ErrorBoundary
-            console.error(`[LazyRetry] Critical: Failed to load chunk ${name || ''} even after reload.`, error);
+            // Disable auto-reload to prevent infinite loops (ERR_TOO_MANY_REDIRECTS)
+            // The ChunkErrorBoundary will handle the UI and offer a manual reload button.
+            console.warn(`[LazyRetry] Failed to load chunk ${name || ''}. Throwing error to Boundary.`, error);
             throw error;
         }
     });

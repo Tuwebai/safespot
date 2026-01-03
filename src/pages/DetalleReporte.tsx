@@ -158,7 +158,7 @@ export function DetalleReporte() {
         <Helmet>
           <title>Reporte no encontrado – SafeSpot</title>
         </Helmet>
-        <Card className="bg-dark-card border-dark-border">
+        <Card className="bg-card border-border">
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{reportDetail.error || 'Reporte no encontrado'}</p>
             <Button variant="outline" onClick={() => navigate('/')} className="mt-4">
@@ -255,7 +255,7 @@ export function DetalleReporte() {
         </script>
       </Helmet>
 
-      <div className="min-h-screen bg-dark-bg pb-24 md:pb-8 overflow-x-hidden">
+      <div className="min-h-screen bg-background pb-24 md:pb-8 overflow-x-hidden">
         <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 md:py-8">
           {/* Top Navigation */}
           <div className="flex items-center justify-between mb-6">
@@ -263,7 +263,7 @@ export function DetalleReporte() {
               variant="ghost"
               size="sm"
               onClick={() => navigate(-1)}
-              className="text-foreground/60 hover:text-foreground hover:bg-dark-border/30"
+              className="text-foreground/60 hover:text-foreground hover:bg-border/30"
               disabled={isBusy}
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -344,7 +344,7 @@ export function DetalleReporte() {
 
         {/* STICKY MOBILE SHARE CTA */}
         {!editor.isEditing && (
-          <div className="fixed bottom-16 left-0 right-0 z-[45] p-4 md:hidden bg-gradient-to-t from-dark-bg via-dark-bg/95 to-transparent pt-8">
+          <div className="fixed bottom-16 left-0 right-0 z-[45] p-4 md:hidden bg-gradient-to-t from-background via-background/95 to-transparent pt-8">
             <ShareButton
               category={report.category}
               zone={report.address || report.zone || 'Ubicación desconocida'}

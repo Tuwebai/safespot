@@ -93,7 +93,7 @@ export const CommentThread = memo(function CommentThread({
             <div className={`relative ${depth > 0 ? 'pl-4 border-l-2 border-foreground/10' : ''}`}>
                 {/* Thread indicator icon for nested comments */}
                 {depth > 0 && (
-                    <div className="absolute -left-3 top-6 bg-dark-bg px-1">
+                    <div className="absolute -left-3 top-6 bg-background px-1">
                         <CornerDownRight className="h-3 w-3 text-foreground/30" />
                     </div>
                 )}
@@ -130,7 +130,7 @@ export const CommentThread = memo(function CommentThread({
 
                 {/* Editors (Inline) */}
                 {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
-                    <Card className="mt-3 bg-dark-card border-dark-border">
+                    <Card className="mt-3 bg-card border-border">
                         <CardContent className="p-4">
                             <RichTextEditor
                                 value={editText}
@@ -148,7 +148,7 @@ export const CommentThread = memo(function CommentThread({
 
                 {/* Reply Editor (Inline) */}
                 {replyingTo === comment.id && onReplyTextChange && onReplySubmit && onReplyCancel && (
-                    <Card className="mt-3 bg-dark-card border-dark-border border-neon-green/30">
+                    <Card className="mt-3 bg-card border-border border-neon-green/30">
                         <CardContent className="p-4">
                             <div className="mb-2 text-sm text-foreground/70 flex items-center gap-1">
                                 <CornerDownRight className="h-3 w-3" />

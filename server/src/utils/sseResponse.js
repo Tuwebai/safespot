@@ -37,6 +37,7 @@ export class SSEResponse {
 
         // Nginx/Proxy specific: Disable buffering to ensure real-time delivery
         this.res.setHeader('X-Accel-Buffering', 'no');
+        this.res.setHeader('X-Content-Type-Options', 'nosniff'); // Security + Browser compatibility
 
         // Ensure headers are sent immediately
         if (typeof this.res.flushHeaders === 'function') {
@@ -48,7 +49,9 @@ export class SSEResponse {
         // We send 2KB of whitespace ("padding") to force the buffer to flush immediately.
         // This ensures the generic 'open' event fires on the client side without delay.
         const stabilizationPadding = ':' + ' '.repeat(2048) + '\n\n';
-        this.res.write(stabilizationPadding);
+        if (this.res.writable) {
+            this.res.write(stabilizationPadding);
+        }
 
         if (typeof this.res.flush === 'function') {
             this.res.flush();
@@ -61,22 +64,35 @@ export class SSEResponse {
      * @param {object} data - Data payload (will be JSON stringified)
      */
     send(type, data) {
-        const formattedData = JSON.stringify({ type, ...data });
-        this.res.write(`data: ${formattedData}\n\n`);
+        if (!this.res.writable) return;
 
-        if (typeof this.res.flush === 'function') {
-            this.res.flush();
+        try {
+            const formattedData = JSON.stringify({ type, ...data });
+            this.res.write(`event: message\n`); // Explicit event type helps some listeners
+            this.res.write(`data: ${formattedData}\n\n`);
+
+            if (typeof this.res.flush === 'function') {
+                this.res.flush();
+            }
+        } catch (error) {
+            console.error('[SSE] Error sending data:', error);
+            this.cleanup();
         }
     }
 
     /**
      * Start the keep-alive heartbeat
-     * @param {number} intervalMs - Interval in milliseconds (Default: 15s)
+     * @param {number} intervalMs - Interval in milliseconds (Default: 5s)
      */
-    startHeartbeat(intervalMs = 15000) {
+    startHeartbeat(intervalMs = 5000) {
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
 
         this.heartbeatInterval = setInterval(() => {
+            if (!this.res.writable) {
+                this.cleanup();
+                return;
+            }
+
             // Comment lines starting with ':' are ignored by the EventSource client
             // but keep the TCP connection active.
             this.res.write(`: heartbeat ${new Date().toISOString()}\n\n`);

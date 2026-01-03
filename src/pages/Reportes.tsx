@@ -362,7 +362,7 @@ export function Reportes() {
       </Helmet>
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">
+        <h1 className="text-4xl font-bold mb-2 text-foreground">
           Lista de Reportes
         </h1>
         <p className="text-muted-foreground">
@@ -371,8 +371,8 @@ export function Reportes() {
       </div>
 
       {/* Filtros - Hidden on mobile, shown in bottom sheet */}
-      <Card className="mb-8 bg-dark-card border-dark-border hidden md:block">
-        <CardHeader className="pb-3 border-b border-dark-border/50">
+      <Card className="mb-8 bg-card border-border hidden md:block">
+        <CardHeader className="pb-3 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Filter className="h-5 w-5 text-neon-green" aria-hidden="true" />
@@ -445,17 +445,17 @@ export function Reportes() {
             </Select>
 
             {/* Círculo de Confianza (Followed Only) */}
-            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-dark-border bg-dark-card/50 hover:bg-dark-card transition-colors cursor-pointer group"
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-border bg-card/50 hover:bg-card transition-colors cursor-pointer group"
               onClick={() => setFollowedOnly(!followedOnly)}
             >
               <div className="flex items-center gap-2">
-                <Users className={`h-4 w-4 transition-colors ${followedOnly ? 'text-neon-green' : 'text-zinc-500 group-hover:text-zinc-400'}`} />
-                <span className={`text-sm font-medium transition-colors ${followedOnly ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-400'}`}>
+                <Users className={`h-4 w-4 transition-colors ${followedOnly ? 'text-neon-green' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                <span className={`text-sm font-medium transition-colors ${followedOnly ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>
                   Mi Círculo
                 </span>
               </div>
-              <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-zinc-800'}`}>
-                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${followedOnly ? 'right-0.5 bg-neon-green shadow-[0_0_8px_rgba(33,255,140,0.5)]' : 'left-0.5 bg-zinc-600'}`} />
+              <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-muted'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${followedOnly ? 'right-0.5 bg-neon-green shadow-[0_0_8px_rgba(33,255,140,0.5)]' : 'left-0.5 bg-muted-foreground'}`} />
               </div>
             </div>
           </div>
@@ -715,7 +715,7 @@ export function Reportes() {
         className="mb-8"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pt-4">
-          <h2 className="text-xl sm:text-2xl font-semibold">
+          <h2 className="text-xl sm:text-2xl font-semibold text-foreground">
             Reportes {isFetching ? '...' : `(${reports.length})`}
           </h2>
           <Link to="/crear-reporte" className="w-full sm:w-auto">
@@ -733,7 +733,7 @@ export function Reportes() {
               ))}
             </div>
           ) : error ? (
-            <Card className="bg-dark-card border-dark-border">
+            <Card className="bg-card border-border">
               <CardContent className="py-12 text-center">
                 <p className="text-destructive mb-4">{error}</p>
                 <Button onClick={() => refetch()} variant="outline">
@@ -742,7 +742,7 @@ export function Reportes() {
               </CardContent>
             </Card>
           ) : reports.length === 0 ? (
-            <Card className="bg-dark-card border-dark-border">
+            <Card className="bg-card border-border">
               <CardContent className="py-12 text-center">
                 <p className="text-muted-foreground">
                   No se encontraron reportes con los filtros seleccionados.
@@ -756,7 +756,7 @@ export function Reportes() {
             >
               <div
                 style={{
-                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  height: `${rowVirtualizer.getTotalSize() + 200}px`,
                   width: '100%',
                   position: 'relative',
                 }}
@@ -783,9 +783,9 @@ export function Reportes() {
                       ref={(el) => {
                         if (el) {
                           // Defer measurement to avoid flushSync warning during render
-                          requestAnimationFrame(() => {
+                          setTimeout(() => {
                             rowVirtualizer.measureElement(el)
-                          })
+                          }, 0)
                         }
                       }}
                       style={{
@@ -806,7 +806,7 @@ export function Reportes() {
                           className="block h-full no-underline"
                         >
                           <AnimatedCard className="h-full">
-                            <Card className={`group bg-zinc-950 border-zinc-800 hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
+                            <Card className={`group bg-card border-border hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
                               {report.priority_zone && (
                                 <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
                                   report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
@@ -819,7 +819,7 @@ export function Reportes() {
                                 </div>
                               )}
 
-                              <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+                              <div className="relative aspect-video w-full overflow-hidden bg-muted/50">
                                 {/* Imagen optimizada */}
                                 {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
                                   <div className="relative overflow-hidden">
@@ -871,7 +871,7 @@ export function Reportes() {
                                         src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
                                         alt="Avatar"
                                       />
-                                      <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                                      <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
                                         {report.anonymous_id.substring(0, 2).toUpperCase()}
                                       </AvatarFallback>
                                     </Avatar>
@@ -894,7 +894,7 @@ export function Reportes() {
                                   </div>
                                 </div>
 
-                                <div className="flex items-center justify-between pt-4 border-t border-dark-border mt-auto">
+                                <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
                                   <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
                                   <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                                     <FavoriteButton

@@ -259,7 +259,7 @@ export const reportsApi = {
    * format: north, south, east, west
    */
   getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
-    return apiRequest<Report[]>(`/reports/bounds?north=${north}&south=${south}&east=${east}&west=${west}`);
+    return apiRequest<Report[]>(`/reports?bounds=${north},${south},${east},${west}`);
   },
 
   /**

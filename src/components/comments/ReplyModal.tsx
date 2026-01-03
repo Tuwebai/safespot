@@ -42,7 +42,7 @@ export function ReplyModal({
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
-                        className="absolute inset-0 bg-dark-bg/60 backdrop-blur-md"
+                        className="absolute inset-0 bg-background/80 backdrop-blur-md"
                     />
 
                     {/* Modal Container */}
@@ -50,15 +50,15 @@ export function ReplyModal({
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="relative w-full max-w-xl bg-zinc-900 border border-dark-border rounded-xl shadow-2xl overflow-hidden"
+                        className="relative w-full max-w-xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}
-                        <div className="flex items-center justify-between p-4 border-b border-dark-border/50">
-                            <Button variant="ghost" size="icon" onClick={onClose} className="hover:bg-dark-border/40">
+                        <div className="flex items-center justify-between p-4 border-b border-border/50">
+                            <Button variant="ghost" size="icon" onClick={onClose} className="hover:bg-muted">
                                 <X className="h-5 w-5" />
                             </Button>
-                            <span className="text-sm font-semibold text-neon-green">Nuevo Comentario</span>
+                            <span className="text-sm font-semibold text-neon-green">Nueva Respuesta</span>
                             <div className="w-10" /> {/* Spacer */}
                         </div>
 
@@ -66,9 +66,9 @@ export function ReplyModal({
                             {/* Parent Comment Context */}
                             <div className="relative flex gap-3">
                                 {/* Vertical Line Connector */}
-                                <div className="absolute left-[19px] top-[40px] bottom-[-20px] w-[2px] bg-dark-border/80" />
+                                <div className="absolute left-[19px] top-[40px] bottom-[-20px] w-[2px] bg-border/80" />
 
-                                <Avatar className="h-10 w-10 border border-dark-border z-10">
+                                <Avatar className="h-10 w-10 border border-border z-10">
                                     <AvatarImage src={parentComment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${parentComment.anonymous_id}`} />
                                     <AvatarFallback>{parentComment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
                                 </Avatar>
@@ -91,7 +91,7 @@ export function ReplyModal({
 
                             {/* Your Reply Area */}
                             <div className="mt-6 flex gap-3">
-                                <Avatar className="h-10 w-10 border border-neon-green/20 z-10 bg-dark-card">
+                                <Avatar className="h-10 w-10 border border-neon-green/20 z-10 bg-card">
                                     <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`} />
                                     <AvatarFallback className="text-neon-green bg-neon-green/10 text-xs">
                                         {profile?.alias?.substring(0, 2).toUpperCase() || 'TÚ'}
@@ -112,14 +112,14 @@ export function ReplyModal({
                         </div>
 
                         {/* Footer with Submit Button */}
-                        <div className="p-4 flex justify-end gap-3 bg-zinc-900/50">
-                            <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                        <div className="p-4 flex justify-end gap-3 bg-muted/40">
+                            <Button variant="ghost" onClick={onClose} disabled={submitting} className="text-foreground hover:bg-background/50">
                                 Cancelar
                             </Button>
                             <Button
                                 onClick={() => onReplySubmit(parentComment.id)}
                                 disabled={submitting || !replyText.trim()}
-                                className="bg-neon-green text-dark-bg hover:bg-neon-green/90 font-bold px-6"
+                                className="bg-neon-green text-black hover:bg-neon-green/90 font-bold px-6"
                             >
                                 {submitting ? 'Enviando...' : 'Responder'}
                             </Button>

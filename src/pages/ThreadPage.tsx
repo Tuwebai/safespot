@@ -131,7 +131,7 @@ export function ThreadPage() {
                 <title>Hilo de @{focusComment.alias || 'Anónimo'} – SafeSpot</title>
             </Helmet>
 
-            <div className="min-h-screen bg-dark-bg pb-20">
+            <div className="min-h-screen bg-background pb-20">
                 <div className="container mx-auto max-w-2xl px-4 py-6">
 
                     {/* Header */}
@@ -140,7 +140,7 @@ export function ThreadPage() {
                             variant="ghost"
                             size="icon"
                             onClick={() => navigate(-1)}
-                            className="hover:bg-dark-border/40"
+                            className="hover:bg-muted"
                         >
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
@@ -184,7 +184,7 @@ export function ThreadPage() {
                         </div>
 
                         {/* 3. Reply Box (Always visible under focus if replying) */}
-                        <Card className="bg-dark-card border-dark-border border-neon-green/20">
+                        <Card className="bg-card border-border border-neon-green/20">
                             <CardContent className="p-4">
                                 <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
                                     <MessageCircle className="h-3 w-3" />

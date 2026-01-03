@@ -62,7 +62,7 @@ export function RichTextEditor({
       underline: false, // Deshabilitar underline en StarterKit para evitar duplicación
       blockquote: {
         HTMLAttributes: {
-          class: 'border-l-4 border-neon-green/50 pl-4 py-2 my-2 bg-dark-bg/50 italic',
+          class: 'border-l-4 border-neon-green/50 pl-4 py-2 my-2 bg-muted/50 italic',
         },
       },
     }),
@@ -114,7 +114,7 @@ export function RichTextEditor({
     },
     editorProps: {
       attributes: {
-        class: 'tiptap-editor min-h-[200px] p-3 bg-dark-bg border border-dark-border rounded-lg text-foreground/80 focus:outline-none focus:ring-2 focus:ring-neon-green/50',
+        class: 'tiptap-editor min-h-[200px] p-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-neon-green/50',
       },
     },
     editable: !disabled,
@@ -210,7 +210,7 @@ export function RichTextEditor({
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-dark-bg rounded-lg border border-dark-border">
+      <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-muted rounded-lg border border-border text-foreground">
         {/* Basic Formatting */}
         <div className="flex items-center gap-1">
           <Button
@@ -218,7 +218,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleBold().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('bold') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('bold') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Negrita (Ctrl+B)"
           >
             <Bold className="h-4 w-4" />
@@ -228,7 +228,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('italic') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('italic') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Cursiva (Ctrl+I)"
           >
             <Italic className="h-4 w-4" />
@@ -238,7 +238,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleUnderline().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('underline') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('underline') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Subrayado (Ctrl+U)"
           >
             <UnderlineIcon className="h-4 w-4" />
@@ -248,7 +248,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleStrike().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('strike') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('strike') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Tachado"
           >
             <Strikethrough className="h-4 w-4" />
@@ -258,7 +258,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleCode().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('code') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('code') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Código (Ctrl+`)"
           >
             <Code className="h-4 w-4" />
@@ -268,7 +268,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('blockquote') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('blockquote') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Cita"
           >
             <Quote className="h-4 w-4" />
@@ -276,13 +276,13 @@ export function RichTextEditor({
         </div>
 
         {/* SafeSpot Features */}
-        <div className="flex items-center gap-1 border-l border-dark-border pl-2">
+        <div className="flex items-center gap-1 border-l border-border pl-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => openInputModal('ubicacion', 'Ingresa la ubicación:')}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 text-foreground hover:bg-background/50"
             title="Ubicación"
           >
             <Hash className="h-4 w-4 text-blue-400" />
@@ -292,7 +292,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => openInputModal('objeto', 'Ingresa el objeto:')}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 text-foreground hover:bg-background/50"
             title="Objeto"
           >
             <Type className="h-4 w-4 text-green-400" />
@@ -302,7 +302,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => openInputModal('usuario', 'Ingresa el usuario:')}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 text-foreground hover:bg-background/50"
             title="Usuario"
           >
             <AtSign className="h-4 w-4 text-purple-400" />
@@ -310,13 +310,13 @@ export function RichTextEditor({
         </div>
 
         {/* Lists */}
-        <div className="flex items-center gap-1 border-l border-dark-border pl-2">
+        <div className="flex items-center gap-1 border-l border-border pl-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('bulletList') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('bulletList') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Lista con viñetas"
           >
             <List className="h-4 w-4" />
@@ -326,7 +326,7 @@ export function RichTextEditor({
             variant="ghost"
             size="sm"
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={`h-8 w-8 p-0 ${editor.isActive('orderedList') ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${editor.isActive('orderedList') ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Lista numerada"
           >
             <ListOrdered className="h-4 w-4" />
@@ -334,13 +334,13 @@ export function RichTextEditor({
         </div>
 
         {/* Preview Toggle */}
-        <div className="flex items-center gap-1 border-l border-dark-border pl-2 ml-auto">
+        <div className="flex items-center gap-1 border-l border-border pl-2 ml-auto">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => setShowPreview(!showPreview)}
-            className={`h-8 w-8 p-0 ${showPreview ? 'bg-neon-green/20 text-neon-green' : ''}`}
+            className={`h-8 w-8 p-0 text-foreground hover:bg-background/50 ${showPreview ? 'bg-neon-green/20 text-neon-green' : ''}`}
             title="Vista previa"
           >
             <Eye className="h-4 w-4" />
@@ -350,7 +350,7 @@ export function RichTextEditor({
 
       {/* Input Area */}
       {showPreview ? (
-        <div className="min-h-[200px] p-4 bg-dark-bg border border-dark-border rounded-lg overflow-auto">
+        <div className="min-h-[200px] p-4 bg-background border border-border rounded-lg overflow-auto">
           <TipTapRenderer content={value} className="text-sm text-foreground/80" />
         </div>
       ) : (
@@ -391,7 +391,7 @@ export function RichTextEditor({
               type="button"
               onClick={() => onSubmit?.()}
               disabled={disabled || !editor.getText().trim()}
-              className="bg-neon-green text-dark-bg hover:bg-neon-green/90"
+              className="bg-neon-green text-black hover:bg-neon-green/90"
             >
               Enviar
             </Button>
@@ -408,7 +408,7 @@ export function RichTextEditor({
           onClick={handleInputModalCancel}
         >
           <Card
-            className="w-full max-w-md bg-dark-card border-dark-border"
+            className="w-full max-w-md bg-card border-border"
             onClick={(e) => e.stopPropagation()}
           >
             <CardHeader>

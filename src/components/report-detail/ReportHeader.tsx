@@ -62,7 +62,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 </Badge>
             </div>
 
-            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-zinc-950 w-fit px-3 py-1.5 rounded-full border border-dark-border/30">
+            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-muted w-fit px-3 py-1.5 rounded-full border border-border/30">
                 <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
                 <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
             </div>
@@ -78,7 +78,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                             src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
                             alt="Avatar"
                         />
-                        <AvatarFallback className="bg-dark-bg text-[10px] text-gray-400">
+                        <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
                             {report.anonymous_id.substring(0, 2).toUpperCase()}
                         </AvatarFallback>
                     </Avatar>

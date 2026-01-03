@@ -268,7 +268,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'thread' })
             onCommentCountChange?.(1)
             triggerBadgeCheck()
-            toast.success('Hilo creado correctamente')
+            // toast.success removed as per user request
         } catch (error) {
             handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')
             dispatch({ type: 'END_SUBMIT' })

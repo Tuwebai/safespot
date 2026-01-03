@@ -24,8 +24,8 @@ router.get('/comments/:reportId', (req, res) => {
     // Confirm connection
     stream.send('connected', { reportId });
 
-    // Start Keep-Alive Heartbeat
-    stream.startHeartbeat(15000);
+    // Start Keep-Alive Heartbeat (5s interval for stability)
+    stream.startHeartbeat(5000);
 
     // Event Handlers
     const handleNewComment = (comment) => {

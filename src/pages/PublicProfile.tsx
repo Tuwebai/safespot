@@ -159,7 +159,7 @@ export function PublicProfile() {
             </Button>
 
             {/* Hero Profile Header */}
-            <div className="relative mb-8 p-1 rounded-2xl bg-gradient-to-br from-zinc-800 to-zinc-950 shadow-2xl overflow-hidden border border-white/5">
+            <div className="relative mb-8 p-1 rounded-2xl bg-card shadow-2xl overflow-hidden border border-border">
                 {/* Decorative elements */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-neon-green/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none" />
@@ -170,12 +170,12 @@ export function PublicProfile() {
                     <div className="relative group">
                         <div className="absolute inset-0 bg-neon-green/20 rounded-full blur-xl group-hover:blur-2xl transition-all duration-500" />
                         <Avatar className="h-32 w-32 border-4 border-zinc-950 shadow-2xl relative z-10 ring-2 ring-white/10 ring-offset-2 ring-offset-zinc-950 group-hover:ring-neon-green transition-all duration-300">
-                            <AvatarImage src={profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.alias || 'anonymous'}`} className="object-cover" />
-                            <AvatarFallback className="bg-zinc-900 text-neon-green text-3xl font-bold font-mono border border-neon-green/20">
+                            <AvatarImage src={profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.anonymous_id}`} className="object-cover" />
+                            <AvatarFallback className="bg-muted text-neon-green text-3xl font-bold font-mono border border-neon-green/20">
                                 {profile.alias?.substring(0, 2).toUpperCase() || '??'}
                             </AvatarFallback>
                         </Avatar>
-                        <div className="absolute -bottom-2 -right-2 bg-zinc-950 border border-neon-green text-neon-green text-xs font-bold px-2 py-0.5 rounded-full z-20">
+                        <div className="absolute -bottom-2 -right-2 bg-card border border-neon-green text-neon-green text-xs font-bold px-2 py-0.5 rounded-full z-20">
                             LVL {profile.level}
                         </div>
                     </div>
@@ -184,11 +184,11 @@ export function PublicProfile() {
                     <div className="flex-1 w-full md:w-auto">
                         <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-4 mb-2">
                             <div>
-                                <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mb-1 flex items-center justify-center md:justify-start gap-3">
+                                <h1 className="text-3xl sm:text-4xl font-black text-foreground tracking-tight mb-1 flex items-center justify-center md:justify-start gap-3">
                                     @{profile.alias}
                                     {profile.stats.trust_score >= 90 && <Shield className="w-6 h-6 text-green-400 fill-green-400/20" />}
                                 </h1>
-                                <p className="text-zinc-400 text-sm flex items-center justify-center md:justify-start gap-2 mb-4">
+                                <p className="text-muted-foreground text-sm flex items-center justify-center md:justify-start gap-2 mb-4">
                                     <Calendar className="w-3.5 h-3.5" />
                                     Miembro desde {new Date(profile.created_at).toLocaleDateString()}
                                 </p>
@@ -222,19 +222,19 @@ export function PublicProfile() {
 
                             {/* Stats Chips */}
                             <div className="flex gap-2">
-                                <div className="px-3 py-1.5 rounded-lg bg-zinc-900/50 border border-white/5 flex flex-col items-center min-w-[70px]">
-                                    <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider">REP</span>
-                                    <span className="font-mono text-white font-bold">{profile.total_reports}</span>
+                                <div className="px-3 py-1.5 rounded-lg bg-muted/50 border border-border flex flex-col items-center min-w-[70px]">
+                                    <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">REP</span>
+                                    <span className="font-mono text-foreground font-bold">{profile.total_reports}</span>
                                 </div>
-                                <div className="px-3 py-1.5 rounded-lg bg-zinc-900/50 border border-white/5 flex flex-col items-center min-w-[70px]">
-                                    <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider">LIKES</span>
-                                    <span className="font-mono text-white font-bold">{profile.stats.likes_received}</span>
+                                <div className="px-3 py-1.5 rounded-lg bg-muted/50 border border-border flex flex-col items-center min-w-[70px]">
+                                    <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">LIKES</span>
+                                    <span className="font-mono text-foreground font-bold">{profile.stats.likes_received}</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* Level Bar Premium */}
-                        <div className="mt-4 w-full bg-zinc-900/80 rounded-full h-8 p-1 border border-white/5 relative overflow-hidden group">
+                        <div className="mt-4 w-full bg-muted/80 rounded-full h-8 p-1 border border-border relative overflow-hidden group">
                             <div
                                 className="h-full bg-gradient-to-r from-neon-green/60 to-neon-green rounded-full relative overflow-hidden transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(33,255,140,0.3)]"
                                 style={{ width: `${Math.max(5, levelProgress.progressPercent)}%` }}
@@ -242,10 +242,10 @@ export function PublicProfile() {
                                 <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20" />
                                 <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/20 to-transparent" />
                             </div>
-                            <div className="absolute inset-0 flex items-center justify-between px-4 text-xs font-bold text-white uppercase tracking-wider drop-shadow-md">
+                            <div className="absolute inset-0 flex items-center justify-between px-4 text-xs font-bold text-foreground uppercase tracking-wider drop-shadow-md">
                                 <span>Lvl {profile.level}</span>
                                 <span className="opacity-80 group-hover:opacity-100 transition-opacity">
-                                    {Math.floor(profile.points)} XP <span className="text-zinc-400">/ {levelProgress.pointsInCurrentLevel + levelProgress.pointsRemaining}</span>
+                                    {Math.floor(profile.points)} XP <span className="text-muted-foreground">/ {levelProgress.pointsInCurrentLevel + levelProgress.pointsRemaining}</span>
                                 </span>
                             </div>
                         </div>
@@ -260,47 +260,47 @@ export function PublicProfile() {
                 <div className="md:col-span-1 space-y-6">
 
                     {/* Stats Overview */}
-                    <Card className="bg-zinc-950 border-zinc-900 shadow-xl overflow-hidden">
+                    <Card className="bg-card border-border shadow-xl overflow-hidden">
                         <CardContent className="p-0">
-                            <div className="p-4 border-b border-zinc-900 bg-zinc-900/30 font-bold text-zinc-400 flex items-center gap-2 text-sm uppercase tracking-wider">
+                            <div className="p-4 border-b border-border bg-muted/30 font-bold text-muted-foreground flex items-center gap-2 text-sm uppercase tracking-wider">
                                 <Activity className="w-4 h-4" /> Estadísticas
                             </div>
-                            <div className="grid grid-cols-2 divide-x divide-zinc-900">
-                                <div className="p-6 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
+                            <div className="grid grid-cols-2 divide-x divide-border">
+                                <div className="p-6 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
                                     <div className={`text-2xl font-black ${trustColor} mb-1 shadow-current drop-shadow-sm`}>
                                         {profile.stats.trust_score}%
                                     </div>
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Confianza</div>
+                                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Confianza</div>
                                 </div>
-                                <div className="p-6 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
-                                    <div className="text-2xl font-black text-white mb-1">
-                                        {profile.stats.active_days_30}<span className="text-sm text-zinc-600 font-normal">d</span>
+                                <div className="p-6 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
+                                    <div className="text-2xl font-black text-foreground mb-1">
+                                        {profile.stats.active_days_30}<span className="text-sm text-muted-foreground font-normal">d</span>
                                     </div>
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Activo (30d)</div>
+                                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Activo (30d)</div>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 divide-x divide-zinc-900 border-t border-zinc-900">
-                                <div className="p-4 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
-                                    <div className="text-xl font-bold text-white mb-0.5">
+                            <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
+                                <div className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
+                                    <div className="text-xl font-bold text-foreground mb-0.5">
                                         {profile.stats.followers_count || 0}
                                     </div>
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Seguidores</div>
+                                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Seguidores</div>
                                 </div>
-                                <div className="p-4 flex flex-col items-center text-center hover:bg-white/5 transition-colors">
-                                    <div className="text-xl font-bold text-white mb-0.5">
+                                <div className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
+                                    <div className="text-xl font-bold text-foreground mb-0.5">
                                         {profile.stats.following_count || 0}
                                     </div>
-                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Siguiendo</div>
+                                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Siguiendo</div>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
 
                     {/* Badges Showcase */}
-                    <Card className="bg-zinc-950 border-zinc-900 shadow-xl relative overflow-hidden">
+                    <Card className="bg-card border-border shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-32 bg-yellow-500/5 rounded-full blur-[80px]" />
                         <CardContent className="p-5 relative">
-                            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
                                 <Trophy className="w-4 h-4 text-yellow-500" /> Insignias
                             </h3>
 
@@ -310,16 +310,16 @@ export function PublicProfile() {
                                         {profile.badges.map((badge, i) => (
                                             <Tooltip key={i}>
                                                 <TooltipTrigger asChild>
-                                                    <div className="aspect-square rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center p-2 hover:border-yellow-500/50 hover:bg-yellow-500/10 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)] transition-all cursor-help group">
+                                                    <div className="aspect-square rounded-xl bg-muted/50 border border-border flex items-center justify-center p-2 hover:border-yellow-500/50 hover:bg-yellow-500/10 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)] transition-all cursor-help group">
                                                         <span className="text-2xl filter drop-shadow-md group-hover:scale-110 transition-transform duration-300">
                                                             {badge.icon || '🏅'}
                                                         </span>
                                                     </div>
                                                 </TooltipTrigger>
-                                                <TooltipContent side="top" className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                                                    <div className="font-bold text-white mb-0.5">{badge.name}</div>
-                                                    <div className="text-xs">{badge.description}</div>
-                                                    <div className="text-[10px] text-zinc-500 mt-1 uppercase">{new Date(badge.awarded_at).toLocaleDateString()}</div>
+                                                <TooltipContent side="top" className="bg-popover border-border text-popover-foreground">
+                                                    <div className="font-bold mb-0.5">{badge.name}</div>
+                                                    <div className="text-xs text-muted-foreground">{badge.description}</div>
+                                                    <div className="text-[10px] text-muted-foreground/70 mt-1 uppercase">{new Date(badge.awarded_at).toLocaleDateString()}</div>
                                                 </TooltipContent>
                                             </Tooltip>
                                         ))}
@@ -338,7 +338,7 @@ export function PublicProfile() {
 
                 {/* Right Column: Recent Activity */}
                 <div className="md:col-span-2">
-                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
                         <FileText className="text-neon-green" /> Historial de Reportes
                     </h3>
 
@@ -351,31 +351,31 @@ export function PublicProfile() {
                                     prefetchRoute="DetalleReporte"
                                     prefetchReportId={report.id}
                                 >
-                                    <div className="group relative bg-zinc-950 border border-zinc-900 hover:border-neon-green/30 rounded-xl p-4 transition-all duration-300 hover:shadow-lg hover:shadow-neon-green/5 overflow-hidden">
-                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-zinc-800 group-hover:bg-neon-green transition-colors" />
+                                    <div className="group relative bg-card border border-border hover:border-neon-green/30 rounded-xl p-4 transition-all duration-300 hover:shadow-lg hover:shadow-neon-green/5 overflow-hidden">
+                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-muted group-hover:bg-neon-green transition-colors" />
 
                                         <div className="flex items-start justify-between gap-4 pl-3">
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1.5">
-                                                    <Badge variant="outline" className="bg-zinc-900 text-[10px] text-zinc-400 border-zinc-800 group-hover:border-neon-green/30 transition-colors">
+                                                    <Badge variant="outline" className="bg-muted/50 text-[10px] text-muted-foreground border-border group-hover:border-neon-green/30 transition-colors">
                                                         {report.category}
                                                     </Badge>
-                                                    <span className="text-xs text-zinc-600">
+                                                    <span className="text-xs text-muted-foreground">
                                                         {new Date(report.created_at).toLocaleDateString()}
                                                     </span>
                                                 </div>
-                                                <h4 className="font-bold text-zinc-200 group-hover:text-neon-green transition-colors truncate text-base">
+                                                <h4 className="font-bold text-foreground group-hover:text-neon-green transition-colors truncate text-base">
                                                     {report.title}
                                                 </h4>
                                             </div>
 
                                             <div className="flex flex-col items-end gap-2">
                                                 <Badge className={`
-                                            ${report.status === 'resuelto' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}
+                                            ${report.status === 'resuelto' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-muted text-muted-foreground border-border'}
                                         `}>
                                                     {report.status}
                                                 </Badge>
-                                                <div className="flex items-center gap-1 text-xs text-zinc-500">
+                                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                                     <Flame className="w-3 h-3 text-orange-500" />
                                                     {report.upvotes_count}
                                                 </div>
@@ -385,15 +385,15 @@ export function PublicProfile() {
                                 </PrefetchLink>
                             ))
                         ) : (
-                            <div className="text-center py-20 bg-zinc-950/50 rounded-2xl border border-dashed border-zinc-900">
-                                <Star className="w-10 h-10 text-zinc-800 mx-auto mb-3" />
-                                <p className="text-zinc-500 font-medium">Sin reportes recientes</p>
+                            <div className="text-center py-20 bg-muted/10 rounded-2xl border border-dashed border-border">
+                                <Star className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                                <p className="text-muted-foreground font-medium">Sin reportes recientes</p>
                             </div>
                         )}
                     </div>
                 </div>
 
-            </div>
-        </div>
+            </div >
+        </div >
     )
 }

@@ -67,7 +67,7 @@ export function Header() {
   }, [mobileMenuOpen])
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-dark-border bg-dark-card">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
@@ -183,7 +183,7 @@ export function Header() {
       {/* Mobile Drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] bg-zinc-950 border-l border-dark-border z-[100] md:hidden shadow-2xl safe-area-bottom",
+          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] bg-card border-l border-border z-[100] md:hidden shadow-2xl safe-area-bottom",
           "transform transition-transform duration-300 ease-in-out",
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         )}

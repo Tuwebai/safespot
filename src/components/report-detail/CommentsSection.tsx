@@ -176,7 +176,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                         variant={viewMode === 'comments' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('comments')}
-                        className={viewMode === 'comments' ? 'bg-neon-green text-dark-bg' : 'border-dark-border text-foreground'}
+                        className={viewMode === 'comments' ? 'bg-neon-green text-black' : 'border-border text-foreground'}
                     >
                         Comentarios
                     </Button>
@@ -184,7 +184,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                         variant={viewMode === 'threads' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('threads')}
-                        className={viewMode === 'threads' ? 'bg-neon-green text-dark-bg' : 'border-dark-border text-foreground'}
+                        className={viewMode === 'threads' ? 'bg-neon-green text-black' : 'border-border text-foreground'}
                     >
                         Hilos
                     </Button>
@@ -201,7 +201,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
 
             {/* Add Comment Card - ONLY in comments view */}
             {viewMode === 'comments' && (
-                <Card className="mb-6 bg-dark-card border-dark-border">
+                <Card className="mb-6 bg-card border-border">
                     <CardHeader>
                         <CardTitle className="font-semibold">Agregar Comentario</CardTitle>
                         <CardDescription className="text-sm text-foreground/70">
@@ -228,7 +228,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                             {sightings.map(sighting => (
                                 <SightingCard key={sighting.id} sighting={sighting} />
                             ))}
-                            <div className="border-b border-dark-border/50 my-4" />
+                            <div className="border-b border-border/50 my-4" />
                         </div>
                     )}
 
@@ -237,7 +237,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                             Cargando comentarios...
                         </div>
                     ) : discussionComments.length === 0 && sightings.length === 0 ? (
-                        <Card className="bg-dark-card border-dark-border">
+                        <Card className="bg-card border-border">
                             <CardContent className="py-12 text-center">
                                 <MessageCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                                 <p className="text-sm font-medium text-foreground mb-2">No hay comentarios aún</p>
@@ -290,7 +290,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                                     </div>
                                     <Button
                                         variant="outline"
-                                        className="w-full h-12 text-base font-medium border-dashed border-dark-border hover:border-neon-green hover:text-neon-green hover:bg-neon-green/5 transition-all"
+                                        className="w-full h-12 text-base font-medium border-dashed border-border hover:border-neon-green hover:text-neon-green hover:bg-neon-green/5 transition-all"
                                         onClick={() => loadMore()}
                                         disabled={isLoadingMore}
                                     >

@@ -241,12 +241,12 @@ export const EnhancedComment = memo(function EnhancedComment({
         "card-glow transition-all duration-300 cursor-pointer group relative overflow-hidden",
         textOpacity,
         isThread
-          ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-dark-card'
+          ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-card'
           : isThreadView
-            ? 'border-neon-green/60 bg-zinc-900/60 ring-2 ring-neon-green/20'
+            ? 'border-neon-green/60 bg-muted/60 ring-2 ring-neon-green/20'
             : isExpanded
-              ? 'border-neon-green/40 bg-zinc-900/90 ring-1 ring-neon-green/10'
-              : 'border-dark-border hover:border-neon-green/20 bg-zinc-900',
+              ? 'border-neon-green/40 bg-muted/90 ring-1 ring-neon-green/10'
+              : 'border-border hover:border-neon-green/20 bg-card',
         comment.is_optimistic ? 'opacity-70 grayscale-[20%]' : ''
       )}
     >
@@ -262,7 +262,7 @@ export const EnhancedComment = memo(function EnhancedComment({
               onClick={(e) => e.stopPropagation()}
             >
               <Avatar className={cn(
-                "h-8 w-8 sm:h-10 sm:w-10 border border-dark-border group-hover:border-neon-green/40 transition-colors",
+                "h-8 w-8 sm:h-10 sm:w-10 border border-border group-hover:border-neon-green/40 transition-colors",
                 isOwner && "ring-2 ring-neon-green/20"
               )}>
                 <AvatarImage src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`} />
@@ -356,18 +356,18 @@ export const EnhancedComment = memo(function EnhancedComment({
             {isContextMenuOpen && (
               <>
                 {/* Menu */}
-                <div className="absolute right-0 top-8 z-20 w-48 bg-dark-card border border-dark-border rounded-lg shadow-lg py-1">
+                <div className="absolute right-0 top-8 z-20 w-48 bg-card border border-border rounded-lg shadow-lg py-1">
                   {/* General User Actions */}
                   <button
                     onClick={handleCopyText}
-                    className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                    className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                   >
                     <Copy className="h-4 w-4" />
                     Copiar texto
                   </button>
                   <button
                     onClick={handleViewDirectLink}
-                    className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                    className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                   >
                     <LinkIcon className="h-4 w-4" />
                     Ver enlace directo
@@ -376,13 +376,13 @@ export const EnhancedComment = memo(function EnhancedComment({
                   {/* Owner Actions */}
                   {isOwner && (
                     <>
-                      <div className="border-t border-dark-border my-1" />
+                      <div className="border-t border-border my-1" />
                       <button
                         onClick={() => {
                           onEdit?.(comment.id)
                           closeMenu()
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                       >
                         <Edit className="h-4 w-4" />
                         Editar
@@ -392,7 +392,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                           onDelete?.(comment.id)
                           closeMenu()
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-dark-bg flex items-center gap-2"
+                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-muted flex items-center gap-2"
                       >
                         <Trash2 className="h-4 w-4" />
                         Eliminar
@@ -403,13 +403,13 @@ export const EnhancedComment = memo(function EnhancedComment({
                   {/* Moderator Actions */}
                   {isMod && (
                     <>
-                      <div className="border-t border-dark-border my-1" />
+                      <div className="border-t border-border my-1" />
                       <button
                         onClick={() => {
                           onEdit?.(comment.id)
                           closeMenu()
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                       >
                         <Edit className="h-4 w-4" />
                         Editar
@@ -419,7 +419,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                           onDelete?.(comment.id)
                           closeMenu()
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-dark-bg flex items-center gap-2"
+                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-muted flex items-center gap-2"
                       >
                         <Trash2 className="h-4 w-4" />
                         Eliminar
@@ -430,7 +430,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                             onUnpin?.(comment.id)
                             closeMenu()
                           }}
-                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                         >
                           <Pin className="h-4 w-4" />
                           Desfijar
@@ -441,7 +441,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                             onPin?.(comment.id)
                             closeMenu()
                           }}
-                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-dark-bg flex items-center gap-2"
+                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                         >
                           <Pin className="h-4 w-4" />
                           Fijar
@@ -461,7 +461,7 @@ export const EnhancedComment = memo(function EnhancedComment({
         </div>
 
         {/* Action Bar (Footer) */}
-        <div className="flex items-center justify-between pt-3 border-t border-dark-border">
+        <div className="flex items-center justify-between pt-3 border-t border-border">
           {/* Left Actions (Interactions) */}
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Button

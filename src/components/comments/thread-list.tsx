@@ -122,11 +122,41 @@ export const ThreadList = memo(function ThreadList({
   })
 
   // Calcular estadísticas
+  // Calcular estadísticas (solo de hilos y sus respuestas)
+  const threadRelatedComments = new Set<string>() // IDs of comments in threads
+  const threadParticipants = new Set<string>()
+  let lastThreadActivity = 0
+
+  // 1. Start with thread roots
+  threads.forEach(t => {
+    threadRelatedComments.add(t.id)
+    threadParticipants.add(t.anonymous_id)
+    const tTime = new Date(t.created_at).getTime()
+    if (tTime > lastThreadActivity) lastThreadActivity = tTime
+  })
+
+  // 2. Process descendants (using repliesMap which is already built)
+  // We need to traverse because repliesMap is keyed by parentID
+  const processReplies = (parentId: string) => {
+    const replies = repliesMap.get(parentId) || []
+    replies.forEach(r => {
+      threadRelatedComments.add(r.id)
+      threadParticipants.add(r.anonymous_id)
+      const rTime = new Date(r.created_at).getTime()
+      if (rTime > lastThreadActivity) lastThreadActivity = rTime
+
+      // Recurse
+      processReplies(r.id)
+    })
+  }
+
+  threads.forEach(t => processReplies(t.id))
+
   const stats = {
-    threads: filteredComments.length,
-    participants: new Set(comments.map(c => c.anonymous_id)).size,
-    lastActivity: comments.length > 0
-      ? new Date(Math.max(...comments.map(c => new Date(c.created_at).getTime()))).toLocaleDateString('es-AR')
+    threads: threads.length,
+    participants: threadParticipants.size,
+    lastActivity: lastThreadActivity > 0
+      ? new Date(lastThreadActivity).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'N/A'
   }
 

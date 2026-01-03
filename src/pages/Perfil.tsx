@@ -89,7 +89,7 @@ export function Perfil() {
   if ((error && gamificationError) || (!profile && !gamificationData)) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="bg-dark-card border-dark-border">
+        <Card className="bg-card border-border">
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{error || 'Error al cargar perfil'}</p>
             <Button variant="outline" onClick={() => { loadProfile(); refetchGamification(); }} className="mt-4">
@@ -128,7 +128,7 @@ export function Perfil() {
           <div className="lg:col-span-2 space-y-6">
 
             {/* Personalización de Apariencia */}
-            <div className="bg-zinc-950 border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
+            <div className="bg-card border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
               <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none" />
               <div className="flex items-center gap-4 relative z-10">
                 <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-inner">
@@ -152,7 +152,7 @@ export function Perfil() {
             </div>
 
             {/* Información del Usuario */}
-            <Card className="bg-dark-card border-dark-border card-glow">
+            <Card className="bg-card border-border card-glow">
               <CardHeader>
                 <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
                   <div className="relative group">
@@ -230,7 +230,7 @@ export function Perfil() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
+                          className="h-8 w-8 rounded-full bg-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
                           onClick={() => document.getElementById('avatar-upload')?.click()}
                           title="Subir imagen"
                         >
@@ -265,9 +265,17 @@ export function Perfil() {
                     <CardDescription className="text-sm sm:text-base font-mono mt-1">
                       ID: {anonymousId}
                     </CardDescription>
-                    <p className="text-xs text-muted-foreground mt-2 max-w-[300px] leading-tight mx-auto sm:mx-0">
-                      Tu identidad permanece anónima. La foto solo es visible en tu perfil.
-                    </p>
+                    {profile?.alias ? (
+                      <Link to={`/usuario/${profile.alias}`} className="mt-2 inline-block">
+                        <Button variant="outline" size="sm" className="text-xs h-7 bg-transparent border-neon-green/30 text-neon-green hover:bg-neon-green/10 hover:text-neon-green">
+                          👤 Ver mi perfil público
+                        </Button>
+                      </Link>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-2 max-w-[300px] leading-tight mx-auto sm:mx-0">
+                        Tu identidad permanece anónima. Configura un alias para ver tu perfil público.
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardHeader>
@@ -379,7 +387,7 @@ export function Perfil() {
             </Card>
 
             {/* Mis Reportes */}
-            <Card className="bg-dark-card border-dark-border">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
@@ -436,7 +444,7 @@ export function Perfil() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Actividad Reciente */}
-            <Card className="bg-dark-card border-dark-border">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
@@ -473,7 +481,7 @@ export function Perfil() {
             <NotificationSettingsSection />
 
             {/* CTA Crear Reporte */}
-            <Card className="bg-dark-card border-dark-border border-neon-green/20">
+            <Card className="bg-card border-border border-neon-green/20">
               <CardContent className="pt-6">
                 <div className="text-center">
                   <h3 className="font-semibold mb-2">¿Viste un problema?</h3>

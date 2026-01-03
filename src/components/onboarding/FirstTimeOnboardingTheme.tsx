@@ -87,7 +87,7 @@ export function FirstTimeOnboardingTheme() {
     if (showBottomBar) {
         return (
             <div className="fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4 animate-in slide-in-from-bottom-10 fade-in duration-300 pointer-events-none">
-                <div className="bg-zinc-950 border border-border/50 shadow-2xl p-4 rounded-2xl flex flex-col md:flex-row items-center gap-6 max-w-5xl w-full pointer-events-auto">
+                <div className="bg-card border border-border shadow-2xl p-4 rounded-2xl flex flex-col md:flex-row items-center gap-6 max-w-5xl w-full pointer-events-auto">
 
                     <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
                         <div className="flex flex-wrap justify-center gap-2">
@@ -99,7 +99,7 @@ export function FirstTimeOnboardingTheme() {
                                         "px-3 py-1.5 rounded-lg border text-xs font-medium transition-all",
                                         theme === t.id
                                             ? "border-primary bg-primary/10 text-primary"
-                                            : "border-border/50 hover:bg-muted text-muted-foreground"
+                                            : "border-border hover:bg-muted text-foreground"
                                     )}
                                 >
                                     {t.name}
@@ -136,7 +136,7 @@ export function FirstTimeOnboardingTheme() {
                             </Button>
                         )}
                         {!isFirstTimeOpen && (
-                            <Button variant="ghost" size="sm" onClick={handleManualClose}>
+                            <Button variant="ghost" size="sm" onClick={handleManualClose} className="text-foreground hover:bg-muted">
                                 Cancelar
                             </Button>
                         )}
