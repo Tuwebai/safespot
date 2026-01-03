@@ -426,6 +426,15 @@ export function SafeSpotMapClient({
     const { zones, saveZone } = useUserZones()
     const hasCenteredRef = useRef(false)
     const [isMapReady, setIsMapReady] = useState(false)
+    const isMountedRef = useRef(true)
+
+    // Cleanup on unmount
+    useEffect(() => {
+        isMountedRef.current = true
+        return () => {
+            isMountedRef.current = false
+        }
+    }, [])
 
     // Sync external activation from props (e.g. from Profile)
     useEffect(() => {
@@ -434,16 +443,31 @@ export function SafeSpotMapClient({
         }
     }, [externalActivateZoneType])
 
+    // Helper to safely call map.setView
+    const safeSetView = useCallback((map: any, coords: [number, number], zoom: number) => {
+        if (!isMountedRef.current) return false
+        if (!map || !map.getContainer || !map.getContainer()) return false
+
+        try {
+            map.setView(coords, zoom)
+            return true
+        } catch (e) {
+            console.warn('[Map] setView failed - map may be unmounted')
+            return false
+        }
+    }, [])
+
     // PRIORITY CENTERING LOGIC - DETERMINISTIC ONCE
     const handleInitialCentering = useCallback(async (map: any) => {
         // Guard 0: Already centered or map not ready
-        if (hasCenteredRef.current || !isMapReady) return
+        if (hasCenteredRef.current || !isMapReady || !isMountedRef.current) return
 
         // 1. Zoom to initialFocus (deep link) - Only if coordinates are valid numbers
         if (initialFocus && typeof initialFocus.lat === 'number' && typeof initialFocus.lng === 'number' && !isNaN(initialFocus.lat) && !isNaN(initialFocus.lng)) {
-            map.setView([initialFocus.lat, initialFocus.lng], 16)
-            hasCenteredRef.current = true
-            return
+            if (safeSetView(map, [initialFocus.lat, initialFocus.lng], 16)) {
+                hasCenteredRef.current = true
+                return
+            }
         }
 
         // 2. Priority Zones: Home > Work > Frequent
@@ -453,18 +477,20 @@ export function SafeSpotMapClient({
         const priorityZone = home || work || frequent
 
         if (priorityZone && typeof priorityZone.lat === 'number' && typeof priorityZone.lng === 'number' && !isNaN(priorityZone.lat) && !isNaN(priorityZone.lng)) {
-            map.setView([priorityZone.lat, priorityZone.lng], 14)
-            hasCenteredRef.current = true
-            return
+            if (safeSetView(map, [priorityZone.lat, priorityZone.lng], 14)) {
+                hasCenteredRef.current = true
+                return
+            }
         }
 
         // 3. Last Known Location from Settings
         try {
             const settings = await notificationsApi.getSettings()
             if (settings && typeof settings.last_known_lat === 'number' && typeof settings.last_known_lng === 'number' && !isNaN(settings.last_known_lat) && !isNaN(settings.last_known_lng)) {
-                map.setView([settings.last_known_lat, settings.last_known_lng], 13)
-                hasCenteredRef.current = true
-                return
+                if (safeSetView(map, [settings.last_known_lat, settings.last_known_lng], 13)) {
+                    hasCenteredRef.current = true
+                    return
+                }
             }
         } catch (e) {
             // Only log errors, not flow
@@ -472,43 +498,34 @@ export function SafeSpotMapClient({
         }
 
         // 4. Browser Geolocation
-        if ('geolocation' in navigator) {
+        if ('geolocation' in navigator && isMountedRef.current) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    // Validate map still exists before calling setView
-                    if (pos.coords.latitude && pos.coords.longitude && map && map.getContainer()) {
-                        try {
-                            map.setView([pos.coords.latitude, pos.coords.longitude], 13)
+                    // Double check component is still mounted
+                    if (!isMountedRef.current) return
+
+                    if (pos.coords.latitude && pos.coords.longitude) {
+                        if (safeSetView(map, [pos.coords.latitude, pos.coords.longitude], 13)) {
                             hasCenteredRef.current = true
-                        } catch (e) {
-                            console.warn('[Map] setView failed - map may be unmounted', e)
                         }
                     }
                 },
                 () => {
                     // 5. Fallback: Buenos Aires
-                    if (map && map.getContainer()) {
-                        try {
-                            map.setView([-34.6037, -58.3816], 12)
-                            hasCenteredRef.current = true
-                        } catch (e) {
-                            console.warn('[Map] setView failed - map may be unmounted', e)
-                        }
+                    if (!isMountedRef.current) return
+
+                    if (safeSetView(map, [-34.6037, -58.3816], 12)) {
+                        hasCenteredRef.current = true
                     }
                 },
                 { timeout: 5000 }
             )
         } else {
-            if (map && map.getContainer()) {
-                try {
-                    map.setView([-34.6037, -58.3816], 12)
-                    hasCenteredRef.current = true
-                } catch (e) {
-                    console.warn('[Map] setView failed - map may be unmounted', e)
-                }
+            if (safeSetView(map, [-34.6037, -58.3816], 12)) {
+                hasCenteredRef.current = true
             }
         }
-    }, [isMapReady, zones, initialFocus, activeZoneType])
+    }, [isMapReady, zones, initialFocus, safeSetView])
 
     // Use the comprehensive top-level styles for placement mode
     const [isSavingZone, setIsSavingZone] = useState(false)

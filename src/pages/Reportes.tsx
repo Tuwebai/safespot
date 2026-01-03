@@ -18,6 +18,7 @@ import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { AnimatedCard } from '@/components/ui/animated'
+import { BottomSheet } from '@/components/ui/bottom-sheet'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { SmartLink } from '@/components/SmartLink'
@@ -99,6 +100,7 @@ export function Reportes() {
   const [addressQuery, setAddressQuery] = useState('')
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([])
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number, lng: number, label: string } | null>(null)
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false)
 
   const debouncedAddressQuery = useDebounce(addressQuery, 500)
 
@@ -320,8 +322,8 @@ export function Reportes() {
         </p>
       </div>
 
-      {/* Filtros */}
-      <Card className="mb-8 bg-dark-card border-dark-border">
+      {/* Filtros - Hidden on mobile, shown in bottom sheet */}
+      <Card className="mb-8 bg-dark-card border-dark-border hidden md:block">
         <CardHeader className="pb-3 border-b border-dark-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -519,6 +521,104 @@ export function Reportes() {
           )}
         </CardContent>
       </Card>
+
+      {/* Mobile Filter Button - Floating */}
+      <Button
+        onClick={() => setIsFilterSheetOpen(true)}
+        className="md:hidden fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-2xl bg-neon-green hover:bg-neon-green/90 text-dark-bg"
+        size="icon"
+      >
+        <Filter className="h-6 w-6" />
+      </Button>
+
+      {/* Mobile Bottom Sheet for Filters */}
+      <BottomSheet
+        isOpen={isFilterSheetOpen}
+        onClose={() => setIsFilterSheetOpen(false)}
+        title="Filtros"
+      >
+        {/* Same filter content as desktop */}
+        <div className="space-y-6">
+          {/* Búsqueda Global */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por título, desc..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Categoría */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Categoría</label>
+            <Select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+            >
+              <option value="all">Todas las categorías</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Estado */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Estado</label>
+            <Select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+            >
+              <option value="all">Todos los estados</option>
+              {statusOptions.map((status) => (
+                <option key={status.value} value={status.value}>{status.label}</option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Ordenar Por */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Ordenar por</label>
+            <Select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+            >
+              <option value="recent">Más Recientes</option>
+              <option value="popular">Más Populares</option>
+              <option value="oldest">Más Antiguos</option>
+            </Select>
+          </div>
+
+          {/* Reset Button */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSearchTerm('')
+              setSelectedCategory('all')
+              setSelectedStatus('all')
+              setSortBy('recent')
+              setStartDate('')
+              setEndDate('')
+              setSelectedLocation(null)
+              setAddressQuery('')
+            }}
+            className="w-full"
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Limpiar Filtros
+          </Button>
+
+          {/* Apply Button */}
+          <Button
+            onClick={() => setIsFilterSheetOpen(false)}
+            className="w-full bg-neon-green hover:bg-neon-green/90 text-dark-bg"
+          >
+            Aplicar Filtros
+          </Button>
+        </div>
+      </BottomSheet>
 
       {/* Listado de Reportes */}
       <div className="mb-8">
