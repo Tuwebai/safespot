@@ -192,6 +192,7 @@ export interface Report {
   flags_count?: number; // Total number of flags on this report
   created_at: string;
   updated_at: string;
+  last_edited_at?: string;
   incident_date?: string; // ISO 8601 date string - Date when the incident occurred
   image_urls?: string[]; // Array of public image URLs from Supabase Storage
   is_favorite?: boolean; // If the current user has favorited this report
@@ -400,6 +401,7 @@ export interface Comment {
   upvotes_count: number;
   created_at: string;
   updated_at: string;
+  last_edited_at?: string;
   parent_id?: string; // Para comentarios anidados (replies)
   is_thread?: boolean; // Si es un hilo (thread) - debe ser top-level (parent_id null)
   liked_by_me?: boolean; // Si el usuario actual dio like

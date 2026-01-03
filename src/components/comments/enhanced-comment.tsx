@@ -209,13 +209,20 @@ export const EnhancedComment = memo(function EnhancedComment({
   const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
 
   const isEdited = useMemo(() => {
+    // Si tenemos last_edited_at del servidor (manejado por trigger de contenido), lo usamos
+    if (comment.last_edited_at) {
+      const created = new Date(comment.created_at).getTime()
+      const edited = new Date(comment.last_edited_at).getTime()
+      // Margen de 1s por discrepancias de precisión en DB
+      return edited - created > 1000
+    }
+
+    // Fallback: Si no hay last_edited_at (ej: registros viejos), usamos updated_at
     if (!comment.updated_at || !comment.created_at) return false
     const created = new Date(comment.created_at).getTime()
     const updated = new Date(comment.updated_at).getTime()
-    // Solo mostrar "editado" si la diferencia es mayor a 2 segundos
-    // Esto evita que likes o sincronización milisegundos activen el flag
-    return Math.abs(updated - created) > 2000
-  }, [comment.created_at, comment.updated_at])
+    return updated - created > 5000 // Umbral mayor para fallback
+  }, [comment.created_at, comment.updated_at, comment.last_edited_at])
 
   const handleCardClick = () => {
     if (isThreadView) return // Already in thread view, don't navigate
@@ -470,7 +477,7 @@ export const EnhancedComment = memo(function EnhancedComment({
               aria-label="Responder a este comentario"
             >
               <MessageCircle className={cn("h-4 w-4 mr-1", isExpanded && "fill-current")} aria-hidden="true" />
-              {repliesCount > 0 ? repliesCount : 'Responder'}
+              {repliesCount > 0 && <span>{repliesCount}</span>}
             </Button>
             <Button
               variant="ghost"
@@ -481,7 +488,7 @@ export const EnhancedComment = memo(function EnhancedComment({
             >
               <>
                 <ThumbsUp className={`h-4 w-4 mr-1 ${comment.liked_by_me ? 'fill-current' : ''}`} aria-hidden="true" />
-                {comment.upvotes_count > 0 ? comment.upvotes_count : 'Me gusta'}
+                {comment.upvotes_count > 0 && <span>{comment.upvotes_count}</span>}
               </>
             </Button>
           </div>

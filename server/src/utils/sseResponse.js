@@ -25,19 +25,29 @@ export class SSEResponse {
      * Sets up the necessary HTTP headers and sends initial stabilization data
      */
     init() {
+        // Essential: Disable default Node.js timeout for this connection
+        this.res.socket?.setTimeout(0);
+        this.res.socket?.setKeepAlive(true);
+
         // Standard SSE Headers
+        this.res.statusCode = 200;
         this.res.setHeader('Content-Type', 'text/event-stream');
-        this.res.setHeader('Cache-Control', 'no-cache');
+        this.res.setHeader('Cache-Control', 'no-cache, no-transform'); // no-transform prevents proxy compression
         this.res.setHeader('Connection', 'keep-alive');
 
         // Nginx/Proxy specific: Disable buffering to ensure real-time delivery
         this.res.setHeader('X-Accel-Buffering', 'no');
 
+        // Ensure headers are sent immediately
+        if (typeof this.res.flushHeaders === 'function') {
+            this.res.flushHeaders();
+        }
+
         // Connection Stabilization:
         // Browsers (like Chrome/Brave) and Proxies often buffer the first chunk of data.
         // We send 2KB of whitespace ("padding") to force the buffer to flush immediately.
         // This ensures the generic 'open' event fires on the client side without delay.
-        const stabilizationPadding = ':'.repeat(2048) + '\n\n';
+        const stabilizationPadding = ':' + ' '.repeat(2048) + '\n\n';
         this.res.write(stabilizationPadding);
 
         if (typeof this.res.flush === 'function') {

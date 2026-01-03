@@ -47,14 +47,7 @@ if (missingVars.length > 0) {
 // Render uses a reverse proxy, so we need to trust the X-Forwarded-* headers
 app.set('trust proxy', 1);
 
-// ============================================
-// SECURITY MIDDLEWARE
-// ============================================
-
-// Helmet for security headers
-app.use(helmet());
-
-// CORS - Support both localhost (dev) and Netlify (prod)
+// 1. CORS - MUST be first for cross-origin SSE/API requests
 const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:5173',
@@ -64,9 +57,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -75,8 +66,16 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'Cache-Control']
+  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'Cache-Control', 'Last-Event-ID']
 }));
+
+// 2. Real-time SSE (Must be before Helmet and Rate Limiters)
+// These connections are long-lived and Helmet/RateLimits can cause resets
+app.use('/api/realtime', realtimeRouter);
+
+// 3. Security Middleware (Helmet)
+// Helmet is applied AFTER realtime to avoid interfering with SSE headers
+app.use(helmet());
 
 // ============================================
 // BODY PARSING WITH LIMITS
@@ -130,6 +129,8 @@ const actionLimiter = rateLimit({
   skipSuccessfulRequests: false, // Count all attempts (even failed ones) against the limit
 });
 
+// app.use('/api/realtime', realtimeRouter); // Moved up
+
 app.use('/api/', globalLimiter);
 // Removed actionLimiter - too restrictive for normal usage
 // app.use(['/api/reports', '/api/comments'], (req, res, next) => {
@@ -171,7 +172,7 @@ app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
-app.use('/api/realtime', realtimeRouter);
+// app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
 app.use('/api/user-zones', userZonesRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency

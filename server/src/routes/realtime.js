@@ -13,6 +13,9 @@ const router = express.Router();
 router.get('/comments/:reportId', (req, res) => {
     const { reportId } = req.params;
 
+    // Essential for long-lived connections
+    req.setTimeout(0);
+
     // Initialize Standard SSE Response
     const stream = new SSEResponse(res);
 

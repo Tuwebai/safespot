@@ -176,7 +176,7 @@ router.get('/', async (req, res) => {
           SELECT 
             r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
             r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
-            r.created_at, r.updated_at, r.incident_date, r.image_urls,
+            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
@@ -245,7 +245,7 @@ router.get('/', async (req, res) => {
           SELECT 
             r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
             r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
-            r.created_at, r.updated_at, r.incident_date, r.image_urls,
+            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
             ST_Distance(r.location, ul.point) AS distance_meters,
             r.threads_count,
             u.avatar_url,

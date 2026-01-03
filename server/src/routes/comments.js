@@ -42,7 +42,7 @@ router.get('/:reportId', async (req, res) => {
 
     const dataPromise = queryWithRLS(
       anonymousId || 'anon',
-      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.parent_id, c.is_thread, u.avatar_url, u.alias
+      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, u.avatar_url, u.alias
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        WHERE c.report_id = $1 AND c.deleted_at IS NULL
@@ -240,7 +240,7 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
     const insertQuery = `
       INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
+      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread
     `;
 
     // CRITICAL: Ensure all params are defined (no undefined values)
@@ -417,7 +417,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
       UPDATE comments 
       SET content = $1, updated_at = $2 
       WHERE id = $3 AND anonymous_id = $4
-      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, parent_id, is_thread
+      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread
     `;
 
     const updateResult = await queryWithRLS(
