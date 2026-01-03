@@ -1,33 +1,3 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { usersApi } from '@/lib/api'
-import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { useToast } from '@/components/ui/toast'
-import { FileText, Calendar, ArrowLeft } from 'lucide-react'
-import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
-import { PrefetchLink } from '@/components/PrefetchLink'
-import { handleError } from '@/lib/errorHandler'
-import { calculateLevelProgress } from '@/lib/levelCalculation'
-
-interface PublicUserProfile {
-    alias: string
-    avatar_url: string | null
-    level: number
-    points: number
-    total_reports: number
-    created_at: string
-    recent_reports: Array<{
-        id: string
-        title: string
-        status: string
-        upvotes_count: number
-        created_at: string
-        category: string
-    }>
-}
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -37,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
-import { FileText, Calendar, ArrowLeft, Shield, Trophy, Activity, Star, Flame, Award, Medal } from 'lucide-react'
+import { FileText, Calendar, ArrowLeft, Shield, Trophy, Activity, Star, Flame, Medal } from 'lucide-react'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { handleError } from '@/lib/errorHandler'
@@ -154,7 +124,7 @@ export function PublicProfile() {
                     <div className="relative group">
                         <div className="absolute inset-0 bg-neon-green/20 rounded-full blur-xl group-hover:blur-2xl transition-all duration-500" />
                         <Avatar className="h-32 w-32 border-4 border-zinc-950 shadow-2xl relative z-10 ring-2 ring-white/10 ring-offset-2 ring-offset-zinc-950 group-hover:ring-neon-green transition-all duration-300">
-                            <AvatarImage src={profile.avatar_url || ''} className="object-cover" />
+                            <AvatarImage src={profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.alias || 'anonymous'}`} className="object-cover" />
                             <AvatarFallback className="bg-zinc-900 text-neon-green text-3xl font-bold font-mono border border-neon-green/20">
                                 {profile.alias?.substring(0, 2).toUpperCase() || '??'}
                             </AvatarFallback>

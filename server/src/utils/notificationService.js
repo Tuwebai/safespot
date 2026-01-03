@@ -289,7 +289,7 @@ export const NotificationService = {
                 title: '🏆 ¡Nueva Insignia Desbloqueada!',
                 message: `Has ganado la insignia "${badge.name}". ¡Felicitaciones!`,
                 entity_type: 'badge',
-                entity_id: badge.code || 'badge', // Use code as entity_id if id not available
+                entity_id: badge.id || null, // MUST be UUID or NULL. badge.code is string.
                 report_id: null
             });
         } catch (err) {

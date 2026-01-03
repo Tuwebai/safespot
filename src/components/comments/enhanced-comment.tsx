@@ -102,9 +102,7 @@ export const EnhancedComment = memo(function EnhancedComment({
     })
   }
 
-  const getUserInitials = (anonymousId: string) => {
-    return anonymousId.substring(0, 2).toUpperCase()
-  }
+
 
   const getThreadTypeColor = (type?: string) => {
     switch (type) {

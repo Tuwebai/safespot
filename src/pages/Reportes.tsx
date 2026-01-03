@@ -744,7 +744,14 @@ export function Reportes() {
                   <div
                     key={virtualRow.key}
                     data-index={virtualRow.index}
-                    ref={rowVirtualizer.measureElement}
+                    ref={(el) => {
+                      if (el) {
+                        // Defer measurement to avoid flushSync warning during render
+                        requestAnimationFrame(() => {
+                          rowVirtualizer.measureElement(el)
+                        })
+                      }
+                    }}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -752,7 +759,7 @@ export function Reportes() {
                       width: '100%',
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
                   >
                     {rowItems.map((report) => (
                       <SmartLink

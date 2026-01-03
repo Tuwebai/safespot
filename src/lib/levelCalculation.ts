@@ -49,22 +49,63 @@ export function getLevelPointsRange(level: number): { min: number; max: number }
 /**
  * Calculate progress to next level (0-100%)
  */
-export function calculateLevelProgress(currentPoints: number, currentLevel: number): number {
+export interface LevelProgress {
+  progressPercent: number;
+  pointsInCurrentLevel: number;
+  pointsRemaining: number;
+  currentLevelMin: number;
+  nextLevelMin: number;
+}
+
+/**
+ * Calculate progress to next level (Detailed breakdown)
+ */
+export function calculateLevelProgress(currentPoints: number, currentLevel: number): LevelProgress {
+  const points = Math.max(0, Math.floor(currentPoints));
+
   if (currentLevel >= MAX_LEVEL) {
-    return 100;
+    return {
+      progressPercent: 100,
+      pointsInCurrentLevel: 0,
+      pointsRemaining: 0,
+      currentLevelMin: 0,
+      nextLevelMin: 0
+    };
   }
 
-  // const currentRange = getLevelPointsRange(currentLevel); // Unused
-  const nextRange = getLevelPointsRange(currentLevel + 1); // Get true start of next level
+  // Current level range
+  // Level L starts at 4 * (L-1)^2
+  const currentLevelMin = 4 * Math.pow(currentLevel - 1, 2);
 
-  // Calculate absolute progress towards next level threshold
-  // This makes the bar look "fuller" (e.g. 900/1000 instead of 0/100 just after level up)
-  // as per user request to avoid "empty bar" feeling.
+  // Next level starts at 4 * L^2
+  const nextLevelMin = 4 * Math.pow(currentLevel, 2);
 
-  if (nextRange.min <= 0) return 0; // Should not happen for levels >= 1
+  // Points earned WITHIN this level so far
+  // Example: Level 4 (36-63 range), Points 50.
+  // currentLevelMin = 36. pointsInCurrentLevel = 50 - 36 = 14.
+  const pointsInCurrentLevel = Math.max(0, points - currentLevelMin);
 
-  const progress = (currentPoints / nextRange.min) * 100;
-  return Math.min(100, Math.max(0, progress));
+  // Total points needed to traverse this entire level
+  // Example: 64 - 36 = 28 points width.
+  const pointsToTraverseLevel = nextLevelMin - currentLevelMin;
+
+  // Points remaining until level up
+  const pointsRemaining = Math.max(0, nextLevelMin - points);
+
+  // Calculate percentage
+  // Avoid division by zero if level 1 starts at 0 and next is 4
+  let progressPercent = 0;
+  if (pointsToTraverseLevel > 0) {
+    progressPercent = (pointsInCurrentLevel / pointsToTraverseLevel) * 100;
+  }
+
+  return {
+    progressPercent: Math.min(100, Math.max(0, progressPercent)),
+    pointsInCurrentLevel,
+    pointsRemaining,
+    currentLevelMin,
+    nextLevelMin
+  };
 }
 
 /**

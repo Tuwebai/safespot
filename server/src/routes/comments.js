@@ -312,23 +312,25 @@ router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) =
       // 3. Notify Mentioned Users
       // Parsing content to find mentions
       try {
-        // Dynamic import to avoid circular dependency issues or just standard import above?
-        // We'll trust standard import at top of file, but for now we added it.
-        // Wait, I need to add the import at the TOP of the file first. 
-        // Assuming I will add it in a separate step or I can use dynamic import here if needed.
-        // Let's assume I will add the import.
-
+        console.log('[DEBUG-MENTIONS] Content to parse:', req.body.content.substring(0, 100)); // Log first 100 chars
         const mentionedIds = extractMentions(req.body.content);
+        console.log('[DEBUG-MENTIONS] Extracted IDs:', mentionedIds);
+
         if (mentionedIds.length > 0) {
           console.log(`[Notify] Found mentions for comment ${data.id}:`, mentionedIds);
           // Notify each unique mentioned user (except self)
           mentionedIds.forEach(targetId => {
-            if (targetId !== anonymousId && targetId !== 'Tú') { // 'Tú' is from optimistic updates, shouldn't be here but safe check
+            if (targetId !== anonymousId) {
+              console.log(`[DEBUG-MENTIONS] Sending notification to ${targetId}`);
               NotificationService.notifyMention(targetId, data.id, anonymousId, req.body.report_id).catch(err => {
                 console.error('[Notify] Failed to notify mention:', err);
               });
+            } else {
+              console.log('[DEBUG-MENTIONS] Skipping self-mention');
             }
           });
+        } else {
+          console.log('[DEBUG-MENTIONS] No mentions found in content');
         }
       } catch (mentionErr) {
         console.error('[Notify] Error processing mentions:', mentionErr);
