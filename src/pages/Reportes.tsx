@@ -28,6 +28,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
+import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 
@@ -782,10 +783,10 @@ export function Reportes() {
                       data-index={virtualRow.index}
                       ref={(el) => {
                         if (el) {
-                          // Defer measurement to avoid flushSync warning during render
-                          setTimeout(() => {
+                          // Use requestAnimationFrame to avoid flushSync warning during render
+                          requestAnimationFrame(() => {
                             rowVirtualizer.measureElement(el)
-                          }, 0)
+                          })
                         }
                       }}
                       style={{
@@ -821,14 +822,15 @@ export function Reportes() {
 
                               <div className="relative aspect-video w-full overflow-hidden bg-muted/50">
                                 {/* Imagen optimizada */}
-                                {Array.isArray(report.image_urls) && report.image_urls.length > 0 && (
-                                  <div className="relative overflow-hidden">
+                                {/* Imagen optimizada o Mapa Fallback */}
+                                {Array.isArray(report.image_urls) && report.image_urls.length > 0 ? (
+                                  <div className="relative overflow-hidden w-full h-full">
                                     <OptimizedImage
                                       src={report.image_urls[0]}
                                       alt={report.title}
                                       aspectRatio={16 / 9}
                                       priority={false}
-                                      className="w-full"
+                                      className="w-full h-full object-cover"
                                     />
                                     <div className="absolute top-2 right-2 flex gap-2 z-10">
                                       <Badge className={getStatusColor(report.status)}>
@@ -836,6 +838,11 @@ export function Reportes() {
                                       </Badge>
                                     </div>
                                   </div>
+                                ) : (
+                                  <ReportMapFallback
+                                    lat={report.latitude}
+                                    lng={report.longitude}
+                                  />
                                 )}
                               </div>
 

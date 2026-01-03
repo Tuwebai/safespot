@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
 // import { PullToRefresh } from '@/components/ui/PullToRefresh' // Removed for map compatibility
 import { reportsApi } from '@/lib/api'
@@ -59,6 +59,16 @@ export function Explorar() {
     refetchOnWindowFocus: false,
   })
 
+  // MERGE STATE REPORT: Ensure the focused report exists in the list even if not fetched yet
+  const reportFromState = (location.state as any)?.report as Report | undefined
+
+  const displayReports = useMemo<Report[]>(() => {
+    if (reportFromState && !reports.find(r => r.id === reportFromState.id)) {
+      return [reportFromState, ...reports]
+    }
+    return reports
+  }, [reports, reportFromState])
+
   const handleSearchInArea = useCallback(() => {
     if (!mapBounds) return
     setBoundsSearchEnabled(true)
@@ -76,7 +86,7 @@ export function Explorar() {
       <MapLayout>
         <Suspense fallback={<MapLoadingFallback />}>
           <SafeSpotMap
-            reports={reports}
+            reports={displayReports}
             initialFocus={initialFocus}
             activateZoneType={activateZoneType}
             onSearchArea={handleSearchInArea}

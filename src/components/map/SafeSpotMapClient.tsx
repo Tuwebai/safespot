@@ -396,9 +396,15 @@ function MapSync({ reports }: { reports: Report[] }) {
     useEffect(() => {
         if (selectedReportId) {
             const report = reports.find(r => r.id === selectedReportId)
-            // Guard against undefined coordinates
-            if (report && typeof report.latitude === 'number' && typeof report.longitude === 'number') {
-                map.flyTo([report.latitude, report.longitude], 16, { duration: 1.5 })
+
+            if (report) {
+                const lat = Number(report.latitude)
+                const lng = Number(report.longitude)
+
+                // Guard against undefined/invalid coordinates
+                if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                    map.flyTo([lat, lng], 16, { duration: 1.5 })
+                }
             }
         }
     }, [selectedReportId, reports, map])
@@ -462,11 +468,16 @@ export function SafeSpotMapClient({
         // Guard 0: Already centered or map not ready
         if (hasCenteredRef.current || !isMapReady || !isMountedRef.current) return
 
-        // 1. Zoom to initialFocus (deep link) - Only if coordinates are valid numbers
-        if (initialFocus && typeof initialFocus.lat === 'number' && typeof initialFocus.lng === 'number' && !isNaN(initialFocus.lat) && !isNaN(initialFocus.lng)) {
-            if (safeSetView(map, [initialFocus.lat, initialFocus.lng], 16)) {
-                hasCenteredRef.current = true
-                return
+        // 1. Zoom to initialFocus (deep link) - Robust check
+        if (initialFocus) {
+            const lat = Number(initialFocus.lat)
+            const lng = Number(initialFocus.lng)
+
+            if (!isNaN(lat) && !isNaN(lng)) {
+                if (safeSetView(map, [lat, lng], 16)) {
+                    hasCenteredRef.current = true
+                    return
+                }
             }
         }
 
@@ -597,8 +608,12 @@ export function SafeSpotMapClient({
     // Compute initial center synchronously to avoid visual jump
     const defaultCenter = useMemo((): [number, number] => {
         // 1. Initial Focus (Deep Link)
-        if (initialFocus && typeof initialFocus.lat === 'number' && typeof initialFocus.lng === 'number' && !isNaN(initialFocus.lat) && !isNaN(initialFocus.lng)) {
-            return [initialFocus.lat, initialFocus.lng]
+        if (initialFocus) {
+            const lat = Number(initialFocus.lat)
+            const lng = Number(initialFocus.lng)
+            if (!isNaN(lat) && !isNaN(lng)) {
+                return [lat, lng]
+            }
         }
 
         // 2. Priority Zones (Home > Work > Frequent)
@@ -623,36 +638,6 @@ export function SafeSpotMapClient({
             {/* Zone Management UI */}
             <AlertZoneControl activeType={activeZoneType} setActiveType={setActiveZoneType} />
 
-            {/* Persistent Zone Status Overlay - FIXED POSITION, INDEPENDENT OF MAP */}
-            <div className="absolute bottom-6 left-2 sm:left-4 z-[500] pointer-events-none scale-90 sm:scale-100 origin-bottom-left">
-                <div className="bg-zinc-950 p-2 sm:p-3 rounded-xl border border-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.6)] pointer-events-auto min-w-[140px] sm:min-w-[160px]">
-                    <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-neon-green/80 font-black mb-1 sm:mb-2 px-1">Zonas Configuradas</p>
-                    <div className="flex flex-col gap-2">
-                        {['home', 'work', 'frequent'].map(type => {
-                            const zone = zones.find(z => z.type === type)
-                            return (
-                                <div key={type} className="flex items-center justify-between gap-4 text-xs p-2 rounded-lg bg-white/5 border border-white/5">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`p-1.5 rounded-md ${zone ? (
-                                            type === 'home' ? 'bg-emerald-500/20 text-emerald-500' :
-                                                type === 'work' ? 'bg-blue-500/20 text-blue-500' :
-                                                    'bg-amber-500/20 text-amber-500'
-                                        ) : 'bg-white/5 text-zinc-500'}`}>
-                                            {type === 'home' && <Home className="w-3 h-3" />}
-                                            {type === 'work' && <Briefcase className="w-3 h-3" />}
-                                            {type === 'frequent' && <MapPin className="w-3 h-3" />}
-                                        </div>
-                                        <span className={`font-medium ${zone ? 'text-zinc-200' : 'text-zinc-500'}`}>
-                                            {type === 'home' ? 'Casa' : type === 'work' ? 'Trabajo' : 'Zona Frec.'}
-                                        </span>
-                                    </div>
-                                    <div className={`w-2 h-2 rounded-full ${zone ? 'bg-neon-green animate-pulse shadow-[0_0_8px_#39FF14]' : 'bg-white/10'}`} />
-                                </div>
-                            )
-                        })}
-                    </div>
-                </div>
-            </div>
 
             <MapContainer
                 center={defaultCenter}

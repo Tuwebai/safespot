@@ -125,8 +125,8 @@ export const ReportActions = memo(function ReportActions({
                         onClick={() => setShowMenu(!showMenu)}
                         disabled={disabled}
                         className={cn(
-                            "rounded-full hover:bg-dark-border/50 transition-colors",
-                            showMenu && "bg-dark-border/50 text-neon-green"
+                            "rounded-full hover:bg-muted transition-colors text-foreground",
+                            showMenu && "bg-muted text-neon-green"
                         )}
                         title="Más opciones"
                     >
@@ -134,7 +134,7 @@ export const ReportActions = memo(function ReportActions({
                     </Button>
 
                     {showMenu && (
-                        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-dark-border rounded-xl shadow-2xl overflow-hidden min-w-[220px] animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="absolute right-0 top-full mt-2 z-50 bg-card border border-border rounded-xl shadow-2xl overflow-hidden min-w-[220px] animate-in fade-in slide-in-from-top-2 duration-200">
 
                             {/* Favorite/Save Toggle */}
                             <button
@@ -142,7 +142,7 @@ export const ReportActions = memo(function ReportActions({
                                     onFavoriteToggle?.(!isFavorite)
                                     setShowMenu(false)
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors text-left text-sm"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left text-sm text-foreground"
                             >
                                 <Heart className={cn("h-4 w-4", isFavorite ? "fill-red-500 text-red-500" : "text-foreground/70")} />
                                 <span>{isFavorite ? 'Quitar de favoritos' : 'Guardar reporte'}</span>
@@ -151,13 +151,13 @@ export const ReportActions = memo(function ReportActions({
                             {/* Download PDF */}
                             <button
                                 onClick={handleDownload}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors text-left text-sm"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left text-sm text-foreground"
                             >
                                 <FileText className="h-4 w-4 text-foreground/70" />
                                 <span>Descargar PDF Oficial</span>
                             </button>
 
-                            <div className="border-t border-dark-border my-1" />
+                            <div className="border-t border-border my-1" />
 
                             {/* Owner specific actions in the menu */}
                             {isOwner ? (
@@ -167,7 +167,7 @@ export const ReportActions = memo(function ReportActions({
                                             onStartEdit()
                                             setShowMenu(false)
                                         }}
-                                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors text-left text-sm"
+                                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left text-sm text-foreground"
                                     >
                                         <Edit className="h-4 w-4 text-foreground/70" />
                                         <span>Editar reporte</span>
@@ -193,7 +193,7 @@ export const ReportActions = memo(function ReportActions({
                                     disabled={isFlagged}
                                     className={cn(
                                         "w-full flex items-center gap-3 px-4 py-3 transition-colors text-left text-sm",
-                                        isFlagged ? "text-yellow-500 cursor-not-allowed" : "hover:bg-dark-border/50 text-foreground/70"
+                                        isFlagged ? "text-yellow-500 cursor-not-allowed" : "hover:bg-muted text-foreground/70"
                                     )}
                                 >
                                     <Flag className={cn("h-4 w-4", isFlagged && "fill-current")} />

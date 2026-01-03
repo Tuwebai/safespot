@@ -279,7 +279,8 @@ export function DetalleReporte() {
                   state: {
                     focusReportId: report.id,
                     lat: report.latitude,
-                    lng: report.longitude
+                    lng: report.longitude,
+                    report: report // Pass full report to ensure it renders on map
                   }
                 })}
                 disabled={isBusy}
@@ -313,7 +314,11 @@ export function DetalleReporte() {
             <ReportDescription report={report} editor={editor} />
 
             {/* 3. Images Section */}
-            <ReportImages imageUrls={imageUrls} />
+            <ReportImages
+              imageUrls={imageUrls}
+              lat={report.latitude}
+              lng={report.longitude}
+            />
 
             {/* 4. Stats Section */}
             <ReportMeta report={report} commentsCount={commentsCount} />
