@@ -32,12 +32,10 @@ export class SSEResponse {
         // Standard SSE Headers
         this.res.statusCode = 200;
         this.res.setHeader('Content-Type', 'text/event-stream');
-        this.res.setHeader('Cache-Control', 'no-cache, no-transform'); // no-transform prevents proxy compression
+        this.res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         this.res.setHeader('Connection', 'keep-alive');
-
-        // Nginx/Proxy specific: Disable buffering to ensure real-time delivery
         this.res.setHeader('X-Accel-Buffering', 'no');
-        this.res.setHeader('X-Content-Type-Options', 'nosniff'); // Security + Browser compatibility
+        this.res.setHeader('X-Content-Type-Options', 'nosniff');
 
         // Ensure headers are sent immediately
         if (typeof this.res.flushHeaders === 'function') {
@@ -45,13 +43,8 @@ export class SSEResponse {
         }
 
         // Connection Stabilization:
-        // Browsers (like Chrome/Brave) and Proxies often buffer the first chunk of data.
-        // We send 2KB of whitespace ("padding") to force the buffer to flush immediately.
-        // This ensures the generic 'open' event fires on the client side without delay.
-        const stabilizationPadding = ':' + ' '.repeat(2048) + '\n\n';
-        if (this.res.writable) {
-            this.res.write(stabilizationPadding);
-        }
+        // Some proxies prefer a starting comment instead of large padding
+        this.res.write(': ok\n\n');
 
         if (typeof this.res.flush === 'function') {
             this.res.flush();
@@ -68,7 +61,7 @@ export class SSEResponse {
 
         try {
             const formattedData = JSON.stringify({ type, ...data });
-            this.res.write(`event: message\n`); // Explicit event type helps some listeners
+            this.res.write(`event: ${type}\n`);
             this.res.write(`data: ${formattedData}\n\n`);
 
             if (typeof this.res.flush === 'function') {
@@ -112,5 +105,6 @@ export class SSEResponse {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
         }
+        // No res.end() here as it might be called after socket is closed
     }
 }

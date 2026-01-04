@@ -43,7 +43,7 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                     // console.log(`[SSE] Connected to report ${reportId}`)
                 }
 
-                eventSource.onmessage = (event) => {
+                const handleEvent = (event: MessageEvent) => {
                     try {
                         const data: RealtimeComment = JSON.parse(event.data)
                         // console.log('[SSE] Received event:', data.type)
@@ -55,11 +55,9 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
 
                             case 'new-comment':
                                 // console.log('[SSE] New comment received, invalidating queries')
-                                // Invalidate comments to trigger refetch
                                 queryClient.invalidateQueries({
                                     queryKey: queryKeys.comments.byReport(reportId)
                                 })
-                                // Also invalidate report to update comment count
                                 queryClient.invalidateQueries({
                                     queryKey: queryKeys.reports.detail(reportId)
                                 })
@@ -86,6 +84,11 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                         console.error('[SSE] Error parsing event data:', err)
                     }
                 }
+
+                eventSource.addEventListener('connected', handleEvent as any);
+                eventSource.addEventListener('new-comment', handleEvent as any);
+                eventSource.addEventListener('comment-update', handleEvent as any);
+                eventSource.addEventListener('comment-delete', handleEvent as any);
 
                 eventSource.onerror = () => {
                     // Only log error if not in closed state to avoid noise during unmount/reload

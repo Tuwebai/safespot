@@ -21,6 +21,7 @@ import sitemapRouter from './routes/sitemap.js';
 import seoRouter from './routes/seo.js';
 import notificationsRouter from './routes/notifications.js';
 import realtimeRouter from './routes/realtime.js';
+import chatsRouter from './routes/chats.js';
 
 // Load environment variables
 dotenv.config();
@@ -174,6 +175,7 @@ app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
 app.use('/api/user-zones', userZonesRouter);
+app.use('/api/chats', chatsRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency
 
@@ -282,13 +284,18 @@ app.use((err, req, res, next) => {
 // SERVER START
 // ============================================
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log('🚀 SafeSpot API Server');
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
   console.log('✅ Server ready to accept requests');
 });
+
+// INCREASE TIMEOUTS FOR SSE STABILITY
+// Prevent random ERR_CONNECTION_RESET in browsers
+server.keepAliveTimeout = 120000; // 120s
+server.headersTimeout = 130000;  // 130s
 
 // ============================================
 // GRACEFUL SHUTDOWN

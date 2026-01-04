@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -9,13 +9,17 @@ import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
+import { useChatRooms } from '@/hooks/queries/useChatsQuery'
 
 export function Header() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { data: profile } = useProfileQuery()
+  const { data: rooms } = useChatRooms()
   const anonymousId = getAnonymousIdSafe()
+
+  const unreadMessagesCount = rooms?.reduce((acc, room) => acc + (room.unread_count || 0), 0) || 0
 
   const isActive = (path: string) => location.pathname === path
 
@@ -120,6 +124,21 @@ export function Header() {
 
           {/* Notification Bell and Create Report Button */}
           <div className="hidden md:flex items-center space-x-4">
+            <Link
+              to="/mensajes"
+              className={cn(
+                "relative p-2 rounded-full transition-colors hover:bg-neon-green/10",
+                isActive('/mensajes') ? "text-neon-green bg-neon-green/10" : "text-foreground/70"
+              )}
+              title="Mensajes"
+            >
+              <MessageSquare className="h-5 w-5" />
+              {unreadMessagesCount > 0 && (
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-card animate-in zoom-in duration-300">
+                  {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+                </span>
+              )}
+            </Link>
             <NotificationBell />
             <Link to="/perfil">
               <div className={cn(
@@ -155,6 +174,20 @@ export function Header() {
 
           {/* Mobile Menu Button */}
           <div className="flex md:hidden items-center space-x-4">
+            <Link
+              to="/mensajes"
+              className={cn(
+                "relative p-2 rounded-full transition-colors hover:bg-neon-green/10",
+                isActive('/mensajes') ? "text-neon-green bg-neon-green/10" : "text-foreground/70"
+              )}
+            >
+              <MessageSquare className="h-5 w-5" />
+              {unreadMessagesCount > 0 && (
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-card">
+                  {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+                </span>
+              )}
+            </Link>
             <NotificationBell />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

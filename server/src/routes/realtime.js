@@ -24,8 +24,8 @@ router.get('/comments/:reportId', (req, res) => {
     // Confirm connection
     stream.send('connected', { reportId });
 
-    // Start Keep-Alive Heartbeat (5s interval for stability)
-    stream.startHeartbeat(5000);
+    // Start Keep-Alive Heartbeat (2s interval for stability)
+    stream.startHeartbeat(2000);
 
     // Event Handlers
     const handleNewComment = (comment) => {
@@ -47,12 +47,68 @@ router.get('/comments/:reportId', (req, res) => {
 
     // Cleanup on client disconnect
     req.on('close', () => {
-        console.log(`[SSE] Client disconnected from report ${reportId}`);
         stream.cleanup();
         realtimeEvents.off(`comment:${reportId}`, handleNewComment);
         realtimeEvents.off(`comment-update:${reportId}`, handleCommentUpdate);
         realtimeEvents.off(`comment-delete:${reportId}`, handleCommentDelete);
-        res.end();
+    });
+});
+
+/**
+ * SSE endpoint for real-time chat messages
+ * GET /api/realtime/chats/:roomId
+ */
+router.get('/chats/:roomId', (req, res) => {
+    const { roomId } = req.params;
+    req.setTimeout(0);
+
+    const stream = new SSEResponse(res);
+    console.log(`[SSE] Client connected for chat room ${roomId}`);
+
+    stream.send('connected', { roomId });
+    stream.startHeartbeat(2000);
+
+    const handleNewMessage = (message) => {
+        stream.send('new-message', { message });
+    };
+
+    const handleTyping = (data) => {
+        stream.send('typing', data);
+    };
+
+    realtimeEvents.on(`chat:${roomId}`, handleNewMessage);
+    realtimeEvents.on(`chat-typing:${roomId}`, handleTyping);
+
+    req.on('close', () => {
+        stream.cleanup();
+        realtimeEvents.off(`chat:${roomId}`, handleNewMessage);
+        realtimeEvents.off(`chat-typing:${roomId}`, handleTyping);
+    });
+});
+
+/**
+ * SSE endpoint for global user notifications (inbox updates)
+ * GET /api/realtime/user/:anonymousId
+ */
+router.get('/user/:anonymousId', (req, res) => {
+    const { anonymousId } = req.params;
+    req.setTimeout(0);
+
+    const stream = new SSEResponse(res);
+    console.log(`[SSE] Client connected for user notifications ${anonymousId}`);
+
+    stream.send('connected', { anonymousId });
+    stream.startHeartbeat(2000);
+
+    const handleChatUpdate = (data) => {
+        stream.send('chat-update', data);
+    };
+
+    realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);
+
+    req.on('close', () => {
+        stream.cleanup();
+        realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
     });
 });
 

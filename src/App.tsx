@@ -22,6 +22,7 @@ const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), '
 const PublicProfile = lazyRetry(() => import('@/pages/PublicProfile').then(m => ({ default: m.PublicProfile })), 'PublicProfile')
 const FollowsPage = lazyRetry(() => import('@/pages/FollowsPage').then(m => ({ default: m.default })), 'FollowsPage')
 const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ default: m.ThreadPage })), 'ThreadPage')
+const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
@@ -68,6 +69,7 @@ function App() {
                 <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
                 <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
                 <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
+                <Route path="/mensajes" element={<Mensajes />} />
               </Routes>
             </Suspense>
           </ChunkErrorBoundary>

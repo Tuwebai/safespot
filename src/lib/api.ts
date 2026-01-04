@@ -8,7 +8,7 @@ import { getCached, setCache } from './cache';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
-const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
+export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
   ? rawApiUrl.replace(/\/$/, '')
   : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
@@ -973,6 +973,95 @@ export const notificationsApi = {
     });
     return res as any;
   },
+};
+
+// ============================================
+// CHATS API (Contextual Messaging)
+// ============================================
+
+export interface ChatRoom {
+  id: string;
+  report_id: string;
+  participant_a: string;
+  participant_b: string;
+  last_message_at: string;
+  status: 'active' | 'archived';
+  created_at: string;
+  report_title: string;
+  report_category: string;
+  participant_a_alias: string;
+  participant_a_avatar: string;
+  participant_b_alias: string;
+  participant_b_avatar: string;
+  last_message_content?: string;
+  unread_count: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  content: string;
+  type: 'text' | 'image' | 'sighting';
+  is_read: boolean;
+  created_at: string;
+  sender_alias?: string;
+  sender_avatar?: string;
+}
+
+export const chatsApi = {
+  /**
+   * Get all chat rooms for the current user
+   */
+  getAllRooms: async (): Promise<ChatRoom[]> => {
+    return apiRequest<ChatRoom[]>('/chats');
+  },
+
+  /**
+   * Create or resume a chat room for a specific report
+   */
+  createRoom: async (reportId: string): Promise<ChatRoom> => {
+    return apiRequest<ChatRoom>('/chats', {
+      method: 'POST',
+      body: JSON.stringify({ report_id: reportId })
+    });
+  },
+
+  /**
+   * Get message history for a room
+   */
+  getMessages: async (roomId: string): Promise<ChatMessage[]> => {
+    return apiRequest<ChatMessage[]>(`/chats/${roomId}/messages`);
+  },
+
+  /**
+   * Send a message to a room
+   */
+  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' = 'text'): Promise<ChatMessage> => {
+    return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, type })
+    });
+  },
+
+  /**
+   * Mark all messages in a room as read
+   */
+  markAsRead: async (roomId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/read`, {
+      method: 'PATCH',
+    });
+  },
+
+  /**
+   * Notify that the current user is typing or stopped typing
+   */
+  notifyTyping: async (roomId: string, isTyping: boolean): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/typing`, {
+      method: 'POST',
+      body: JSON.stringify({ isTyping })
+    });
+  }
 };
 
 // ============================================

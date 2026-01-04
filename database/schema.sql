@@ -422,21 +422,97 @@ CREATE POLICY gamification_stats_all ON gamification_stats
     WITH CHECK (true);
 
 -- ============================================
--- NOTES ON RLS
--- ============================================
--- 1. current_anonymous_id() function reads from app.anonymous_id setting
--- 2. Backend must set this before queries: SET LOCAL app.anonymous_id = 'uuid-here';
--- 3. Policies allow NULL anonymous_id for system operations (triggers, functions)
--- 4. All policies are idempotent (DROP IF EXISTS before CREATE)
--- 5. Future: When adding auth, replace current_anonymous_id() with auth.uid()
--- ============================================
+
 
 -- ============================================
--- COMMENTS
+-- 6. CHAT ROOMS TABLE
 -- ============================================
--- This schema is designed for anonymous operations
--- All tables reference anonymous_id, not user_id
--- Future migration path: Add user_id column and migrate data
--- RLS is enabled on all tables for security
+-- Manages 1-on-1 chats linked to specific reports
+CREATE TABLE IF NOT EXISTS chat_rooms (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    report_id UUID NOT NULL,
+    participant_a UUID NOT NULL, -- The user who initiates contact
+    participant_b UUID NOT NULL, -- The report owner
+    last_message_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT fk_chat_report FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
+    CONSTRAINT fk_participant_a FOREIGN KEY (participant_a) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
+    CONSTRAINT fk_participant_b FOREIGN KEY (participant_b) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
+    -- Prevent duplicate rooms for same participants on same report
+    CONSTRAINT unique_chat_room UNIQUE (report_id, participant_a, participant_b),
+    -- Prevent chatting with oneself
+    CONSTRAINT different_participants CHECK (participant_a <> participant_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_report_id ON chat_rooms(report_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_participants ON chat_rooms(participant_a, participant_b);
+
 -- ============================================
+-- 7. CHAT MESSAGES TABLE
+-- ============================================
+-- Messages within a chat room
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    room_id UUID NOT NULL,
+    sender_id UUID NOT NULL,
+    content TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'text' CHECK (type IN ('text', 'image', 'sighting')),
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT fk_message_room FOREIGN KEY (room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_sender FOREIGN KEY (sender_id) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
+    CONSTRAINT message_content_not_empty CHECK (LENGTH(TRIM(content)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
+
+-- ============================================
+-- RLS: CHAT_ROOMS
+-- ============================================
+ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can only see rooms they are part of
+DROP POLICY IF EXISTS chat_rooms_select ON chat_rooms;
+CREATE POLICY chat_rooms_select ON chat_rooms
+    FOR SELECT
+    USING (participant_a = current_anonymous_id() OR participant_b = current_anonymous_id());
+
+-- Policy: Users can create rooms they are participant_a of
+DROP POLICY IF EXISTS chat_rooms_insert ON chat_rooms;
+CREATE POLICY chat_rooms_insert ON chat_rooms
+    FOR INSERT
+    WITH CHECK (participant_a = current_anonymous_id());
+
+-- ============================================
+-- RLS: CHAT_MESSAGES
+-- ============================================
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can see messages in rooms they belong to
+DROP POLICY IF EXISTS chat_messages_select ON chat_messages;
+CREATE POLICY chat_messages_select ON chat_messages
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM chat_rooms 
+            WHERE id = chat_messages.room_id 
+            AND (participant_a = current_anonymous_id() OR participant_b = current_anonymous_id())
+        )
+    );
+
+-- Policy: Users can only send messages as themselves in their own rooms
+DROP POLICY IF EXISTS chat_messages_insert ON chat_messages;
+CREATE POLICY chat_messages_insert ON chat_messages
+    FOR INSERT
+    WITH CHECK (
+        sender_id = current_anonymous_id() AND
+        EXISTS (
+            SELECT 1 FROM chat_rooms 
+            WHERE id = room_id 
+            AND (participant_a = current_anonymous_id() OR participant_b = current_anonymous_id())
+        )
+    );
+
 

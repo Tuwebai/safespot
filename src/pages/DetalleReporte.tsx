@@ -7,8 +7,9 @@ import { SEO } from '@/components/SEO'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportCardSkeleton as ReportSkeleton } from '@/components/ui/skeletons'
-import { ArrowLeft, MapPin } from 'lucide-react'
+import { ArrowLeft, MapPin, MessageSquare } from 'lucide-react'
 import { ShareButton } from '@/components/ShareButton'
+import { useCreateChatMutation } from '@/hooks/queries/useChatsQuery'
 
 // Hooks
 import { useReportDetail } from '@/hooks/useReportDetail'
@@ -96,6 +97,24 @@ export function DetalleReporte() {
   // REALTIME: Subscribe to instant comment updates via SSE
   useRealtimeComments(id)
 
+  const createChatMutation = useCreateChatMutation();
+
+  const report = initialReport
+  const imageUrls = report ? normalizeImageUrls(report.image_urls) : []
+
+  const handleCreateChat = async () => {
+    try {
+      if (report?.id) {
+        await createChatMutation.mutateAsync(report.id);
+        navigate('/mensajes');
+      }
+    } catch (err) {
+      console.error('Error creating chat:', err);
+    }
+  };
+
+  const isOwner = report?.anonymous_id === localStorage.getItem('safespot_anonymous_id');
+
   // Local comments count for optimistic updates
   const [commentsCount, setCommentsCount] = useState(0)
 
@@ -124,8 +143,6 @@ export function DetalleReporte() {
     flagManager.deletingReport ||
     flagManager.flaggingReport
 
-  const report = initialReport
-  const imageUrls = report ? normalizeImageUrls(report.image_urls) : []
 
   // ============================================
   // CONDITIONAL RETURNS (after all hooks)
@@ -291,7 +308,22 @@ export function DetalleReporte() {
               </div>
             )}
 
-            {/* 6. Comments Section */}
+            {/* 6. Contact Author CTA (Contextual Messaging) */}
+            {!editor.isEditing && !isOwner && (
+              <Button
+                onClick={handleCreateChat}
+                disabled={createChatMutation.isPending}
+                className="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-2xl py-6 h-auto flex flex-col gap-1 shadow-sm"
+              >
+                <div className="flex items-center gap-2 font-bold text-base">
+                  <MessageSquare className="h-5 w-5" />
+                  Contactar con el Autor
+                </div>
+                <span className="text-[10px] opacity-70 font-normal">Inicia un chat privado sobre este incidente</span>
+              </Button>
+            )}
+
+            {/* 7. Comments Section */}
             <CommentsSection
               reportId={id!}
               totalCount={initialReport?.comments_count || 0}

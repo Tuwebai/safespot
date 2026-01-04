@@ -66,9 +66,12 @@ registerRoute(
 
 // C. Llamadas a la API (Network-first)
 // Intentar cargar datos frescos, si no hay internet usar la última versión guardada.
-// EXCLUIMOS tiempo real (SSE) porque requiere una conexión abierta que no se puede cachear.
+// EXCLUIMOS tiempo real (SSE) y CHATS porque son altamente dinámicos y no deben cachearse.
 registerRoute(
-    ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.includes('/realtime/'),
+    ({ url }) =>
+        url.pathname.startsWith('/api/') &&
+        !url.pathname.includes('/realtime/') &&
+        !url.pathname.includes('/chats'), // Chat routes should be NetworkOnly (captured any path containing /chats)
     new NetworkFirst({
         cacheName: 'safespot-api-cache',
         plugins: [
