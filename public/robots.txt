@@ -1,9 +1,6 @@
 User-agent: *
 Allow: /
-Disallow: /perfil
-Disallow: /gamificacion
-Disallow: /crear-reporte
-Disallow: /favoritos
-Disallow: /api/
+Disallow: /admin
+Disallow: /api
 
-Sitemap: https://safespot.tuweb-ai.com/sitemap.xml
+Sitemap: https://safespot.app/sitemap.xml

@@ -26,6 +26,7 @@ const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ def
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
 import { UpdateNotification } from '@/components/UpdateNotification'
+import { SEO } from '@/components/SEO'
 
 function App() {
   return (
@@ -38,6 +39,7 @@ function App() {
       <ThemeProvider>
         <FirstTimeOnboardingTheme />
         <UpdateNotification />
+        <SEO />
         <Layout>
           <ChunkErrorBoundary>
             <Suspense fallback={<RouteLoadingFallback />}>

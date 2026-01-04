@@ -16,6 +16,7 @@ import { calculateLevelProgress } from '@/lib/levelCalculation'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Users, UserCircle } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
+import { SEO } from '@/components/SEO'
 
 interface PublicUserProfile {
     anonymous_id: string
@@ -150,6 +151,14 @@ export function PublicProfile() {
 
     return (
         <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 pb-20">
+            {profile && (
+                <SEO
+                    title={`Perfil de @${profile.alias}`}
+                    description={`Mira el perfil y estadísticas de seguridad de @${profile.alias} en SafeSpot. Nivel ${profile.level} - ${profile.points} Puntos.`}
+                    image={profile.avatar_url || undefined}
+                    type="profile"
+                />
+            )}
 
             {/* Navigation */}
             <Button
