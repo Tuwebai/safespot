@@ -710,6 +710,20 @@ export const usersApi = {
       method: 'DELETE',
     });
   },
+
+  /**
+   * Get followers list
+   */
+  getFollowers: async (identifier: string): Promise<any[]> => {
+    return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/followers`);
+  },
+
+  /**
+   * Get following list
+   */
+  getFollowing: async (identifier: string): Promise<any[]> => {
+    return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/following`);
+  },
 };
 
 // ============================================

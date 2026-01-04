@@ -197,7 +197,7 @@ export function Reportes() {
     e.stopPropagation()
 
     // Validaciones frontend
-    const report = reports.find(r => r.id === reportId)
+    const report = reports.find((r: Report) => r.id === reportId)
     if (!report) return
 
     const currentAnonymousId = getAnonymousIdSafe()
@@ -226,7 +226,7 @@ export function Reportes() {
     if (!flaggingReportId) return
 
     const reportId = flaggingReportId
-    const report = reports.find(r => r.id === reportId)
+    const report = reports.find((r: Report) => r.id === reportId)
 
     if (!report) {
       setIsFlagDialogOpen(false)
@@ -764,7 +764,7 @@ export function Reportes() {
               >
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
-                  const validReports = reports.filter((report) => {
+                  const validReports = reports.filter((report: Report) => {
                     return (
                       report != null &&
                       typeof report === 'object' &&
@@ -798,7 +798,7 @@ export function Reportes() {
                       }}
                       className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
                     >
-                      {rowItems.map((report) => (
+                      {rowItems.map((report: Report) => (
                         <SmartLink
                           key={report.id}
                           to={`/reporte/${report.id}`}

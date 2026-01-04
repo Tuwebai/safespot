@@ -282,14 +282,20 @@ export function PublicProfile() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
-                                <div className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
-                                    <div className="text-xl font-bold text-foreground mb-0.5">
+                                <div
+                                    className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
+                                    onClick={() => navigate(`/usuario/@${profile.alias}/seguidores`)}
+                                >
+                                    <div className="text-xl font-bold text-foreground mb-0.5 group-hover:text-neon-green transition-colors">
                                         {profile.stats.followers_count || 0}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Seguidores</div>
                                 </div>
-                                <div className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
-                                    <div className="text-xl font-bold text-foreground mb-0.5">
+                                <div
+                                    className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
+                                    onClick={() => navigate(`/usuario/@${profile.alias}/seguidos`)}
+                                >
+                                    <div className="text-xl font-bold text-foreground mb-0.5 group-hover:text-neon-green transition-colors">
                                         {profile.stats.following_count || 0}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Siguiendo</div>
