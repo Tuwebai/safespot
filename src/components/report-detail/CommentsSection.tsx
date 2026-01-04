@@ -17,10 +17,11 @@ import { ReplyModal } from '@/components/comments/ReplyModal'
 // TYPES
 // ============================================
 
-reportId: string
-totalCount: number
-onCommentCountChange: (delta: number) => void
-    reportOwnerId ?: string
+export interface CommentsSectionProps {
+    reportId: string
+    totalCount: number
+    onCommentCountChange: (delta: number) => void
+    reportOwnerId?: string
 }
 
 // ============================================
@@ -131,7 +132,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange, re
     }
 
     const currentAnonymousId = getAnonymousIdSafe()
-    const isCommentMod = false // Prepared for future mod system
+
 
     // Split comments into Sightings and Discussion
     const { sightings, discussionComments } = useMemo(() => {
