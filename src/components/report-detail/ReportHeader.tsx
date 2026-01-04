@@ -8,6 +8,7 @@ import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/api'
 import { PrefetchLink } from '@/components/PrefetchLink'
+import { getAvatarUrl } from '@/lib/avatar'
 
 // ============================================
 // TYPES
@@ -75,7 +76,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 <div className="relative">
                     <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">
                         <AvatarImage
-                            src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                            src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
                             alt="Avatar"
                         />
                         <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">

@@ -4,9 +4,10 @@ import { usersApi } from '@/lib/api';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Users, UserPlus, UserCheck } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { getAnonymousIdSafe } from '@/lib/identity';
+import { getAvatarUrl } from '@/lib/avatar';
 import { handleError } from '@/lib/errorHandler';
 import { Badge } from '@/components/ui/badge';
 
@@ -228,7 +229,7 @@ export default function FollowsPage() {
                                     <div key={user.anonymous_id} className="flex items-center justify-between p-4 bg-card border border-border rounded-lg shadow-sm">
                                         <div className="flex items-center gap-3 flex-1 min-w-0" onClick={() => navigate(`/usuario/${user.alias}`)}>
                                             <Avatar className="h-10 w-10 border border-border cursor-pointer">
-                                                <AvatarImage src={user.avatar_url || undefined} />
+                                                <AvatarImage src={user.avatar_url || getAvatarUrl(user.anonymous_id)} />
                                                 <AvatarFallback>{user.alias?.substring(0, 2).toUpperCase()}</AvatarFallback>
                                             </Avatar>
                                             <div className="min-w-0 flex-1">

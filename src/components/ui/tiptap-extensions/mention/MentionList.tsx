@@ -1,6 +1,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { UserProfile } from '@/lib/api'
+import { getAvatarUrl } from '@/lib/avatar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar'
 
 interface MentionListProps {
@@ -66,7 +67,7 @@ export const MentionList = forwardRef((props: MentionListProps, ref) => {
                         onClick={() => selectItem(index)}
                     >
                         <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                            <AvatarImage src={item.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${item.anonymous_id}`} />
+                            <AvatarImage src={item.avatar_url || getAvatarUrl(item.anonymous_id)} />
                             <AvatarFallback className="text-[9px]">{item.anonymous_id.substring(0, 2).toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <span className="font-medium truncate max-w-[150px]">@{item.alias}</span>

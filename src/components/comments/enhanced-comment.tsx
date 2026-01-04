@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast'
 import { Link, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
+import { getAvatarUrl } from '@/lib/avatar'
 import {
   MessageCircle,
   ThumbsUp,
@@ -273,7 +274,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                 "h-8 w-8 sm:h-10 sm:w-10 border border-border group-hover:border-neon-green/40 transition-colors",
                 isOwner && "ring-2 ring-neon-green/20"
               )}>
-                <AvatarImage src={comment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.anonymous_id}`} />
+                <AvatarImage src={comment.avatar_url || getAvatarUrl(comment.anonymous_id)} />
                 <AvatarFallback>{comment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
               </Avatar>
             </Link>

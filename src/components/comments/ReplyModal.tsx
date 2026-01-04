@@ -6,6 +6,7 @@ import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { getPlainTextFromTipTap } from '@/lib/tiptap-content'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
 import { getAnonymousIdSafe } from '@/lib/identity'
+import { getAvatarUrl } from '@/lib/avatar'
 import type { Comment } from '@/lib/api'
 
 interface ReplyModalProps {
@@ -69,7 +70,7 @@ export function ReplyModal({
                                 <div className="absolute left-[19px] top-[40px] bottom-[-20px] w-[2px] bg-border/80" />
 
                                 <Avatar className="h-10 w-10 border border-border z-10">
-                                    <AvatarImage src={parentComment.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${parentComment.anonymous_id}`} />
+                                    <AvatarImage src={parentComment.avatar_url || getAvatarUrl(parentComment.anonymous_id)} />
                                     <AvatarFallback>{parentComment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
                                 </Avatar>
 
@@ -92,7 +93,7 @@ export function ReplyModal({
                             {/* Your Reply Area */}
                             <div className="mt-6 flex gap-3">
                                 <Avatar className="h-10 w-10 border border-neon-green/20 z-10 bg-card">
-                                    <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`} />
+                                    <AvatarImage src={profile?.avatar_url || getAvatarUrl(anonymousId)} />
                                     <AvatarFallback className="text-neon-green bg-neon-green/10 text-xs">
                                         {profile?.alias?.substring(0, 2).toUpperCase() || 'TÚ'}
                                     </AvatarFallback>

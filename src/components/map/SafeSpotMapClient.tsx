@@ -14,6 +14,7 @@ import { useUserZones } from '@/hooks/useUserZones'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
+import { getAvatarUrl } from '@/lib/avatar'
 
 // Add custom style for placement mode cursor
 // Extracted CenterManager to prevent re-mounting loops
@@ -694,7 +695,7 @@ export function SafeSpotMapClient({
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                                         <Avatar className="h-5 w-5 border border-white/10 shrink-0">
                                             <AvatarImage
-                                                src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                                src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
                                                 alt="Avatar"
                                             />
                                             <AvatarFallback className="bg-dark-bg text-[8px] text-gray-400 flex items-center justify-center">

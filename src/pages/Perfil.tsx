@@ -13,6 +13,7 @@ import { TrendingUp, Calendar, FileText, ThumbsUp, Palette } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
+import { getAvatarUrl } from '@/lib/avatar'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { NotificationSettingsSection } from '@/components/NotificationSettingsSection'
@@ -159,7 +160,7 @@ export function Perfil() {
                     {/* Avatar Circle */}
                     <Avatar className="h-24 w-24 border-2 border-neon-green/30 group-hover:border-neon-green/80 transition-all shadow-[0_0_15px_rgba(0,255,136,0.1)]">
                       <AvatarImage
-                        src={profile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}`}
+                        src={profile?.avatar_url || getAvatarUrl(anonymousId)}
                         alt="Avatar"
                         className="object-cover"
                       />
@@ -180,7 +181,7 @@ export function Perfil() {
                         onClick={() => {
                           // Optimistic Update: Update UI immediately
                           const randomSeed = Math.random().toString(36).substring(7);
-                          const newAvatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${anonymousId}-${randomSeed}`;
+                          const newAvatarUrl = getAvatarUrl(`${anonymousId}-${randomSeed}`);
 
                           // 1. Update local state immediately
                           const previousProfile = profile;

@@ -10,6 +10,7 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { getAvatarUrl } from '@/lib/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -875,7 +876,7 @@ export function Reportes() {
                                   <div className="flex items-center gap-2">
                                     <Avatar className="h-6 w-6 border border-white/10 shrink-0">
                                       <AvatarImage
-                                        src={report.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${report.anonymous_id}`}
+                                        src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
                                         alt="Avatar"
                                       />
                                       <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">

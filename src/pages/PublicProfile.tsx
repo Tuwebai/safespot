@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom';
+import { getAvatarUrl } from '@/lib/avatar';
 import { usersApi } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
@@ -97,10 +98,10 @@ export function PublicProfile() {
         try {
             if (isFollowing) {
                 await usersApi.unfollow(anonymousId)
-                toast.success(`Dejaste de seguir a @${profile.alias}`)
+                toast.success(`Dejaste de seguir a @${profile.alias} `)
             } else {
                 await usersApi.follow(anonymousId)
-                toast.success(`Ahora sigues a @${profile.alias}`)
+                toast.success(`Ahora sigues a @${profile.alias} `)
             }
         } catch (error) {
             // Rollback on error
@@ -172,7 +173,7 @@ export function PublicProfile() {
                     <div className="relative group">
                         <div className="absolute inset-0 bg-neon-green/20 rounded-full blur-xl group-hover:blur-2xl transition-all duration-500" />
                         <Avatar className="h-32 w-32 border-4 border-zinc-950 shadow-2xl relative z-10 ring-2 ring-white/10 ring-offset-2 ring-offset-zinc-950 group-hover:ring-neon-green transition-all duration-300">
-                            <AvatarImage src={profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.anonymous_id}`} className="object-cover" />
+                            <AvatarImage src={profile.avatar_url || getAvatarUrl(profile.anonymous_id)} className="object-cover" />
                             <AvatarFallback className="bg-muted text-neon-green text-3xl font-bold font-mono border border-neon-green/20">
                                 {profile.alias?.substring(0, 2).toUpperCase() || '??'}
                             </AvatarFallback>
@@ -202,11 +203,12 @@ export function PublicProfile() {
                                             onClick={handleFollowToggle}
                                             variant={profile.stats.is_following ? "outline" : "default"}
                                             className={`
-                                                rounded-full px-8 font-bold transition-all duration-300
+rounded - full px - 8 font - bold transition - all duration - 300
                                                 ${profile.stats.is_following
                                                     ? 'border-white/10 hover:border-red-500/50 hover:text-red-500 hover:bg-red-500/5'
-                                                    : 'bg-neon-green text-black hover:bg-neon-green/90 shadow-[0_0_15px_rgba(33,255,140,0.3)]'}
-                                            `}
+                                                    : 'bg-neon-green text-black hover:bg-neon-green/90 shadow-[0_0_15px_rgba(33,255,140,0.3)]'
+                                                }
+`}
                                         >
                                             <Users className="w-4 h-4 mr-2" />
                                             {profile.stats.is_following ? 'Siguiendo' : 'Seguir'}
@@ -239,7 +241,7 @@ export function PublicProfile() {
                         <div className="mt-4 w-full bg-muted/80 rounded-full h-8 p-1 border border-border relative overflow-hidden group">
                             <div
                                 className="h-full bg-gradient-to-r from-neon-green/60 to-neon-green rounded-full relative overflow-hidden transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(33,255,140,0.3)]"
-                                style={{ width: `${Math.max(5, levelProgress.progressPercent)}%` }}
+                                style={{ width: `${Math.max(5, levelProgress.progressPercent)}% ` }}
                             >
                                 <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20" />
                                 <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/20 to-transparent" />
@@ -269,7 +271,7 @@ export function PublicProfile() {
                             </div>
                             <div className="grid grid-cols-2 divide-x divide-border">
                                 <div className="p-6 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
-                                    <div className={`text-2xl font-black ${trustColor} mb-1 shadow-current drop-shadow-sm`}>
+                                    <div className={`text - 2xl font - black ${trustColor} mb - 1 shadow - current drop - shadow - sm`}>
                                         {profile.stats.trust_score}%
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Confianza</div>
@@ -284,13 +286,13 @@ export function PublicProfile() {
                             <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
                                 <div
                                     className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
-                                    onClick={() => navigate(`/usuario/@${profile.alias}/seguidores`)}
+                                    onClick={() => navigate(`/ usuario / @${profile.alias}/seguidores`)}
                                 >
                                     <div className="text-xl font-bold text-foreground mb-0.5 group-hover:text-neon-green transition-colors">
                                         {profile.stats.followers_count || 0}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Seguidores</div>
-                                </div>
+                                </div >
                                 <div
                                     className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
                                     onClick={() => navigate(`/usuario/@${profile.alias}/seguidos`)}
@@ -300,12 +302,12 @@ export function PublicProfile() {
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Siguiendo</div>
                                 </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </div >
+                        </CardContent >
+                    </Card >
 
                     {/* Badges Showcase */}
-                    <Card className="bg-card border-border shadow-xl relative overflow-hidden">
+                    < Card className="bg-card border-border shadow-xl relative overflow-hidden" >
                         <div className="absolute top-0 right-0 p-32 bg-yellow-500/5 rounded-full blur-[80px]" />
                         <CardContent className="p-5 relative">
                             <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -340,12 +342,12 @@ export function PublicProfile() {
                                 </div>
                             )}
                         </CardContent>
-                    </Card>
+                    </Card >
 
-                </div>
+                </div >
 
                 {/* Right Column: Recent Activity */}
-                <div className="md:col-span-2">
+                < div className="md:col-span-2" >
                     <h3 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
                         <FileText className="text-neon-green" /> Historial de Reportes
                     </h3>
@@ -399,7 +401,7 @@ export function PublicProfile() {
                             </div>
                         )}
                     </div>
-                </div>
+                </div >
 
             </div >
         </div >
