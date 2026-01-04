@@ -175,8 +175,8 @@ self.addEventListener('notificationclick', (event: any) => {
     let url = event.notification.data?.url || '/explorar';
 
     // Handle specific actions
-    if (event.action === 'map' || event.action === '') {
-        // 'map' button OR clicking notification body (empty string)
+    if (event.action === 'map') {
+        // Explicit map button click
         if (event.notification.data?.reportId) {
             url = `/explorar?reportId=${event.notification.data.reportId}`;
         } else {
@@ -188,6 +188,18 @@ self.addEventListener('notificationclick', (event: any) => {
             url = `/reporte/${event.notification.data.reportId}`;
         }
         console.log('[SW] Navigating to report:', url);
+    } else if (event.action === 'view_profile') {
+        if (event.notification.data?.url) {
+            url = event.notification.data.url;
+        }
+        console.log('[SW] Navigating to profile:', url);
+    } else if (event.action === '') {
+        // Body click - use data.url if present (default logic), or fallback based on data
+        if (!event.notification.data?.url && event.notification.data?.reportId) {
+            // Fallback for old payloads if any
+            url = `/explorar?reportId=${event.notification.data.reportId}`;
+        }
+        console.log('[SW] Notification body click, url:', url);
     }
 
     const fullUrl = new URL(url, self.location.origin).href;

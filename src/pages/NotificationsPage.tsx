@@ -45,12 +45,31 @@ export default function NotificationsPage() {
             entityType: notif.entity_type
         });
 
+        // 1. Handle Navigation by Type
+        if (notif.type === 'achievement' || notif.entity_type === 'badge') {
+            navigate('/perfil'); // Badges are shown in profile
+            return;
+        }
+
+        if (notif.type === 'follow') {
+            console.log('[Notification] Handling follow click:', notif);
+            if (notif.entity_id) {
+                // entity_id is the follower's UUID
+                navigate(`/usuario/${notif.entity_id}`);
+            } else {
+                console.warn('[Notification] Missing entity_id for follow notification, redirecting to own profile');
+                navigate('/perfil');
+            }
+            return;
+        }
+
+        // 2. Default: Report Navigation
         const targetReportId = notif.report_id || (notif.entity_type === 'report' ? notif.entity_id : null);
 
         if (targetReportId) {
             navigate(`/reporte/${targetReportId}`);
         } else {
-            console.error('[Notification] No valid report_id for navigation', notif);
+            console.warn('[Notification] No navigation target found', notif);
         }
     };
 

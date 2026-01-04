@@ -20,10 +20,39 @@ import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
  * Fetch all reports with optional filters
  * Cached for 30 seconds by default
  */
+/**
+ * Fetch all reports with optional filters
+ * Cached for 30 seconds by default
+ */
 export function useReportsQuery(filters?: ReportFilters) {
+    const isDefaultQuery = !filters || Object.keys(filters).length === 0
+
     return useQuery({
         queryKey: queryKeys.reports.list(filters),
-        queryFn: () => reportsApi.getAll(filters),
+        queryFn: async () => {
+            const data = await reportsApi.getAll(filters)
+            // Only cache the default "all reports" view to localStorage
+            if (isDefaultQuery) {
+                try {
+                    localStorage.setItem('safespot_reports_all', JSON.stringify(data))
+                } catch (e) { }
+            }
+            return data
+        },
+        initialData: () => {
+            // Only use cached data for the default view
+            if (isDefaultQuery) {
+                try {
+                    const item = localStorage.getItem('safespot_reports_all')
+                    if (item) {
+                        return JSON.parse(item)
+                    }
+                } catch (e) {
+                    return undefined
+                }
+            }
+            return undefined
+        },
         staleTime: 60 * 1000, // 1 minute staling
         refetchOnWindowFocus: false,
         retry: 1, // Minimize retries

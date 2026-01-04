@@ -4,6 +4,7 @@ import { queryWithRLS } from '../utils/rls.js';
 import { requireAnonymousId, validateImageBuffer } from '../utils/validation.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
+import { NotificationService } from '../utils/notificationService.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
@@ -418,12 +419,21 @@ router.get('/public/:alias', async (req, res) => {
       return res.status(400).json({ error: 'Alias required' });
     }
 
+    // Check if alias is a UUID (to support direct ID navigation)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(alias);
+
+    const query = isUUID
+      ? `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
+         FROM anonymous_users 
+         WHERE anonymous_id = $1`
+      : `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
+         FROM anonymous_users 
+         WHERE LOWER(alias) = LOWER($1)`;
+
     // Public query - get user data
     const result = await queryWithRLS(
       '',
-      `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
-       FROM anonymous_users 
-       WHERE alias = $1`,
+      query,
       [alias]
     );
 
@@ -439,39 +449,38 @@ router.get('/public/:alias', async (req, res) => {
       `SELECT b.code, b.name, b.icon, b.description, b.rarity, ub.awarded_at
        FROM user_badges ub
        JOIN badges b ON ub.badge_id = b.id
-       WHERE ub.anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
+       WHERE ub.anonymous_id = $1
        ORDER BY b.level DESC, ub.awarded_at DESC`,
-      [alias]
+      [publicProfile.anonymous_id]
     );
 
     // Calculate detailed stats (This could be cached or pre-calculated in a real high-scale app)
     // For now, we calculate on the fly for freshness
     const statsResult = await queryWithRLS(
       '',
-      `WITH user_id AS (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
-       SELECT 
-         (SELECT COUNT(*) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as total_reports,
-         (SELECT COUNT(*) FROM comments WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as total_comments,
-         (SELECT COALESCE(SUM(upvotes_count), 0) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as report_likes,
-         (SELECT COALESCE(SUM(upvotes_count), 0) FROM comments WHERE anonymous_id = (SELECT anonymous_id FROM user_id)) as comment_likes,
-         (SELECT COUNT(DISTINCT created_at::date) FROM reports WHERE anonymous_id = (SELECT anonymous_id FROM user_id) AND created_at > NOW() - INTERVAL '30 days') as active_days_30
+      `SELECT 
+         (SELECT COUNT(*) FROM reports WHERE anonymous_id = $1) as total_reports,
+         (SELECT COUNT(*) FROM comments WHERE anonymous_id = $1) as total_comments,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM reports WHERE anonymous_id = $1) as report_likes,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM comments WHERE anonymous_id = $1) as comment_likes,
+         (SELECT COUNT(DISTINCT created_at::date) FROM reports WHERE anonymous_id = $1 AND created_at > NOW() - INTERVAL '30 days') as active_days_30
        `,
-      [alias]
+      [publicProfile.anonymous_id]
     );
 
     const stats = statsResult.rows[0] || {};
-    const trustScore = Math.min(100, 50 + (parseInt(stats.report_likes) * 2) + (parseInt(stats.comment_likes) * 0.5)); // Simple algo
+    const trustScore = Math.min(100, 50 + (parseInt(stats.report_likes || 0) * 2) + (parseInt(stats.comment_likes || 0) * 0.5)); // Simple algo
 
-    // Get public reports (limit to 5 most recent)
+    // Get public reports (limit to 10 most recent)
     const reportsResult = await queryWithRLS(
       '',
       `SELECT id, title, status, upvotes_count, created_at, category
        FROM reports 
-       WHERE anonymous_id = (SELECT anonymous_id FROM anonymous_users WHERE alias = $1)
+       WHERE anonymous_id = $1
        AND deleted_at IS NULL
        ORDER BY created_at DESC
        LIMIT 10`,
-      [alias]
+      [publicProfile.anonymous_id]
     );
 
     // 3. Get follow counts and trust score from stats (now using denormalized columns)
@@ -546,6 +555,12 @@ router.post('/follow/:followingId', requireAnonymousId, async (req, res) => {
       'INSERT INTO followers (follower_id, following_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [followerId, followingId]
     );
+
+    // Trigger Notification (Async)
+    console.log(`[FOLLOW] Triggering notification for follower=${followerId} -> following=${followingId}`);
+    NotificationService.notifyNewFollower(followerId, followingId).catch(err => {
+      console.error('[FOLLOW] Notification failed:', err.message);
+    });
 
     res.json({ success: true, message: 'Usuario seguido' });
   } catch (error) {

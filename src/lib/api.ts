@@ -865,10 +865,10 @@ export const gamificationApi = {
 export interface Notification {
   id: string;
   anonymous_id: string;
-  type: 'proximity' | 'activity' | 'similar';
+  type: 'proximity' | 'activity' | 'similar' | 'achievement' | 'follow' | 'mention' | 'like';
   title: string;
   message: string;
-  entity_type: 'report' | 'comment' | 'share' | 'sighting';
+  entity_type: 'report' | 'comment' | 'share' | 'sighting' | 'badge' | 'user';
   entity_id: string;
   report_id?: string;
   is_read: boolean;

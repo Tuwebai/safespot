@@ -209,7 +209,7 @@ export function createActivityNotificationPayload({ type, title, message, report
     let icon = '/favicon.svg';
 
     // Different actions based on type
-    const actions = [
+    let actions = [
         {
             action: 'view_report',
             title: '📄 Abrir Reporte'
@@ -219,6 +219,14 @@ export function createActivityNotificationPayload({ type, title, message, report
             title: '✅ Entendido'
         }
     ];
+
+    if (type === 'follow') {
+        url = `/usuario/${entityId}`; // Profile URL (entityId is follower's alias or ID)
+        actions = [{
+            action: 'view_profile',
+            title: '👤 Ver Perfil'
+        }];
+    }
 
     return {
         title: title,

@@ -65,7 +65,9 @@ export function PublicProfile() {
 
         try {
             setLoading(true)
-            const data = await usersApi.getPublicProfile(alias) as unknown as PublicUserProfile
+            // Sanitize input: remove '@' prefix if present from URL parameter
+            const cleanAlias = alias.replace(/^@/, '');
+            const data = await usersApi.getPublicProfile(cleanAlias) as unknown as PublicUserProfile
             setProfile(data)
         } catch (error) {
             const errorInfo = handleError(error, toast.error, 'PublicProfile.load')

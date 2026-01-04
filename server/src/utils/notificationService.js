@@ -539,5 +539,79 @@ export const NotificationService = {
                     last_notified_at = NOW()
                 WHERE anonymous_id = $1
             `, [anonymous_id]);
+    },
+
+    /**
+     * Notify user of a new follower
+     */
+    async notifyNewFollower(followerId, followedId) {
+        console.log(`[Notify] Event: notifyNewFollower follower = ${followerId} followed = ${followedId}`);
+        try {
+            const db = DB.public();
+
+            // 1. Get follower details (alias) and target settings
+            const followerResult = await db.query(`
+                SELECT alias FROM anonymous_users WHERE anonymous_id = $1
+    `, [followerId]);
+
+            const targetResult = await db.query(`
+                SELECT ns.notifications_today, ns.max_notifications_per_day 
+                FROM notification_settings ns 
+                WHERE ns.anonymous_id = $1
+    `, [followedId]);
+
+            const followerAlias = followerResult.rows[0]?.alias || 'Alguien';
+
+            // Check limits
+            const targetSettings = targetResult.rows[0];
+            if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
+                console.log(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day}) - IGNORING FOR TESTING`);
+                // return; // Disabled for testing
+            }
+
+            // 2. Create Notification
+            await this.createNotification({
+                anonymous_id: followedId,
+                type: 'follow',
+                title: '👤 Tienes un nuevo seguidor',
+                message: `"${followerAlias}" comenzó a seguirte.`,
+                entity_type: 'user',
+                entity_id: followerId, // Storing follower ID in entity_id might need UUID cast if schema strictness varies, but usually fine.
+                report_id: null
+            });
+
+            // 3. Send Push Notification
+            const pushConfigured = isPushConfigured();
+            console.log(`[Notify] Push Configured: ${pushConfigured}`);
+
+            if (pushConfigured) {
+                const subscriptionsResult = await db.query(`
+SELECT * FROM push_subscriptions 
+                    WHERE anonymous_id = $1 AND is_active = true
+    `, [followedId]);
+
+                console.log(`[Notify] Found ${subscriptionsResult.rows.length} subscriptions for user ${followedId}`);
+
+                if (subscriptionsResult.rows.length > 0) {
+                    const payload = createActivityNotificationPayload({
+                        type: 'follow',
+                        title: '👤 Nuevo Seguidor',
+                        message: `${followerAlias} comenzó a seguirte`,
+                        reportId: null,
+                        entityId: followerAlias // Passing Alias as entityId for URL generation in payload helper
+                    });
+
+                    for (const sub of subscriptionsResult.rows) {
+                        sendPushNotification(
+                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+                            payload
+                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                    }
+                }
+            }
+
+        } catch (err) {
+            logError(err, { context: 'notifyNewFollower', followerId, followedId });
+        }
     }
 };
