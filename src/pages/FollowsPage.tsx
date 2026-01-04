@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Users, UserPlus, UserCheck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/components/ui/toast';
+import { getAnonymousIdSafe } from '@/lib/identity';
 import { handleError } from '@/lib/errorHandler';
 import { Badge } from '@/components/ui/badge';
 
@@ -97,7 +98,7 @@ export default function FollowsPage() {
     };
 
     // Determine current user ID safely
-    const currentUserId = localStorage.getItem('anonymous_id');
+    const currentUserId = getAnonymousIdSafe();
 
     return (
         <div className="container mx-auto max-w-2xl px-4 py-6 pb-20">
