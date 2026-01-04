@@ -1,10 +1,30 @@
 import express from 'express';
 import { queryWithRLS } from '../utils/rls.js';
-import { logError } from '../utils/logger.js';
+import { logError, logSuccess } from '../utils/logger.js';
 import { sanitizeContent } from '../utils/sanitize.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import multer from 'multer';
+import { supabaseAdmin } from '../config/supabase.js';
+import { validateImageBuffer, requireAnonymousId } from '../utils/validation.js';
+import { imageUploadLimiter } from '../utils/rateLimiter.js';
 
 const router = express.Router();
+
+// Configuración de Multer para Chat
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB max
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Archivo de imagen inválido'), false);
+        }
+    },
+});
 
 /**
  * GET /api/chats
@@ -25,6 +45,8 @@ router.get('/', async (req, res) => {
         u2.alias as participant_b_alias,
         u2.avatar_url as participant_b_avatar,
         m.content as last_message_content,
+        m.type as last_message_type,
+        m.caption as last_message_caption,
         m.sender_id as last_message_sender_id,
         (
           SELECT COUNT(*)::int 
@@ -36,7 +58,7 @@ router.get('/', async (req, res) => {
       JOIN anonymous_users u1 ON cr.participant_a = u1.anonymous_id
       JOIN anonymous_users u2 ON cr.participant_b = u2.anonymous_id
       LEFT JOIN LATERAL (
-        SELECT content, sender_id 
+        SELECT content, sender_id, type, caption 
         FROM chat_messages 
         WHERE room_id = cr.id 
         ORDER BY created_at DESC 
@@ -113,8 +135,8 @@ router.get('/:roomId/messages', async (req, res) => {
 
         const result = await queryWithRLS(anonymousId, messagesQuery, [roomId]);
 
-        // Marcar como leídos
-        await queryWithRLS(anonymousId, 'UPDATE chat_messages SET is_read = true WHERE room_id = $1 AND sender_id != $2', [roomId, anonymousId]);
+        // Marcar como entregados y leídos
+        await queryWithRLS(anonymousId, 'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE room_id = $1 AND sender_id != $2', [roomId, anonymousId]);
 
         res.json(result.rows);
     } catch (err) {
@@ -130,7 +152,7 @@ router.get('/:roomId/messages', async (req, res) => {
 router.post('/:roomId/messages', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
-    const { content, type = 'text' } = req.body;
+    const { content, type = 'text', caption } = req.body;
 
     if (!content) return res.status(400).json({ error: 'Content is required' });
 
@@ -139,12 +161,18 @@ router.post('/:roomId/messages', async (req, res) => {
         const sanitized = Array.isArray(sanitizedArr) ? sanitizedArr[0] : sanitizedArr;
 
         const insertQuery = `
-      INSERT INTO chat_messages (room_id, sender_id, content, type)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO chat_messages (room_id, sender_id, content, type, caption)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
 
-        const result = await queryWithRLS(anonymousId, insertQuery, [roomId, anonymousId, sanitized, type]);
+        const result = await queryWithRLS(anonymousId, insertQuery, [
+            roomId,
+            anonymousId,
+            sanitized,
+            type || 'text',
+            caption || null
+        ]);
         const newMessage = result.rows[0];
 
         // Actualizar last_message_at en la sala
@@ -232,7 +260,7 @@ router.patch('/:roomId/read', async (req, res) => {
 
     try {
         await queryWithRLS(anonymousId,
-            'UPDATE chat_messages SET is_read = true WHERE room_id = $1 AND sender_id != $2 AND is_read = false',
+            'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
             [roomId, anonymousId]
         );
 
@@ -240,6 +268,37 @@ router.patch('/:roomId/read', async (req, res) => {
         realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
             roomId,
             action: 'read'
+        });
+
+        // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
+        realtimeEvents.emit(`chat-read:${roomId}`, {
+            readerId: anonymousId
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * PATCH /api/chats/:roomId/delivered
+ * Marca todos los mensajes de una sala como entregados (vv gris)
+ */
+router.patch('/:roomId/delivered', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+
+    try {
+        await queryWithRLS(anonymousId,
+            'UPDATE chat_messages SET is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND is_delivered = false',
+            [roomId, anonymousId]
+        );
+
+        // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
+        realtimeEvents.emit(`chat-delivered:${roomId}`, {
+            receiverId: anonymousId
         });
 
         res.json({ success: true });
@@ -271,6 +330,83 @@ router.post('/:roomId/typing', async (req, res) => {
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /api/chats/:roomId/images
+ * Sube una imagen para un chat y retorna la URL
+ */
+router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.single('image'), async (req, res) => {
+    const anonymousId = req.anonymousId;
+    const { roomId } = req.params;
+    const file = req.file;
+
+    if (!file) {
+        return res.status(400).json({ error: 'No image provided' });
+    }
+
+    try {
+        // 1. Verificar que el usuario sea parte de la sala
+        const roomResult = await queryWithRLS(anonymousId,
+            'SELECT participant_a, participant_b FROM chat_rooms WHERE id = $1',
+            [roomId]
+        );
+
+        if (roomResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Chat room not found' });
+        }
+
+        const room = roomResult.rows[0];
+        if (room.participant_a !== anonymousId && room.participant_b !== anonymousId) {
+            return res.status(403).json({ error: 'Forbidden: You are not a participant of this chat' });
+        }
+
+        if (!supabaseAdmin) {
+            return res.status(500).json({ error: 'Storage service not configured' });
+        }
+
+        // 2. Validar buffer de imagen
+        await validateImageBuffer(file.buffer);
+
+        // 3. Subir a Supabase
+        const bucketName = 'report-images'; // Reutilizamos el mismo bucket por ahora o uno de chats si existe
+        const fileExt = file.originalname.split('.').pop();
+        const fileName = `chats/${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+            .from(bucketName)
+            .upload(fileName, file.buffer, {
+                contentType: file.mimetype,
+                upsert: false,
+            });
+
+        if (uploadError) {
+            logError(uploadError, req);
+            throw new Error(`Failed to upload: ${uploadError.message}`);
+        }
+
+        // 4. Obtener URL pública
+        const { data: urlData } = supabaseAdmin.storage
+            .from(bucketName)
+            .getPublicUrl(fileName);
+
+        if (!urlData?.publicUrl) {
+            throw new Error('Failed to get public URL');
+        }
+
+        logSuccess('Chat image uploaded', { roomId, anonymousId, url: urlData.publicUrl });
+
+        res.json({
+            success: true,
+            url: urlData.publicUrl
+        });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(status || 500).json({
+            error: err.message || 'Internal server error'
+        });
     }
 });
 

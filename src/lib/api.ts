@@ -32,7 +32,6 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function getHeaders(): HeadersInit {
   const anonymousId = ensureAnonymousId();
   return {
-    'Content-Type': 'application/json',
     'X-Anonymous-Id': anonymousId,
   };
 }
@@ -67,12 +66,19 @@ export async function apiRequest<T>(
   }
 
   try {
+    const headers: HeadersInit = {
+      ...getHeaders(),
+      ...options.headers,
+    };
+
+    // Only set Content-Type to JSON if we have a body and it's NOT FormData
+    if (options.body && !(options.body instanceof FormData)) {
+      (headers as any)['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        ...getHeaders(),
-        ...options.headers,
-      },
+      headers,
     });
 
     // Handle 429 Too Many Requests specifically
@@ -994,6 +1000,8 @@ export interface ChatRoom {
   participant_b_alias: string;
   participant_b_avatar: string;
   last_message_content?: string;
+  last_message_type: 'text' | 'image' | 'sighting' | null;
+  last_message_caption?: string;
   unread_count: number;
 }
 
@@ -1004,9 +1012,12 @@ export interface ChatMessage {
   content: string;
   type: 'text' | 'image' | 'sighting';
   is_read: boolean;
+  is_delivered: boolean;
   created_at: string;
   sender_alias?: string;
   sender_avatar?: string;
+  caption?: string;
+  localUrl?: string; // Para actualizaciones optimistas fluidas
 }
 
 export const chatsApi = {
@@ -1037,18 +1048,24 @@ export const chatsApi = {
   /**
    * Send a message to a room
    */
-  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' = 'text'): Promise<ChatMessage> => {
+  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' = 'text', caption?: string): Promise<ChatMessage> => {
     return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, type })
+      body: JSON.stringify({ content, type, caption })
+    });
+  },
+
+  markAsRead: async (roomId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/read`, {
+      method: 'PATCH',
     });
   },
 
   /**
-   * Mark all messages in a room as read
+   * Mark all messages in a room as delivered
    */
-  markAsRead: async (roomId: string): Promise<{ success: boolean }> => {
-    return apiRequest<{ success: boolean }>(`/chats/${roomId}/read`, {
+  markAsDelivered: async (roomId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/delivered`, {
       method: 'PATCH',
     });
   },
@@ -1061,6 +1078,21 @@ export const chatsApi = {
       method: 'POST',
       body: JSON.stringify({ isTyping })
     });
+  },
+
+  /**
+   * Upload an image for a chat room
+   */
+  uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    return apiRequest<{ success: boolean; url: string }>(`/chats/${roomId}/images`, {
+      method: 'POST',
+      body: formData,
+      // Note: apiRequest should NOT set Content-Type for FormData
+      // so the browser can set the boundary automatically.
+    }).then(res => ({ url: res.url }));
   }
 };
 

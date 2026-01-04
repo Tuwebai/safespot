@@ -101,6 +101,9 @@ async function testConnection() {
       SET 
         followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
         following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
+      -- 6. Add caption and delivered status to chat_messages
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS caption TEXT;
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN DEFAULT FALSE;
     `;
 
     await pool.query(initSql);

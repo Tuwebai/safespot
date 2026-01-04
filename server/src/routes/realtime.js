@@ -60,14 +60,17 @@ router.get('/comments/:reportId', (req, res) => {
  */
 router.get('/chats/:roomId', (req, res) => {
     const { roomId } = req.params;
+    const { anonymousId } = req.query; // Recibimos el ID para saber quién está en línea
+
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    console.log(`[SSE] Client connected for chat room ${roomId}`);
+    console.log(`[SSE] Client connected for chat room ${roomId} (User: ${anonymousId})`);
 
     stream.send('connected', { roomId });
     stream.startHeartbeat(2000);
 
+    // Event Handlers
     const handleNewMessage = (message) => {
         stream.send('new-message', { message });
     };
@@ -76,13 +79,68 @@ router.get('/chats/:roomId', (req, res) => {
         stream.send('typing', data);
     };
 
+    const handleRead = (data) => {
+        // Notificar que los mensajes fueron leídos (doble tilde vv)
+        stream.send('messages-read', data);
+    };
+
+    const handleDelivered = (data) => {
+        // Notificar que los mensajes fueron entregados (doble tilde gris vv)
+        stream.send('messages-delivered', data);
+    };
+
+    const handlePresence = (data) => {
+        // Notificar quién entró o salió de la sala
+        stream.send('presence', data);
+    };
+
+    // Suscribirse a eventos
     realtimeEvents.on(`chat:${roomId}`, handleNewMessage);
     realtimeEvents.on(`chat-typing:${roomId}`, handleTyping);
+    realtimeEvents.on(`chat-read:${roomId}`, handleRead);
+    realtimeEvents.on(`chat-delivered:${roomId}`, handleDelivered);
+    realtimeEvents.on(`chat-presence:${roomId}`, handlePresence);
+
+    // Notificar que ESTE usuario entró (Online)
+    if (anonymousId) {
+        realtimeEvents.emit(`chat-presence:${roomId}`, {
+            userId: anonymousId,
+            status: 'online'
+        });
+
+        // Al entrar, marcar mensajes de otros como ENTREGADOS
+        (async () => {
+            try {
+                const { queryWithRLS } = await import('../utils/rls.js');
+                await queryWithRLS(anonymousId,
+                    'UPDATE chat_messages SET is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND is_delivered = false',
+                    [roomId, anonymousId]
+                );
+                // Notificar que se entregaron mensajes
+                realtimeEvents.emit(`chat-delivered:${roomId}`, {
+                    receiverId: anonymousId
+                });
+            } catch (err) {
+                console.error('[SSE] Error marking as delivered on connect:', err);
+            }
+        })();
+    }
 
     req.on('close', () => {
+        // Notificar que ESTE usuario salió (Offline)
+        if (anonymousId) {
+            realtimeEvents.emit(`chat-presence:${roomId}`, {
+                userId: anonymousId,
+                status: 'offline'
+            });
+        }
+
         stream.cleanup();
         realtimeEvents.off(`chat:${roomId}`, handleNewMessage);
         realtimeEvents.off(`chat-typing:${roomId}`, handleTyping);
+        realtimeEvents.off(`chat-read:${roomId}`, handleRead);
+        realtimeEvents.off(`chat-delivered:${roomId}`, handleDelivered);
+        realtimeEvents.off(`chat-presence:${roomId}`, handlePresence);
     });
 });
 

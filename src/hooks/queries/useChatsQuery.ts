@@ -47,8 +47,9 @@ export function useChatMessages(roomId: string | undefined) {
     const queryClient = useQueryClient();
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
-    // Real-time state for typing
+    // Real-time state for typing and presence
     const [isTyping, setIsTyping] = useState(false);
+    const [isOtherOnline, setIsOtherOnline] = useState(false);
 
     const query = useQuery({
         queryKey: CHATS_KEYS.messages(roomId || ''),
@@ -60,7 +61,7 @@ export function useChatMessages(roomId: string | undefined) {
     useEffect(() => {
         if (!roomId || !anonymousId) return;
 
-        const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${roomId}`;
+        const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${roomId}?anonymousId=${anonymousId}`;
         const eventSource = new EventSource(sseUrl);
 
         eventSource.addEventListener('new-message', (event: any) => {
@@ -84,12 +85,41 @@ export function useChatMessages(roomId: string | undefined) {
             }
         });
 
+        eventSource.addEventListener('presence', (event: any) => {
+            const data = JSON.parse(event.data);
+            if (data.userId !== anonymousId) {
+                setIsOtherOnline(data.status === 'online');
+            }
+        });
+
+        eventSource.addEventListener('messages-read', (event: any) => {
+            const data = JSON.parse(event.data);
+            // Si el otro leyó mis mensajes, actualizamos is_read localmente
+            if (data.readerId !== anonymousId) {
+                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+                    if (!old) return old;
+                    return old.map(m => m.sender_id === anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
+                });
+            }
+        });
+
+        eventSource.addEventListener('messages-delivered', (event: any) => {
+            const data = JSON.parse(event.data);
+            // Si el otro recibió mis mensajes, actualizamos is_delivered localmente
+            if (data.receiverId !== anonymousId) {
+                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+                    if (!old) return old;
+                    return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
+                });
+            }
+        });
+
         return () => {
             eventSource.close();
         };
     }, [roomId, anonymousId, queryClient]);
 
-    return { ...query, isOtherTyping: isTyping };
+    return { ...query, isOtherTyping: isTyping, isOtherOnline };
 }
 
 /**
@@ -100,8 +130,15 @@ export function useSendMessageMutation() {
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
     return useMutation({
-        mutationFn: ({ roomId, content, type }: { roomId: string; content: string; type?: 'text' | 'image' | 'sighting' }) =>
-            chatsApi.sendMessage(roomId, content, type),
+        mutationFn: async ({ roomId, content, type, caption, file }: { roomId: string; content: string; type?: 'text' | 'image' | 'sighting', caption?: string, file?: File }) => {
+            if (type === 'image' && file) {
+                // 1. Subir la imagen primero si es un archivo
+                const { url } = await chatsApi.uploadChatImage(roomId, file);
+                // 2. Enviar el mensaje con la URL final
+                return chatsApi.sendMessage(roomId, url, type, caption);
+            }
+            return chatsApi.sendMessage(roomId, content, type, caption);
+        },
 
         onMutate: async (variables) => {
             // Cancelar refetches salientes
@@ -110,46 +147,60 @@ export function useSendMessageMutation() {
             // Snapshot del valor previo
             const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId));
 
-            // Optimistic update
+            // Optimistic update: Si hay un archivo, usamos un blob URL temporal
+            let optimisticContent = variables.content;
+            if (variables.type === 'image' && variables.file) {
+                optimisticContent = URL.createObjectURL(variables.file);
+            }
+
             const optimisticMessage: ChatMessage = {
                 id: `temp-${Date.now()}`,
                 room_id: variables.roomId,
                 sender_id: anonymousId || 'me',
-                content: variables.content,
+                content: variables.type === 'image' && variables.file ? '' : variables.content,
+                localUrl: optimisticContent.startsWith('blob:') ? optimisticContent : undefined,
                 type: variables.type || 'text',
+                caption: variables.caption,
                 is_read: false,
+                is_delivered: false,
                 created_at: new Date().toISOString(),
-                sender_alias: 'Tú', // Opcional, se puede mejorar
+                sender_alias: 'Tú',
             };
 
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId), (old) => {
                 return [...(old || []), optimisticMessage];
             });
 
-            return { previousMessages };
+            return { previousMessages, blobUrl: optimisticContent.startsWith('blob:') ? optimisticContent : null };
         },
 
         onError: (_err, variables, context) => {
             if (context?.previousMessages) {
                 queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId), context.previousMessages);
             }
+            // Revocamos solo en error para limpiar
+            if (context?.blobUrl) URL.revokeObjectURL(context.blobUrl);
         },
 
-        onSuccess: (newMessage, variables) => {
-            // Reemplazar el mensaje optimista (o simplemente invalidar para ser más seguro, 
-            // pero reemplazar es más suave)
+        onSuccess: (newMessage, variables, context) => {
+            // Reemplazar el mensaje optimista manteniendo el localUrl para la transición
+            const confirmedMessage = {
+                ...newMessage,
+                localUrl: context?.blobUrl || undefined
+            };
+
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId), (old) => {
-                if (!old) return [newMessage];
-                // Quitamos el temporal y añadimos el real
-                return old.filter(m => !m.id.startsWith('temp-')).concat(newMessage);
+                if (!old) return [confirmedMessage];
+                return old.filter(m => !m.id.startsWith('temp-')).concat(confirmedMessage);
             });
 
             // Actualizar lista de salas
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
+
+            // NO revocamos el blob aquí, lo hará el componente ChatImage tras cargar la imagen real
         },
 
         onSettled: (_data, _error, variables) => {
-            // Siempre invalidar al final para asegurar sincronización con el servidor
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
         }
     });
@@ -179,8 +230,30 @@ export function useMarkAsReadMutation() {
         onSuccess: (_, roomId) => {
             // Invalidar lista de salas para actualizar unread counts globalmente
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
-            // Invalidar mensajes de la sala para reflejar is_read: true
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(roomId) });
+            // Actualizar localmente para evitar parpadeo
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+                if (!old) return old;
+                const anonymousId = localStorage.getItem('safespot_anonymous_id');
+                return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
+            });
+        },
+    });
+}
+
+/**
+ * Mutation para marcar sala como entregada
+ */
+export function useMarkAsDeliveredMutation() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (roomId: string) => chatsApi.markAsDelivered(roomId),
+        onSuccess: (_, roomId) => {
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+                if (!old) return old;
+                const anonymousId = localStorage.getItem('safespot_anonymous_id');
+                return old.map(m => m.sender_id !== anonymousId ? { ...m, is_delivered: true } : m);
+            });
         },
     });
 }
