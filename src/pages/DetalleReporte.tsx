@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Helmet } from 'react-helmet-async'
-import { generateSEOTags, generateReportStructuredData } from '@/lib/seo'
+// import { Helmet } from 'react-helmet-async'
+// import { generateSEOTags } from '@/lib/seo' 
+import { generateReportStructuredData } from '@/lib/seo'
+import { SEO } from '@/components/SEO'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportCardSkeleton as ReportSkeleton } from '@/components/ui/skeletons'
@@ -140,9 +142,7 @@ export function DetalleReporte() {
   if (reportDetail.loading) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Helmet>
-          <title>Cargando reporte... – SafeSpot</title>
-        </Helmet>
+        <SEO title="Cargando reporte..." />
         <ReportSkeleton />
       </div>
     )
@@ -155,9 +155,7 @@ export function DetalleReporte() {
   if (reportDetail.error || !report) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <Helmet>
-          <title>Reporte no encontrado – SafeSpot</title>
-        </Helmet>
+        <SEO title="Reporte no encontrado" />
         <Card className="bg-card border-border">
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{reportDetail.error || 'Reporte no encontrado'}</p>
@@ -180,20 +178,7 @@ export function DetalleReporte() {
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === report.status)?.label || report.status
   const formattedDate = new Date(report.created_at).toLocaleDateString()
 
-  // SEO Configuration
-  const seo = generateSEOTags({
-    title: `${category} en ${zone}`,
-    description: `Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`,
-    canonical: `https://safespot.netlify.app/reporte/${report.id}`,
-    image: imageUrls.length > 0 ? imageUrls[0] : undefined,
-    imageAlt: `Imagen del reporte: ${report.title}`,
-    type: 'article',
-    publishedTime: report.created_at,
-    modifiedTime: report.updated_at,
-    author: 'SafeSpot Community',
-    section: category,
-    tags: [category, zone, report.status]
-  })
+
 
   // JSON-LD Structured Data
   const structuredData = generateReportStructuredData({
@@ -216,44 +201,15 @@ export function DetalleReporte() {
       fallbackTitle="Error en el detalle del reporte"
       onReset={() => reportDetail.refetch()}
     >
-      <Helmet>
-        <title>{seo.title}</title>
-        <meta name="description" content={seo.description} />
-        <link rel="canonical" href={seo.canonical} />
-
-        {/* Open Graph */}
-        <meta property="og:type" content={seo.ogType} />
-        <meta property="og:url" content={seo.ogUrl} />
-        <meta property="og:title" content={seo.ogTitle} />
-        <meta property="og:description" content={seo.ogDescription} />
-        <meta property="og:image" content={seo.ogImage} />
-        <meta property="og:image:width" content={seo.ogImageWidth} />
-        <meta property="og:image:height" content={seo.ogImageHeight} />
-        <meta property="og:image:alt" content={seo.ogImageAlt} />
-        <meta property="og:site_name" content={seo.ogSiteName} />
-        <meta property="og:locale" content={seo.ogLocale} />
-
-        {/* Article-specific */}
-        {seo.articlePublishedTime && <meta property="article:published_time" content={seo.articlePublishedTime} />}
-        {seo.articleModifiedTime && <meta property="article:modified_time" content={seo.articleModifiedTime} />}
-        {seo.articleAuthor && <meta property="article:author" content={seo.articleAuthor} />}
-        {seo.articleSection && <meta property="article:section" content={seo.articleSection} />}
-        {seo.articleTags && seo.articleTags.map((tag, i) => (
-          <meta key={i} property="article:tag" content={tag} />
-        ))}
-
-        {/* Twitter */}
-        <meta name="twitter:card" content={seo.twitterCard} />
-        <meta name="twitter:title" content={seo.twitterTitle} />
-        <meta name="twitter:description" content={seo.twitterDescription} />
-        <meta name="twitter:image" content={seo.twitterImage} />
-        <meta name="twitter:image:alt" content={seo.twitterImageAlt} />
-
-        {/* JSON-LD Structured Data */}
-        <script type="application/ld+json">
-          {JSON.stringify(structuredData)}
-        </script>
-      </Helmet>
+      <SEO
+        title={`${category} en ${zone}`}
+        description={`Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`}
+        url={`https://safespot.netlify.app/reporte/${report.id}`}
+        image={imageUrls.length > 0 ? imageUrls[0] : undefined}
+        type="article"
+        author="SafeSpot Community"
+        structuredData={structuredData}
+      />
 
       <div className="min-h-screen bg-background pb-24 md:pb-8 overflow-x-hidden">
         <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 md:py-8">

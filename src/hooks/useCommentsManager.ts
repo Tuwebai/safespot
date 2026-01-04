@@ -366,22 +366,24 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     }, [comments, state.submitting, state.processingId, likeMutation, toast])
 
     const pinComment = useCallback(async (commentId: string) => {
+        if (!reportId) return
         try {
-            await pinMutation.mutateAsync({ id: commentId })
+            await pinMutation.mutateAsync({ id: commentId, reportId })
             toast.success('Comentario fijado')
         } catch (error) {
             handleErrorWithMessage(error, 'Error al fijar comentario', toast.error, 'useCommentsManager.pinComment')
         }
-    }, [pinMutation, toast])
+    }, [pinMutation, toast, reportId])
 
     const unpinComment = useCallback(async (commentId: string) => {
+        if (!reportId) return
         try {
-            await unpinMutation.mutateAsync({ id: commentId })
+            await unpinMutation.mutateAsync({ id: commentId, reportId })
             toast.success('Comentario desfijado')
         } catch (error) {
             handleErrorWithMessage(error, 'Error al desfijar comentario', toast.error, 'useCommentsManager.unpinComment')
         }
-    }, [unpinMutation, toast])
+    }, [unpinMutation, toast, reportId])
 
     // ============================================
     // ACTION CREATORS (for UI)

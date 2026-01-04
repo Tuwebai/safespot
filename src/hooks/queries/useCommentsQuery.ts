@@ -57,23 +57,37 @@ export function useCreateCommentMutation() {
             queryClient.setQueriesData(
                 { queryKey: queryKeys.comments.byReport(newCommentData.report_id) },
                 (old: any) => {
+                    const sortFn = (a: any, b: any) => {
+                        if (!!a.is_pinned !== !!b.is_pinned) return b.is_pinned ? 1 : -1
+                        if (a.is_pinned) return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+                        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                    }
+
                     if (!old) return [optimisticComment]
-                    if (Array.isArray(old)) return [optimisticComment, ...old]
-                    // If it's a paginated object, add to the first page
+
+                    if (Array.isArray(old)) {
+                        return [optimisticComment, ...old].sort(sortFn)
+                    }
+
                     if (old.pages) {
                         const newPages = [...old.pages]
                         if (newPages[0]) {
+                            const newPageData = [optimisticComment, ...(newPages[0].data || [])]
                             newPages[0] = {
                                 ...newPages[0],
-                                data: [optimisticComment, ...(newPages[0].data || [])]
+                                data: newPageData.sort(sortFn)
                             }
                         }
                         return { ...old, pages: newPages }
                     }
-                    // Handle PaginatedComments ({ comments: [] })
+
                     if (old.comments && Array.isArray(old.comments)) {
-                        return { ...old, comments: [optimisticComment, ...old.comments] }
+                        return {
+                            ...old,
+                            comments: [optimisticComment, ...old.comments].sort(sortFn)
+                        }
                     }
+
                     return old
                 }
             )
@@ -442,32 +456,38 @@ export function usePinCommentMutation() {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: ({ id }: { id: string }) => commentsApi.pin(id),
-        onMutate: async ({ id }) => {
-            await queryClient.cancelQueries({ queryKey: ['comments'] })
+        mutationFn: ({ id }: { id: string; reportId: string }) => commentsApi.pin(id),
+        onMutate: async ({ id, reportId }) => {
+            // Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: queryKeys.comments.byReport(reportId) })
+
+            // Snapshot
+            const previousComments = queryClient.getQueriesData({ queryKey: queryKeys.comments.byReport(reportId) })
 
             // Optimistic update
             queryClient.setQueriesData<any>(
-                { queryKey: ['comments'] },
+                { queryKey: queryKeys.comments.byReport(reportId) },
                 (old: any) => {
                     if (!old) return old
-                    // Set logic: set this comment to is_pinned=true, and all others in the SAME REPORT to is_pinned=false
-                    // Since we don't know the reportId easily here without iterating, we just set this one true and others false if we can find them.
 
                     const transform = (comments: any[]) => {
-                        // Find the reportId of the pinned comment if possible (from the comment itself in the list)
-                        const targetComment = comments.find((c: any) => c.id === id);
-                        const reportId = targetComment?.report_id;
-
-                        return comments.map((c: any) => {
-                            if (c.id === id) return { ...c, is_pinned: true }
-                            // Unpin others in the same report if we know the reportId
-                            if (reportId && c.report_id === reportId) return { ...c, is_pinned: false }
-                            // Fallback: unpin everything else? No, safer to only unpin if reportId matches or just this one.
-                            // Actually, in the backend we unpin others. So here valid optimistic UI is:
-                            // If we can't be sure, just set this one true. But ideally unpin others.
-                            // Simplified: just set this one true.
+                        const updated = comments.map((c: any) => {
+                            if (c.id === id) return { ...c, is_pinned: true, updated_at: new Date().toISOString() }
                             return c
+                        })
+
+                        // Re-sort to reflect new pin status immediately
+                        return updated.sort((a, b) => {
+                            // 1. Pinned first
+                            if (!!a.is_pinned !== !!b.is_pinned) return b.is_pinned ? 1 : -1
+
+                            // 2. If both pinned, sort by updated_at (newest pin/update first)
+                            if (a.is_pinned) {
+                                return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+                            }
+
+                            // 3. If neither pinned, sort by creation (newest first)
+                            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                         })
                     }
 
@@ -485,9 +505,18 @@ export function usePinCommentMutation() {
                     return old
                 }
             )
+
+            return { previousComments, reportId }
         },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['comments'] })
+        onError: (_, __, context) => {
+            if (context?.previousComments) {
+                context.previousComments.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: (_, __, { reportId }) => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(reportId) })
         }
     })
 }
@@ -499,13 +528,15 @@ export function useUnpinCommentMutation() {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: ({ id }: { id: string }) => commentsApi.unpin(id),
-        onMutate: async ({ id }) => {
-            await queryClient.cancelQueries({ queryKey: ['comments'] })
+        mutationFn: ({ id }: { id: string; reportId: string }) => commentsApi.unpin(id),
+        onMutate: async ({ id, reportId }) => {
+            await queryClient.cancelQueries({ queryKey: queryKeys.comments.byReport(reportId) })
+
+            const previousComments = queryClient.getQueriesData({ queryKey: queryKeys.comments.byReport(reportId) })
 
             // Optimistic update
             queryClient.setQueriesData<any>(
-                { queryKey: ['comments'] },
+                { queryKey: queryKeys.comments.byReport(reportId) },
                 (old: any) => {
                     if (!old) return old
                     const transform = (comments: any[]) => comments.map((c: any) =>
@@ -526,9 +557,17 @@ export function useUnpinCommentMutation() {
                     return old
                 }
             )
+            return { previousComments }
         },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['comments'] })
+        onError: (_, __, context) => {
+            if (context?.previousComments) {
+                context.previousComments.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: (_, __, { reportId }) => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(reportId) })
         }
     })
 }

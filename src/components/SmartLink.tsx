@@ -62,7 +62,11 @@ export function SmartLink({
         }
 
         if (prefetchReportId) {
-            prefetchReport(prefetchReportId)
+            // Validate UUID to avoid 500 errors on temp IDs (optimistic UI)
+            const isTempId = prefetchReportId.startsWith('temp-') || prefetchReportId.length < 30
+            if (!isTempId) {
+                prefetchReport(prefetchReportId)
+            }
         }
     }, [prefetchReportId, prefetchRoute, priority])
 

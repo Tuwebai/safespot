@@ -52,7 +52,7 @@ router.get('/:reportId', async (req, res) => {
        WHERE c.report_id = $1 AND c.deleted_at IS NULL
        ORDER BY 
          c.is_pinned DESC NULLS LAST,
-         (c.upvotes_count >= 2 AND c.upvotes_count = MAX(c.upvotes_count) OVER()) DESC, 
+         CASE WHEN c.is_pinned THEN c.updated_at END DESC,
          c.created_at DESC
        LIMIT $2 OFFSET $3`,
       [reportId, limitNum, offset]
@@ -422,7 +422,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     // Update comment using queryWithRLS for RLS enforcement
     const updateQuery = `
       UPDATE comments 
-      SET content = $1, updated_at = $2 
+      SET content = $1, updated_at = $2, last_edited_at = $2 
       WHERE id = $3 AND anonymous_id = $4
       RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread
     `;
@@ -880,21 +880,9 @@ router.post('/:id/pin', requireAnonymousId, async (req, res) => {
 
     // 3. Pin the comment
     await queryWithRLS(
-      anonymousId, // Although RLS usually blocks updates to others' comments, if we use a SERVICE bypass or if we update 'is_pinned' specifically it might work.
-      // Ideally, RLS policy for 'comments' should allow UPDATE if (auth.uid() = reports.anonymous_id via join).
-      // Since complex RLS might block this, we can try direct update or check DB policies.
-      // Assuming 'queryWithRLS' runs as permitted if RLS allows.
-      // For now, we update directly.
-      `UPDATE comments SET is_pinned = true WHERE id = $1`,
-      [id]
-    );
-
-    // Unpin other comments logic? Usually only one pinned.
-    // If we want Single Pin, we should unpin others first:
-    await queryWithRLS(
       anonymousId,
-      `UPDATE comments SET is_pinned = false WHERE report_id = $1 AND id != $2`,
-      [comment.report_id, id]
+      `UPDATE comments SET is_pinned = true, updated_at = NOW() WHERE id = $1`,
+      [id]
     );
 
     res.json({ success: true, message: 'Comment pinned' });

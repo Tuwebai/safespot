@@ -8,6 +8,7 @@ interface SEOProps {
     url?: string;
     type?: 'website' | 'article' | 'profile';
     author?: string;
+    structuredData?: Record<string, any>;
 }
 
 export const SEO = ({
@@ -17,7 +18,8 @@ export const SEO = ({
     image,
     url,
     type = 'website',
-    author
+    author,
+    structuredData
 }: SEOProps) => {
     const siteTitle = 'SafeSpot';
     const fullTitle = title ? `${title} | ${siteTitle}` : `${siteTitle} - Red de Seguridad Ciudadana`;
@@ -58,6 +60,13 @@ export const SEO = ({
 
             {/* Canonical */}
             <link rel="canonical" href={currentUrl} />
+
+            {/* JSON-LD Structured Data */}
+            {structuredData && (
+                <script type="application/ld+json">
+                    {JSON.stringify(structuredData)}
+                </script>
+            )}
         </Helmet>
     );
 };

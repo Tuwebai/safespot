@@ -221,12 +221,17 @@ export const EnhancedComment = memo(function EnhancedComment({
       return edited - created > 1000
     }
 
-    // Fallback: Si no hay last_edited_at (ej: registros viejos), usamos updated_at
+    // Fallback: Si no hay last_edited_at...
     if (!comment.updated_at || !comment.created_at) return false
+
+    // FIX: Si está fijado, 'updated_at' se usa para el ordenamiento, no necesariamente edición.
+    // Si no hay 'last_edited_at' explícito y está fijado, asumimos que la actualización fue el fijado.
+    if (comment.is_pinned) return false
+
     const created = new Date(comment.created_at).getTime()
     const updated = new Date(comment.updated_at).getTime()
     return updated - created > 5000 // Umbral mayor para fallback
-  }, [comment.created_at, comment.updated_at, comment.last_edited_at])
+  }, [comment.created_at, comment.updated_at, comment.last_edited_at, comment.is_pinned])
 
   const handleCardClick = () => {
     if (isThreadView) return // Already in thread view, don't navigate
@@ -242,7 +247,7 @@ export const EnhancedComment = memo(function EnhancedComment({
     <Card
       onClick={handleCardClick}
       className={cn(
-        "card-glow transition-all duration-300 cursor-pointer group relative overflow-hidden",
+        "card-glow transition-all duration-300 cursor-pointer group relative",
         textOpacity,
         isThread
           ? 'border-2 border-purple-500/50 hover:border-purple-500/80 bg-card'
@@ -251,7 +256,7 @@ export const EnhancedComment = memo(function EnhancedComment({
             : isExpanded
               ? 'border-neon-green/40 bg-muted/90 ring-1 ring-neon-green/10'
               : 'border-border hover:border-neon-green/20 bg-card',
-        comment.is_optimistic ? 'opacity-70 grayscale-[20%]' : '',
+
         comment.is_pinned
           ? 'border-neon-green/50 bg-neon-green/5 ring-1 ring-neon-green/20'
           : comment.is_highlighted
@@ -373,7 +378,7 @@ export const EnhancedComment = memo(function EnhancedComment({
             {isContextMenuOpen && (
               <>
                 {/* Menu */}
-                <div className="absolute right-0 top-8 z-20 w-48 bg-card border border-border rounded-lg shadow-lg py-1">
+                <div className="absolute right-0 top-8 z-50 w-48 bg-card border border-border rounded-lg shadow-xl py-1 transform transition-all duration-200 ease-out origin-top-right animate-in fade-in zoom-in-95">
                   {/* General User Actions */}
                   <button
                     onClick={handleCopyText}
@@ -387,90 +392,84 @@ export const EnhancedComment = memo(function EnhancedComment({
                     className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                   >
                     <LinkIcon className="h-4 w-4" />
-                    Ver enlace directo
+                    Link directo
                   </button>
 
-                  {/* Owner Actions */}
-                  {isOwner && (
-                    <>
-                      <div className="border-t border-border my-1" />
-                      <button
-                        onClick={() => {
-                          onEdit?.(comment.id)
+                  {/* Flag Action (Non-owners) */}
+                  {!isOwner && (
+                    <button
+                      onClick={() => {
+                        if (!comment.is_flagged) {
+                          onFlag?.(comment.id)
                           closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                      >
-                        <Edit className="h-4 w-4" />
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => {
-                          onDelete?.(comment.id)
-                          closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-muted flex items-center gap-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </button>
-                    </>
-                  )}
-
-                  {/* Moderator Actions */}
-                  {isMod && (
-                    <>
-                      <div className="border-t border-border my-1" />
-                      <button
-                        onClick={() => {
-                          onEdit?.(comment.id)
-                          closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                      >
-                        <Edit className="h-4 w-4" />
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => {
-                          onDelete?.(comment.id)
-                          closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-muted flex items-center gap-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </button>
-                    </>
-                  )}
-
-                  {/* Pin/Unpin Actions (Report Owner or Mod) */}
-                  {(canPin || isMod) && (
-                    <>
-                      <div className="border-t border-border my-1" />
-                      {comment.is_pinned ? (
-                        <button
-                          onClick={() => {
-                            onUnpin?.(comment.id)
-                            closeMenu()
-                          }}
-                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                        >
-                          <Pin className="h-4 w-4 rotate-45 transform" />
-                          Desfijar
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            onPin?.(comment.id)
-                            closeMenu()
-                          }}
-                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                        >
-                          <Pin className="h-4 w-4" />
-                          Fijar
-                        </button>
+                        }
+                      }}
+                      disabled={comment.is_flagged ?? false}
+                      className={cn(
+                        "w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-muted",
+                        comment.is_flagged ? "text-yellow-500 opacity-80 cursor-default" : "text-foreground hover:text-yellow-500"
                       )}
+                    >
+                      <Flag className={cn("h-4 w-4", comment.is_flagged && "fill-current")} />
+                      {comment.is_flagged ? 'Reportado' : 'Reportar'}
+                    </button>
+                  )}
+
+                  {/* Consolidated Admin/Owner Actions */}
+                  {(isOwner || isMod) && (
+                    <>
+                      <div className="border-t border-border my-1" />
+
+                      {/* Edit */}
+                      <button
+                        onClick={() => {
+                          onEdit?.(comment.id)
+                          closeMenu()
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                      >
+                        <Edit className="h-4 w-4" />
+                        Editar
+                      </button>
+
+                      {/* Pin/Unpin (Report Owner or Mod only) */}
+                      {(canPin || isMod) && (
+                        comment.is_pinned ? (
+                          <button
+                            onClick={() => {
+                              onUnpin?.(comment.id)
+                              closeMenu()
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                          >
+                            <Pin className="h-4 w-4 rotate-45 transform" />
+                            Desfijar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              onPin?.(comment.id)
+                              closeMenu()
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                          >
+                            <Pin className="h-4 w-4" />
+                            Fijar
+                          </button>
+                        )
+                      )}
+
+                      {/* Delete */}
+                      <button
+                        onClick={() => {
+                          onDelete?.(comment.id)
+                          closeMenu()
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar
+                      </button>
                     </>
                   )}
                 </div>
@@ -517,69 +516,12 @@ export const EnhancedComment = memo(function EnhancedComment({
             </Button>
           </div>
 
-          {/* Right Actions (Moderation) */}
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            {isMod && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => onEdit?.(comment.id)}
-                  title="Editar"
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                {comment.is_pinned ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onUnpin?.(comment.id)}
-                    title="Desfijar"
-                  >
-                    <Pin className="h-4 w-4" />
-                  </Button>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onPin?.(comment.id)}
-                    title="Fijar"
-                  >
-                    <Pin className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => onDelete?.(comment.id)}
-                  title="Eliminar"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
-            )}
-            {!isOwner && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`h-7 w-7 p-0 ${comment.is_flagged ? 'text-yellow-400 opacity-50 cursor-not-allowed' : 'hover:text-yellow-400'}`}
-                onClick={() => onFlag?.(comment.id)}
-                disabled={comment.is_flagged ?? false}
-                aria-label={comment.is_flagged ? 'Ya has reportado este comentario' : 'Reportar contenido inapropiado'}
-                title={comment.is_flagged ? 'Ya has reportado este comentario' : 'Reportar'}
-              >
-                <Flag className={`h-4 w-4 ${comment.is_flagged ? 'fill-current' : ''}`} aria-hidden="true" />
-              </Button>
-            )}
-          </div>
+          {/* Right Actions moved to Context Menu */}
         </div>
+
 
         {/* Replies are now handled by CommentThread component recursively */}
       </CardContent>
-    </Card>
+    </Card >
   )
 })

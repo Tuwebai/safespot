@@ -87,17 +87,15 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                     }
                 }
 
-                eventSource.onerror = (error) => {
-                    console.error('[SSE] Connection error:', error)
-                    eventSource.close()
-
-                    // Attempt to reconnect after 5 seconds
-                    if (isMounted) {
-                        // console.log('[SSE] Reconnecting in 5 seconds...')
-                        reconnectTimeoutRef.current = setTimeout(() => {
-                            connect()
-                        }, 5000)
+                eventSource.onerror = () => {
+                    // Only log error if not in closed state to avoid noise during unmount/reload
+                    if (eventSource.readyState !== EventSource.CLOSED) {
+                        // console.warn('[SSE] Connection issue (retrying automatically)')
                     }
+
+                    // Do NOT close manually. Let native EventSource retry logic work.
+                    // Only if it explicitly reaches CLOSED state unexpectedly might we want to intervene,
+                    // but usually the browser handles 3-second backoff automatically.
                 }
             } catch (err) {
                 console.error('[SSE] Failed to create EventSource:', err)

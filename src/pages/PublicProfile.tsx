@@ -157,6 +157,25 @@ export function PublicProfile() {
                     description={`Mira el perfil y estadísticas de seguridad de @${profile.alias} en SafeSpot. Nivel ${profile.level} - ${profile.points} Puntos.`}
                     image={profile.avatar_url || undefined}
                     type="profile"
+                    structuredData={{
+                        "@context": "https://schema.org",
+                        "@type": "Person",
+                        "name": profile.alias,
+                        "image": profile.avatar_url,
+                        "description": `Usuario nivel ${profile.level} en SafeSpot`,
+                        "interactionStatistic": [
+                            {
+                                "@type": "InteractionCounter",
+                                "interactionType": "https://schema.org/WriteAction",
+                                "userInteractionCount": profile.total_reports
+                            },
+                            {
+                                "@type": "InteractionCounter",
+                                "interactionType": "https://schema.org/FollowAction",
+                                "userInteractionCount": profile.stats.followers_count
+                            }
+                        ]
+                    }}
                 />
             )}
 

@@ -762,10 +762,7 @@ export function Reportes() {
                       data-index={virtualRow.index}
                       ref={(el) => {
                         if (el) {
-                          // Use requestAnimationFrame to avoid flushSync warning during render
-                          requestAnimationFrame(() => {
-                            rowVirtualizer.measureElement(el)
-                          })
+                          rowVirtualizer.measureElement(el)
                         }
                       }}
                       style={{
