@@ -24,12 +24,24 @@ router.get('/', async (req, res) => {
         u1.avatar_url as participant_a_avatar,
         u2.alias as participant_b_alias,
         u2.avatar_url as participant_b_avatar,
-        (SELECT content FROM chat_messages WHERE room_id = cr.id ORDER BY created_at DESC LIMIT 1) as last_message_content,
-        (SELECT COUNT(*) FROM chat_messages WHERE room_id = cr.id AND sender_id != $1 AND is_read = false) as unread_count
+        m.content as last_message_content,
+        m.sender_id as last_message_sender_id,
+        (
+          SELECT COUNT(*)::int 
+          FROM chat_messages 
+          WHERE room_id = cr.id AND sender_id != $1 AND is_read = false
+        ) as unread_count
       FROM chat_rooms cr
       JOIN reports r ON cr.report_id = r.id
       JOIN anonymous_users u1 ON cr.participant_a = u1.anonymous_id
       JOIN anonymous_users u2 ON cr.participant_b = u2.anonymous_id
+      LEFT JOIN LATERAL (
+        SELECT content, sender_id 
+        FROM chat_messages 
+        WHERE room_id = cr.id 
+        ORDER BY created_at DESC 
+        LIMIT 1
+      ) m ON true
       WHERE cr.participant_a = $1 OR cr.participant_b = $1
       ORDER BY cr.last_message_at DESC
     `;
@@ -153,6 +165,55 @@ router.post('/:roomId/messages', async (req, res) => {
 
         // Notificar via SSE a la sala específica
         realtimeEvents.emit(`chat:${roomId}`, newMessage);
+
+        // 3. ENVIAR NOTIFICACIÓN PUSH NATIVA (Si el destinatario está offline)
+        (async () => {
+            try {
+                const roomData = roomResult.rows[0];
+                const recipientId = roomData.participant_a === anonymousId ? roomData.participant_b : roomData.participant_a;
+
+                // Buscar suscripciones activas del destinatario
+                const { data: subs, error: subError } = await supabaseAdmin
+                    .from('push_subscriptions')
+                    .select('*')
+                    .eq('anonymous_id', recipientId)
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: false })
+                    .limit(5); // Notificar hasta 5 dispositivos
+
+                if (!subError && subs && subs.length > 0) {
+                    const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
+
+                    // Obtener info extra de la sala para el payload (alias, titulo)
+                    const roomInfoQuery = `
+                        SELECT r.title as report_title, 
+                               u.alias as sender_alias
+                        FROM chat_rooms cr
+                        JOIN reports r ON cr.report_id = r.id
+                        JOIN anonymous_users u ON u.anonymous_id = $1
+                        WHERE cr.id = $2
+                    `;
+                    const roomInfo = await queryWithRLS(anonymousId, roomInfoQuery, [anonymousId, roomId]);
+
+                    if (roomInfo.rows.length > 0) {
+                        const payload = createChatNotificationPayload(
+                            { ...newMessage, sender_alias: roomInfo.rows[0].sender_alias },
+                            { report_title: roomInfo.rows[0].report_title }
+                        );
+
+                        await sendBatchNotifications(
+                            subs.map(s => ({
+                                subscription: { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth },
+                                subscriptionId: s.id
+                            })),
+                            payload
+                        );
+                    }
+                }
+            } catch (notifyErr) {
+                console.error('[Push] Error triggering chat notification:', notifyErr);
+            }
+        })();
 
         res.status(201).json(newMessage);
     } catch (err) {

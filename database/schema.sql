@@ -446,7 +446,9 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_rooms_report_id ON chat_rooms(report_id);
-CREATE INDEX IF NOT EXISTS idx_chat_rooms_participants ON chat_rooms(participant_a, participant_b);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_participant_a ON chat_rooms(participant_a);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_participant_b ON chat_rooms(participant_b);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_last_message ON chat_rooms(last_message_at DESC);
 
 -- ============================================
 -- 7. CHAT MESSAGES TABLE
@@ -466,7 +468,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_unread_count ON chat_messages(room_id, sender_id, is_read) WHERE is_read = false;
 
 -- ============================================
 -- RLS: CHAT_ROOMS

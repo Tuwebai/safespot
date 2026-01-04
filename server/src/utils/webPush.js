@@ -245,6 +245,38 @@ export function createActivityNotificationPayload({ type, title, message, report
 }
 
 /**
+ * Create notification payload for a new chat message
+ * 
+ * @param {Object} message - Message data
+ * @param {Object} room - Room data (for title/sender info)
+ * @returns {NotificationPayload}
+ */
+export function createChatNotificationPayload(message, room) {
+    const senderAlias = message.sender_alias || 'Alguien';
+    const reportTitle = room.report_title || 'un reporte';
+
+    return {
+        title: `💬 Nuevo mensaje de @${senderAlias}`,
+        body: `${reportTitle}: ${message.content}`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: `chat-${message.room_id}`, // Tagging by room id groups notifications from the same chat
+        renotify: true,
+        data: {
+            roomId: message.room_id,
+            url: `/mensajes`, // Link to messaging center
+            timestamp: Date.now()
+        },
+        actions: [
+            {
+                action: 'mark-read',
+                title: '✅ Leído'
+            }
+        ]
+    };
+}
+
+/**
  * Get VAPID public key for frontend subscription
  */
 export function getVapidPublicKey() {

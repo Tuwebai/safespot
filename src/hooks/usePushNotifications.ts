@@ -53,6 +53,11 @@ export function usePushNotifications() {
         try {
             setStatus(prev => ({ ...prev, isLoading: true, error: null }));
 
+            // 1. Check browser reality
+            const registration = await navigator.serviceWorker.ready;
+            const existingSub = await registration.pushManager.getSubscription();
+
+            // 2. Check server record
             const anonymousId = ensureAnonymousId();
             const response = await fetch(`${API_BASE}/api/push/status`, {
                 headers: { 'X-Anonymous-Id': anonymousId }
@@ -64,10 +69,16 @@ export function usePushNotifications() {
 
             const { data } = await response.json();
 
+            // Reconcile: We are only "subscribed" if both browser and server agree.
+            // If browser has a sub but server doesn't know about it, we should re-sync.
+            // If server thinks we have one but browser doesn't, we need to re-subscribe.
+            const isBrowserSubscribed = !!existingSub;
+            const isServerSubscribed = !!data.isSubscribed;
+
             setStatus(prev => ({
                 ...prev,
                 isSupported: true,
-                isSubscribed: data.isSubscribed || false,
+                isSubscribed: isBrowserSubscribed && isServerSubscribed,
                 permission: Notification.permission,
                 radius: data.radius || 500,
                 hasLocation: data.hasLocation || false,
@@ -206,17 +217,28 @@ export function usePushNotifications() {
                         // Update other fields if needed
                     }));
 
-                } catch (backgroundError) {
+                } catch (backgroundError: any) {
                     console.error('Background subscription failed:', backgroundError);
+
+                    // Handle Brave specific error
+                    const isBrave = (navigator as any).brave !== undefined;
+                    const isAbortError = backgroundError.name === 'AbortError';
+
+                    let errorMsg = 'Error de conexión. Intenta de nuevo.';
+
+                    if (isBrave && isAbortError) {
+                        errorMsg = 'Brave bloqueó las notificaciones. Activá "Servicios de Google para mensajería push" en settings/privacy.';
+                        toast.error(errorMsg);
+                    } else {
+                        toast.error('Hubo un problema activando las alertas. Por favor reintentá.');
+                    }
 
                     // Revert optimistic update
                     setStatus(prev => ({
                         ...prev,
                         isSubscribed: false,
-                        error: 'Error de conexión. Intenta de nuevo.'
+                        error: errorMsg
                     }));
-
-                    toast.error('Hubo un problema activando las alertas. Por favor reintentá.');
                 }
             })();
 
