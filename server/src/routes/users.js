@@ -592,5 +592,111 @@ router.delete('/follow/:followingId', requireAnonymousId, async (req, res) => {
 });
 
 
+/**
+ * GET /api/users/:identifier/followers
+ * Get list of followers
+ */
+router.get('/:identifier/followers', async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const currentUserId = req.headers['x-anonymous-id'];
+
+    if (!identifier) return res.status(400).json({ error: 'Identifier required' });
+
+    // Resolve Identifier to Anonymous ID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    const userQuery = isUUID
+      ? `SELECT anonymous_id FROM anonymous_users WHERE anonymous_id = $1`
+      : `SELECT anonymous_id FROM anonymous_users WHERE LOWER(alias) = LOWER($1)`;
+
+    const userResult = await queryWithRLS('', userQuery, [identifier]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const targetUserId = userResult.rows[0].anonymous_id;
+
+    // Get Followers List
+    // We join with anonymous_users to get details
+    // And check if current user is following them back
+    const result = await queryWithRLS(
+      currentUserId || '',
+      `SELECT 
+         u.anonymous_id, 
+         u.alias, 
+         u.avatar_url, 
+         u.level,
+         EXISTS(SELECT 1 FROM followers f2 WHERE f2.follower_id = $1 AND f2.following_id = u.anonymous_id) as is_following_back
+       FROM followers f
+       JOIN anonymous_users u ON f.follower_id = u.anonymous_id
+       WHERE f.following_id = $2
+       ORDER BY f.created_at DESC
+       LIMIT 50`,
+      [currentUserId || '00000000-0000-0000-0000-000000000000', targetUserId]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch followers' });
+  }
+});
+
+/**
+ * GET /api/users/:identifier/following
+ * Get list of users followed by target
+ */
+router.get('/:identifier/following', async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const currentUserId = req.headers['x-anonymous-id'];
+
+    if (!identifier) return res.status(400).json({ error: 'Identifier required' });
+
+    // Resolve Identifier
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    const userQuery = isUUID
+      ? `SELECT anonymous_id FROM anonymous_users WHERE anonymous_id = $1`
+      : `SELECT anonymous_id FROM anonymous_users WHERE LOWER(alias) = LOWER($1)`;
+
+    const userResult = await queryWithRLS('', userQuery, [identifier]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const targetUserId = userResult.rows[0].anonymous_id;
+
+    // Get Following List
+    const result = await queryWithRLS(
+      currentUserId || '',
+      `SELECT 
+         u.anonymous_id, 
+         u.alias, 
+         u.avatar_url, 
+         u.level,
+         EXISTS(SELECT 1 FROM followers f2 WHERE f2.follower_id = $1 AND f2.following_id = u.anonymous_id) as is_following
+       FROM followers f
+       JOIN anonymous_users u ON f.following_id = u.anonymous_id
+       WHERE f.follower_id = $2
+       ORDER BY f.created_at DESC
+       LIMIT 50`,
+      [currentUserId || '00000000-0000-0000-0000-000000000000', targetUserId]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch following' });
+  }
+});
+
 export default router;
 
