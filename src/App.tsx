@@ -64,6 +64,7 @@ function App() {
                 <Route path="/usuario/:alias" element={<PublicProfile />} />
                 <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
                 <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
+                <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
                 <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
               </Routes>
             </Suspense>

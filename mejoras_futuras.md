@@ -449,6 +449,38 @@ Análisis exhaustivo de la aplicación SafeSpot identificando **30+ mejoras** pa
 
 ---
 
+
+---
+
+## 9. Personalización Profunda y Comunidad
+
+### 9.1 Comentarios Destacados por la Comunidad
+**Prioridad**: 🟢 Baja  
+**Complejidad**: ⭐⭐ Media  
+**Impacto**: Aumento de calidad de contenido y Auto-moderación
+
+**Concepto**:
+Los comentarios que aportan valor real (votados por la comunidad) se destacan automáticamente visualmente y en posición. Premia la calidad, no la cantidad.
+
+**Lógica de Selección (Backend)**:
+1.  **Mayor Likes**: Se identifica el comentario con más `likes` del hilo.
+2.  **Umbral Mínimo**: Debe superar un mínimo (ej. 5 likes) para evitar destacar contenido mediocre por defecto.
+3.  **Flag**: El backend inyecta `is_highlighted: true`.
+
+**Consulta SQL Conceptual**:
+```sql
+SELECT *, (likes_count >= 5 AND likes_count = MAX(likes_count) OVER()) as is_highlighted
+FROM comments
+ORDER BY is_highlighted DESC, created_at DESC;
+```
+
+**Estímulo Visual (Frontend)**:
+- 🏆 **Icono**: Pequeño trofeo o medalla junto al nombre.
+- ✨ **Fondo**: Fondo sutilmente dorado/ámbar (`bg-yellow-500/10`) para diferenciarlo del resto.
+- 🏷️ **Etiqueta**: Texto pequeño "Destacado por la comunidad".
+
+---
+
 ## 📊 Matriz de Priorización
 
 | Mejora | Prioridad | Complejidad | Impacto | ROI |

@@ -340,6 +340,7 @@ export function DetalleReporte() {
               reportId={id!}
               totalCount={initialReport?.comments_count || 0}
               onCommentCountChange={handleCommentCountChange}
+              reportOwnerId={initialReport?.anonymous_id}
             />
 
             {/* 7. Related Reports */}

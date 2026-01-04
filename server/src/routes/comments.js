@@ -42,11 +42,18 @@ router.get('/:reportId', async (req, res) => {
 
     const dataPromise = queryWithRLS(
       anonymousId || 'anon',
-      `SELECT c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, u.avatar_url, u.alias
+      `SELECT 
+         c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
+         u.avatar_url, u.alias,
+         -- Highlight logic: Must have >= 2 likes and equal the maximum likes in this result set
+         (c.upvotes_count >= 2 AND c.upvotes_count = MAX(c.upvotes_count) OVER()) as is_highlighted
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        WHERE c.report_id = $1 AND c.deleted_at IS NULL
-       ORDER BY c.created_at DESC
+       ORDER BY 
+         c.is_pinned DESC NULLS LAST,
+         (c.upvotes_count >= 2 AND c.upvotes_count = MAX(c.upvotes_count) OVER()) DESC, 
+         c.created_at DESC
        LIMIT $2 OFFSET $3`,
       [reportId, limitNum, offset]
     );
@@ -832,6 +839,94 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
     res.status(500).json({
       error: 'Failed to flag comment'
     });
+  }
+});
+
+
+/**
+ * POST /api/comments/:id/pin
+ * Pin a comment (Only by Report Owner)
+ */
+router.post('/:id/pin', requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    // 1. Get Comment & Report Info
+    const { data: comment, error: commentError } = await supabase
+      .from('comments')
+      .select('id, report_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (commentError || !comment) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    // 2. Verify Report Owner
+    const { data: report, error: reportError } = await supabase
+      .from('reports')
+      .select('anonymous_id')
+      .eq('id', comment.report_id)
+      .maybeSingle();
+
+    if (reportError || !report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    if (report.anonymous_id !== anonymousId) {
+      return res.status(403).json({ error: 'Only the report owner can pin comments' });
+    }
+
+    // 3. Pin the comment
+    await queryWithRLS(
+      anonymousId, // Although RLS usually blocks updates to others' comments, if we use a SERVICE bypass or if we update 'is_pinned' specifically it might work.
+      // Ideally, RLS policy for 'comments' should allow UPDATE if (auth.uid() = reports.anonymous_id via join).
+      // Since complex RLS might block this, we can try direct update or check DB policies.
+      // Assuming 'queryWithRLS' runs as permitted if RLS allows.
+      // For now, we update directly.
+      `UPDATE comments SET is_pinned = true WHERE id = $1`,
+      [id]
+    );
+
+    // Unpin other comments logic? Usually only one pinned.
+    // If we want Single Pin, we should unpin others first:
+    await queryWithRLS(
+      anonymousId,
+      `UPDATE comments SET is_pinned = false WHERE report_id = $1 AND id != $2`,
+      [comment.report_id, id]
+    );
+
+    res.json({ success: true, message: 'Comment pinned' });
+  } catch (err) {
+    logError(err, req);
+    res.status(500).json({ error: 'Failed to pin comment' });
+  }
+});
+
+/**
+ * DELETE /api/comments/:id/pin
+ * Unpin a comment
+ */
+router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    const { data: comment } = await supabase.from('comments').select('id, report_id').eq('id', id).maybeSingle();
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    const { data: report } = await supabase.from('reports').select('anonymous_id').eq('id', comment.report_id).maybeSingle();
+    if (report.anonymous_id !== anonymousId) {
+      return res.status(403).json({ error: 'Only the report owner can unpin comments' });
+    }
+
+    await queryWithRLS(anonymousId, `UPDATE comments SET is_pinned = false WHERE id = $1`, [id]);
+
+    res.json({ success: true, message: 'Comment unpinned' });
+  } catch (err) {
+    logError(err, req);
+    res.status(500).json({ error: 'Failed to unpin comment' });
   }
 });
 

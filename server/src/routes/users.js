@@ -698,5 +698,99 @@ router.get('/:identifier/following', async (req, res) => {
   }
 });
 
+
+/**
+ * GET /api/users/recommendations
+ * Get user suggestions based on shared locality
+ */
+router.get('/recommendations', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+
+    // 1. Determine User's Top Locality
+    const localityResult = await queryWithRLS(
+      anonymousId,
+      `SELECT locality, COUNT(*) as report_count
+       FROM reports
+       WHERE anonymous_id = $1 AND locality IS NOT NULL AND locality != ''
+       GROUP BY locality
+       ORDER BY report_count DESC
+       LIMIT 1`,
+      [anonymousId]
+    );
+
+    let locality = null;
+    let fallback = false;
+
+    if (localityResult.rows.length > 0) {
+      locality = localityResult.rows[0].locality;
+    }
+
+    let recommendations = [];
+
+    // 2. Query Recommendations
+    if (locality) {
+      // Find users who reported in the same locality, exclude self/followed
+      const recResult = await queryWithRLS(
+        anonymousId,
+        `SELECT DISTINCT ON (u.anonymous_id) 
+           u.anonymous_id, 
+           u.alias, 
+           u.avatar_url, 
+           u.level,
+           $2 as common_locality
+         FROM anonymous_users u
+         JOIN reports r ON u.anonymous_id = r.anonymous_id
+         WHERE r.locality = $2
+           AND u.anonymous_id != $1
+           AND u.alias IS NOT NULL AND u.alias != ''
+           AND NOT EXISTS (SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id)
+         ORDER BY u.anonymous_id, u.level DESC, u.last_active_at DESC
+         LIMIT 20`,
+        [anonymousId, locality]
+      );
+      recommendations = recResult.rows;
+    }
+
+    // 3. Fallback: Global Top Users if no local matches or no user locality
+    if (recommendations.length < 5) {
+      const excludeIds = [anonymousId, ...recommendations.map(r => r.anonymous_id)];
+
+      const fallbackResult = await queryWithRLS(
+        anonymousId,
+        `SELECT 
+           u.anonymous_id, 
+           u.alias, 
+           u.avatar_url, 
+           u.level,
+           'Global' as common_locality
+         FROM anonymous_users u
+         WHERE u.anonymous_id != ALL($1)
+           AND u.alias IS NOT NULL AND u.alias != ''
+           AND NOT EXISTS (SELECT 1 FROM followers f WHERE f.follower_id = $2 AND f.following_id = u.anonymous_id)
+         ORDER BY u.level DESC, u.last_active_at DESC
+         LIMIT $3`,
+        [excludeIds, anonymousId, 20 - recommendations.length]
+      );
+
+      recommendations = [...recommendations, ...fallbackResult.rows];
+      fallback = !locality;
+    }
+
+    res.json({
+      success: true,
+      data: recommendations,
+      meta: {
+        locality,
+        is_fallback: fallback
+      }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch recommendations' });
+  }
+});
+
 export default router;
 

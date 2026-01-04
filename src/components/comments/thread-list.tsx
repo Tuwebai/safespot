@@ -16,6 +16,8 @@ interface ThreadListProps {
   onDelete?: (commentId: string) => void
   onFlag?: (commentId: string) => void
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
+  onPin?: (commentId: string) => void
+  onUnpin?: (commentId: string) => void
   isOwner?: (commentId: string) => boolean
   isMod?: boolean
   editingCommentId?: string | null
@@ -49,6 +51,8 @@ export const ThreadList = memo(function ThreadList({
   onDelete,
   onFlag,
   onLikeChange,
+  onPin,
+  onUnpin,
   isOwner = () => false,
   isMod = false,
   editingCommentId = null,
@@ -278,8 +282,11 @@ export const ThreadList = memo(function ThreadList({
                 onDelete={onDelete}
                 onFlag={onFlag}
                 onLikeChange={onLikeChange}
+                onPin={onPin}
+                onUnpin={onUnpin}
                 isOwner={isThreadOwner}
                 isMod={isMod}
+                canPin={isMod} // In ThreadList usage context, isMod implies Report Owner permissions
                 replyingTo={replyingTo}
                 replyText={replyText}
                 onReplyTextChange={onReplyTextChange}

@@ -17,17 +17,17 @@ import { ReplyModal } from '@/components/comments/ReplyModal'
 // TYPES
 // ============================================
 
-interface CommentsSectionProps {
-    reportId: string
-    totalCount: number
-    onCommentCountChange: (delta: number) => void
+reportId: string
+totalCount: number
+onCommentCountChange: (delta: number) => void
+    reportOwnerId ?: string
 }
 
 // ============================================
 // COMPONENT
 // ============================================
 
-export function CommentsSection({ reportId, totalCount, onCommentCountChange }: CommentsSectionProps) {
+export function CommentsSection({ reportId, totalCount, onCommentCountChange, reportOwnerId }: CommentsSectionProps) {
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
@@ -73,6 +73,8 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
         setReplyText,
         setEditText,
         setThreadText,
+        pinComment,
+        unpinComment,
     } = commentsManager
 
     // Load comments on mount
@@ -263,7 +265,9 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                                             onFlag={handleFlagComment}
                                             onLikeChange={handleLikeChange}
                                             isOwner={isCommentOwner}
-                                            isMod={isCommentMod}
+                                            isMod={currentAnonymousId === reportOwnerId} // Using isMod as "Report Owner" for pinning permission context
+                                            onPin={pinComment}
+                                            onUnpin={unpinComment}
                                             replyingTo={replyingTo}
                                             replyText={replyText}
                                             onReplyTextChange={setReplyText}
@@ -324,7 +328,9 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange }: 
                         const comment = comments.find(c => c.id === commentId)
                         return comment ? comment.anonymous_id === currentAnonymousId : false
                     }}
-                    isMod={isCommentMod}
+                    isMod={currentAnonymousId === reportOwnerId} // "Report Owner" logic
+                    onPin={pinComment}
+                    onUnpin={unpinComment}
                     editingCommentId={editingId}
                     editText={editText}
                     onEditTextChange={setEditText}

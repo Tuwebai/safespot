@@ -16,7 +16,8 @@ import {
   Flag,
   MoreHorizontal,
   Copy,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Trophy
 } from 'lucide-react'
 import type { Comment } from '@/lib/api'
 
@@ -41,6 +42,7 @@ interface EnhancedCommentProps {
   onToggleReplies?: () => void
   isExpanded?: boolean
   isThreadView?: boolean
+  canPin?: boolean
 }
 
 export const EnhancedComment = memo(function EnhancedComment({
@@ -57,6 +59,7 @@ export const EnhancedComment = memo(function EnhancedComment({
   onUnpin,
   depth = 0,
   repliesCount = 0,
+  canPin = false,
   onToggleReplies,
   isExpanded = false,
   isThreadView = false,
@@ -247,7 +250,12 @@ export const EnhancedComment = memo(function EnhancedComment({
             : isExpanded
               ? 'border-neon-green/40 bg-muted/90 ring-1 ring-neon-green/10'
               : 'border-border hover:border-neon-green/20 bg-card',
-        comment.is_optimistic ? 'opacity-70 grayscale-[20%]' : ''
+        comment.is_optimistic ? 'opacity-70 grayscale-[20%]' : '',
+        comment.is_pinned
+          ? 'border-neon-green/50 bg-neon-green/5 ring-1 ring-neon-green/20'
+          : comment.is_highlighted
+            ? 'border-yellow-500/50 bg-yellow-500/5 ring-1 ring-yellow-500/20'
+            : ''
       )}
     >
       <CardContent className={cardPadding}>
@@ -294,6 +302,14 @@ export const EnhancedComment = memo(function EnhancedComment({
                 {isThread && (
                   <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 font-semibold">
                     💬 Hilo
+                  </Badge>
+                )}
+
+                {/* Highlighted Badge */}
+                {comment.is_highlighted && (
+                  <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30 flex items-center gap-1">
+                    <Trophy className="h-3 w-3" />
+                    Destacado
                   </Badge>
                 )}
 
@@ -424,6 +440,13 @@ export const EnhancedComment = memo(function EnhancedComment({
                         <Trash2 className="h-4 w-4" />
                         Eliminar
                       </button>
+                    </>
+                  )}
+
+                  {/* Pin/Unpin Actions (Report Owner or Mod) */}
+                  {(canPin || isMod) && (
+                    <>
+                      <div className="border-t border-border my-1" />
                       {comment.is_pinned ? (
                         <button
                           onClick={() => {
@@ -432,7 +455,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                           }}
                           className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
                         >
-                          <Pin className="h-4 w-4" />
+                          <Pin className="h-4 w-4 rotate-45 transform" />
                           Desfijar
                         </button>
                       ) : (

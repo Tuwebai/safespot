@@ -434,3 +434,101 @@ export function useFlagCommentMutation() {
         },
     })
 }
+
+/**
+ * Pin a comment
+ */
+export function usePinCommentMutation() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: ({ id }: { id: string }) => commentsApi.pin(id),
+        onMutate: async ({ id }) => {
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
+
+            // Optimistic update
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old: any) => {
+                    if (!old) return old
+                    // Set logic: set this comment to is_pinned=true, and all others in the SAME REPORT to is_pinned=false
+                    // Since we don't know the reportId easily here without iterating, we just set this one true and others false if we can find them.
+
+                    const transform = (comments: any[]) => {
+                        // Find the reportId of the pinned comment if possible (from the comment itself in the list)
+                        const targetComment = comments.find((c: any) => c.id === id);
+                        const reportId = targetComment?.report_id;
+
+                        return comments.map((c: any) => {
+                            if (c.id === id) return { ...c, is_pinned: true }
+                            // Unpin others in the same report if we know the reportId
+                            if (reportId && c.report_id === reportId) return { ...c, is_pinned: false }
+                            // Fallback: unpin everything else? No, safer to only unpin if reportId matches or just this one.
+                            // Actually, in the backend we unpin others. So here valid optimistic UI is:
+                            // If we can't be sure, just set this one true. But ideally unpin others.
+                            // Simplified: just set this one true.
+                            return c
+                        })
+                    }
+
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    if (old.comments) return { ...old, comments: transform(old.comments) }
+                    return old
+                }
+            )
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['comments'] })
+        }
+    })
+}
+
+/**
+ * Unpin a comment
+ */
+export function useUnpinCommentMutation() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: ({ id }: { id: string }) => commentsApi.unpin(id),
+        onMutate: async ({ id }) => {
+            await queryClient.cancelQueries({ queryKey: ['comments'] })
+
+            // Optimistic update
+            queryClient.setQueriesData<any>(
+                { queryKey: ['comments'] },
+                (old: any) => {
+                    if (!old) return old
+                    const transform = (comments: any[]) => comments.map((c: any) =>
+                        c.id === id ? { ...c, is_pinned: false } : c
+                    )
+
+                    if (Array.isArray(old)) return transform(old)
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: transform(page.data || [])
+                            }))
+                        }
+                    }
+                    if (old.comments) return { ...old, comments: transform(old.comments) }
+                    return old
+                }
+            )
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['comments'] })
+        }
+    })
+}

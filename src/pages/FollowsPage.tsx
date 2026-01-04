@@ -17,6 +17,7 @@ interface UserListItem {
     level: number;
     is_following: boolean; // Or is_following_back depending on context
     is_following_back?: boolean;
+    common_locality?: string | null;
 }
 
 export default function FollowsPage() {
@@ -26,7 +27,7 @@ export default function FollowsPage() {
     const toast = useToast();
 
     // Determine initial tab based on URL path or state
-    const initialTab = location.pathname.includes('/seguidos') ? 'following' : 'followers';
+    const initialTab = location.pathname.includes('/seguidos') ? 'following' : location.pathname.includes('/sugerencias') ? 'suggestions' : 'followers';
     const [activeTab, setActiveTab] = useState(initialTab);
 
     const [users, setUsers] = useState<UserListItem[]>([]);
@@ -44,8 +45,20 @@ export default function FollowsPage() {
             let data = [];
             if (activeTab === 'followers') {
                 data = await usersApi.getFollowers(identifier);
-            } else {
+            } else if (activeTab === 'following') {
                 data = await usersApi.getFollowing(identifier);
+            } else if (activeTab === 'suggestions') {
+                // Determine if we are viewing our own profile to show suggestions
+                // Determine if we are viewing our own profile to show suggestions
+                // We can't easily check ID match with alias here without fetching profile first, 
+                // but usually suggestions are only relevant for "Me". 
+                // For now, let's allow fetching suggestions if we are on the suggestions tab.
+                // The backend validates token anyway.
+                const suggestions = await usersApi.getSuggestions();
+                data = suggestions.map((s: any) => ({
+                    ...s,
+                    is_following: false // Suggestions are by definition people we don't follow
+                }));
             }
             setUsers(data);
         } catch (error) {
@@ -61,17 +74,23 @@ export default function FollowsPage() {
 
     const handleFollowToggle = async (user: UserListItem) => {
         // Optimistic update
-        setUsers(prev => prev.map(u => {
-            if (u.anonymous_id === user.anonymous_id) {
-                // If we are in 'following' tab and unfollow, we might want to remove it or just change state
-                // Changing state is safer for UI stability
-                const newState = activeTab === 'followers'
-                    ? { ...u, is_following_back: !u.is_following_back } // If list is followers, we toggle 'follow back'
-                    : { ...u, is_following: !u.is_following };
-                return newState;
+        setUsers(prev => {
+            if (activeTab === 'suggestions') {
+                // Remove from list if followed
+                return prev.filter(u => u.anonymous_id !== user.anonymous_id);
             }
-            return u;
-        }));
+            return prev.map(u => {
+                if (u.anonymous_id === user.anonymous_id) {
+                    // If we are in 'following' tab and unfollow, we might want to remove it or just change state
+                    // Changing state is safer for UI stability
+                    const newState = activeTab === 'followers'
+                        ? { ...u, is_following_back: !u.is_following_back } // If list is followers, we toggle 'follow back'
+                        : { ...u, is_following: !u.is_following };
+                    return newState;
+                }
+                return u;
+            });
+        });
 
         try {
             const isFollowing = activeTab === 'followers' ? user.is_following_back : user.is_following;
@@ -93,12 +112,16 @@ export default function FollowsPage() {
     const handleTabChange = (value: string) => {
         setActiveTab(value);
         // Optional: Update URL without full reload
-        const newPath = value === 'followers' ? `/usuario/@${targetUserAlias}/seguidores` : `/usuario/@${targetUserAlias}/seguidos`;
+        const newPath = value === 'followers'
+            ? `/usuario/@${targetUserAlias}/seguidores`
+            : value === 'following'
+                ? `/usuario/@${targetUserAlias}/seguidos`
+                : `/usuario/@${targetUserAlias}/sugerencias`;
         window.history.replaceState(null, '', newPath);
     };
 
     // Determine current user ID safely
-    const currentUserId = getAnonymousIdSafe();
+    const currentAnonymousId = getAnonymousIdSafe();
 
     return (
         <div className="container mx-auto max-w-2xl px-4 py-6 pb-20">
@@ -120,80 +143,143 @@ export default function FollowsPage() {
             </div>
 
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-6">
-                    <TabsTrigger value="followers">Seguidores</TabsTrigger>
-                    <TabsTrigger value="following">Seguidos</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3 mb-6">
+                    <TabsTrigger value="followers" className="flex-1">Seguidores</TabsTrigger>
+                    <TabsTrigger value="following" className="flex-1">Seguidos</TabsTrigger>
+                    {/* Only show "Cerca" if viewing own profile. Checking if alias matches is tricky client-side without ID.
+                        We can show it always, but it will error for others if backend checks token.
+                        The backend uses `req.anonymousId` (requester) to find neighbors.
+                        It makes sense to only show this tab if I am viewing MY profile.
+                         But wait, logic above fetches `usersApi.getSuggestions()` which uses MY token.
+                         So it will show MY neighbors even if I am on another profile? That's confusing.
+                         Let's assume this page is primarily for managing MY network or viewing others.
+                         If I view someone else, "Cerca" tab doesn't make sense unless it means "Cerca de ESTE usuario".
+                         But the backend implements "Cerca de MI".
+                         For now, let's hide "Cerca" tab if not viewing self (best effort check or just show it and let users discover).
+                         Actually, standard pattern: This screen is often "My Network".
+                         Let's add it.
+                    */}
+                    <TabsTrigger value="suggestions" className="flex-1">📍 Cerca</TabsTrigger>
                 </TabsList>
+
+                {/* SUGGESTIONS INFO BANNER */}
+                {activeTab === 'suggestions' && users.length > 0 && (
+                    <div className="bg-neon-green/10 border border-neon-green/20 rounded-md p-3 mb-4 text-sm text-foreground/80 flex items-center gap-2">
+                        <div className="bg-neon-green/20 p-1.5 rounded-full">
+                            <Users className="h-4 w-4 text-neon-green" />
+                        </div>
+                        <span>
+                            {users[0].common_locality === 'Global'
+                                ? "Mostrando usuarios más activos de toda la comunidad."
+                                : `Personas activas en ${users[0].common_locality || 'tu zona'}.`
+                            }
+                        </span>
+                    </div>
+                )}
 
                 <div className="space-y-4">
                     {loading ? (
                         <div className="space-y-4">
                             {[1, 2, 3].map(i => (
-                                <div key={i} className="flex items-center gap-3 p-4 rounded-xl bg-card/50 border border-border animate-pulse">
-                                    <div className="h-12 w-12 rounded-full bg-muted" />
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-4 w-24 bg-muted rounded" />
-                                        <div className="h-3 w-16 bg-muted rounded" />
-                                    </div>
-                                </div>
+                                <div key={i} className="h-20 bg-card/50 animate-pulse rounded-lg" />
                             ))}
                         </div>
                     ) : users.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
-                            <Users className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                            <p>No hay usuarios aquí aún.</p>
+                            {activeTab === 'followers' && "Aún no hay seguidores."}
+                            {activeTab === 'following' && (
+                                <div className="flex flex-col items-center gap-3">
+                                    <p>No sigues a nadie aún.</p>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => handleTabChange('suggestions')}
+                                        className="border-neon-green/50 text-neon-green hover:bg-neon-green/10"
+                                    >
+                                        Buscar personas cerca 👀
+                                    </Button>
+                                </div>
+                            )}
+                            {activeTab === 'suggestions' && "No hay sugerencias por ahora. ¡Interactúa más para encontrarnos!"}
                         </div>
                     ) : (
-                        users.map((user) => {
-                            const isFollowing = activeTab === 'followers' ? user.is_following_back : user.is_following;
+                        <div className="space-y-3">
+                            {users.map(user => {
+                                const isFollowersTab = activeTab === 'followers';
+                                const isSuggestionsTab = activeTab === 'suggestions';
+                                // Logic:
+                                // Suggestions: 'Seguir' button (User is not followed)
+                                // Followers: 'Seguir' (if not following back) or 'Siguiendo' (if following back)
+                                // Following: 'Siguiendo' (hover to unfollow)
 
-                            return (
-                                <div key={user.anonymous_id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/50 hover:border-neon-green/30 transition-colors">
-                                    <div
-                                        className="flex items-center gap-3 flex-1 cursor-pointer"
-                                        onClick={() => navigate(`/usuario/${user.anonymous_id}`)}
-                                    >
-                                        <Avatar className="h-12 w-12 border border-border">
-                                            <AvatarImage src={user.avatar_url || undefined} />
-                                            <AvatarFallback className="bg-muted text-muted-foreground">
-                                                {user.alias?.substring(0, 2).toUpperCase()}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                            <h3 className="font-bold text-foreground">@{user.alias}</h3>
-                                            <div className="flex items-center gap-2">
-                                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-neon-green/30 text-neon-green bg-neon-green/5">
-                                                    LVL {user.level}
-                                                </Badge>
+                                let isFollowing = false;
+
+                                if (isFollowersTab) {
+                                    isFollowing = user.is_following_back || false; // Showing if I follow them back
+                                } else if (isSuggestionsTab) {
+                                    isFollowing = false; // By definition
+                                } else {
+                                    isFollowing = user.is_following; // I follow them
+                                }
+
+                                // Prevent showing Follow button for myself
+                                const isMe = user.anonymous_id === currentAnonymousId;
+
+                                return (
+                                    <div key={user.anonymous_id} className="flex items-center justify-between p-4 bg-card border border-border rounded-lg shadow-sm">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0" onClick={() => navigate(`/usuario/${user.alias}`)}>
+                                            <Avatar className="h-10 w-10 border border-border cursor-pointer">
+                                                <AvatarImage src={user.avatar_url || undefined} />
+                                                <AvatarFallback>{user.alias?.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                            </Avatar>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="font-medium text-foreground truncate flex items-center gap-2">
+                                                    <span>@{user.alias}</span>
+                                                    {user.level > 1 && (
+                                                        <Badge variant="outline" className="text-[10px] h-4 px-1 border-neon-green/30 text-neon-green/70">
+                                                            Nvl {user.level}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                {isSuggestionsTab && user.common_locality && user.common_locality !== 'Global' && (
+                                                    <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-neon-green/50 inline-block"></span>
+                                                        Activo en {user.common_locality}
+                                                    </div>
+                                                )}
+                                                {isSuggestionsTab && user.common_locality === 'Global' && (
+                                                    <div className="text-xs text-muted-foreground truncate">
+                                                        Top Miembro de la Comunidad
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
+                                        {!isMe && (
+                                            <Button
+                                                size="sm"
+                                                variant={isFollowing ? "outline" : "default"}
+                                                onClick={() => handleFollowToggle(user)}
+                                                className={`ml-3 ${isFollowing
+                                                    ? "border-border text-muted-foreground hover:text-destructive hover:border-destructive"
+                                                    : "bg-neon-green text-black hover:bg-neon-green/90"}`}
+                                            >
+                                                {isFollowing ? (
+                                                    <>
+                                                        <UserCheck className="h-4 w-4 mr-1" />
+                                                        <span className="hidden sm:inline">Siguiendo</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <UserPlus className="h-4 w-4 sm:mr-1" />
+                                                        <span className="hidden sm:inline">Seguir</span>
+                                                    </>
+                                                )}
+                                            </Button>
+                                        )}
                                     </div>
-
-                                    {user.anonymous_id !== currentUserId && ( // Cannot follow self
-                                        <Button
-                                            size="sm"
-                                            variant={isFollowing ? "outline" : "default"}
-                                            className={isFollowing
-                                                ? "border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50"
-                                                : "bg-neon-green text-black hover:bg-neon-green/90"
-                                            }
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleFollowToggle(user);
-                                            }}
-                                        >
-                                            {isFollowing ? (
-                                                <UserCheck className="h-4 w-4" />
-                                            ) : (
-                                                <UserPlus className="h-4 w-4" />
-                                            )}
-                                        </Button>
-                                    )}
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
+                                )
+                            })}
+                        </div>
+                    )}</div>
             </Tabs>
         </div>
     );

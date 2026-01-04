@@ -414,6 +414,8 @@ export interface Comment {
   newBadges?: NewBadge[]; // Newly awarded badges in this action
   avatar_url?: string;
   alias?: string | null;
+  is_highlighted?: boolean;
+  is_pinned?: boolean;
 }
 
 export interface CreateCommentData {
@@ -520,6 +522,24 @@ export const commentsApi = {
       }
     );
     return response;
+  },
+
+  /**
+   * Pin a comment
+   */
+  pin: async (commentId: string): Promise<{ is_pinned: boolean }> => {
+    return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Unpin a comment
+   */
+  unpin: async (commentId: string): Promise<{ is_pinned: boolean }> => {
+    return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
+      method: 'DELETE',
+    });
   },
 };
 
@@ -724,6 +744,14 @@ export const usersApi = {
   getFollowing: async (identifier: string): Promise<any[]> => {
     return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/following`);
   },
+
+  /**
+   * Get recommended users (suggestions)
+   */
+  getSuggestions: async (): Promise<any[]> => {
+    return apiRequest<any[]>(`/users/recommendations`);
+  }
+
 };
 
 // ============================================

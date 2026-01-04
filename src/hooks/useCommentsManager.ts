@@ -10,7 +10,9 @@ import {
     useUpdateCommentMutation,
     useDeleteCommentMutation,
     useToggleLikeCommentMutation,
-    useFlagCommentMutation
+    useFlagCommentMutation,
+    usePinCommentMutation,
+    useUnpinCommentMutation
 } from '@/hooks/queries/useCommentsQuery'
 
 // ============================================
@@ -154,6 +156,8 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const deleteMutation = useDeleteCommentMutation()
     const likeMutation = useToggleLikeCommentMutation()
     const flagMutation = useFlagCommentMutation()
+    const pinMutation = usePinCommentMutation()
+    const unpinMutation = useUnpinCommentMutation()
 
     // ============================================
     // UTILS
@@ -361,6 +365,24 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         }
     }, [comments, state.submitting, state.processingId, likeMutation, toast])
 
+    const pinComment = useCallback(async (commentId: string) => {
+        try {
+            await pinMutation.mutateAsync({ id: commentId })
+            toast.success('Comentario fijado')
+        } catch (error) {
+            handleErrorWithMessage(error, 'Error al fijar comentario', toast.error, 'useCommentsManager.pinComment')
+        }
+    }, [pinMutation, toast])
+
+    const unpinComment = useCallback(async (commentId: string) => {
+        try {
+            await unpinMutation.mutateAsync({ id: commentId })
+            toast.success('Comentario desfijado')
+        } catch (error) {
+            handleErrorWithMessage(error, 'Error al desfijar comentario', toast.error, 'useCommentsManager.unpinComment')
+        }
+    }, [unpinMutation, toast])
+
     // ============================================
     // ACTION CREATORS (for UI)
     // ============================================
@@ -448,6 +470,8 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         deleteComment,
         flagComment,
         toggleLike,
+        pinComment,
+        unpinComment,
 
         // UI actions
         startReply,

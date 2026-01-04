@@ -37,6 +37,7 @@ interface CommentThreadProps {
     submittingEdit?: boolean
     activeMenuId?: string | null
     onMenuOpen?: (id: string | null) => void
+    canPin?: boolean
 }
 
 export const CommentThread = memo(function CommentThread({
@@ -67,6 +68,7 @@ export const CommentThread = memo(function CommentThread({
     activeMenuId,
     onMenuOpen,
     initialExpanded = false,
+    canPin = false,
 }: CommentThreadProps) {
     // Find direct replies to this comment and sort them chronologically (oldest first)
     const replies = allComments
@@ -126,6 +128,7 @@ export const CommentThread = memo(function CommentThread({
                     depth={depth}
                     activeMenuId={activeMenuId}
                     onMenuOpen={onMenuOpen}
+                    canPin={canPin}
                 />
 
                 {/* Editors (Inline) */}
@@ -205,6 +208,7 @@ export const CommentThread = memo(function CommentThread({
                                 submittingEdit={submittingEdit}
                                 activeMenuId={activeMenuId}
                                 onMenuOpen={onMenuOpen}
+                                canPin={canPin}
                             />
                         )
                     })}
