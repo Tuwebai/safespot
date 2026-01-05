@@ -14,8 +14,26 @@ import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
 import { reverseGeocode } from '../utils/georef.js';
 import { exportReportPDF } from '../controllers/exportController.js';
 import { NotificationService } from '../utils/notificationService.js';
+import { verifyUserStatus } from '../middleware/moderation.js';
+import { realtimeEvents } from '../utils/eventEmitter.js';
 
 const router = express.Router();
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Archivo de imagen inválido: formato no permitido'), false);
+    }
+  }
+});
 
 /**
  * GET /api/reports
@@ -699,116 +717,126 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', requireAnonymousId, validate(reportSchema), async (req, res) => {
-  try {
-    const anonymousId = req.anonymousId;
-
-    logSuccess('Creating report', { anonymousId, title: req.body.title });
-
-    // Ensure anonymous user exists in anonymous_users table (idempotent)
+/**
+ * POST /api/reports
+ * Create a new report
+ * Body: title, description, category, latitude, longitude, zone (opt), image (opt)
+ */
+router.post('/',
+  requireAnonymousId,
+  verifyUserStatus, // Enforce Ban
+  imageUploadLimiter,
+  upload.array('images', 3),
+  async (req, res) => {
     try {
-      await ensureAnonymousUser(anonymousId);
-    } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user'
-      });
-    }
+      const anonymousId = req.anonymousId;
 
-    // Check for duplicate report (same anonymous_id, category, zone, title within last 10 minutes)
-    const title = req.body.title.trim();
-    const category = req.body.category;
-    const zone = req.body.zone;
+      logSuccess('Creating report', { anonymousId, title: req.body.title });
 
-    // Calculate timestamp 10 minutes ago
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      // Ensure anonymous user exists in anonymous_users table (idempotent)
+      try {
+        await ensureAnonymousUser(anonymousId);
+      } catch (error) {
+        logError(error, req);
+        return res.status(500).json({
+          error: 'Failed to ensure anonymous user'
+        });
+      }
 
-    const duplicateResult = await queryWithRLS(anonymousId, `
+      // Check for duplicate report (same anonymous_id, category, zone, title within last 10 minutes)
+      const title = req.body.title.trim();
+      const category = req.body.category;
+      const zone = req.body.zone;
+
+      // Calculate timestamp 10 minutes ago
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+      const duplicateResult = await queryWithRLS(anonymousId, `
       SELECT id FROM reports
       WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
       LIMIT 1
     `, [anonymousId, category, zone, title, tenMinutesAgo]);
 
-    if (duplicateResult.rows.length > 0) {
-      return res.status(409).json({
-        error: 'DUPLICATE_REPORT',
-        message: 'Ya existe un reporte similar reciente'
-      });
-    }
-
-    // Parse and validate incident_date if provided
-    let incidentDate = null;
-    if (req.body.incident_date) {
-      const parsedDate = new Date(req.body.incident_date);
-      if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({
-          error: 'VALIDATION_ERROR',
-          message: 'incident_date must be a valid ISO 8601 date string'
+      if (duplicateResult.rows.length > 0) {
+        return res.status(409).json({
+          error: 'DUPLICATE_REPORT',
+          message: 'Ya existe un reporte similar reciente'
         });
       }
-      incidentDate = parsedDate.toISOString();
-    } else {
-      incidentDate = new Date().toISOString();
-    }
 
-    // ... other imports
-
-    // Check for Duplicate Report (same block)
-    // ...
-
-    // NEW: Check Trust Score & Shadow Ban Status
-    let isHidden = false;
-    try {
-      const visibility = await checkContentVisibility(anonymousId);
-      if (visibility.isHidden) {
-        isHidden = true;
-        logSuccess('Shadow ban applied', { anonymousId, action: visibility.moderationAction });
+      // Parse and validate incident_date if provided
+      let incidentDate = null;
+      if (req.body.incident_date) {
+        const parsedDate = new Date(req.body.incident_date);
+        if (isNaN(parsedDate.getTime())) {
+          return res.status(400).json({
+            error: 'VALIDATION_ERROR',
+            message: 'incident_date must be a valid ISO 8601 date string'
+          });
+        }
+        incidentDate = parsedDate.toISOString();
+      } else {
+        incidentDate = new Date().toISOString();
       }
-    } catch (checkError) {
-      logError(checkError, req);
-      // Fail open: Default to visible if check fails to avoid blocking valid users
-    }
 
-    // Context for logging suspicious content
-    const sanitizeContext = { anonymousId, ip: req.ip };
+      // ... other imports
 
-    // SECURITY: Sanitize all user input BEFORE database insert
-    const sanitizedTitle = sanitizeText(req.body.title, 'report.title', sanitizeContext);
-    const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
-    const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext);
-    const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext);
+      // Check for Duplicate Report (same block)
+      // ...
 
-    // GEOLOCATION: Get province/locality from Georef API (Argentina)
-    let province = null;
-    let locality = null;
-    let department = null;
-
-    if (req.body.latitude && req.body.longitude) {
+      // NEW: Check Trust Score & Shadow Ban Status
+      let isHidden = false;
       try {
-        const geoData = await reverseGeocode(
-          parseFloat(req.body.latitude),
-          parseFloat(req.body.longitude)
-        );
-        province = geoData.province;
-        locality = geoData.locality;
-        department = geoData.department;
-        logSuccess('Georef resolved', { province, locality });
-      } catch (geoError) {
-        // Non-blocking: continue without province data
-        logError(geoError, { context: 'georef.reverseGeocode' });
+        const visibility = await checkContentVisibility(anonymousId);
+        if (visibility.isHidden) {
+          isHidden = true;
+          logSuccess('Shadow ban applied', { anonymousId, action: visibility.moderationAction });
+        }
+      } catch (checkError) {
+        logError(checkError, req);
+        // Fail open: Default to visible if check fails to avoid blocking valid users
       }
-    }
 
-    // AUTO-POPULATE ZONE: If zone is empty or generic, use locality/department from Georef
-    // This ensures meaningful location data for new reports while maintaining backward compatibility
-    let finalZone = sanitizedZone;
-    if (!finalZone || finalZone.trim() === '' || finalZone === 'Sin zona') {
-      // Priority: locality > department > keep original
-      finalZone = locality || department || sanitizedZone || '';
-    }
+      // Context for logging suspicious content
+      const sanitizeContext = { anonymousId, ip: req.ip };
 
-    // Insert report using queryWithRLS for RLS consistency
-    const insertResult = await queryWithRLS(anonymousId, `
+      // SECURITY: Sanitize all user input BEFORE database insert
+      const sanitizedTitle = sanitizeText(req.body.title, 'report.title', sanitizeContext);
+      const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
+      const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext);
+      const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext);
+
+      // GEOLOCATION: Get province/locality from Georef API (Argentina)
+      let province = null;
+      let locality = null;
+      let department = null;
+
+      if (req.body.latitude && req.body.longitude) {
+        try {
+          const geoData = await reverseGeocode(
+            parseFloat(req.body.latitude),
+            parseFloat(req.body.longitude)
+          );
+          province = geoData.province;
+          locality = geoData.locality;
+          department = geoData.department;
+          logSuccess('Georef resolved', { province, locality });
+        } catch (geoError) {
+          // Non-blocking: continue without province data
+          logError(geoError, { context: 'georef.reverseGeocode' });
+        }
+      }
+
+      // AUTO-POPULATE ZONE: If zone is empty or generic, use locality/department from Georef
+      // This ensures meaningful location data for new reports while maintaining backward compatibility
+      let finalZone = sanitizedZone;
+      if (!finalZone || finalZone.trim() === '' || finalZone === 'Sin zona') {
+        // Priority: locality > department > keep original
+        finalZone = locality || department || sanitizedZone || '';
+      }
+
+      // Insert report using queryWithRLS for RLS consistency
+      const insertResult = await queryWithRLS(anonymousId, `
       INSERT INTO reports (
         anonymous_id, title, description, category, zone, address, 
         latitude, longitude, status, incident_date, is_hidden,
@@ -816,93 +844,96 @@ router.post('/', requireAnonymousId, validate(reportSchema), async (req, res) =>
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `, [
-      anonymousId,
-      sanitizedTitle,
-      sanitizedDescription,
-      req.body.category,  // Validated against whitelist, no sanitization needed
-      finalZone,
-      sanitizedAddress,
-      req.body.latitude || null,
-      req.body.longitude || null,
-      req.body.status || 'pendiente',
-      incidentDate,
-      isHidden,
-      province,
-      locality,
-      department
-    ]);
+        anonymousId,
+        sanitizedTitle,
+        sanitizedDescription,
+        req.body.category,  // Validated against whitelist, no sanitization needed
+        finalZone,
+        sanitizedAddress,
+        req.body.latitude || null,
+        req.body.longitude || null,
+        req.body.status || 'pendiente',
+        incidentDate,
+        isHidden,
+        province,
+        locality,
+        department
+      ]);
 
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no data'), req);
-      return res.status(500).json({
-        error: 'Failed to create report',
-        message: 'Insert operation returned no data'
-      });
-    }
-
-    const newReport = insertResult.rows[0];
-
-    const data = newReport;
-
-    logSuccess('Report created', {
-      id: data.id,
-      anonymousId
-    });
-
-    // Evaluate badges (await to include in response for real-time notification)
-    let newBadges = [];
-    try {
-      const gamification = await syncGamification(anonymousId);
-      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
-        newBadges = gamification.profile.newlyAwarded;
-
-        // Notify for each new badge
-        for (const badge of newBadges) {
-          NotificationService.notifyBadgeEarned(anonymousId, badge)
-            .catch(err => logError(err, { context: 'notifyBadgeEarned', badge: badge.code }));
-        }
+      if (insertResult.rows.length === 0) {
+        logError(new Error('Insert returned no data'), req);
+        return res.status(500).json({
+          error: 'Failed to create report',
+          message: 'Insert operation returned no data'
+        });
       }
-    } catch (err) {
-      logError(err, req);
-    }
 
-    // NOTIFICATIONS: Notify users (In-app)
-    NotificationService.notifyNearbyNewReport(data).catch(err => logError(err, { context: 'notifyNearbyNewReport' }));
-    NotificationService.notifySimilarReports(data).catch(err => logError(err, { context: 'notifySimilarReports' }));
+      const newReport = insertResult.rows[0];
 
-    // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
-    // Import dynamically to avoid circular dependencies
-    import('./push.js').then(({ notifyNearbyUsers }) => {
-      notifyNearbyUsers(data).catch(err => {
-        logError(err, { context: 'notifyNearbyUsers' });
+      const data = newReport;
+
+      logSuccess('Report created', {
+        id: data.id,
+        anonymousId
       });
-    }).catch(() => {
-      // Push module not available, ignore
-    });
 
-    res.status(201).json({
-      success: true,
-      data: {
-        ...data,
-        newBadges
-      },
-      message: 'Report created successfully'
-    });
-  } catch (error) {
-    logError(error, req);
+      // REALTIME: Broadcast new report to global feed
+      realtimeEvents.emitNewReport(data);
 
-    if (error.message.startsWith('VALIDATION_ERROR')) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        message: error.message
+      // Evaluate badges (await to include in response for real-time notification)
+      let newBadges = [];
+      try {
+        const gamification = await syncGamification(anonymousId);
+        if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+          newBadges = gamification.profile.newlyAwarded;
+
+          // Notify for each new badge
+          for (const badge of newBadges) {
+            NotificationService.notifyBadgeEarned(anonymousId, badge)
+              .catch(err => logError(err, { context: 'notifyBadgeEarned', badge: badge.code }));
+          }
+        }
+      } catch (err) {
+        logError(err, req);
+      }
+
+      // NOTIFICATIONS: Notify users (In-app)
+      NotificationService.notifyNearbyNewReport(data).catch(err => logError(err, { context: 'notifyNearbyNewReport' }));
+      NotificationService.notifySimilarReports(data).catch(err => logError(err, { context: 'notifySimilarReports' }));
+
+      // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
+      // Import dynamically to avoid circular dependencies
+      import('./push.js').then(({ notifyNearbyUsers }) => {
+        notifyNearbyUsers(data).catch(err => {
+          logError(err, { context: 'notifyNearbyUsers' });
+        });
+      }).catch(() => {
+        // Push module not available, ignore
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          ...data,
+          newBadges
+        },
+        message: 'Report created successfully'
+      });
+    } catch (error) {
+      logError(error, req);
+
+      if (error.message.startsWith('VALIDATION_ERROR')) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          message: error.message
+        });
+      }
+
+      res.status(500).json({
+        error: 'Failed to create report'
       });
     }
-
-    res.status(500).json({
-      error: 'Failed to create report'
-    });
-  }
-});
+  });
 
 /**
  * GET /api/reports/:id/related
@@ -1347,20 +1378,6 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * Accepts: multipart/form-data with image files
  * Rate limited: 5 per minute, 20 per hour
  */
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max per file (production grade limit)
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Archivo de imagen inválido'), false);
-    }
-  },
-});
 
 router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array('images', 5), async (req, res) => {
   try {

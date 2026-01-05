@@ -34,10 +34,11 @@ export function Layout({ children }: LayoutProps) {
   const publicRoutes = ['/terminos', '/privacidad']
   const isPublicRoute = publicRoutes.includes(location.pathname)
   const isMensajesPage = location.pathname.includes('/mensajes')
+  const isAdminPage = location.pathname.startsWith('/admin')
 
   // Determine if we should force alias creation
-  // Condición: No está cargando, tenemos perfil, NO tiene alias, y NO es una ruta pública
-  const showForceAlias = !isLoading && profile && !profile.alias && !isPublicRoute
+  // Condición: No está cargando, tenemos perfil, NO tiene alias, y NO es una ruta pública, Y NO es admin
+  const showForceAlias = !isLoading && profile && !profile.alias && !isPublicRoute && !isAdminPage
 
   return (
     <ToastProvider>
@@ -58,28 +59,33 @@ export function Layout({ children }: LayoutProps) {
       <a href="#main-content" className="skip-link">
         Saltar al contenido principal
       </a>
-      <div className="flex min-h-screen flex-col bg-dark-bg text-white selection:bg-neon-green/30">
-        {!isMensajesPage && <Header />}
+      <div className={cn(
+        "flex min-h-screen flex-col bg-dark-bg text-white selection:bg-neon-green/30",
+        isAdminPage && "min-h-0 h-full"
+      )}>
+        {!isMensajesPage && !isAdminPage && <Header />}
         <main
           id="main-content"
           className={cn(
             "flex-1 flex flex-col bg-dark-bg",
             isMensajesPage
               ? "fixed inset-0 z-[60] h-screen w-screen overflow-hidden p-0 m-0 max-w-none"
-              : "min-h-[60vh] pb-16 md:pb-0 overflow-hidden"
+              : isAdminPage
+                ? "w-full min-h-screen p-0 m-0"
+                : "min-h-[60vh] pb-16 md:pb-0 overflow-hidden"
           )}
         >
           <ErrorBoundary fallbackTitle="Ocurrió un error inesperado">
             <div className={cn(
               "flex-1 animate-in fade-in duration-500 fill-mode-both",
-              isMensajesPage && "h-full w-full max-w-none p-0 m-0"
+              (isMensajesPage || isAdminPage) && "h-full w-full max-w-none p-0 m-0"
             )}>
               {children}
             </div>
           </ErrorBoundary>
         </main>
-        {!isMensajesPage && <Footer />}
-        {!isMensajesPage && <BottomNav />}
+        {!isMensajesPage && !isAdminPage && <Footer />}
+        {!isMensajesPage && !isAdminPage && <BottomNav />}
       </div>
     </ToastProvider>
   )

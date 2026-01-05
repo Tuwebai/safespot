@@ -24,6 +24,14 @@ const FollowsPage = lazyRetry(() => import('@/pages/FollowsPage').then(m => ({ d
 const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ default: m.ThreadPage })), 'ThreadPage')
 const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
 
+// Admin Imports (Lazy Loaded)
+const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
+const AdminDashboard = lazyRetry(() => import('@/pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })), 'AdminDashboard')
+const UsersPage = lazyRetry(() => import('@/pages/admin/UsersPage').then(m => ({ default: m.UsersPage })), 'UsersPage')
+const AdminReportsPage = lazyRetry(() => import('./pages/admin/ReportsPage').then(module => ({ default: module.ReportsPage })), 'AdminReportsPage')
+const AdminModerationPage = lazyRetry(() => import('@/pages/admin/ModerationPage').then(m => ({ default: m.ModerationPage })), 'AdminModerationPage')
+import { AdminGuard } from '@/components/admin/AdminGuard'
+
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
 import { UpdateNotification } from '@/components/UpdateNotification'
@@ -70,6 +78,27 @@ function App() {
                 <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
                 <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
                 <Route path="/mensajes" element={<Mensajes />} />
+
+                {/* --- ADMIN ROUTES (Protected by Guard) --- */}
+                {/* 
+                    Ghost Protocol Logic Update: 
+                    User requested "/admin" to be the entry. 
+                    - If unauthorized -> Show Login Screen (at /admin).
+                    - If authorized -> Show Admin Layout (at /admin).
+                    We will handle this in a wrapper component. 
+                */}
+                <Route path="/admin/*" element={
+                  <AdminGuard>
+                    <AdminLayout />
+                  </AdminGuard>
+                }>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="reports" element={<AdminReportsPage />} />
+                  <Route path="users" element={<UsersPage />} />
+                  <Route path="moderation" element={<AdminModerationPage />} />
+                  {/* Add other admin sub-routes here */}
+                </Route>
+
               </Routes>
             </Suspense>
           </ChunkErrorBoundary>

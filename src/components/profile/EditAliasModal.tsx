@@ -150,8 +150,10 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isFor
                             </Button>
                         </div>
                     </form>
+
+
                 </CardContent>
             </Card>
-        </div>
+        </div >
     );
 }

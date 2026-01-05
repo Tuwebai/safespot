@@ -9,6 +9,7 @@ import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { voteLimiter } from '../utils/rateLimiter.js';
+import { realtimeEvents } from '../utils/eventEmitter.js';
 
 const router = express.Router();
 
@@ -215,6 +216,20 @@ router.post('/', requireAnonymousId, validate(voteSchema), async (req, res) => {
       data,
       message: 'Vote created successfully'
     });
+
+    // REALTIME: Fetch updated count and broadcast
+    // Run asynchronously to not block response
+    (async () => {
+      try {
+        if (report_id) {
+          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
+          // Also update the reports table cache if you use it, but for now just broadcast the count
+          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count });
+        }
+      } catch (err) {
+        logError(err, { context: 'realtimeParam.vote' });
+      }
+    })();
   } catch (error) {
     logError(error, req);
 
@@ -299,6 +314,18 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
       success: true,
       message: 'Vote removed successfully'
     });
+
+    // REALTIME: Fetch updated count and broadcast
+    (async () => {
+      try {
+        if (report_id) {
+          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
+          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count });
+        }
+      } catch (err) {
+        logError(err, { context: 'realtimeParam.unvote' });
+      }
+    })();
   } catch (error) {
     logError(error, req);
     res.status(500).json({

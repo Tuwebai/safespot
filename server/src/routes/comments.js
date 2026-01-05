@@ -13,6 +13,7 @@ import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/
 import { NotificationService } from '../utils/notificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { extractMentions } from '../utils/mentions.js';
+import { verifyUserStatus } from '../middleware/moderation.js';
 
 const router = express.Router();
 
@@ -149,7 +150,7 @@ router.get('/:reportId', async (req, res) => {
  * Create a new comment
  * Requires: X-Anonymous-Id header
  */
-router.post('/', requireAnonymousId, validate(commentSchema), async (req, res) => {
+router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     let isHidden = false; // Shadow ban status
@@ -524,7 +525,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * Requires: X-Anonymous-Id header
  * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/:id/like', requireAnonymousId, async (req, res) => {
+router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;

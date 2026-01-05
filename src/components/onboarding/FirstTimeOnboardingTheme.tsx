@@ -202,12 +202,12 @@ export function FirstTimeOnboardingTheme() {
                 </div>
 
                 {/* Right: Controls */}
-                <div className="space-y-8">
+                <div className="space-y-8 text-white">
                     <div className="space-y-2">
                         <h1 className="text-4xl font-bold tracking-tight">
                             Hazlo tuyo.
                         </h1>
-                        <p className="text-lg text-muted-foreground">
+                        <p className="text-lg text-zinc-400">
                             Personaliza la experiencia. <button onClick={() => setIsPreviewMode(true)} className="text-primary hover:underline">Activa la vista previa</button> para ver cómo queda en tu app.
                         </p>
                     </div>
@@ -215,7 +215,7 @@ export function FirstTimeOnboardingTheme() {
 
                     {/* Theme Selection */}
                     <div className="space-y-4">
-                        <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Tema Principal</label>
+                        <label className="text-sm font-medium uppercase tracking-wider text-zinc-500">Tema Principal</label>
                         <div className="grid grid-cols-2 gap-3">
                             {THEMES.map((t) => (
                                 <button
@@ -225,7 +225,7 @@ export function FirstTimeOnboardingTheme() {
                                         "relative p-4 rounded-xl border-2 text-left transition-all duration-200 outline-none",
                                         theme === t.id
                                             ? "border-primary bg-primary/5 shadow-[0_0_20px_rgba(0,0,0,0.1)]"
-                                            : "border-border/50 hover:border-primary/50 hover:bg-card/50"
+                                            : "border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
                                     )}
                                 >
                                     {theme === t.id && (
@@ -233,8 +233,8 @@ export function FirstTimeOnboardingTheme() {
                                             <Check size={16} strokeWidth={3} />
                                         </div>
                                     )}
-                                    <div className="font-semibold">{t.name}</div>
-                                    <div className="text-xs text-muted-foreground mt-1">{t.description}</div>
+                                    <div className="font-semibold text-zinc-200">{t.name}</div>
+                                    <div className="text-xs text-zinc-500 mt-1">{t.description}</div>
                                 </button>
                             ))}
                         </div>
@@ -242,7 +242,7 @@ export function FirstTimeOnboardingTheme() {
 
                     {/* Accent Selection */}
                     <div className="space-y-4">
-                        <label className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Color de Acento</label>
+                        <label className="text-sm font-medium uppercase tracking-wider text-zinc-500">Color de Acento</label>
                         <div className="flex flex-wrap gap-3">
                             {ACCENTS.map((acc) => (
                                 <button
@@ -251,7 +251,7 @@ export function FirstTimeOnboardingTheme() {
                                     className={cn(
                                         "h-12 w-12 rounded-full flex items-center justify-center transition-all duration-200",
                                         accentColor === acc.id
-                                            ? "ring-4 ring-offset-4 ring-offset-background ring-foreground scale-110"
+                                            ? "ring-4 ring-offset-4 ring-offset-zinc-950 ring-white scale-110"
                                             : "hover:scale-110 opacity-80 hover:opacity-100"
                                     )}
                                     style={{ backgroundColor: acc.color }}
@@ -266,7 +266,7 @@ export function FirstTimeOnboardingTheme() {
                     <div className="pt-8">
                         <Button
                             size="lg"
-                            className="w-full text-lg h-14 font-bold shadow-2xl shadow-primary/20 hover:shadow-primary/40 transition-all"
+                            className="w-full text-lg h-14 font-bold shadow-2xl shadow-primary/20 hover:shadow-primary/40 transition-all text-black"
                             onClick={handleConfirm}
                         >
                             Comenzar Experiencia <ArrowRight className="ml-2" />

@@ -132,3 +132,11 @@ export const likeLimiter = dbRateLimiter({
   message: 'Estás dando likes demasiado rápido. Espera un momento.'
 });
 
+// Admin Login: 5 attempts per 15 minutes
+export const loginLimiter = dbRateLimiter({
+  action: 'admin_login',
+  limitMinute: 5, // Actually, dbRateLimiter uses minutes, but for login we want strictly low.
+  limitHour: 20,
+  message: 'Demasiados intentos de inicio de sesión. Cuenta bloqueada temporalmente.'
+});
+

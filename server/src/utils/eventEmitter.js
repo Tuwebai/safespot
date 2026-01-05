@@ -39,6 +39,72 @@ class RealtimeEvents extends EventEmitter {
         this.emit(`comment-delete:${reportId}`, { commentId });
         console.log(`[Realtime] Emitted comment delete for report ${reportId}`);
     }
+
+    /**
+     * Emit a user ban/unban event
+     * @param {string} anonymousId - The user ID
+     * @param {object} data - { status: 'banned' | 'active', reason: string }
+     */
+    emitUserBan(anonymousId, data) {
+        this.emit(`user-status:${anonymousId}`, data);
+        console.log(`[Realtime] Emitted user status change for ${anonymousId}`, data);
+    }
+
+    /**
+     * Emit a new report event (Global Feed)
+     * @param {object} report - The full report object (or minimal summary)
+     */
+    emitNewReport(report) {
+        // Broadcast to 'global-report-update' channel which /api/realtime/feed listens to
+        this.emit('global-report-update', {
+            type: 'new-report',
+            report: report
+        });
+        console.log(`[Realtime] Emitted new report ${report.id} to global feed`);
+    }
+
+    /**
+     * Emit a vote/like update
+     * @param {string} type - 'report' or 'comment'
+     * @param {string} id - The Item ID
+     * @param {object} updates - Changed fields (e.g. { upvotes_count: 5 })
+     */
+    emitVoteUpdate(type, id, updates) {
+        if (type === 'report') {
+            // Update detail view listeners
+            this.emit(`report-update:${id}`, updates);
+
+            // Update global feed listeners
+            this.emit('global-report-update', {
+                type: 'stats-update',
+                reportId: id,
+                updates
+            });
+        } else if (type === 'comment') {
+            // Update comment listeners (in report detail)
+            // Note: comments are usually listened to via the parent report channel
+            // We might need to handle this differently if we don't have reportId here.
+            // But usually we do or can fetch it. 
+            // For now, let's assume specific comment update.
+            this.emit(`comment-update:${id}`, updates); // This might need a reportId prefix if clients listen by report
+        }
+        console.log(`[Realtime] Emitted vote update for ${type} ${id}`, updates);
+    }
+
+    /**
+     * Emit a badge earned event (Personal Notification)
+     * @param {string} anonymousId - The recipient
+     * @param {object} badge - The badge object
+     */
+    emitBadgeEarned(anonymousId, badge) {
+        this.emit(`user-notification:${anonymousId}`, {
+            type: 'achievement',
+            title: '🏆 ¡Nueva Insignia Desbloqueada!',
+            message: `Has ganado la insignia "${badge.name}".`,
+            badge
+        });
+        console.log(`[Realtime] Emitted badge earned for ${anonymousId}`, badge.code);
+    }
 }
 
 // Export singleton instance

@@ -25,9 +25,10 @@ export function useGlobalFeed() {
                 queryClient.invalidateQueries({ queryKey: ['reports', 'list'] })
 
                 // Also stats if needed
-                if (data.type === 'stats-update') {
-                    // We might not need to invalidate global stats frequently if it causes layout shift
-                    // queryClient.invalidateQueries({ queryKey: ['stats'] })
+                if (data.type === 'stats-update' || data.type === 'new_report') {
+                    // Refresh stats when significant events happen
+                    queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
+                    queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
                 }
             } catch (err) {
                 console.error('[SSE] Error parsing global feed event:', err)

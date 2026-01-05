@@ -24,6 +24,11 @@ import seoRouter from './routes/seo.js';
 import notificationsRouter from './routes/notifications.js';
 import realtimeRouter from './routes/realtime.js';
 import chatsRouter from './routes/chats.js';
+import adminAuthRouter from './routes/adminAuth.js';
+import adminStatsRouter from './routes/adminStats.js';
+import adminHeatmapRouter from './routes/adminHeatmap.js';
+import adminUsersRouter from './routes/adminUsers.js';
+import adminModerationRouter from './routes/adminModeration.js';
 
 // Load environment variables
 dotenv.config();
@@ -69,8 +74,8 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'Cache-Control', 'Last-Event-ID']
+  method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'Cache-Control', 'Last-Event-ID', 'Authorization']
 }));
 
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)
@@ -177,6 +182,11 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
+app.use('/api/admin/auth', adminAuthRouter);
+app.use('/api/admin', adminStatsRouter); // Mount at /api/admin so it becomes /api/admin/stats
+app.use('/api/admin', adminHeatmapRouter); // Mount at /api/admin so it becomes /api/admin/heatmap
+app.use('/api/admin/users', adminUsersRouter);
+app.use('/api/admin/moderation', adminModerationRouter); // Mount at /api/admin/users
 app.use('/api/user-zones', userZonesRouter);
 app.use('/api/chats', chatsRouter);
 app.use('/api', sitemapRouter);

@@ -295,8 +295,17 @@ export const NotificationService = {
                 message: `Has ganado la insignia "${badge.name}". ¡Felicitaciones!`,
                 entity_type: 'badge',
                 entity_id: badge.id || null, // MUST be UUID or NULL. badge.code is string.
+                entity_id: badge.id || null, // MUST be UUID or NULL. badge.code is string.
                 report_id: null
             });
+
+            // Emit Real-time Event (SSE)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+                realtimeEvents.emitBadgeEarned(anonymousId, badge);
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
         } catch (err) {
             logError(err, { context: 'notifyBadgeEarned', anonymousId, badge: badge.name });
         }
