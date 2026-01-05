@@ -13,17 +13,16 @@ import { QueryClient } from '@tanstack/react-query'
 export const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            // Tier 1: General data (1 minute stale)
-            // Balanced between freshness and server load
-            staleTime: 60 * 1000,
+            // Tier 1: General data (0 seconds stale for "real-time" feel)
+            // Big tech often uses "stale-while-revalidate" approach: show cache, fetch new immediately.
+            // Setting staleTime to 0 means "always stale, always refetch in background".
+            staleTime: 0,
 
-            // Tier 2: Cache retention (10 minutes)
-            // Essential for high-quality "Back" button experience
-            gcTime: 10 * 60 * 1000,
+            // Tier 2: Cache retention (5 minutes)
+            gcTime: 5 * 60 * 1000,
 
-            // Optimization: Only refetch on focus for critical views
-            // We'll override this locally for the detailed report view
-            refetchOnWindowFocus: false,
+            // Optimization: Refetch on window focus is KEY for "always fresh" feel
+            refetchOnWindowFocus: true,
 
             // Resilience: Exponential backoff for network instability
             retry: 2,
