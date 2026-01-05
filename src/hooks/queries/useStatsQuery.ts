@@ -19,27 +19,11 @@ export function useGlobalStatsQuery() {
         queryKey: queryKeys.stats.global,
         queryFn: async () => {
             const data = await usersApi.getStats()
-            // Cache successful response
-            try {
-                localStorage.setItem('safespot_stats_global_v2', JSON.stringify(data))
-            } catch (e) {
-                // Ignore storage errors
-            }
             return data
-        },
-        initialData: () => {
-            // Try to load from local storage for instant render
-            try {
-                const item = localStorage.getItem('safespot_stats_global_v2')
-                if (item) {
-                    return JSON.parse(item)
-                }
-            } catch (e) {
-                return undefined
-            }
         },
         staleTime: 0, // Instant refresh in background
         refetchOnWindowFocus: false,
+        refetchInterval: 30000, // Refresh every 30 seconds
         retry: false,
     })
 }
@@ -53,23 +37,11 @@ export function useCategoryStatsQuery() {
         queryKey: queryKeys.stats.categories,
         queryFn: async () => {
             const data = await usersApi.getCategoryStats()
-            try {
-                localStorage.setItem('safespot_stats_categories_v2', JSON.stringify(data))
-            } catch (e) { }
             return data
-        },
-        initialData: () => {
-            try {
-                const item = localStorage.getItem('safespot_stats_categories_v2')
-                if (item) {
-                    return JSON.parse(item)
-                }
-            } catch (e) {
-                return undefined
-            }
         },
         staleTime: 0, // Instant refresh
         refetchOnWindowFocus: false,
+        refetchInterval: 30000, // Refresh every 30 seconds
         retry: false,
     })
 }

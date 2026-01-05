@@ -43,7 +43,8 @@ export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
   retries = 3,
-  backoff = 500
+  backoff = 500,
+  timeout = 15000 // 15 seconds default timeout
 ): Promise<T> {
   // 1. Check offline status immediately
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -76,10 +77,16 @@ export async function apiRequest<T>(
       (headers as any)['Content-Type'] = 'application/json';
     }
 
+    // Setup timeout
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: controller.signal,
     });
+    clearTimeout(id);
 
     // Handle 429 Too Many Requests specifically
     if (response.status === 429) {
@@ -117,6 +124,14 @@ export async function apiRequest<T>(
   } catch (error) {
     // 3. Handle Network Errors (fetch failed)
     const isNetworkError = error instanceof TypeError || (error instanceof Error && error.message === 'Failed to fetch');
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError';
+
+    if (isTimeout) {
+      const timeoutError = new Error('La solicitud tardó demasiado. Por favor, verificá tu conexión.') as any;
+      timeoutError.message = 'La solicitud tardó demasiado. Por favor, verificá tu conexión.'; // Explicitly set message
+      timeoutError.code = 'TIMEOUT'; // Add a code we can check if needed
+      throw timeoutError;
+    }
 
     if (isNetworkError && retries > 0) {
       console.warn(`Network error. Retrying in ${backoff}ms... (${retries} attempts left)`);
