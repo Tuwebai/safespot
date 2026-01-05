@@ -21,7 +21,7 @@ export function useGlobalStatsQuery() {
             const data = await usersApi.getStats()
             // Cache successful response
             try {
-                localStorage.setItem('safespot_stats_global', JSON.stringify(data))
+                localStorage.setItem('safespot_stats_global_v2', JSON.stringify(data))
             } catch (e) {
                 // Ignore storage errors
             }
@@ -30,7 +30,7 @@ export function useGlobalStatsQuery() {
         initialData: () => {
             // Try to load from local storage for instant render
             try {
-                const item = localStorage.getItem('safespot_stats_global')
+                const item = localStorage.getItem('safespot_stats_global_v2')
                 if (item) {
                     return JSON.parse(item)
                 }
@@ -38,7 +38,7 @@ export function useGlobalStatsQuery() {
                 return undefined
             }
         },
-        staleTime: 5 * 60 * 1000, // 5 minutes (reduce 429s)
+        staleTime: 0, // Instant refresh in background
         refetchOnWindowFocus: false,
         retry: false,
     })
@@ -54,13 +54,13 @@ export function useCategoryStatsQuery() {
         queryFn: async () => {
             const data = await usersApi.getCategoryStats()
             try {
-                localStorage.setItem('safespot_stats_categories', JSON.stringify(data))
+                localStorage.setItem('safespot_stats_categories_v2', JSON.stringify(data))
             } catch (e) { }
             return data
         },
         initialData: () => {
             try {
-                const item = localStorage.getItem('safespot_stats_categories')
+                const item = localStorage.getItem('safespot_stats_categories_v2')
                 if (item) {
                     return JSON.parse(item)
                 }
@@ -68,7 +68,7 @@ export function useCategoryStatsQuery() {
                 return undefined
             }
         },
-        staleTime: 5 * 60 * 1000, // 5 minutes
+        staleTime: 0, // Instant refresh
         refetchOnWindowFocus: false,
         retry: false,
     })

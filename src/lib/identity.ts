@@ -52,12 +52,14 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-function setCookie(name: string, value: string, days = 365) {
+function setCookie(name: string, value: string, days = 3650) { // 10 years default
   if (typeof document === 'undefined') return;
   const date = new Date();
   date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
   const expires = `expires=${date.toUTCString()}`;
-  document.cookie = `${name}=${value};${expires};path=/;SameSite=Lax`;
+  // Add SameSite=None + Secure for cross-context if needed, but Lax is safer for now.
+  // Use max-age for modern browsers support
+  document.cookie = `${name}=${value};${expires};path=/;SameSite=Lax;max-age=${days * 24 * 60 * 60}`;
 }
 
 // --------------------------------------------
@@ -157,26 +159,37 @@ export async function initializeIdentity(): Promise<string> {
       }
     });
 
-    winner = fallbackWinner;
+    winner = fallbackWinner; // The most persistent ID wins
+    console.log('[Identity] Recovered ID:', winner);
   } else {
     // Absolute loss: Generate new
-    // Check if we already have a cached one (e.g. from previous run in memory?)
-    // No, cachedId is checked at start of function.
     winner = generateUUID();
+    console.log('[Identity] Generated NEW ID:', winner);
   }
 
-  // 3. Normalize and Broadcast (Synchronization) - Fire and difference
+  // 3. Normalize and Broadcast (Synchronization) - Force Restore to all layers
+  // This ensures if LocalStorage was cleared but Cookie remained, LocalStorage gets fixed.
   cachedId = winner;
   const versionedId = `${ID_VERSION}|${winner}`;
 
-  // Don't await writing, just do it
   try {
-    localStorage.setItem(L1_KEY, winner);
-    setCookie(L2_KEY, versionedId);
-    setIDB('current_id', versionedId).catch(console.error);
+    // FORCE WRITE TO ALL LAYERS immediately
+    if (l1 !== winner) localStorage.setItem(L1_KEY, winner);
+    if (l2 !== versionedId) setCookie(L2_KEY, versionedId);
+    // Always try to write DB to be safe
+    setIDB('current_id', versionedId).catch(e => console.error('[Identity] IDB Write failed', e));
+
+    // Double check: If we just generated a new one, ensure it sticks
+    if (candidates.length === 0) {
+      localStorage.setItem(L1_KEY, winner);
+      setCookie(L2_KEY, versionedId);
+    }
+
   } catch (e) {
     console.debug('[Identity] Failed to sync all layers', e);
   }
+
+
 
   return winner;
 }

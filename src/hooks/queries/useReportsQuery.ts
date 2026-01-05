@@ -34,7 +34,7 @@ export function useReportsQuery(filters?: ReportFilters) {
             // Only cache the default "all reports" view to localStorage
             if (isDefaultQuery) {
                 try {
-                    localStorage.setItem('safespot_reports_all', JSON.stringify(data))
+                    localStorage.setItem('safespot_reports_all_v2', JSON.stringify(data))
                 } catch (e) { }
             }
             return data
@@ -43,7 +43,7 @@ export function useReportsQuery(filters?: ReportFilters) {
             // Only use cached data for the default view
             if (isDefaultQuery) {
                 try {
-                    const item = localStorage.getItem('safespot_reports_all')
+                    const item = localStorage.getItem('safespot_reports_all_v2')
                     if (item) {
                         return JSON.parse(item)
                     }

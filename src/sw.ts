@@ -69,21 +69,25 @@ registerRoute(
 // Si la red tarda más de 10s, o falla, usar caché.
 // FetchOptions 'reload' fuerza a ignorar la caché HTTP del navegador para ir directo al servidor.
 // EXCLUIMOS tiempo real (SSE) y CHATS porque son altamente dinámicos y no deben cachearse.
+// C. Llamadas a la API (Network-first para resiliencia, SIN CACHÉ persistente)
+// El usuario reportó datos viejos/stale. Para corregirlo, reducimos la caché a CERO o muy poco.
+// Usamos NetworkFirst para que si hay red, SIEMPRE valla al servidor.
+// Solo si falla, usa caché, pero esa caché no debe durar más de 1 minuto.
 registerRoute(
     ({ url }) =>
         url.pathname.startsWith('/api/') &&
         !url.pathname.includes('/realtime/') &&
-        !url.pathname.includes('/chats'), // Chat routes should be NetworkOnly
+        !url.pathname.includes('/chats'),
     new NetworkFirst({
         cacheName: 'safespot-api-cache',
-        networkTimeoutSeconds: 10, // Si la red tarda > 10s, usar caché
+        networkTimeoutSeconds: 5, // Esperar 5s a la red antes de fallback
         fetchOptions: {
-            cache: 'reload', // IMPORTANTE: Ignorar caché HTTP del navegador
+            cache: 'no-store', // IMPORTANTE: No guardar en caché HTTP del navegador
         },
         plugins: [
             new ExpirationPlugin({
                 maxEntries: 50,
-                maxAgeSeconds: 5 * 60, // 5 minutos (antes 24h) para reducir datos stale
+                maxAgeSeconds: 5, // 5 segundos de vida. Básicamente "sólo para offline repentino".
             }),
             new CacheableResponsePlugin({
                 statuses: [0, 200],
