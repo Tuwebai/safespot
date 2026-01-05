@@ -264,7 +264,7 @@ export function createChatNotificationPayload(message, room) {
         renotify: true,
         data: {
             roomId: message.room_id,
-            url: `/mensajes`, // Link to messaging center
+            url: `/mensajes?roomId=${message.room_id}`, // Link to messaging center
             timestamp: Date.now()
         },
         actions: [

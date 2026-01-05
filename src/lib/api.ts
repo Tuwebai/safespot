@@ -1010,7 +1010,7 @@ export interface ChatMessage {
   room_id: string;
   sender_id: string;
   content: string;
-  type: 'text' | 'image' | 'sighting';
+  type: 'text' | 'image' | 'sighting' | 'location';
   is_read: boolean;
   is_delivered: boolean;
   created_at: string;
@@ -1029,12 +1029,16 @@ export const chatsApi = {
   },
 
   /**
-   * Create or resume a chat room for a specific report
+   * Create or resume a chat room.
+   * Can be report-based (provide reportId) or direct (provide recipientId).
    */
-  createRoom: async (reportId: string): Promise<ChatRoom> => {
+  createRoom: async (params: { reportId?: string; recipientId?: string }): Promise<ChatRoom> => {
     return apiRequest<ChatRoom>('/chats', {
       method: 'POST',
-      body: JSON.stringify({ report_id: reportId })
+      body: JSON.stringify({
+        report_id: params.reportId,
+        recipient_id: params.recipientId
+      })
     });
   },
 
@@ -1048,7 +1052,7 @@ export const chatsApi = {
   /**
    * Send a message to a room
    */
-  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' = 'text', caption?: string): Promise<ChatMessage> => {
+  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string): Promise<ChatMessage> => {
     return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content, type, caption })

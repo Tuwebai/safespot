@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
         const chatQuery = `
       SELECT 
         cr.*,
-        r.title as report_title,
+        COALESCE(r.title, 'Chat Directo') as report_title,
         r.category as report_category,
         u1.alias as participant_a_alias,
         u1.avatar_url as participant_a_avatar,
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
           WHERE room_id = cr.id AND sender_id != $1 AND is_read = false
         ) as unread_count
       FROM chat_rooms cr
-      JOIN reports r ON cr.report_id = r.id
+      LEFT JOIN reports r ON cr.report_id = r.id
       JOIN anonymous_users u1 ON cr.participant_a = u1.anonymous_id
       JOIN anonymous_users u2 ON cr.participant_b = u2.anonymous_id
       LEFT JOIN LATERAL (
@@ -82,38 +82,76 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
-    const { report_id } = req.body;
+    const { report_id, recipient_id } = req.body;
 
-    if (!anonymousId || !report_id) {
-        return res.status(400).json({ error: 'Report ID and Anonymous ID are required' });
+    if (!anonymousId) {
+        return res.status(400).json({ error: 'Anonymous ID required' });
+    }
+
+    if (!report_id && !recipient_id) {
+        return res.status(400).json({ error: 'Either report_id or recipient_id is required' });
     }
 
     try {
-        // 1. Obtener el dueño del reporte
-        const reportResult = await queryWithRLS(anonymousId, 'SELECT anonymous_id FROM reports WHERE id = $1', [report_id]);
-        if (reportResult.rows.length === 0) return res.status(404).json({ error: 'Report not found' });
+        let participantB = recipient_id;
 
-        const reportOwnerId = reportResult.rows[0].anonymous_id;
+        // Si hay reporte, el destinatario es el dueño del reporte
+        if (report_id) {
+            const reportResult = await queryWithRLS(anonymousId, 'SELECT anonymous_id FROM reports WHERE id = $1', [report_id]);
+            if (reportResult.rows.length === 0) return res.status(404).json({ error: 'Report not found' });
+            participantB = reportResult.rows[0].anonymous_id;
+        }
 
-        if (reportOwnerId === anonymousId) {
+        if (participantB === anonymousId) {
             return res.status(400).json({ error: 'Cannot start a chat with yourself' });
         }
 
-        // 2. Crear sala (USANDO ON CONFLICT por si ya existe)
-        const createRoomQuery = `
-      INSERT INTO chat_rooms (report_id, participant_a, participant_b)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (report_id, participant_a, participant_b) 
-      DO UPDATE SET status = 'active'
-      RETURNING *
-    `;
+        // Determinar participantes (ordenados para consistencia si quisiéramos, pero la query busca por ID)
+        // La tabla tiene participant_a y participant_b.
+        // Para DMs (report_id IS NULL), usaremos un constraint único compuesto.
 
-        const roomResult = await queryWithRLS(anonymousId, createRoomQuery, [report_id, anonymousId, reportOwnerId]);
+        let createRoomQuery;
+        let queryParams;
+
+        if (report_id) {
+            // Lógica existente para reportes
+            createRoomQuery = `
+              INSERT INTO chat_rooms (report_id, participant_a, participant_b)
+              VALUES ($1, $2, $3)
+              ON CONFLICT (report_id, participant_a, participant_b) 
+              DO UPDATE SET status = 'active'
+              RETURNING *
+            `;
+            queryParams = [report_id, anonymousId, participantB];
+        } else {
+            // Nueva lógica para DMs (Direct Messages)
+            // Intentamos buscar si ya existe la sala entre estos dos sin reporte
+            // Nota: participant_a y participant_b no tienen orden garantizado, así que verificamos ambos lados
+            // O usamos el UNIQUE INDEX que creamos (participant_a, participant_b) WHERE report_id IS NULL
+            // Para simplificar, siempre guardamos el menor ID en A y el mayor en B para consistencia en DMs si se desea,
+            // pero Postgres ON CONFLICT requiere coincidencia exacta de columnas del index.
+            // El índice es (participant_a, participant_b). Así que debemos probar ambas combinaciones o normalizar.
+
+            // Vamos a normalizar IDs para DMs para aprovechar el índice único simple
+            const [user1, user2] = [anonymousId, participantB].sort();
+
+            createRoomQuery = `
+              INSERT INTO chat_rooms (report_id, participant_a, participant_b)
+              VALUES (NULL, $1, $2)
+              ON CONFLICT (participant_a, participant_b) WHERE report_id IS NULL
+              DO UPDATE SET status = 'active'
+              RETURNING *
+            `;
+            queryParams = [user1, user2];
+        }
+
+        const roomResult = await queryWithRLS(anonymousId, createRoomQuery, queryParams);
         res.status(201).json(roomResult.rows[0]);
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
     }
+
 });
 
 /**
@@ -217,7 +255,7 @@ router.post('/:roomId/messages', async (req, res) => {
                         SELECT r.title as report_title, 
                                u.alias as sender_alias
                         FROM chat_rooms cr
-                        JOIN reports r ON cr.report_id = r.id
+                        LEFT JOIN reports r ON cr.report_id = r.id
                         JOIN anonymous_users u ON u.anonymous_id = $1
                         WHERE cr.id = $2
                     `;
@@ -226,7 +264,7 @@ router.post('/:roomId/messages', async (req, res) => {
                     if (roomInfo.rows.length > 0) {
                         const payload = createChatNotificationPayload(
                             { ...newMessage, sender_alias: roomInfo.rows[0].sender_alias },
-                            { report_title: roomInfo.rows[0].report_title }
+                            { report_title: roomInfo.rows[0].report_title || 'Mensaje Directo' }
                         );
 
                         await sendBatchNotifications(

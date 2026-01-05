@@ -14,7 +14,7 @@ export const ChatReportContext: React.FC<ChatReportContextProps> = ({ reportId }
     const [isExpanded, setIsExpanded] = useState(false);
     const { data: report, isLoading } = useReportDetailQuery(reportId);
 
-    if (isLoading || !report) return null;
+    if (!reportId || isLoading || !report) return null;
 
     return (
         <div className="border-b border-white/5 bg-white/[0.02]">

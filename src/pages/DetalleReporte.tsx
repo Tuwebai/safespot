@@ -105,7 +105,7 @@ export function DetalleReporte() {
   const handleCreateChat = async () => {
     try {
       if (report?.id) {
-        await createChatMutation.mutateAsync(report.id);
+        await createChatMutation.mutateAsync({ reportId: report.id });
         navigate('/mensajes');
       }
     } catch (err) {

@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
-import { FileText, Calendar, ArrowLeft, Shield, Trophy, Activity, Star, Flame, Medal } from 'lucide-react'
+import { FileText, Calendar, ArrowLeft, Shield, Trophy, Activity, Star, Flame, Medal, MessageSquare } from 'lucide-react'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { handleError } from '@/lib/errorHandler'
@@ -240,6 +240,27 @@ rounded - full px - 8 font - bold transition - all duration - 300
                                         >
                                             <Users className="w-4 h-4 mr-2" />
                                             {profile.stats.is_following ? 'Siguiendo' : 'Seguir'}
+                                        </Button>
+
+                                        {/* DM Button */}
+                                        <Button
+                                            onClick={async () => {
+                                                try {
+                                                    // Import dynamically if needed or assume hook logic. 
+                                                    // Dynamic import to use api directly without adding hook complexity here
+                                                    const { chatsApi } = await import('@/lib/api');
+                                                    await chatsApi.createRoom({ recipientId: profile.anonymous_id });
+                                                    navigate('/mensajes');
+                                                } catch (e) {
+                                                    toast.error('Error al iniciar chat');
+                                                }
+                                            }}
+                                            variant="secondary"
+                                            className="rounded-full px-6 font-bold hover:bg-muted/80 ml-2"
+                                            disabled={loading}
+                                        >
+                                            <MessageSquare className="w-4 h-4 mr-2" />
+                                            Mensaje
                                         </Button>
                                     </div>
                                 ) : (

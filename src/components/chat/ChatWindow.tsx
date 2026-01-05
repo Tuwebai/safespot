@@ -129,18 +129,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         if ((!message.trim() && !selectedFile) || sendMessageMutation.isPending) return;
 
         try {
-            await sendMessageMutation.mutateAsync({
-                roomId: room.id,
-                content: message,
-                type: selectedFile ? 'image' : 'text',
-                caption: selectedFile ? message : undefined,
-                file: selectedFile || undefined
-            });
+            const contentToSend = message;
+            const fileToSend = selectedFile;
+            const captionToSend = selectedFile ? message : undefined;
 
+            // Optimistic clear
             setMessage('');
             cancelImageSelection();
+
+            await sendMessageMutation.mutateAsync({
+                roomId: room.id,
+                content: contentToSend,
+                type: fileToSend ? 'image' : 'text',
+                caption: captionToSend,
+                file: fileToSend || undefined
+            });
+
         } catch (error) {
             console.error('Error sending message:', error);
+            // Optional: Restore message on error if robust error handling is desired, 
+            // but for now we follow the "instant" pattern.
         }
     };
 
@@ -152,6 +160,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         const url = URL.createObjectURL(file);
         setPreviewUrl(url);
     };
+
 
     const cancelImageSelection = () => {
         setSelectedFile(null);
@@ -196,7 +205,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
                             ) : (
                                 <span className="text-[10px] text-white/30 truncate">
-                                    Chat vinculado a: {room.report_title}
+                                    {room.report_category ? `Chat vinculado a: ${room.report_title}` : 'Mensaje Directo'}
                                 </span>
                             )}
                         </div>
@@ -349,6 +358,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         >
                             <ImageIcon className="h-5 w-5" />
                         </Button>
+
+
                         <Input
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}

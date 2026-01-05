@@ -104,6 +104,16 @@ async function testConnection() {
       -- 6. Add caption and delivered status to chat_messages
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS caption TEXT;
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN DEFAULT FALSE;
+      -- 7. Update type check constraint for chat_messages
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_type_check') THEN
+          ALTER TABLE chat_messages DROP CONSTRAINT chat_messages_type_check;
+        END IF;
+      END $$;
+      
+      ALTER TABLE chat_messages ADD CONSTRAINT chat_messages_type_check 
+        CHECK (type IN ('text', 'image', 'sighting', 'location'));
     `;
 
     await pool.query(initSql);

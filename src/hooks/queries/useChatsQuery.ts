@@ -130,7 +130,7 @@ export function useSendMessageMutation() {
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
     return useMutation({
-        mutationFn: async ({ roomId, content, type, caption, file }: { roomId: string; content: string; type?: 'text' | 'image' | 'sighting', caption?: string, file?: File }) => {
+        mutationFn: async ({ roomId, content, type, caption, file }: { roomId: string; content: string; type?: 'text' | 'image' | 'sighting' | 'location', caption?: string, file?: File }) => {
             if (type === 'image' && file) {
                 // 1. Subir la imagen primero si es un archivo
                 const { url } = await chatsApi.uploadChatImage(roomId, file);
@@ -213,7 +213,7 @@ export function useCreateChatMutation() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (reportId: string) => chatsApi.createRoom(reportId),
+        mutationFn: (params: { reportId?: string; recipientId?: string }) => chatsApi.createRoom(params),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
         },

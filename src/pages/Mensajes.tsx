@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { SEO } from '../components/SEO';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const Mensajes: React.FC = () => {
     const navigate = useNavigate();
@@ -24,6 +24,7 @@ const Mensajes: React.FC = () => {
             : { alias: room.participant_a_alias, avatar: room.participant_a_avatar };
     };
 
+    // Modificar filtro para incluir búsqueda por ID también (para deep linking)
     const filteredRooms = useMemo(() => {
         if (!rooms) return [];
         if (!searchTerm.trim()) return rooms;
@@ -33,10 +34,24 @@ const Mensajes: React.FC = () => {
             const other = getOtherParticipant(room);
             return (
                 other.alias.toLowerCase().includes(term) ||
-                room.report_title.toLowerCase().includes(term)
+                room.report_title?.toLowerCase().includes(term) ||
+                room.id === searchTerm // Allow searching/filtering by exact ID
             );
         });
     }, [rooms, searchTerm, anonymousId]);
+
+    // Deep linking support
+    const [searchParams] = useSearchParams();
+    const deepLinkRoomId = searchParams.get('roomId');
+
+    React.useEffect(() => {
+        if (deepLinkRoomId && rooms) {
+            const targetRoom = rooms.find(r => r.id === deepLinkRoomId);
+            if (targetRoom) {
+                setSelectedRoom(targetRoom);
+            }
+        }
+    }, [deepLinkRoomId, rooms]);
 
     // Variantes para las animaciones
     const sidebarVariants = {
@@ -143,8 +158,15 @@ const Mensajes: React.FC = () => {
                                                                 {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
                                                             </span>
                                                         </div>
-                                                        <p className="text-primary/70 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5">
-                                                            {room.report_title}
+                                                        <p className="text-primary/70 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
+                                                            {room.report_category ? (
+                                                                <>
+                                                                    <span>{room.report_title}</span>
+                                                                    <span className="opacity-50">• {room.report_category}</span>
+                                                                </>
+                                                            ) : (
+                                                                'Mensaje Directo'
+                                                            )}
                                                         </p>
                                                         <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${room.unread_count > 0 ? 'text-white font-medium' : 'text-white/50'}`}>
                                                             {room.last_message_type === 'image' ? (
