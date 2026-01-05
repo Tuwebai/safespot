@@ -6,6 +6,8 @@ import { logError, logSuccess } from './logger.js';
 const existenceCache = new Map();
 const CACHE_LIMIT = 5000;
 
+const UPDATE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
 /**
  * Ensure anonymous user exists in anonymous_users table
  * This function is idempotent - safe to call multiple times
@@ -19,8 +21,28 @@ export async function ensureAnonymousUser(anonymousId) {
     throw new Error('anonymousId is required');
   }
 
-  // Check cache first (saves 150-300ms HTTP round-trip)
-  if (existenceCache.has(anonymousId)) {
+  const now = Date.now();
+  const cachedEntry = existenceCache.get(anonymousId);
+
+  // Check cache first
+  if (cachedEntry) {
+    // If we have verified existence recently, just return
+    // But if it's been a while, we should update last_active_at in background
+    if (now - cachedEntry.lastChecked > UPDATE_INTERVAL_MS) {
+      // Background update (fire and forget) to keep "active users" stats fresh
+      const client = supabaseAdmin || supabase;
+      client
+        .from('anonymous_users')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('anonymous_id', anonymousId)
+        .then(({ error }) => {
+          if (error) console.error('[AUTH] Failed to update last_active_at:', error.message);
+        })
+        .catch(err => console.error('[AUTH] Exception updating last_active_at:', err));
+
+      // Update cache timestamp immediately to prevent spamming
+      existenceCache.set(anonymousId, { ...cachedEntry, lastChecked: now });
+    }
     return true;
   }
 
@@ -40,9 +62,18 @@ export async function ensureAnonymousUser(anonymousId) {
       throw new Error(`Failed to check anonymous user: ${checkError.message}`);
     }
 
-    // If user exists, return early (idempotent)
+    // If user exists, update cache and return
     if (existingUser) {
-      existenceCache.set(anonymousId, true);
+      existenceCache.set(anonymousId, { exists: true, lastChecked: now });
+
+      // Also update last_active_at since this is a fresh lookup
+      clientToUse
+        .from('anonymous_users')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('anonymous_id', anonymousId)
+        .then(() => { }) // Silent success
+        .catch(() => { });
+
       return true;
     }
 
@@ -66,7 +97,7 @@ export async function ensureAnonymousUser(anonymousId) {
       // If error is due to duplicate (race condition), that's okay
       if (insertError.code === '23505') {
         logSuccess('Anonymous user already exists (race condition)', { anonymousId });
-        existenceCache.set(anonymousId, true);
+        existenceCache.set(anonymousId, { exists: true, lastChecked: now });
         return true;
       }
 
@@ -82,7 +113,7 @@ export async function ensureAnonymousUser(anonymousId) {
       const firstKey = existenceCache.keys().next().value;
       existenceCache.delete(firstKey);
     }
-    existenceCache.set(anonymousId, true);
+    existenceCache.set(anonymousId, { exists: true, lastChecked: now });
 
     return true;
   } catch (error) {
