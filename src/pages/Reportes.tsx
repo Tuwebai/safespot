@@ -33,6 +33,7 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh'
 import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
+import { AdBanner } from '@/components/AdBanner'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -730,209 +731,221 @@ export function Reportes() {
               </CardContent>
             </Card>
           ) : (
-            <div
-              ref={parentRef}
-              className="w-full"
-            >
+            <>
+              {/* Primer anuncio: Siempre visible si hay reportes */}
+              {reports.length > 0 && (
+                <AdBanner className="mb-8" />
+              )}
+
               <div
-                style={{
-                  height: `${rowVirtualizer.getTotalSize() + 200}px`,
-                  width: '100%',
-                  position: 'relative',
-                }}
+                ref={parentRef}
+                className="w-full"
               >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
-                  const validReports = reports.filter((report: Report) => {
+                <div
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize() + 200}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
+                    const validReports = reports.filter((report: Report) => {
+                      return (
+                        report != null &&
+                        typeof report === 'object' &&
+                        report.id != null &&
+                        typeof report.id === 'string' &&
+                        report.title != null &&
+                        typeof report.title === 'string'
+                      )
+                    })
+                    const startIndex = virtualRow.index * columns
+                    const rowItems = validReports.slice(startIndex, startIndex + columns)
+
                     return (
-                      report != null &&
-                      typeof report === 'object' &&
-                      report.id != null &&
-                      typeof report.id === 'string' &&
-                      report.title != null &&
-                      typeof report.title === 'string'
-                    )
-                  })
-                  const startIndex = virtualRow.index * columns
-                  const rowItems = validReports.slice(startIndex, startIndex + columns)
-
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      ref={(el) => {
-                        if (el) {
-                          rowVirtualizer.measureElement(el)
-                        }
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
-                    >
-                      {rowItems.map((report: Report) => (
-                        <SmartLink
-                          key={report.id}
-                          to={`/reporte/${report.id}`}
-                          prefetchReportId={report.id}
-                          prefetchRoute="DetalleReporte"
-                          className="block h-full no-underline"
-                        >
-                          <AnimatedCard className="h-full">
-                            <Card className={`group bg-card border-border hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
-                              {report.priority_zone && (
-                                <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
-                                  report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
-                                    'bg-amber-500 text-white'
-                                  }`}>
-                                  {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                                  {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                                  {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                                  {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
-                                </div>
-                              )}
-
-                              <div className="relative aspect-video w-full overflow-hidden bg-muted/50">
-                                {/* Imagen optimizada */}
-                                {/* Imagen optimizada o Mapa Fallback */}
-                                {Array.isArray(report.image_urls) && report.image_urls.length > 0 ? (
-                                  <div className="relative overflow-hidden w-full h-full">
-                                    <OptimizedImage
-                                      src={report.image_urls[0]}
-                                      alt={report.title}
-                                      aspectRatio={16 / 9}
-                                      priority={false}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute top-2 right-2 flex gap-2 z-10">
-                                      <Badge className={getStatusColor(report.status)}>
-                                        {getStatusLabel(report.status)}
-                                      </Badge>
-                                    </div>
+                      <div
+                        key={virtualRow.key}
+                        data-index={virtualRow.index}
+                        ref={(el) => {
+                          if (el) {
+                            rowVirtualizer.measureElement(el)
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
+                      >
+                        {rowItems.map((report: Report) => (
+                          <SmartLink
+                            key={report.id}
+                            to={`/reporte/${report.id}`}
+                            prefetchReportId={report.id}
+                            prefetchRoute="DetalleReporte"
+                            className="block h-full no-underline"
+                          >
+                            <AnimatedCard className="h-full">
+                              <Card className={`group bg-card border-border hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
+                                {report.priority_zone && (
+                                  <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                                    report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
+                                      'bg-amber-500 text-white'
+                                    }`}>
+                                    {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
+                                    {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
+                                    {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
+                                    {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
                                   </div>
-                                ) : (
-                                  <ReportMapFallback
-                                    lat={report.latitude}
-                                    lng={report.longitude}
-                                  />
                                 )}
-                              </div>
 
-                              <CardContent className="p-6 flex-1 flex flex-col">
-                                <div className="flex items-start justify-between mb-2">
-                                  <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                                    {report.title}
-                                  </h3>
-                                  {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
-                                    <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                                      {getStatusLabel(report.status)}
-                                    </Badge>
+                                <div className="relative aspect-video w-full overflow-hidden bg-muted/50">
+                                  {/* Imagen optimizada */}
+                                  {/* Imagen optimizada o Mapa Fallback */}
+                                  {Array.isArray(report.image_urls) && report.image_urls.length > 0 ? (
+                                    <div className="relative overflow-hidden w-full h-full">
+                                      <OptimizedImage
+                                        src={report.image_urls[0]}
+                                        alt={report.title}
+                                        aspectRatio={16 / 9}
+                                        priority={false}
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                        <Badge className={getStatusColor(report.status)}>
+                                          {getStatusLabel(report.status)}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <ReportMapFallback
+                                      lat={report.latitude}
+                                      lng={report.longitude}
+                                    />
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                                  <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                                  <span>{report.category}</span>
-                                </div>
 
-                                <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                                  {report.description}
-                                </p>
+                                <CardContent className="p-6 flex-1 flex flex-col">
+                                  <div className="flex items-start justify-between mb-2">
+                                    <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                                      {report.title}
+                                    </h3>
+                                    {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
+                                      <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
+                                        {getStatusLabel(report.status)}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                                    <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
+                                    <span>{report.category}</span>
+                                  </div>
 
-                                <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
-                                  <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                                  <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                                </div>
+                                  <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                                    {report.description}
+                                  </p>
 
-                                <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                                      <AvatarImage
-                                        src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
-                                        alt="Avatar"
+                                  <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                                    <MapPin className="h-4 w-4 mr-1 text-neon-green" />
+                                    <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-6 w-6 border border-white/10 shrink-0">
+                                        <AvatarImage
+                                          src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
+                                          alt="Avatar"
+                                        />
+                                        <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
+                                          {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex flex-col">
+                                        {report.alias && (
+                                          <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
+                                        )}
+                                        <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-4">
+                                      <div className="flex items-center gap-1" title="Hilos">
+                                        <GitBranch className="h-4 w-4" />
+                                        <span>{report.threads_count ?? 0}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1" title="Comentarios">
+                                        <MessageCircle className="h-4 w-4" />
+                                        <span>{report.comments_count}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
+                                    <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
+                                    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                                      <FavoriteButton
+                                        reportId={report.id}
+                                        isFavorite={report.is_favorite ?? false}
+                                        onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
                                       />
-                                      <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
-                                        {report.anonymous_id.substring(0, 2).toUpperCase()}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div className="flex flex-col">
-                                      {report.alias && (
-                                        <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
-                                      )}
-                                      <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center space-x-4">
-                                    <div className="flex items-center gap-1" title="Hilos">
-                                      <GitBranch className="h-4 w-4" />
-                                      <span>{report.threads_count ?? 0}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1" title="Comentarios">
-                                      <MessageCircle className="h-4 w-4" />
-                                      <span>{report.comments_count}</span>
-                                    </div>
-                                  </div>
-                                </div>
+                                      {(() => {
+                                        const currentAnonymousId = getAnonymousIdSafe()
+                                        const isOwner = report?.anonymous_id === currentAnonymousId
+                                        const isFlagged = report?.is_flagged ?? false
+                                        const isFlagging = flaggingReports.has(report.id)
 
-                                <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
-                                  <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                                  <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                                    <FavoriteButton
-                                      reportId={report.id}
-                                      isFavorite={report.is_favorite ?? false}
-                                      onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
-                                    />
-                                    {(() => {
-                                      const currentAnonymousId = getAnonymousIdSafe()
-                                      const isOwner = report?.anonymous_id === currentAnonymousId
-                                      const isFlagged = report?.is_flagged ?? false
-                                      const isFlagging = flaggingReports.has(report.id)
+                                        if (isOwner) return null
 
-                                      if (isOwner) return null
+                                        if (isFlagged) {
+                                          return (
+                                            <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                              Denunciado
+                                            </span>
+                                          )
+                                        }
 
-                                      if (isFlagged) {
                                         return (
-                                          <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                            Denunciado
-                                          </span>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                              handleFlag(e, report.id)
+                                            }}
+                                            disabled={isFlagging}
+                                            className="hover:text-yellow-400"
+                                            title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
+                                          >
+                                            {isFlagging ? (
+                                              <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                            ) : (
+                                              <Flag className="h-4 w-4" />
+                                            )}
+                                          </Button>
                                         )
-                                      }
-
-                                      return (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.preventDefault()
-                                            handleFlag(e, report.id)
-                                          }}
-                                          disabled={isFlagging}
-                                          className="hover:text-yellow-400"
-                                          title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                                        >
-                                          {isFlagging ? (
-                                            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                          ) : (
-                                            <Flag className="h-4 w-4" />
-                                          )}
-                                        </Button>
-                                      )
-                                    })()}
+                                      })()}
+                                    </div>
                                   </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </AnimatedCard>
-                        </SmartLink>
-                      ))}
-                    </div>
-                  )
-                })}
+                                </CardContent>
+                              </Card>
+                            </AnimatedCard>
+                          </SmartLink>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
+
+              {/* Segundo anuncio: Solo si hay 5 o más reportes */}
+              {reports.length >= 5 && (
+                <AdBanner className="mt-4 mb-8" />
+              )}
+            </>
           )
         }
       </PullToRefresh >
