@@ -183,16 +183,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 }
             }}
         >
-            <Card className="flex flex-col h-full bg-[#111] border-white/10 overflow-hidden shadow-2xl">
+            <Card className="flex flex-col h-full bg-background border-border overflow-hidden shadow-2xl">
                 {/* Header */}
-                <div className="p-4 border-b border-white/5 flex items-center gap-3 bg-white/[0.03]">
+                <div className="p-4 border-b border-border flex items-center gap-3 bg-card/50">
                     {onBack && (
-                        <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden text-white/70">
+                        <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden text-muted-foreground">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
                     <div className="flex-1 min-w-0">
-                        <h3 className="text-white font-bold text-sm truncate uppercase tracking-wider">
+                        <h3 className="text-foreground font-bold text-sm truncate uppercase tracking-wider">
                             @{otherParticipant.alias}
                         </h3>
                         <div className="flex items-center gap-1.5 h-4">
@@ -204,7 +204,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             ) : isOtherTyping ? (
                                 <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
                             ) : (
-                                <span className="text-[10px] text-white/30 truncate">
+                                <span className="text-[10px] text-muted-foreground truncate">
                                     {room.report_category ? `Chat vinculado a: ${room.report_title}` : 'Mensaje Directo'}
                                 </span>
                             )}
@@ -216,13 +216,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 <ChatReportContext reportId={room.report_id} />
 
                 {/* Messages Area */}
-                <div className="flex-1 p-4 overflow-y-auto custom-scrollbar" ref={scrollRef}>
+                <div className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50" ref={scrollRef}>
                     <div className="space-y-4">
                         {messagesLoading ? (
-                            <div className="text-center text-white/30 py-10 uppercase tracking-widest text-xs">Cargando mensajes...</div>
+                            <div className="text-center text-muted-foreground py-10 uppercase tracking-widest text-xs">Cargando mensajes...</div>
                         ) : messages?.length === 0 ? (
                             <div className="text-center py-10">
-                                <p className="text-white/30 text-xs italic">No hay mensajes aún. ¡Iniciá la conversación!</p>
+                                <p className="text-muted-foreground text-xs italic">No hay mensajes aún. ¡Iniciá la conversación!</p>
                             </div>
                         ) : (
                             messages?.map((msg) => (
@@ -239,7 +239,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                 <img
                                                     src={getAvatarUrl(msg.sender_alias || 'Anon')}
                                                     alt="Avatar"
-                                                    className="w-8 h-8 rounded-full border border-white/10 mt-1"
+                                                    className="w-8 h-8 rounded-full border border-border mt-1"
                                                 />
                                             </div>
                                         )}
@@ -247,7 +247,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                             <div
                                                 className={`relative px-3 py-2 rounded-2xl text-sm shadow-sm ${isMe(msg)
                                                     ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                                    : 'bg-white/10 text-white border border-white/10 rounded-tl-none'
+                                                    : 'bg-muted text-foreground border border-border rounded-tl-none'
                                                     }`}
                                             >
                                                 {msg.type === 'image' ? (
@@ -266,7 +266,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                 {msg.caption}
                                                             </div>
                                                             <div className="flex items-center gap-1 shrink-0 pb-0.5">
-                                                                <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-white/40'}`}>
+                                                                <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                     {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                                 </span>
                                                                 {isMe(msg) && (
@@ -293,7 +293,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                                                         {/* Timestamp Absolute Bottom Right */}
                                                         <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
-                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-white/40'}`}>
+                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                 {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                             </span>
                                                             {isMe(msg) && (
@@ -325,7 +325,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                                 <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
                             </div>
-                            <span className="text-[10px] text-white/40 italic">
+                            <span className="text-[10px] text-muted-foreground italic">
                                 Escribiendo...
                             </span>
                         </div>
@@ -334,23 +334,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                 {/* Image Preview Overlay */}
                 {previewUrl && (
-                    <div className="bg-black/60 backdrop-blur-md border-t border-white/10 p-4 transition-all duration-300">
+                    <div className="bg-background/80 backdrop-blur-md border-t border-border p-4 transition-all duration-300">
                         <div className="flex items-center gap-4 max-w-2xl mx-auto">
                             <div className="relative group shrink-0">
                                 <img
                                     src={previewUrl}
                                     alt="Vista previa"
-                                    className="h-20 w-20 object-cover rounded-lg border border-white/20 shadow-lg"
+                                    className="h-20 w-20 object-cover rounded-lg border border-border shadow-lg"
                                 />
                                 <button
                                     onClick={cancelImageSelection}
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg hover:bg-red-600 transition-colors"
+                                    className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground p-1 rounded-full shadow-lg hover:bg-destructive/90 transition-colors"
                                 >
                                     <X className="h-3 w-3" />
                                 </button>
                             </div>
-                            <div className="flex-1 text-sm text-white/60">
-                                <p className="font-medium text-white mb-1 uppercase tracking-tighter text-xs">Imagen seleccionada</p>
+                            <div className="flex-1 text-sm text-muted-foreground">
+                                <p className="font-medium text-foreground mb-1 uppercase tracking-tighter text-xs">Imagen seleccionada</p>
                                 <p className="text-[11px]">Escribí una leyenda opcional abajo antes de enviar.</p>
                             </div>
                         </div>
@@ -358,7 +358,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 )}
 
                 {/* Input Area */}
-                <div className="p-4 bg-white/[0.03] border-t border-white/5">
+                <div className="p-4 bg-card border-t border-border">
                     <div className="flex items-center gap-2">
                         <input
                             type="file"
@@ -370,7 +370,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className={`text-white/40 hover:text-white shrink-0 ${previewUrl ? 'text-primary' : ''}`}
+                            className={`text-muted-foreground hover:text-foreground shrink-0 ${previewUrl ? 'text-primary' : ''}`}
                             onClick={() => fileInputRef.current?.click()}
                             disabled={sendMessageMutation.isPending}
                         >
@@ -383,7 +383,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             onChange={(e) => setMessage(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             placeholder={previewUrl ? "Añadir leyenda..." : "Escribí un mensaje..."}
-                            className="bg-black/40 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-primary/50"
+                            className="bg-muted border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/50"
                             disabled={sendMessageMutation.isPending}
                         />
                         <Button

@@ -67,7 +67,7 @@ const Mensajes: React.FC = () => {
     } as const;
 
     return (
-        <div className="flex-1 flex overflow-hidden h-full w-full bg-black/20 relative">
+        <div className="flex-1 flex overflow-hidden h-full w-full bg-background relative transition-colors duration-300">
             <SEO
                 title="Mensajes | SafeSpot"
                 description="Centro de mensajes contextuales vinculados a tus reportes y colaboraciones."
@@ -82,26 +82,26 @@ const Mensajes: React.FC = () => {
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className={`flex-1 md:flex-[0.3] flex flex-col border-r border-white/10 bg-white/[0.02] overflow-hidden`}
+                        className={`flex-1 md:flex-[0.3] flex flex-col border-r border-border bg-card/30 overflow-hidden`}
                     >
-                        <div className="p-4 border-b border-white/10 space-y-4 bg-white/[0.02]">
+                        <div className="p-4 border-b border-border space-y-4 bg-card/50">
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => navigate('/')}
-                                    className="p-2 -ml-2 hover:bg-white/5 rounded-full text-white/50 hover:text-white transition-colors"
+                                    className="p-2 -ml-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors"
                                     title="Volver al inicio"
                                 >
                                     <ArrowLeft className="w-5 h-5" />
                                 </button>
-                                <h1 className="text-xl font-bold text-white tracking-tight">Mensajes</h1>
+                                <h1 className="text-xl font-bold text-foreground tracking-tight">Mensajes</h1>
                             </div>
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                 <Input
                                     placeholder="Buscar chats..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-10 bg-black/40 border-white/10 text-xs h-9"
+                                    className="pl-10 bg-muted/50 border-input text-foreground placeholder:text-muted-foreground text-xs h-9 focus-visible:ring-primary"
                                 />
                             </div>
                         </div>
@@ -110,21 +110,21 @@ const Mensajes: React.FC = () => {
                             {isLoading ? (
                                 <div className="p-4 space-y-3">
                                     {Array.from({ length: 5 }).map((_, i) => (
-                                        <div key={i} className="h-20 bg-white/5 animate-pulse rounded-lg" />
+                                        <div key={i} className="h-20 bg-muted/50 animate-pulse rounded-lg" />
                                     ))}
                                 </div>
                             ) : filteredRooms.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center p-8 text-center h-full">
-                                    <MessageSquare className="text-white/10 w-12 h-12 mb-4" />
-                                    <h3 className="text-white/60 font-medium text-sm">
+                                    <MessageSquare className="text-muted-foreground/50 w-12 h-12 mb-4" />
+                                    <h3 className="text-muted-foreground font-medium text-sm">
                                         {searchTerm ? 'Sin resultados' : 'Bandeja Vacía'}
                                     </h3>
-                                    <p className="text-white/30 text-[11px] mt-2">
+                                    <p className="text-muted-foreground/70 text-[11px] mt-2">
                                         {searchTerm ? `No encontramos chats para "${searchTerm}"` : 'Inicia un chat desde un reporte para colaborar.'}
                                     </p>
                                 </div>
                             ) : (
-                                <div className="divide-y divide-white/5">
+                                <div className="divide-y divide-border/50">
                                     {filteredRooms.map((room) => {
                                         const other = getOtherParticipant(room);
                                         const isActive = selectedRoom?.id === room.id;
@@ -135,7 +135,7 @@ const Mensajes: React.FC = () => {
                                                 onClick={() => setSelectedRoom(room)}
                                                 className={`p-4 cursor-pointer transition-colors border-l-4 ${isActive
                                                     ? 'bg-primary/10 border-primary'
-                                                    : 'border-transparent hover:bg-white/5'
+                                                    : 'border-transparent hover:bg-muted/50'
                                                     }`}
                                             >
                                                 <div className="flex gap-3">
@@ -143,32 +143,32 @@ const Mensajes: React.FC = () => {
                                                         <img
                                                             src={getAvatarUrl(other.alias)}
                                                             alt="Avatar"
-                                                            className="w-12 h-12 rounded-full border border-white/10"
+                                                            className="w-12 h-12 rounded-full border border-border"
                                                         />
                                                         {room.unread_count > 0 && (
-                                                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-black">
+                                                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background">
                                                                 {room.unread_count}
                                                             </span>
                                                         )}
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex justify-between items-start">
-                                                            <h4 className="text-white font-semibold text-xs truncate">@{other.alias}</h4>
-                                                            <span className="text-[10px] text-white/30 whitespace-nowrap">
+                                                            <h4 className="text-foreground font-semibold text-xs truncate">@{other.alias}</h4>
+                                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                                                                 {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
                                                             </span>
                                                         </div>
-                                                        <p className="text-primary/70 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
+                                                        <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
                                                             {room.report_category ? (
                                                                 <>
                                                                     <span>{room.report_title}</span>
-                                                                    <span className="opacity-50">• {room.report_category}</span>
+                                                                    <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
                                                                 </>
                                                             ) : (
                                                                 'Mensaje Directo'
                                                             )}
                                                         </p>
-                                                        <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${room.unread_count > 0 ? 'text-white font-medium' : 'text-white/50'}`}>
+                                                        <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${room.unread_count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                                                             {room.last_message_type === 'image' ? (
                                                                 <>
                                                                     <Camera className="w-3.5 h-3.5 shrink-0" />
@@ -191,7 +191,7 @@ const Mensajes: React.FC = () => {
             </AnimatePresence>
 
             {/* Chat Content Pane */}
-            <div className={`flex-1 flex flex-col bg-black/40 ${selectedRoom ? 'fixed inset-0 z-50 md:relative md:inset-auto md:z-0' : 'hidden md:flex'}`}>
+            <div className={`flex-1 flex flex-col bg-background/50 ${selectedRoom ? 'fixed inset-0 z-50 md:relative md:inset-auto md:z-0' : 'hidden md:flex'}`}>
                 <AnimatePresence>
                     {selectedRoom ? (
                         <motion.div
@@ -200,7 +200,7 @@ const Mensajes: React.FC = () => {
                             initial="initial"
                             animate="animate"
                             exit="exit"
-                            className="flex-1 overflow-hidden h-full bg-[#0a0a0a]"
+                            className="flex-1 overflow-hidden h-full bg-background"
                         >
                             <ChatWindow
                                 room={selectedRoom}
@@ -208,13 +208,13 @@ const Mensajes: React.FC = () => {
                             />
                         </motion.div>
                     ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center hidden md:flex">
-                            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                                <MessageSquare className="text-white/10 w-8 h-8" />
+                        <div className="flex-1 flex flex-col items-center justify-center hidden md:flex text-center p-8">
+                            <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mb-4">
+                                <MessageSquare className="text-muted-foreground/30 w-8 h-8" />
                             </div>
-                            <h2 className="text-lg font-bold text-white/80">SafeSpot Chat</h2>
-                            <p className="text-white/30 text-xs mt-2">
-                                Seleccioná una conversación para empezar
+                            <h2 className="text-lg font-bold text-foreground">SafeSpot Chat</h2>
+                            <p className="text-muted-foreground text-xs mt-2 max-w-xs">
+                                Seleccioná una conversación del panel izquierdo para comenzar a chatear.
                             </p>
                         </div>
                     )}
