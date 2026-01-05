@@ -71,7 +71,10 @@ export async function prefetchReport(id: string): Promise<Report | null> {
             return report
         })
         .catch(error => {
-            console.warn(`[prefetch] Failed to prefetch report ${id}:`, error.message)
+            // Suppress 404 errors (report not found) to avoid console noise
+            if (error?.response?.status !== 404 && error?.message?.indexOf('404') === -1) {
+                console.warn(`[prefetch] Failed to prefetch report ${id}:`, error.message)
+            }
             return null
         })
         .finally(() => {

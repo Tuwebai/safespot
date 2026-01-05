@@ -53,7 +53,7 @@ export function useReportsQuery(filters?: ReportFilters) {
             }
             return undefined
         },
-        staleTime: 60 * 1000, // 1 minute staling
+        staleTime: 0, // Always refetch in background to ensure freshness (avoids showing old localStorage data)
         refetchOnWindowFocus: false,
         retry: 1, // Minimize retries
     })

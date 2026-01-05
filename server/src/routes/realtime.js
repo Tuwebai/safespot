@@ -40,10 +40,16 @@ router.get('/comments/:reportId', (req, res) => {
         stream.send('comment-delete', payload);
     };
 
+    const handleReportUpdate = (payload) => {
+        // Broadcast generic report updates (e.g. stats/likes)
+        stream.send('report-update', payload);
+    };
+
     // Subscribe to system events
     realtimeEvents.on(`comment:${reportId}`, handleNewComment);
     realtimeEvents.on(`comment-update:${reportId}`, handleCommentUpdate);
     realtimeEvents.on(`comment-delete:${reportId}`, handleCommentDelete);
+    realtimeEvents.on(`report-update:${reportId}`, handleReportUpdate);
 
     // Cleanup on client disconnect
     req.on('close', () => {
@@ -51,6 +57,7 @@ router.get('/comments/:reportId', (req, res) => {
         realtimeEvents.off(`comment:${reportId}`, handleNewComment);
         realtimeEvents.off(`comment-update:${reportId}`, handleCommentUpdate);
         realtimeEvents.off(`comment-delete:${reportId}`, handleCommentDelete);
+        realtimeEvents.off(`report-update:${reportId}`, handleReportUpdate);
     });
 });
 
@@ -173,6 +180,30 @@ router.get('/user/:anonymousId', (req, res) => {
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
         realtimeEvents.off(`user-notification:${anonymousId}`, handleNotification);
+    });
+});
+
+/**
+ * SSE endpoint for global feed updates (e.g. counters for home page)
+ * GET /api/realtime/feed
+ */
+router.get('/feed', (req, res) => {
+    req.setTimeout(0);
+    const stream = new SSEResponse(res);
+    // console.log('[SSE] Client connected to Global Feed');
+
+    stream.send('connected', { feed: 'global' });
+    stream.startHeartbeat(10000); // 10s heartbeat for global feed (less aggressive)
+
+    const handleGlobalUpdate = (data) => {
+        stream.send('global-report-update', data);
+    };
+
+    realtimeEvents.on('global-report-update', handleGlobalUpdate);
+
+    req.on('close', () => {
+        stream.cleanup();
+        realtimeEvents.off('global-report-update', handleGlobalUpdate);
     });
 });
 

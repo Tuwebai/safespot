@@ -92,14 +92,24 @@ router.get('/settings', requireAnonymousId, async (req, res) => {
                 INSERT INTO anonymous_users (anonymous_id) VALUES ($1) ON CONFLICT DO NOTHING
             `, [anonymousId]);
 
-            settings = await db.insert('notification_settings', {
-                anonymous_id: anonymousId,
-                proximity_alerts: false,
-                report_activity: false,
-                similar_reports: false,
-                radius_meters: 1000,
-                max_notifications_per_day: 5
-            });
+            // Use ON CONFLICT DO NOTHING to handle race conditions (concurrent requests)
+            const insertResult = await db.query(`
+                INSERT INTO notification_settings 
+                (anonymous_id, proximity_alerts, report_activity, similar_reports, radius_meters, max_notifications_per_day)
+                VALUES ($1, false, false, false, 1000, 5)
+                ON CONFLICT (anonymous_id) DO NOTHING
+                RETURNING *
+            `, [anonymousId]);
+
+            if (insertResult.rows.length > 0) {
+                settings = insertResult.rows[0];
+            } else {
+                // If we couldn't insert (conflict), it means it exists now. Fetch it.
+                settings = await db.select('notification_settings', {
+                    where: { anonymous_id: anonymousId },
+                    single: true
+                });
+            }
         }
 
         console.log(`[Notifications Settings] Returning settings for ${anonymousId}:`, settings);

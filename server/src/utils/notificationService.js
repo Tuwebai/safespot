@@ -172,16 +172,6 @@ export const NotificationService = {
                     break;
             }
 
-            // 3. Check for similar recent notification to group/prevent spam
-            // const recent = await db.query(`
-            //     SELECT id FROM notifications 
-            //     WHERE anonymous_id = $1 AND type = 'activity' AND entity_id = $2 
-            //       AND created_at > NOW() - INTERVAL '1 hour'
-            //     LIMIT 1
-            // `, [report.anonymous_id, reportId]);
-
-            // if (recent.rows.length > 0 && type !== 'sighting') return; // Group shares/comments
-
             await this.createNotification({
                 anonymous_id: report.anonymous_id,
                 type: 'activity',
@@ -218,6 +208,21 @@ export const NotificationService = {
                     }
                 }
             }
+
+            // 5. Emit Real-time Event (SSE)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+                realtimeEvents.emit(`user-notification:${report.anonymous_id}`, {
+                    type: type,
+                    title,
+                    message,
+                    reportId,
+                    entityId
+                });
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyActivity', reportId, type });
         }
@@ -265,7 +270,7 @@ export const NotificationService = {
                 await db.query(`
                     UPDATE notification_settings
                     SET notifications_today = notifications_today + 1,
-                        last_notified_at = NOW()
+                    last_notified_at = NOW()
                     WHERE anonymous_id = ANY($1::uuid[])
                 `, [result.rows.map(r => r.anonymous_id)]);
             }
@@ -360,6 +365,21 @@ export const NotificationService = {
                 }
             }
 
+            // 4. Emit Real-time Event (SSE)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+                realtimeEvents.emit(`user-notification:${parent.anonymous_id}`, {
+                    type: 'reply',
+                    title: '↩️ Respondieron a tu comentario',
+                    message: 'Alguien respondió a tu comentario.',
+                    parentCommentId,
+                    replyId,
+                    reportId: parent.report_id
+                });
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyCommentReply', parentCommentId });
         }
@@ -424,6 +444,21 @@ export const NotificationService = {
                     }
                 }
             }
+
+            // 4. Emit Real-time Event (SSE)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+                realtimeEvents.emit(`user-notification:${targetAnonymousId}`, {
+                    type: 'mention',
+                    title: '⚡ Te han mencionado',
+                    message: 'Alguien te mencionó en un comentario.',
+                    reportId,
+                    commentId
+                });
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyMention', targetAnonymousId, commentId });
         }
@@ -463,16 +498,6 @@ export const NotificationService = {
 
             // Check limits
             if (owner.notifications_today >= owner.max_notifications_per_day) return;
-
-            // Prevent Spam: limit 1 "like" notification per entity per hour
-            // const recent = await db.query(`
-            //     SELECT id FROM notifications 
-            //     WHERE anonymous_id = $1 AND type = 'like' AND entity_id = $2 
-            //       AND created_at > NOW() - INTERVAL '1 hour'
-            //     LIMIT 1
-            // `, [owner.anonymous_id, targetId]);
-
-            // if (recent.rows.length > 0) return;
 
             // 2. Create Notification
             const title = targetType === 'report' ? '❤️ A alguien le gustó tu reporte' : '❤️ A alguien le gustó tu comentario';
@@ -515,6 +540,47 @@ export const NotificationService = {
                 }
             }
 
+            // 4. Emit Real-time Event (Private User Notification)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+
+                // 4a. Private Notification (to owner)
+                realtimeEvents.emit(`user-notification:${owner.anonymous_id}`, {
+                    type: 'like',
+                    title,
+                    message,
+                    targetType,
+                    targetId,
+                    reportId: owner.report_id
+                });
+
+                // 4b. Public Broadcast (to report viewers - for Realtime Counters)
+                if (targetType === 'report') {
+                    // Updates the report view (like count)
+                    realtimeEvents.emit(`report-update:${targetId}`, {
+                        type: 'stats-update',
+                        reportId: targetId
+                    });
+
+                    // Broadcast to Global Feed (Home Page Counters)
+                    realtimeEvents.emit('global-report-update', {
+                        type: 'stats-update',
+                        reportId: targetId
+                    });
+                } else if (targetType === 'comment' && owner.report_id) {
+                    // Updates the comment list (like count on comment)
+                    // We treat it as 'comment-update' so the frontend refreshes the list
+                    realtimeEvents.emit(`comment-update:${owner.report_id}`, {
+                        commentId: targetId,
+                        reportId: owner.report_id,
+                        action: 'like'
+                    });
+                }
+
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyLike', targetType, targetId });
         }
@@ -522,7 +588,6 @@ export const NotificationService = {
 
     /**
      * Create the notification record and increment daily count
-     * ... existing createNotification ...
      */
     async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
         const db = DB.public();
@@ -536,7 +601,7 @@ export const NotificationService = {
         await db.query(`
                 UPDATE notification_settings 
                 SET notifications_today = notifications_today + 1,
-                    last_notified_at = NOW()
+                last_notified_at = NOW()
                 WHERE anonymous_id = $1
             `, [anonymous_id]);
     },
@@ -552,13 +617,13 @@ export const NotificationService = {
             // 1. Get follower details (alias) and target settings
             const followerResult = await db.query(`
                 SELECT alias FROM anonymous_users WHERE anonymous_id = $1
-    `, [followerId]);
+            `, [followerId]);
 
             const targetResult = await db.query(`
                 SELECT ns.notifications_today, ns.max_notifications_per_day 
                 FROM notification_settings ns 
                 WHERE ns.anonymous_id = $1
-    `, [followedId]);
+            `, [followedId]);
 
             const followerAlias = followerResult.rows[0]?.alias || 'Alguien';
 
@@ -566,7 +631,6 @@ export const NotificationService = {
             const targetSettings = targetResult.rows[0];
             if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
                 console.log(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day}) - IGNORING FOR TESTING`);
-                // return; // Disabled for testing
             }
 
             // 2. Create Notification
@@ -576,21 +640,17 @@ export const NotificationService = {
                 title: '👤 Tienes un nuevo seguidor',
                 message: `"${followerAlias}" comenzó a seguirte.`,
                 entity_type: 'user',
-                entity_id: followerId, // Storing follower ID in entity_id might need UUID cast if schema strictness varies, but usually fine.
+                entity_id: followerId,
                 report_id: null
             });
 
             // 3. Send Push Notification
             const pushConfigured = isPushConfigured();
-            console.log(`[Notify] Push Configured: ${pushConfigured}`);
-
             if (pushConfigured) {
                 const subscriptionsResult = await db.query(`
-SELECT * FROM push_subscriptions 
+                    SELECT * FROM push_subscriptions 
                     WHERE anonymous_id = $1 AND is_active = true
-    `, [followedId]);
-
-                console.log(`[Notify] Found ${subscriptionsResult.rows.length} subscriptions for user ${followedId}`);
+                `, [followedId]);
 
                 if (subscriptionsResult.rows.length > 0) {
                     const payload = createActivityNotificationPayload({
@@ -598,7 +658,7 @@ SELECT * FROM push_subscriptions
                         title: '👤 Nuevo Seguidor',
                         message: `${followerAlias} comenzó a seguirte`,
                         reportId: null,
-                        entityId: followerAlias // Passing Alias as entityId for URL generation in payload helper
+                        entityId: followerAlias
                     });
 
                     for (const sub of subscriptionsResult.rows) {
@@ -611,15 +671,15 @@ SELECT * FROM push_subscriptions
             }
 
             // 4. Emit Real-time Event (SSE)
-            // This ensures the frontend updates immediately (e.g. followers count, notification bell)
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${followedId}`, {
                     type: 'follow',
-                    followerId: followerId,
-                    followerAlias: followerAlias
+                    title: '👤 Tienes un nuevo seguidor',
+                    message: `"${followerAlias}" comenzó a seguirte.`,
+                    followerId,
+                    followerAlias
                 });
-                console.log(`[Notify] SSE Event emitted: user-notification:${followedId}`);
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
             }

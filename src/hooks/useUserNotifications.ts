@@ -8,7 +8,11 @@ interface NotificationPayload {
     type: string;
     followerId?: string;
     followerAlias?: string;
-    // Add other payload types as needed
+    reportId?: string; // ID of the report involved (for likes, comments, mentions)
+    entityId?: string;
+    targetType?: string;
+    title?: string;
+    message?: string;
 }
 
 export function useUserNotifications(onNotification?: (data: NotificationPayload) => void) {
@@ -28,23 +32,25 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
         eventSource.addEventListener('notification', (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data) as NotificationPayload;
-                console.log('[SSE] Notification received:', data);
+                console.log('[SSE] Notification received:', data.type, data);
 
-                // Global handling (e.g., invalidate queries)
+                // 1. Always invalidate notifications list (update bell count)
+                queryClient.invalidateQueries({ queryKey: ['notifications'] });
+
+                // 2. Handle specific types
                 if (data.type === 'follow') {
-                    // Update profile queries if meaningful
-                    // Note: This listens to notifications for ME.
-                    // If I am looking at MY public profile, I want updates.
-                    // If I am looking at someone else's profile, I don't get their notifications.
-                    // WAIT. 
-                    // The user said: "if someone follows ME, I don't get notification".
-                    // So this hook listening to MY events is correct.
-
-                    // Invalidate my notification count / bell
-                    queryClient.invalidateQueries({ queryKey: ['notifications'] });
-
-                    // Also invalidate self profile query if active
+                    // Update profile stats
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
+                }
+
+                // 3. Update Report/Comments if reportId is present (Likes, Comments, Mentions)
+                // This ensures that if I'm viewing the report, the like count or comments update instantly.
+                if (data.reportId) {
+                    queryClient.invalidateQueries({ queryKey: ['reports', data.reportId] });
+                    queryClient.invalidateQueries({ queryKey: ['comments', data.reportId] });
+
+                    // Also invalidate global feed stats if needed? 
+                    // Maybe overkill to invalidate 'reports' list, but individual report cache is good.
                 }
 
                 // Custom callback

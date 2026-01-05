@@ -6,7 +6,7 @@ const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`
 
 interface RealtimeComment {
-    type: 'new-comment' | 'comment-update' | 'comment-delete' | 'connected'
+    type: 'new-comment' | 'comment-update' | 'comment-delete' | 'connected' | 'report-update'
     comment?: any
     commentId?: string
     reportId?: string
@@ -70,6 +70,13 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                                 })
                                 break
 
+                            case 'report-update':
+                                // console.log('[SSE] Report updated (likes/stats), invalidating report detail')
+                                queryClient.invalidateQueries({
+                                    queryKey: queryKeys.reports.detail(reportId)
+                                })
+                                break
+
                             case 'comment-delete':
                                 // console.log('[SSE] Comment deleted, invalidating queries')
                                 queryClient.invalidateQueries({
@@ -89,6 +96,7 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                 eventSource.addEventListener('new-comment', handleEvent as any);
                 eventSource.addEventListener('comment-update', handleEvent as any);
                 eventSource.addEventListener('comment-delete', handleEvent as any);
+                eventSource.addEventListener('report-update', handleEvent as any);
 
                 eventSource.onerror = () => {
                     // Only log error if not in closed state to avoid noise during unmount/reload
