@@ -1,7 +1,13 @@
 const pg = require('pg');
 const { Pool } = pg;
 
-const connectionString = 'postgresql://postgres.womkvonfiwjzzatsowkl:JUANCHI101718@aws-0-us-west-2.pooler.supabase.com:5432/postgres';
+require('dotenv').config();
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+    console.error('❌ DATABASE_URL environment variable is missing');
+    process.exit(1);
+}
 
 const pool = new Pool({
     connectionString,

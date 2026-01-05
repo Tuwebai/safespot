@@ -250,48 +250,66 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                     : 'bg-white/10 text-white border border-white/10 rounded-tl-none'
                                                     }`}
                                             >
-                                                <div className="flex flex-col gap-1">
-                                                    {msg.type === 'image' ? (
-                                                        <div className="flex flex-col gap-2">
-                                                            <div className="max-w-[200px] sm:max-w-[300px] overflow-hidden rounded-lg">
-                                                                <ChatImage
-                                                                    src={msg.content}
-                                                                    localUrl={msg.localUrl}
-                                                                    alt="Mensaje de imagen"
-                                                                    className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                                    onClick={() => window.open(msg.content, '_blank')}
-                                                                />
+                                                {msg.type === 'image' ? (
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="max-w-[200px] sm:max-w-[300px] overflow-hidden rounded-lg">
+                                                            <ChatImage
+                                                                src={msg.content}
+                                                                localUrl={msg.localUrl}
+                                                                alt="Mensaje de imagen"
+                                                                className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                                                                onClick={() => window.open(msg.content, '_blank')}
+                                                            />
+                                                        </div>
+                                                        <div className="flex justify-between items-end gap-2 pl-1">
+                                                            <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
+                                                                {msg.caption}
                                                             </div>
-                                                            {msg.caption && (
-                                                                <div className="text-sm pb-1 px-1 whitespace-pre-wrap leading-relaxed overflow-hidden">
-                                                                    {msg.caption}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="whitespace-pre-wrap leading-relaxed pr-14 min-h-[1.25rem]">
-                                                            {msg.content}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Meta info (Time + Ticks) inside bubble */}
-                                                    <div className="absolute bottom-1 right-2 flex items-center gap-1 pl-4 py-0.5 bg-transparent">
-                                                        <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-white/40'}`}>
-                                                            {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
-                                                        </span>
-                                                        {isMe(msg) && (
-                                                            <div className="flex items-center">
-                                                                {msg.is_read ? (
-                                                                    <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                ) : msg.is_delivered ? (
-                                                                    <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                ) : (
-                                                                    <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                            <div className="flex items-center gap-1 shrink-0 pb-0.5">
+                                                                <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-white/40'}`}>
+                                                                    {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
+                                                                </span>
+                                                                {isMe(msg) && (
+                                                                    <div className="flex items-center">
+                                                                        {msg.is_read ? (
+                                                                            <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                                                                        ) : msg.is_delivered ? (
+                                                                            <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                        ) : (
+                                                                            <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                        )}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                        )}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                ) : (
+                                                    <div className="relative">
+                                                        <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block">
+                                                            {msg.content}
+                                                            {/* Spacer to reserve space for absolute timestamp */}
+                                                            <span className="inline-block w-12 h-3" aria-hidden="true"></span>
+                                                        </span>
+
+                                                        {/* Timestamp Absolute Bottom Right */}
+                                                        <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
+                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-white/40'}`}>
+                                                                {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
+                                                            </span>
+                                                            {isMe(msg) && (
+                                                                <div className="flex items-center">
+                                                                    {msg.is_read ? (
+                                                                        <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                                                                    ) : msg.is_delivered ? (
+                                                                        <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                    ) : (
+                                                                        <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

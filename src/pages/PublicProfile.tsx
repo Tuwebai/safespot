@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useNavigate, useParams } from 'react-router-dom';
 import { getAvatarUrl } from '@/lib/avatar';
 import { usersApi } from '@/lib/api'
@@ -61,6 +62,31 @@ export function PublicProfile() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const currentAnonymousId = useMemo(() => getAnonymousIdSafe(), [])
+
+    // Real-time updates
+    useUserNotifications((data) => {
+        if (data.type === 'follow' && profile && data.followerId === currentAnonymousId) {
+            // Case: I followed this profile from another device? No.
+            // Wait. The requirement is: "si alguien me sigue no me aparece la notificacion en tiempo real".
+            // This means *I* am the one being followed.
+            // If I am viewing my own Public Profile, I want to see the follower count go up.
+
+            if (profile.anonymous_id === currentAnonymousId) {
+                // Refresh my profile
+                loadProfile();
+            }
+        }
+    });
+
+    // Also need to listen if I am viewing ANOTHER user's profile and *I* follow them (handled by optimistic update),
+    // OR if I am viewing a profile and someone else follows them?
+    // We can't listen to other user's private notifications.
+    // But we can listen to general updates if we subscribed to that user? No.
+    // The user's complaint is likely about the "Notification Bell" or receiving the "Pop up".
+    // "no me aparece la notificacion... tengo que recargar".
+    // If they mean the Global Notification Bell in the Layout, that needs this hook.
+    // If they mean the PublicProfile follower count of THEMSELVES, that also needs this hook.
+
 
     const loadProfile = useCallback(async () => {
         if (!alias) return

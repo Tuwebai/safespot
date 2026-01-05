@@ -162,11 +162,17 @@ router.get('/user/:anonymousId', (req, res) => {
         stream.send('chat-update', data);
     };
 
+    const handleNotification = (data) => {
+        stream.send('notification', data);
+    };
+
     realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);
+    realtimeEvents.on(`user-notification:${anonymousId}`, handleNotification);
 
     req.on('close', () => {
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
+        realtimeEvents.off(`user-notification:${anonymousId}`, handleNotification);
     });
 });
 

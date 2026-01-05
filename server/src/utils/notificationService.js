@@ -610,6 +610,20 @@ SELECT * FROM push_subscriptions
                 }
             }
 
+            // 4. Emit Real-time Event (SSE)
+            // This ensures the frontend updates immediately (e.g. followers count, notification bell)
+            try {
+                const { realtimeEvents } = await import('./eventEmitter.js');
+                realtimeEvents.emit(`user-notification:${followedId}`, {
+                    type: 'follow',
+                    followerId: followerId,
+                    followerAlias: followerAlias
+                });
+                console.log(`[Notify] SSE Event emitted: user-notification:${followedId}`);
+            } catch (sseErr) {
+                console.error('[Notify] SSE Emit failed:', sseErr);
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyNewFollower', followerId, followedId });
         }

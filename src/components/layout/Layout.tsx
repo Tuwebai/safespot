@@ -8,6 +8,7 @@ import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { useLocation } from 'react-router-dom'
 import { useProfileQuery, useInvalidateProfile } from '@/hooks/queries/useProfileQuery'
+import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +23,10 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const { data: profile, isLoading } = useProfileQuery()
   const { invalidateProfile } = useInvalidateProfile()
+
+  // Global Real-time Notifications Listener
+  // This ensures that wherever the user is, they receive updates for follows, etc.
+  useUserNotifications()
 
   // Routes where alias is not enforced
   const publicRoutes = ['/terminos', '/privacidad']
