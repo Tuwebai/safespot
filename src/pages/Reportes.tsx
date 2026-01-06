@@ -307,6 +307,7 @@ export function Reportes() {
     const handleLayoutUpdate = () => {
       setColumns(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
       if (parentRef.current) {
+        // Usar scrollMargin=0 ya que el contenedor está al inicio de la página o manejado por el flujo natural
         setScrollMargin(parentRef.current.offsetTop)
       }
     }
@@ -731,10 +732,12 @@ export function Reportes() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
+            <div className="flex flex-col">
               {/* Primer anuncio: Siempre visible si hay reportes */}
               {reports.length > 0 && (
-                <AdBanner className="mb-4" />
+                <div className="mb-6">
+                  <AdBanner />
+                </div>
               )}
 
               <div
@@ -743,7 +746,7 @@ export function Reportes() {
               >
                 <div
                   style={{
-                    height: `${rowVirtualizer.getTotalSize() + 200}px`,
+                    height: `${rowVirtualizer.getTotalSize()}px`,
                     width: '100%',
                     position: 'relative',
                   }}
@@ -943,8 +946,8 @@ export function Reportes() {
 
               {/* Segundo anuncio: Solo si hay 5 o más reportes */}
               {reports.length >= 5 && (
-                <div className="pt-4 pb-20">
-                  <AdBanner className="mb-8" />
+                <div className="pt-8 pb-32">
+                  <AdBanner />
                 </div>
               )}
             </div>
