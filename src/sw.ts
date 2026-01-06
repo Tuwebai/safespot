@@ -79,15 +79,11 @@ const apiHandler = new NetworkOnly({
             requestWillFetch: async ({ request }) => {
                 // Clone request to add AbortSignal logic if needed by browser, 
                 // but Workbox handles strategy timeouts better via networkTimeoutSeconds won't work on NetworkOnly.
-                // We rely on standard fetch or client timeout, but we enforce no-cache headers here.
+                // We rely on standard fetch or client timeout.
+                // CRITICAL FIX: Do NOT inject headers into the REQUEST. This causes CORS preflight failures.
+                // The 'cache: no-store' option is sufficient to prevent browser caching of the response.
                 return new Request(request, {
-                    cache: 'no-store',
-                    headers: new Headers({
-                        ...Object.fromEntries(request.headers),
-                        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-                        'Pragma': 'no-cache',
-                        'Expires': '0',
-                    })
+                    cache: 'no-store'
                 });
             },
             handlerDidError: async () => {
