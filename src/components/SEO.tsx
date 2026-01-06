@@ -24,7 +24,7 @@ export const SEO = ({
     const siteTitle = 'SafeSpot';
     const fullTitle = title ? `${title} | ${siteTitle}` : `${siteTitle} - Red de Seguridad Ciudadana`;
 
-    const defaultDescription = 'La red comunitaria de seguridad ciudadana más grande. Reporta robos, visualiza alertas de incidentes en tu zona y cuidá a tu barrio con información en tiempo real.';
+    const defaultDescription = 'La mejor plataforma para reportar robos y ver reportes en tiempo real. Únete a la comunidad de SafeSpot para reportar incidentes y recuperar objetos robados.';
     const metaDescription = description || defaultDescription;
 
     const siteUrl = 'https://safespot.tuweb-ai.com'; // Actual production URL
@@ -32,7 +32,7 @@ export const SEO = ({
     const defaultImage = '/og-image.png'; // Make sure this exists in public/
     const metaImage = image || `${siteUrl}${defaultImage}`;
 
-    const defaultKeywords = ['seguridad', 'vecinos', 'alertas', 'robos', 'mapa del delito', 'argentina', 'safespot', 'seguridad ciudadana'];
+    const defaultKeywords = ['reportar robo', 'reportar robos', 'robos', 'reportar', 'reportes', 'seguridad', 'vecinos', 'alertas', 'mapa del delito', 'argentina', 'safespot'];
     const metaKeywords = keywords ? [...defaultKeywords, ...keywords].join(', ') : defaultKeywords.join(', ');
 
     return (
