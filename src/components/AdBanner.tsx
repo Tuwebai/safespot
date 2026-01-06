@@ -25,10 +25,10 @@ export const AdBanner = ({ className = "" }: AdBannerProps) => {
 
     return (
         <div className={`ad-wrapper w-full overflow-hidden transition-all duration-300 ${className}`}>
-            <div className="bg-card/40 rounded-3xl border border-border p-2 px-4 min-h-[90px] flex flex-col items-center justify-center relative group backdrop-blur-sm">
+            <div className="bg-card/40 rounded-[2rem] border border-border p-4 min-h-[100px] md:min-h-[120px] flex flex-col items-center justify-center relative group backdrop-blur-md">
                 {/* Etiqueta de Publicidad Adaptativa */}
-                <div className="absolute top-0 right-8 transform -translate-y-1/2">
-                    <span className="bg-primary text-[9px] font-bold text-primary-foreground px-2 py-0.5 rounded-full border border-primary/20 uppercase tracking-widest shadow-md">
+                <div className="absolute top-0 right-10 transform -translate-y-1/2 z-10">
+                    <span className="bg-primary text-[10px] font-bold text-primary-foreground px-3 py-1 rounded-full border border-primary/20 uppercase tracking-[0.15em] shadow-lg">
                         Publicidad
                     </span>
                 </div>
@@ -44,11 +44,16 @@ export const AdBanner = ({ className = "" }: AdBannerProps) => {
                 />
 
                 {/* Placeholder elegante que adapta su color al acento del tema */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity overflow-hidden rounded-3xl">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity overflow-hidden rounded-[2rem]">
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/5 to-transparent -translate-x-full group-hover:animate-shimmer" />
-                    <span className="text-[10px] font-medium text-muted-foreground tracking-[0.2em] uppercase opacity-40">
-                        Espacio Publicitario SafeSpot
-                    </span>
+                    <div className="flex flex-col items-center gap-1 opacity-40">
+                        <span className="text-[11px] font-bold text-primary tracking-[0.3em] uppercase">
+                            SafeSpot
+                        </span>
+                        <span className="text-[9px] font-medium text-muted-foreground tracking-[0.1em] uppercase">
+                            Espacio Publicitario
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>

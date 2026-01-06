@@ -731,10 +731,10 @@ export function Reportes() {
               </CardContent>
             </Card>
           ) : (
-            <>
+            <div className="space-y-4">
               {/* Primer anuncio: Siempre visible si hay reportes */}
               {reports.length > 0 && (
-                <AdBanner className="mb-8" />
+                <AdBanner className="mb-4" />
               )}
 
               <div
@@ -943,9 +943,11 @@ export function Reportes() {
 
               {/* Segundo anuncio: Solo si hay 5 o más reportes */}
               {reports.length >= 5 && (
-                <AdBanner className="mt-4 mb-8" />
+                <div className="pt-4 pb-20">
+                  <AdBanner className="mb-8" />
+                </div>
               )}
-            </>
+            </div>
           )
         }
       </PullToRefresh >
