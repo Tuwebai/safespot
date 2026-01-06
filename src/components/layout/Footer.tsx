@@ -3,10 +3,10 @@ import { MapPin, Github, Twitter, Mail } from 'lucide-react'
 
 export function Footer() {
   return (
-    <footer className="hidden md:block bg-dark-card border-t border-dark-border py-6">
+    <footer className="bg-dark-card border-t border-dark-border py-6">
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+        <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
           {/* Branding Column (Spans 2 columns) */}
           <div className="md:col-span-2">
             {/* Logo Group */}
@@ -85,6 +85,16 @@ export function Footer() {
                   Mi Perfil
                 </Link>
               </li>
+              <li>
+                <a
+                  href="https://link.mercadopago.com.ar/safespotapp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neon-green hover:text-neon-green/80 font-medium transition-colors flex items-center gap-2"
+                >
+                  💙 Apoyar Proyecto
+                </a>
+              </li>
             </ul>
           </div>
 
@@ -113,15 +123,25 @@ export function Footer() {
         </div>
 
         {/* Copyright Bar */}
-        <div className="border-t border-dark-border mt-8 pt-8 flex flex-col md:flex-row justify-between">
-          <p className="text-sm text-foreground/70 mb-2 md:mb-0">
-            © 2024 SafeSpot. Todos los derechos reservados.
-          </p>
+        <div className="border-t border-dark-border mt-8 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-foreground/70">
+              © 2024 SafeSpot. Todos los derechos reservados.
+            </p>
+            <a
+              href="https://link.mercadopago.com.ar/safespotapp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="md:hidden text-sm text-neon-green font-semibold hover:underline"
+            >
+              💙 Apoyar Proyecto
+            </a>
+          </div>
           <p className="text-sm text-foreground/70">
             Hecho con ❤️ para la comunidad
           </p>
-        </div>
-      </div>
-    </footer>
+        </div >
+      </div >
+    </footer >
   )
 }
