@@ -25,7 +25,7 @@ export const AdBanner = ({ className = "" }: AdBannerProps) => {
 
     return (
         <div className={`ad-wrapper w-full overflow-hidden transition-all duration-300 ${className}`}>
-            <div className="bg-card/40 rounded-[2rem] border border-border p-3 md:p-6 min-h-[160px] md:min-h-[200px] flex flex-col items-center justify-center relative group backdrop-blur-md">
+            <div className="bg-card/30 rounded-3xl border border-border/50 p-4 min-h-[140px] md:min-h-[180px] flex flex-col items-center justify-center relative group backdrop-blur-md">
                 {/* Etiqueta de Publicidad Adaptativa */}
                 <div className="absolute top-0 right-10 transform -translate-y-1/2 z-10">
                     <span className="bg-primary text-[10px] font-bold text-primary-foreground px-3 py-1 rounded-full border border-primary/20 uppercase tracking-[0.15em] shadow-lg">

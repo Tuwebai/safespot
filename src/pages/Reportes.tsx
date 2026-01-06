@@ -733,16 +733,10 @@ export function Reportes() {
             </Card>
           ) : (
             <div className="flex flex-col">
-              {/* Primer anuncio: Siempre visible si hay reportes */}
-              {reports.length > 0 && (
-                <div className="mb-6">
-                  <AdBanner />
-                </div>
-              )}
-
               <div
                 ref={parentRef}
                 className="w-full relative"
+                style={{ minHeight: '600px' }}
               >
                 <div
                   style={{
@@ -944,15 +938,16 @@ export function Reportes() {
                 </div>
               </div>
 
-              {/* Segundo anuncio: Solo si hay 5 o más reportes */}
-              {reports.length >= 5 && (
-                <div className="pt-10 pb-10">
-                  <AdBanner />
-                </div>
-              )}
-
-              {/* Espaciador final para evitar que la barra de navegación móvil tape el contenido */}
-              <div className="h-32 md:h-12 w-full" />
+              {/* Publicidad y Espaciador Final */}
+              <div className="mt-12 space-y-8">
+                {reports.length > 0 && (
+                  <div className="border-t border-border/30 pt-12">
+                    <AdBanner />
+                  </div>
+                )}
+                {/* Espacio extra para que la barra de navegación móvil no tape nada */}
+                <div className="h-40 w-full" />
+              </div>
             </div>
           )
         }
