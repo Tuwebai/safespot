@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import AdminMap from '@/components/admin/AdminMap'
 import { useNavigate } from 'react-router-dom'
+import { getAvatarUrl } from '@/lib/avatar'
 
 export function AdminDashboard() {
     const { data, isLoading } = useAdminStats()
@@ -91,12 +92,23 @@ export function AdminDashboard() {
                                 className="bg-[#1e293b]/50 p-3 rounded-lg border border-[#334155]/50 hover:bg-[#1e293b] transition-colors cursor-pointer group hover:border-[#00ff88]/30"
                             >
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className="text-xs font-mono text-slate-400">ID: {activity.anonymous_id ? activity.anonymous_id.substring(0, 8) : 'ANON'}</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-6 w-6 rounded-full bg-[#1e293b] border border-[#334155] overflow-hidden">
+                                            <img
+                                                src={activity.anonymous_users?.avatar_url || getAvatarUrl(activity.anonymous_id)}
+                                                alt=""
+                                                className="h-full w-full object-cover"
+                                            />
+                                        </div>
+                                        <span className="text-xs font-mono text-slate-400">
+                                            {activity.anonymous_users?.alias || (activity.anonymous_id ? activity.anonymous_id.substring(0, 8) : 'ANON')}
+                                        </span>
+                                    </div>
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/20 text-blue-400 uppercase`}>
                                         {activity.category || activity.report_type || 'INCIDENT'}
                                     </span>
                                 </div>
-                                <p className="text-sm text-slate-300 font-medium truncate group-hover:text-white transition-colors">
+                                <p className="text-sm text-slate-300 font-medium truncate group-hover:text-white transition-colors pl-8">
                                     {activity.title}
                                 </p>
                                 <div className="mt-2 flex items-center justify-between text-xs text-slate-500">

@@ -68,7 +68,18 @@ router.get('/stats', verifyAdminToken, async (req, res) => {
         try {
             const { data, error } = await supabaseAdmin
                 .from('reports')
-                .select('id, title, created_at, category, zone, anonymous_id')
+                .select(`
+                    id, 
+                    title, 
+                    created_at, 
+                    category, 
+                    zone, 
+                    anonymous_id,
+                    anonymous_users (
+                        avatar_url,
+                        alias
+                    )
+                `)
                 .order('created_at', { ascending: false })
                 .limit(10);
 

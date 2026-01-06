@@ -9,6 +9,7 @@ import {
     Loader2
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
+import { getAvatarUrl } from '@/lib/avatar'
 
 interface AdminUser {
     anonymous_id: string
@@ -173,13 +174,11 @@ export function UsersPage() {
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="h-10 w-10 rounded-full bg-[#1e293b] flex items-center justify-center border border-[#334155] overflow-hidden">
-                                                    {user.avatar_url ? (
-                                                        <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
-                                                    ) : (
-                                                        <span className="text-xs font-bold text-slate-500">
-                                                            {user.alias ? user.alias.substring(0, 2).toUpperCase() : 'AN'}
-                                                        </span>
-                                                    )}
+                                                    <img
+                                                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                                                        alt=""
+                                                        className="h-full w-full object-cover"
+                                                    />
                                                 </div>
                                                 <div>
                                                     <div className="font-medium text-slate-200">

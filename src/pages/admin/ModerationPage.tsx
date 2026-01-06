@@ -7,6 +7,7 @@ import {
     ShieldAlert, Trash2, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getAvatarUrl } from '@/lib/avatar';
 
 interface ModerationItem {
     id: string;
@@ -186,11 +187,11 @@ export function ModerationPage() {
 
                                     <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
                                         <div className="h-5 w-5 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden">
-                                            {item.author.avatar_url ? (
-                                                <img src={item.author.avatar_url} className="h-full w-full object-cover" />
-                                            ) : (
-                                                <span className="text-[10px]">{item.author.alias?.substring(0, 2)}</span>
-                                            )}
+                                            <img
+                                                src={item.author.avatar_url || getAvatarUrl(item.author.anonymous_id)}
+                                                className="h-full w-full object-cover"
+                                                alt=""
+                                            />
                                         </div>
                                         <span>Autor: <span className="text-slate-300">{item.author.alias || 'Anónimo'}</span></span>
                                         <span className="font-mono text-slate-600">({item.author.anonymous_id.substring(0, 8)})</span>
