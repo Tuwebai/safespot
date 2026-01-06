@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from './ui/button';
 import { FeedbackState } from './ui/feedback-state';
+import { reportFrontendError } from '@/lib/adminTasks';
 
 interface Props {
     children: ReactNode;
@@ -34,6 +35,16 @@ export class ChunkErrorBoundary extends Component<Props, State> {
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error('[ChunkErrorBoundary] Uncaught error:', error, errorInfo);
+
+        // Auto-report to Admin System
+        reportFrontendError({
+            title: `React Error: ${error.name}`,
+            description: error.message,
+            severity: error.name === 'ChunkLoadError' ? 'high' : 'critical',
+            metadata: {
+                componentStack: errorInfo.componentStack
+            }
+        }).catch(console.error);
     }
 
     private handleRetry = () => {

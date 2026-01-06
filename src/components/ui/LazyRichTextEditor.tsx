@@ -8,6 +8,8 @@ const Editor = lazyRetry(() =>
     'RichTextEditor'
 )
 
+import { MentionParticipant } from './tiptap-extensions/mention/suggestion'
+
 interface RichTextEditorProps {
     value: string
     onChange: (value: string) => void
@@ -19,6 +21,7 @@ interface RichTextEditorProps {
     showCancel?: boolean
     onCancel?: () => void
     hideSubmitButton?: boolean
+    prioritizedUsers?: MentionParticipant[]
 }
 
 /**

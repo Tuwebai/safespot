@@ -209,7 +209,7 @@ export const EnhancedComment = memo(function EnhancedComment({
 
   // Adjust visual styling based on depth
 
-  const cardPadding = depth === 0 ? 'p-6' : depth === 1 ? 'p-4' : 'p-3'
+  const cardPadding = 'p-4 sm:p-5'
   const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
 
   const isEdited = useMemo(() => {
@@ -300,6 +300,19 @@ export const EnhancedComment = memo(function EnhancedComment({
                     @{comment.alias || 'Usuario Anónimo'}
                   </span>
                 </Link>
+
+                {/* Contextual Role Badges */}
+                {comment.is_author && (
+                  <Badge className="bg-neon-green/10 text-neon-green border-neon-green/30 px-1.5 py-0 h-5 text-[10px] font-black tracking-tighter shadow-[0_0_10px_rgba(57,255,20,0.1)]">
+                    AUTOR
+                  </Badge>
+                )}
+
+                {comment.is_local && !comment.is_author && (
+                  <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 px-1.5 py-0 h-5 text-[10px] font-black tracking-tighter shadow-[0_0_10px_rgba(34,211,238,0.1)]">
+                    VECINO LOCAL
+                  </Badge>
+                )}
               </div>
 
               {/* Badges Row (Visual Indicators) */}

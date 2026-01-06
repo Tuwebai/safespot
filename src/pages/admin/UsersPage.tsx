@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -6,7 +8,13 @@ import {
     Search,
     Ban,
     UserCheck,
-    Loader2
+    Loader2,
+    Award,
+    Calendar,
+    MessageSquare,
+    FileText,
+    Shield,
+    Activity
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
 import { getAvatarUrl } from '@/lib/avatar'
@@ -18,9 +26,11 @@ interface AdminUser {
     created_at: string
     last_active_at: string
     total_reports: number
+    total_comments: number
     trust_score: number
     status: 'active' | 'banned' | 'shadow_banned'
     level: number
+    points: number
 }
 
 interface UsersResponse {
@@ -36,7 +46,17 @@ interface UsersResponse {
 export function UsersPage() {
     const [page, setPage] = useState(1)
     const [search, setSearch] = useState('')
+    const [hoveredUser, setHoveredUser] = useState<{ user: AdminUser, x: number, y: number } | null>(null)
+    const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const debouncedSearch = useDebounce(search, 500)
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+        }
+    }, [])
+
     const queryClient = useQueryClient()
 
     // Query Users
@@ -169,8 +189,22 @@ export function UsersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                data?.users?.map((user: AdminUser) => (
-                                    <tr key={user.anonymous_id} className="hover:bg-[#1e293b]/30 transition-colors group">
+                                (data?.users || []).map((user: AdminUser) => (
+                                    <tr
+                                        key={user.anonymous_id}
+                                        onMouseEnter={(e) => {
+                                            const { clientX, clientY } = e
+                                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+                                            hoverTimeoutRef.current = setTimeout(() => {
+                                                setHoveredUser({ user, x: clientX, y: clientY })
+                                            }, 50) // Tiny delay for stability
+                                        }}
+                                        onMouseLeave={() => {
+                                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+                                            setHoveredUser(null)
+                                        }}
+                                        className="hover:bg-[#1e293b]/30 transition-colors group relative"
+                                    >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="h-10 w-10 rounded-full bg-[#1e293b] flex items-center justify-center border border-[#334155] overflow-hidden">
@@ -239,7 +273,143 @@ export function UsersPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Floating Ultra-Fast Preview */}
+            <AnimatePresence>
+                {hoveredUser && (
+                    <UserPreview
+                        user={hoveredUser.user}
+                        x={hoveredUser.x}
+                        y={hoveredUser.y}
+                    />
+                )}
+            </AnimatePresence>
         </div>
+    )
+}
+
+function UserPreview({ user, x, y }: { user: AdminUser, x: number, y: number }) {
+    const boxWidth = 280
+    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+    const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800
+    const margin = 20
+
+    // NEW STRATEGY: Flip based on screen half
+    // This is MUCH more robust than centering + clamping with unknown height
+
+    const isBottomHalf = y > screenHeight / 2
+    const isRightHalf = x > screenWidth / 2
+
+    // Vertical Position
+    let style: any = {
+        position: 'fixed',
+        width: boxWidth,
+        zIndex: 9999,
+        pointerEvents: 'none'
+    }
+
+    if (isBottomHalf) {
+        style.bottom = (screenHeight - y) + 10
+        // Clamp to top margin
+        if (style.bottom > screenHeight - margin - 350) { // 350 is a safety min-height
+            // if it's too tall, just use top: margin
+        }
+    } else {
+        style.top = y + 10
+    }
+
+    // Horizontal Position
+    if (isRightHalf) {
+        style.right = (screenWidth - x) + 20
+    } else {
+        style.left = x + 20
+    }
+
+    return createPortal(
+        <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: isBottomHalf ? 10 : -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.1, ease: "easeOut" }}
+            style={style}
+            className="bg-[#0b1120]/98 backdrop-blur-xl border border-[#00ff88]/40 rounded-2xl p-5 shadow-[0_30px_60px_-12px_rgba(0,0,0,0.7),0_0_20px_rgba(0,255,136,0.15)] overflow-hidden"
+        >
+            {/* Header / Avatar */}
+            <div className="flex items-center gap-4 mb-4">
+                <div className="h-16 w-16 rounded-2xl bg-[#1e293b] border border-[#00ff88]/20 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                    <img
+                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                        alt=""
+                        className="h-full w-full object-cover"
+                    />
+                </div>
+                <div className="min-w-0">
+                    <h3 className="text-white font-bold text-lg truncate">{user.alias || 'Anónimo'}</h3>
+                    <div className="flex items-center gap-1.5 text-[#00ff88] text-xs font-bold uppercase tracking-wider">
+                        <Award className="h-3 w-3" />
+                        Nivel {user.level}
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-[#1e293b]/50 rounded-xl p-3 border border-[#334155]/30">
+                    <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1 flex items-center gap-1">
+                        <Activity className="h-3 w-3" />
+                        Confianza
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-bold text-white">{user.trust_score}</span>
+                        <span className="text-xs text-slate-500">/100</span>
+                    </div>
+                </div>
+                <div className="bg-[#1e293b]/50 rounded-xl p-3 border border-[#334155]/30">
+                    <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1 flex items-center gap-1">
+                        <Shield className="h-3 w-3" />
+                        Puntos
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-bold text-white">{user.points || 0}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Activity Feed Mini */}
+            <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-widest px-1">
+                    Historial Reciente
+                </div>
+                <div className="bg-[#020617]/50 rounded-xl p-3 space-y-2 border border-[#334155]/20">
+                    <div className="flex items-center gap-3 text-xs">
+                        <FileText className="h-3.5 w-3.5 text-[#00ff88]" />
+                        <span className="text-slate-300">Reportes creados:</span>
+                        <span className="ml-auto font-mono text-white">{user.total_reports}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                        <MessageSquare className="h-3.5 w-3.5 text-blue-400" />
+                        <span className="text-slate-300">Comentarios:</span>
+                        <span className="ml-auto font-mono text-white">{user.total_comments || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs pt-1 border-t border-[#334155]/50">
+                        <Calendar className="h-3.5 w-3.5 text-orange-400" />
+                        <span className="text-slate-300">Miembro desde:</span>
+                        <span className="ml-auto whitespace-nowrap text-slate-400">{new Date(user.created_at).toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* User ID Footer */}
+            <div className="mt-4 text-center">
+                <span className="text-[9px] font-mono text-slate-600 truncate block">
+                    UUID: {user.anonymous_id}
+                </span>
+            </div>
+
+            {/* Background Glow Ornament */}
+            <div className="absolute top-0 right-0 w-24 h-24 bg-[#00ff88]/5 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none"></div>
+        </motion.div>,
+        document.body
     )
 }
 

@@ -1,0 +1,138 @@
+{
+    "name": "SafeSpot - Critical Event Manager",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "safespot-events",
+                "options": {}
+            },
+            "id": "a9e8f4d2-7c1b-4d5a-8e2c-3f9a7b6c5d4e",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "string": [
+                        {
+                            "value1": "={{ $json.body.severity }}",
+                            "operation": "regex",
+                            "value2": "high|critical"
+                        }
+                    ]
+                }
+            },
+            "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+            "name": "Is High or Critical?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                500,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "https://graph.facebook.com/v17.0/YOUR_PHONE_NUMBER_ID/messages",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "whatsAppApi",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": \"YOUR_DESTINATION_NUMBER\", \"type\": \"template\", \"template\": { \"name\": \"critical_alert\", \"language\": { \"code\": \"es\" }, \"components\": [ { \"type\": \"body\", \"parameters\": [ { \"type\": \"text\", \"text\": \"{{ $node['Webhook Trigger'].json.body.type.toUpperCase() }}\" }, { \"type\": \"text\", \"text\": \"{{ $node['Webhook Trigger'].json.body.severity === 'critical' ? '🔴 CRÍTICA' : '🟠 ALTA' }}\" }, { \"type\": \"text\", \"text\": \"{{ $node['Webhook Trigger'].json.body.title }}\" }, { \"type\": \"text\", \"text\": \"{{ $node['Webhook Trigger'].json.body.id }}\" } ] } ] } }",
+                "options": {}
+            },
+            "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+            "name": "WhatsApp Notification",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                750,
+                200
+            ],
+            "notesInFlow": true,
+            "notes": "Usa la Cloud API de WhatsApp"
+        },
+        {
+            "parameters": {
+                "resource": "databaseTable",
+                "operation": "insert",
+                "table": "admin_tasks",
+                "columns": {
+                    "mappingMode": "defineBelow",
+                    "value": {
+                        "type": "={{ $json.body.type }}",
+                        "title": "={{ $json.body.title }}",
+                        "description": "={{ $json.body.description }}",
+                        "severity": "={{ $json.body.severity }}",
+                        "source": "={{ $json.body.source }}",
+                        "metadata": "={{ JSON.stringify($json.body.metadata) }}"
+                    }
+                }
+            },
+            "id": "d4e5f6a9-b8c7-4d5a-8e2c-3f9a7b6c5d4e",
+            "name": "Supabase Save",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                500,
+                500
+            ],
+            "notesInFlow": true,
+            "notes": "Opcional si el backend ya lo guarda"
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Is High or Critical?",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Supabase Save",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Is High or Critical?": {
+            "main": [
+                [
+                    {
+                        "node": "WhatsApp Notification",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+        "templateId": ""
+    },
+    "pinData": {},
+    "versionId": "f7a8b9c0-d1e2-4f3a-8b9c-0d1e2f3a4b5c"
+}

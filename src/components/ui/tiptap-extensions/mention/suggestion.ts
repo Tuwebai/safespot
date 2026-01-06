@@ -4,18 +4,41 @@ import tippy from 'tippy.js'
 import { MentionList } from './MentionList'
 import { usersApi } from '@/lib/api'
 
-export default {
-    items: async ({ query }: { query: string }) => {
-        // Only search if query has at least 2 characters to save API calls
-        if (query.length < 2) return []
+export interface MentionParticipant {
+    anonymous_id: string
+    alias: string
+    avatar_url?: string
+}
 
-        try {
-            const response = await usersApi.search(query)
-            return response.filter(u => u.alias).map(u => ({
+export const getSuggestionConfig = (priorityUsers: MentionParticipant[] = []) => ({
+    items: async ({ query }: { query: string }) => {
+        // If query is very short, only show priority users that match
+        if (query.length < 1) {
+            return priorityUsers.map(u => ({
                 ...u,
                 id: u.anonymous_id,
                 label: u.alias
             }))
+        }
+
+        try {
+            const response = await usersApi.search(query)
+            const mapped = response.filter(u => u.alias).map(u => ({
+                ...u,
+                id: u.anonymous_id,
+                label: u.alias
+            }))
+
+            // Prioritize users who are already in the conversation
+            const priorityIds = new Set(priorityUsers.map(u => u.anonymous_id))
+
+            return mapped.sort((a, b) => {
+                const aIsPriority = priorityIds.has(a.id)
+                const bIsPriority = priorityIds.has(b.id)
+                if (aIsPriority && !bIsPriority) return -1
+                if (!aIsPriority && bIsPriority) return 1
+                return 0
+            })
         } catch (error) {
             console.error('Mention search error:', error)
             return []
@@ -79,4 +102,7 @@ export default {
             },
         }
     },
-}
+})
+
+// Default export uses empty priority users
+export default getSuggestionConfig([])

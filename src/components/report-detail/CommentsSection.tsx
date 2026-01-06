@@ -12,6 +12,7 @@ import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
 import { ReplyModal } from '@/components/comments/ReplyModal'
+import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
 
 // ============================================
 // TYPES
@@ -22,13 +23,22 @@ export interface CommentsSectionProps {
     totalCount: number
     onCommentCountChange: (delta: number) => void
     reportOwnerId?: string
+    reportOwnerAlias?: string
+    reportOwnerAvatar?: string
 }
 
 // ============================================
 // COMPONENT
 // ============================================
 
-export function CommentsSection({ reportId, totalCount, onCommentCountChange, reportOwnerId }: CommentsSectionProps) {
+export function CommentsSection({
+    reportId,
+    totalCount,
+    onCommentCountChange,
+    reportOwnerId,
+    reportOwnerAlias,
+    reportOwnerAvatar
+}: CommentsSectionProps) {
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
@@ -163,6 +173,33 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange, re
         return { sightings: sightingsList, discussionComments: discussionList }
     }, [comments])
 
+    // Calculate unique participants for mention prioritization
+    const participants = useMemo(() => {
+        const uniqueEntries = new Map<string, MentionParticipant>()
+
+        // Add report owner
+        if (reportOwnerId && reportOwnerAlias) {
+            uniqueEntries.set(reportOwnerId, {
+                anonymous_id: reportOwnerId,
+                alias: reportOwnerAlias,
+                avatar_url: reportOwnerAvatar
+            })
+        }
+
+        // Add all commenters
+        comments.forEach(c => {
+            if (c.alias) {
+                uniqueEntries.set(c.anonymous_id, {
+                    anonymous_id: c.anonymous_id,
+                    alias: c.alias,
+                    avatar_url: c.avatar_url
+                })
+            }
+        })
+
+        return Array.from(uniqueEntries.values())
+    }, [comments, reportOwnerId, reportOwnerAlias, reportOwnerAvatar])
+
     // Find the comment being replied to for the modal
     const parentCommentToReply = useMemo(() =>
         replyingTo ? comments.find(c => c.id === replyingTo) || null : null
@@ -217,6 +254,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange, re
                             onChange={setCommentText}
                             onSubmit={submitComment}
                             disabled={submitting === 'comment'}
+                            prioritizedUsers={participants}
                         />
                     </CardContent>
                 </Card>
@@ -372,6 +410,7 @@ export function CommentsSection({ reportId, totalCount, onCommentCountChange, re
                 onReplyTextChange={setReplyText}
                 onReplySubmit={submitReply}
                 submitting={submitting === 'reply'}
+                prioritizedUsers={participants}
             />
         </div>
     )

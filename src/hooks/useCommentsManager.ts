@@ -192,9 +192,9 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         const textToUse = (overridingContent !== undefined && !isEvent) ? overridingContent : state.commentText
         const { plain, rich } = normalizeCommentPayload(textToUse)
 
-        if (!reportId || !plain.trim() || state.submitting) {
+        if (!reportId || !plain.trim()) {
             // Only show toast if it's a manual submit (not an event) and content is actually empty
-            if (!plain.trim() && !state.submitting && textToUse && typeof textToUse !== 'object' && !('_reactName' in (textToUse as any))) {
+            if (!plain.trim() && textToUse && typeof textToUse !== 'object' && !('_reactName' in (textToUse as any))) {
                 toast.warning('El comentario no puede estar vacío')
             }
             return
@@ -223,8 +223,8 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const submitReply = useCallback(async (parentId: string) => {
         const { plain, rich } = normalizeCommentPayload(state.replyText)
 
-        if (!reportId || !plain.trim() || state.submitting) {
-            if (!plain.trim() && !state.submitting) {
+        if (!reportId || !plain.trim()) {
+            if (!plain.trim()) {
                 toast.warning('La respuesta no puede estar vacía')
             }
             return
@@ -253,8 +253,8 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const submitThread = useCallback(async () => {
         const { plain, rich } = normalizeCommentPayload(state.threadText)
 
-        if (!reportId || !plain.trim() || state.submitting) {
-            if (!plain.trim() && !state.submitting) {
+        if (!reportId || !plain.trim()) {
+            if (!plain.trim()) {
                 toast.warning('El texto del hilo no puede estar vacío')
             }
             return
@@ -282,7 +282,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     const submitEdit = useCallback(async (commentId: string) => {
         const { plain, rich } = normalizeCommentPayload(state.editText)
 
-        if (!plain.trim() || state.submitting) return
+        if (!plain.trim()) return
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'edit', id: commentId } })
 
@@ -299,7 +299,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     }, [state.editText, state.submitting, normalizeCommentPayload, updateMutation, toast])
 
     const deleteComment = useCallback(async (commentId: string) => {
-        if (state.submitting || !reportId) return
+        if (!reportId) return
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'delete', id: commentId } })
 
@@ -316,7 +316,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
 
     const flagComment = useCallback(async (commentId: string) => {
         const comment = comments.find(c => c.id === commentId)
-        if (!comment || state.submitting) return
+        if (!comment) return
 
         if (comment.is_flagged) {
             toast.warning('Ya has reportado este comentario')
@@ -347,7 +347,7 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     }, [comments, state.submitting, flagMutation, toast])
 
     const toggleLike = useCallback(async (commentId: string) => {
-        if (state.submitting === 'like' && state.processingId === commentId) return
+        // Radical Optimistic UI: No blocking check. We trust the mutation queue and optimistic state.
 
         const comment = comments.find(c => c.id === commentId)
         if (!comment) return

@@ -437,6 +437,8 @@ export interface Comment {
   alias?: string | null;
   is_highlighted?: boolean;
   is_pinned?: boolean;
+  is_author?: boolean;
+  is_local?: boolean;
 }
 
 export interface CreateCommentData {

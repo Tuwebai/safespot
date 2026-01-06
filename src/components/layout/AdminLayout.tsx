@@ -7,6 +7,7 @@ export function AdminLayout() {
 
     const navItems = [
         { path: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
+        { path: '/admin/tasks', icon: Bell, label: 'Tareas' },
         { path: '/admin/users', icon: Users, label: 'Users' },
         { path: '/admin/moderation', icon: ShieldAlert, label: 'Moderation' },
     ]

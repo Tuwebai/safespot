@@ -30,6 +30,7 @@ const AdminDashboard = lazyRetry(() => import('@/pages/admin/AdminDashboard').th
 const UsersPage = lazyRetry(() => import('@/pages/admin/UsersPage').then(m => ({ default: m.UsersPage })), 'UsersPage')
 const AdminReportsPage = lazyRetry(() => import('./pages/admin/ReportsPage').then(module => ({ default: module.ReportsPage })), 'AdminReportsPage')
 const AdminModerationPage = lazyRetry(() => import('@/pages/admin/ModerationPage').then(m => ({ default: m.ModerationPage })), 'AdminModerationPage')
+const AdminTasksPage = lazyRetry(() => import('@/pages/admin/TasksPage').then(m => ({ default: m.TasksPage })), 'AdminTasksPage')
 import { AdminGuard } from '@/components/admin/AdminGuard'
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -96,6 +97,7 @@ function App() {
                   <Route path="reports" element={<AdminReportsPage />} />
                   <Route path="users" element={<UsersPage />} />
                   <Route path="moderation" element={<AdminModerationPage />} />
+                  <Route path="tasks" element={<AdminTasksPage />} />
                   {/* Add other admin sub-routes here */}
                 </Route>
 

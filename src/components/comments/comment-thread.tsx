@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { EnhancedComment } from './enhanced-comment'
 import { CornerDownRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { Comment } from '@/lib/api'
 
 interface CommentThreadProps {
@@ -38,6 +39,7 @@ interface CommentThreadProps {
     activeMenuId?: string | null
     onMenuOpen?: (id: string | null) => void
     canPin?: boolean
+    isLastChild?: boolean
 }
 
 export const CommentThread = memo(function CommentThread({
@@ -69,6 +71,7 @@ export const CommentThread = memo(function CommentThread({
     onMenuOpen,
     initialExpanded = false,
     canPin = false,
+    isLastChild = false,
 }: CommentThreadProps) {
     // Find direct replies to this comment and sort them chronologically (oldest first)
     const replies = allComments
@@ -80,9 +83,6 @@ export const CommentThread = memo(function CommentThread({
         ? allComments.find(c => c.id === comment.parent_id)
         : undefined
 
-    // Calculate indentation and visual adjustments based on depth
-    const indentClass = depth > 0 ? `ml-${Math.min(depth * 6, 18)}` : ''
-
     // State for handling accordion expansion - Hidden by default (Twitter style)
     const [isExpanded, setIsExpanded] = useState(initialExpanded)
 
@@ -90,22 +90,34 @@ export const CommentThread = memo(function CommentThread({
     const shouldShowReplies = replies.length > 0 && isExpanded
 
     return (
-        <div className={`${indentClass} ${depth > 0 ? 'mt-3' : ''}`}>
+        <div className={cn(
+            "group/thread relative",
+            depth > 0 && "mt-3"
+        )}>
+            {/* 
+                THREAD RAIL (Vertical Line)
+                This line connects all descendants to the parent
+            */}
+            {depth > 0 && (
+                <div className={cn(
+                    "absolute -left-[17px] sm:-left-[21px] top-0 w-[1.5px] bg-border/40 group-hover/thread:bg-neon-green/30 transition-colors pointer-events-none",
+                    isLastChild ? "h-6" : "bottom-0"
+                )} />
+            )}
+
             {/* Comment Card with Thread Line */}
-            <div className={`relative ${depth > 0 ? 'pl-4 border-l-2 border-foreground/10' : ''}`}>
-                {/* Thread indicator icon for nested comments */}
+            <div className="relative">
+                {/* Horizontal connection for nested comments */}
                 {depth > 0 && (
-                    <div className="absolute -left-3 top-6 bg-background px-1">
-                        <CornerDownRight className="h-3 w-3 text-foreground/30" />
-                    </div>
+                    <div className="absolute -left-[17px] sm:-left-[21px] top-6 w-[17px] sm:w-[21px] h-[1.5px] bg-border/40 group-hover/thread:bg-neon-green/30 transition-colors pointer-events-none" />
                 )}
 
                 {/* Context Badge: "Respondiendo a..." */}
                 {depth > 0 && parentComment && (
-                    <div className="mb-2 text-xs text-foreground/60 flex items-center gap-1 ml-1">
-                        <span>Respondiendo a</span>
-                        <span className="text-neon-green font-medium">
-                            {parentComment.alias ? `@${parentComment.alias}` : `Usuario Anónimo ${parentComment.anonymous_id.substring(0, 2).toUpperCase()}`}
+                    <div className="mb-2 text-[10px] sm:text-xs text-foreground/50 flex items-center gap-1 ml-1 uppercase font-bold tracking-tight">
+                        <span className="opacity-60">Respondiendo a</span>
+                        <span className="text-neon-green/80 group-hover/thread:text-neon-green transition-colors">
+                            @{parentComment.alias || 'Anónimo'}
                         </span>
                     </div>
                 )}
@@ -130,6 +142,11 @@ export const CommentThread = memo(function CommentThread({
                     onMenuOpen={onMenuOpen}
                     canPin={canPin}
                 />
+
+                {/* Parent Avatar Stem: Connects this avatar to its replies */}
+                {replies.length > 0 && isExpanded && (
+                    <div className="absolute left-[23px] sm:left-[27px] top-12 bottom-0 w-[1.5px] bg-gradient-to-b from-border/40 via-border/20 to-transparent group-hover/thread:from-neon-green/40 duration-500 transition-colors pointer-events-none" />
+                )}
 
                 {/* Editors (Inline) */}
                 {editingCommentId === comment.id && onEditTextChange && onEditSubmit && onEditCancel && (
@@ -177,14 +194,15 @@ export const CommentThread = memo(function CommentThread({
 
             {/* Recursive Rendering of Replies - Hidden behind accordion */}
             {shouldShowReplies && (
-                <div className="space-y-3 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                    {replies.map((reply) => {
+                <div className="space-y-3 mt-3 ml-[17px] sm:ml-[21px] animate-in fade-in slide-in-from-top-2 duration-300">
+                    {replies.map((reply, index) => {
                         return (
                             <CommentThread
                                 key={reply.id}
                                 comment={reply}
                                 allComments={allComments}
                                 depth={depth + 1}
+                                isLastChild={index === replies.length - 1}
                                 onReply={onReply}
                                 onEdit={onEdit}
                                 onDelete={onDelete}

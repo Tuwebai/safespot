@@ -47,9 +47,34 @@ router.get('/:reportId', async (req, res) => {
          c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
          u.avatar_url, u.alias,
          -- Highlight logic: Must have >= 2 likes and equal the maximum likes in this result set
-         (c.upvotes_count >= 2 AND c.upvotes_count = MAX(c.upvotes_count) OVER()) as is_highlighted
+         (c.upvotes_count >= 2 AND c.upvotes_count = MAX(c.upvotes_count) OVER()) as is_highlighted,
+         -- Context Badges Logic
+         (c.anonymous_id = r.anonymous_id) as is_author,
+         (
+           EXISTS (
+             SELECT 1 FROM reports r2 
+             WHERE r2.anonymous_id = c.anonymous_id 
+             AND r2.deleted_at IS NULL
+             AND (
+               (r2.locality = r.locality AND r.locality IS NOT NULL) OR 
+               (r2.zone = r.zone AND r.zone IS NOT NULL)
+             )
+           )
+           OR
+           EXISTS (
+             SELECT 1 FROM user_zones uz
+             WHERE uz.anonymous_id = c.anonymous_id
+             AND r.longitude IS NOT NULL AND r.latitude IS NOT NULL
+             AND ST_DWithin(
+               ST_MakePoint(uz.lng, uz.lat)::geography,
+               ST_MakePoint(r.longitude, r.latitude)::geography,
+               COALESCE(uz.radius_meters, 1000)
+             )
+           )
+         ) as is_local
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
+       INNER JOIN reports r ON c.report_id = r.id
        WHERE c.report_id = $1 AND c.deleted_at IS NULL
        ORDER BY 
          c.is_pinned DESC NULLS LAST,
@@ -246,9 +271,40 @@ router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), 
 
     // Insert comment using queryWithRLS for RLS enforcement
     const insertQuery = `
-      INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread
+      WITH inserted AS (
+        INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      )
+      SELECT 
+        i.*,
+        u.avatar_url, u.alias,
+        (i.anonymous_id = r.anonymous_id) as is_author,
+        (
+          EXISTS (
+            SELECT 1 FROM reports r2 
+            WHERE r2.anonymous_id = i.anonymous_id 
+            AND r2.deleted_at IS NULL
+            AND (
+              (r2.locality = r.locality AND r.locality IS NOT NULL) OR 
+              (r2.zone = r.zone AND r.zone IS NOT NULL)
+            )
+          )
+          OR
+          EXISTS (
+            SELECT 1 FROM user_zones uz
+            WHERE uz.anonymous_id = i.anonymous_id
+            AND r.longitude IS NOT NULL AND r.latitude IS NOT NULL
+            AND ST_DWithin(
+              ST_MakePoint(uz.lng, uz.lat)::geography,
+              ST_MakePoint(r.longitude, r.latitude)::geography,
+              COALESCE(uz.radius_meters, 1000)
+            )
+          )
+        ) as is_local
+      FROM inserted i
+      LEFT JOIN anonymous_users u ON i.anonymous_id = u.anonymous_id
+      INNER JOIN reports r ON i.report_id = r.id
     `;
 
     // CRITICAL: Ensure all params are defined (no undefined values)

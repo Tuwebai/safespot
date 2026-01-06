@@ -329,6 +329,8 @@ export function DetalleReporte() {
               totalCount={initialReport?.comments_count || 0}
               onCommentCountChange={handleCommentCountChange}
               reportOwnerId={initialReport?.anonymous_id}
+              reportOwnerAlias={initialReport?.alias || undefined}
+              reportOwnerAvatar={initialReport?.avatar_url || undefined}
             />
 
             {/* 7. Related Reports */}

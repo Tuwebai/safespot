@@ -9,6 +9,8 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
 import type { Comment } from '@/lib/api'
 
+import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
+
 interface ReplyModalProps {
     isOpen: boolean
     onClose: () => void
@@ -17,6 +19,7 @@ interface ReplyModalProps {
     onReplyTextChange: (text: string) => void
     onReplySubmit: (parentId: string) => void
     submitting: boolean
+    prioritizedUsers?: MentionParticipant[]
 }
 
 export function ReplyModal({
@@ -26,7 +29,8 @@ export function ReplyModal({
     replyText,
     onReplyTextChange,
     onReplySubmit,
-    submitting
+    submitting,
+    prioritizedUsers = []
 }: ReplyModalProps) {
     const { data: profile } = useProfileQuery()
     const anonymousId = getAnonymousIdSafe()
@@ -107,6 +111,7 @@ export function ReplyModal({
                                         disabled={submitting}
                                         placeholder="Escribe tu respuesta..."
                                         hideSubmitButton={true}
+                                        prioritizedUsers={prioritizedUsers}
                                     />
                                 </div>
                             </div>

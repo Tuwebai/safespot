@@ -12,27 +12,22 @@ interface UseFavoriteProps {
 
 interface UseFavoriteReturn {
     isFavorite: boolean
-    isLoading: boolean
     toggleFavorite: (e?: React.MouseEvent) => Promise<void>
 }
 
 export function useFavorite({ reportId, initialState = false, onToggle }: UseFavoriteProps): UseFavoriteReturn {
     const [isFavorite, setIsFavorite] = useState(initialState)
-    const [isLoading, setIsLoading] = useState(false)
     const toast = useToast()
 
     const toggleFavorite = useCallback(async (e?: React.MouseEvent) => {
         e?.preventDefault()
         e?.stopPropagation()
 
-        if (isLoading) return
-
-        // Optimistic update
+        // Optimistic update - Radical: No waiting, just toggle
         const previousState = isFavorite
         const newState = !previousState
 
         setIsFavorite(newState)
-        setIsLoading(true)
         onToggle?.(newState)
 
         try {
@@ -56,14 +51,11 @@ export function useFavorite({ reportId, initialState = false, onToggle }: UseFav
             setIsFavorite(previousState)
             onToggle?.(previousState)
             handleErrorWithMessage(error, 'Error al guardar en favoritos', toast.error, 'useFavorite.toggleFavorite')
-        } finally {
-            setIsLoading(false)
         }
-    }, [reportId, isFavorite, isLoading, onToggle, toast])
+    }, [reportId, isFavorite, onToggle, toast])
 
     return {
         isFavorite,
-        isLoading,
         toggleFavorite
     }
 }

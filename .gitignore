@@ -34,3 +34,6 @@ server/.env
 
 # Netlify
 .netlify
+ADMIN_TASK_SYSTEM_ANALYSIS.md
+N8N_CONFIGURATION_GUIDE.md
+SAFESPOT_2_0_ROADMAP.md

@@ -29,6 +29,8 @@ import adminStatsRouter from './routes/adminStats.js';
 import adminHeatmapRouter from './routes/adminHeatmap.js';
 import adminUsersRouter from './routes/adminUsers.js';
 import adminModerationRouter from './routes/adminModeration.js';
+import adminTasksRouter from './routes/adminTasks.js';
+import { logCriticalError } from './utils/adminTasks.js';
 
 // Load environment variables
 dotenv.config();
@@ -187,6 +189,7 @@ app.use('/api/admin', adminStatsRouter); // Mount at /api/admin so it becomes /a
 app.use('/api/admin', adminHeatmapRouter); // Mount at /api/admin so it becomes /api/admin/heatmap
 app.use('/api/admin/users', adminUsersRouter);
 app.use('/api/admin/moderation', adminModerationRouter); // Mount at /api/admin/users
+app.use('/api/admin/tasks', adminTasksRouter);
 app.use('/api/user-zones', userZonesRouter);
 app.use('/api/chats', chatsRouter);
 app.use('/api', sitemapRouter);
@@ -288,6 +291,11 @@ app.use((err, req, res, next) => {
   if (process.env.NODE_ENV === 'development') {
     response.stack = err.stack;
     response.details = err.details || err.errors;
+  }
+
+  // LOG CRITICAL ERRORS (500s) to Admin Task System
+  if (status >= 500) {
+    logCriticalError(err, req).catch(console.error);
   }
 
   res.status(status).json(response);

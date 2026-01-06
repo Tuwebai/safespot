@@ -9,7 +9,7 @@ import { Location } from './tiptap-extensions/safespot-location'
 import { Object as SafeSpotObject } from './tiptap-extensions/safespot-object'
 import { User as SafeSpotUser } from './tiptap-extensions/safespot-user'
 import Mention from '@tiptap/extension-mention'
-import suggestion from './tiptap-extensions/mention/suggestion'
+import { getSuggestionConfig, MentionParticipant } from './tiptap-extensions/mention/suggestion'
 import { Button } from './button'
 import { Input } from './input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card'
@@ -41,6 +41,7 @@ interface RichTextEditorProps {
   showCancel?: boolean // Si es true, muestra botón Cancelar
   onCancel?: () => void // Callback para cancelar
   hideSubmitButton?: boolean
+  prioritizedUsers?: MentionParticipant[]
 }
 
 export function RichTextEditor({
@@ -53,7 +54,8 @@ export function RichTextEditor({
   hideHelp = false,
   showCancel = false,
   onCancel,
-  hideSubmitButton = false
+  hideSubmitButton = false,
+  prioritizedUsers = []
 }: RichTextEditorProps) {
   // Memoizar las extensiones para evitar recrearlas en cada render
   const extensions = useMemo(() => [
@@ -80,9 +82,9 @@ export function RichTextEditor({
       HTMLAttributes: {
         class: 'mention text-neon-green font-medium bg-neon-green/10 px-1 rounded-sm cursor-pointer',
       },
-      suggestion,
+      suggestion: getSuggestionConfig(prioritizedUsers),
     }),
-  ], [maxLength, placeholder])
+  ], [maxLength, placeholder, prioritizedUsers])
 
   // Normalizar contenido inicial para soportar texto plano legacy
   // Solo se calcula una vez en la inicialización del editor (no depende de cambios de value)
