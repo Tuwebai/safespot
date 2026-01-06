@@ -13,28 +13,25 @@ import { QueryClient } from '@tanstack/react-query'
 export const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            // Tier 1: General data (0 seconds stale for "real-time" feel)
-            // Big tech often uses "stale-while-revalidate" approach: show cache, fetch new immediately.
-            // Setting staleTime to 0 means "always stale, always refetch in background".
-            staleTime: 0,
+            // ENTERPRISE GRADE STRICTNESS:
+            // "Source of Truth" is ALWAYS the server.
 
-            // Tier 2: Cache retention (5 minutes)
-            gcTime: 5 * 60 * 1000,
+            // 1. Data Validity
+            staleTime: 0, // Data is immediately stale. Always refetch.
+            gcTime: 0,    // Do NOT keep unused data in memory cache. If component unmounts, discard.
 
-            // Optimization: Refetch on window focus is KEY for "always fresh" feel
-            refetchOnWindowFocus: true,
+            // 2. Refetch Triggers (Aggressive)
+            refetchOnWindowFocus: true, // Force check when user looks at screen
+            refetchOnMount: true,       // Force check when component opens
+            refetchOnReconnect: true,   // Force check when network comes back
 
-            // Resilience: Exponential backoff for network instability
-            retry: 2,
-            retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
-
-            // Performance: Avoid blocking main thread on hydration
-            refetchOnMount: true,
-            refetchOnReconnect: true,
+            // 3. Network Behavior
+            retry: 0, // Delegate retry logic to Service Worker or User Action. Don't hide failures.
+            networkMode: 'online', // Only fetch if we *think* we are online. 
         },
         mutations: {
-            // Fast failure for user actions
-            retry: 0,
+            retry: 0, // Fail fast on actions.
+            networkMode: 'online',
         },
     },
 })

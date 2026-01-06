@@ -5,9 +5,10 @@ self.__WB_DISABLE_DEV_LOGS = true;
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { StaleWhileRevalidate, CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
+import { BackgroundSyncPlugin } from 'workbox-background-sync';
 
 declare let self: ServiceWorkerGlobalScope;
 
@@ -68,33 +69,89 @@ registerRoute(
 // Intentar cargar datos frescos siempre.
 // Si la red tarda más de 10s, o falla, usar caché.
 // FetchOptions 'reload' fuerza a ignorar la caché HTTP del navegador para ir directo al servidor.
-// EXCLUIMOS tiempo real (SSE) y CHATS porque son altamente dinámicos y no deben cachearse.
-// C. Llamadas a la API (Network-first para resiliencia, SIN CACHÉ persistente)
-// El usuario reportó datos viejos/stale. Para corregirlo, reducimos la caché a CERO o muy poco.
-// Usamos NetworkFirst para que si hay red, SIEMPRE valla al servidor.
-// Solo si falla, usa caché, pero esa caché no debe durar más de 1 minuto.
+// C. Llamadas a la API (STRICT NETWORK-ONLY - Enterprise Grade)
+// REGLA DE ORO: La UI jamás debe mostrar datos viejos.
+// Si no hay red, la petición falla y la UI debe mostrar estado "Offline/Pending", nunca cache.
+const apiHandler = new NetworkOnly({
+    plugins: [
+        {
+            // Custom timeout plugin to enforce 3s limit
+            requestWillFetch: async ({ request }) => {
+                // Clone request to add AbortSignal logic if needed by browser, 
+                // but Workbox handles strategy timeouts better via networkTimeoutSeconds won't work on NetworkOnly.
+                // We rely on standard fetch or client timeout, but we enforce no-cache headers here.
+                return new Request(request, {
+                    cache: 'no-store',
+                    headers: new Headers({
+                        ...Object.fromEntries(request.headers),
+                        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                    })
+                });
+            },
+            handlerDidError: async () => {
+                // If network fails, return 503 Service Unavailable
+                // This forces the UI to handle the error state instead of showing fallback content
+                return new Response(JSON.stringify({ error: 'Network Unavailable', code: 'OFFLINE_MODE' }), {
+                    status: 503,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+        }
+    ]
+});
+
+// Helper to wrap with timeout functionality since NetworkOnly doesn't support networkTimeoutSeconds natively
+const timeoutWrapper = async (options: any) => {
+    const TIMEOUT_MS = 3000;
+    const timeoutPromise = new Promise<Response>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), TIMEOUT_MS)
+    );
+
+    try {
+        return await Promise.race([
+            apiHandler.handle(options),
+            timeoutPromise
+        ]);
+    } catch (error) {
+        // Return 504 Gateway Timeout if actual timeout
+        if (error instanceof Error && error.message === 'Request timed out') {
+            return new Response(JSON.stringify({ error: 'Request Timed Out', code: 'TIMEOUT' }), {
+                status: 504,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+        throw error;
+    }
+};
+
 registerRoute(
-    ({ url }) =>
-        url.pathname.startsWith('/api/') &&
-        !url.pathname.includes('/realtime/') &&
-        !url.pathname.includes('/chats'),
-    new NetworkFirst({
-        cacheName: 'safespot-api-cache',
-        networkTimeoutSeconds: 5, // Esperar 5s a la red antes de fallback
-        fetchOptions: {
-            cache: 'no-store', // IMPORTANTE: No guardar en caché HTTP del navegador
-        },
-        plugins: [
-            new ExpirationPlugin({
-                maxEntries: 50,
-                maxAgeSeconds: 5, // 5 segundos de vida. Básicamente "sólo para offline repentino".
-            }),
-            new CacheableResponsePlugin({
-                statuses: [0, 200],
-            }),
-        ],
-    })
+    ({ url }) => url.pathname.startsWith('/api/'),
+    timeoutWrapper
 );
+
+// D. Background Sync para Mutaciones (POST, PUT, DELETE)
+// Si no hay red, guardamos la petición y la reintentamos cuando vuelva la conexión.
+// Ideal para reportes, comentarios, likes.
+const bgSyncPlugin = new BackgroundSyncPlugin('safespot-mutations-queue', {
+    maxRetentionTime: 24 * 60, // Reintentar por hasta 24 horas
+});
+
+const mutationHandler = new NetworkOnly({
+    plugins: [bgSyncPlugin],
+});
+
+// Need to cast to specific HTTPMethod type for TS
+type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+(['POST', 'PUT', 'DELETE', 'PATCH'] as HTTPMethod[]).forEach(method => {
+    registerRoute(
+        ({ url }) => url.pathname.startsWith('/api/'),
+        mutationHandler,
+        method
+    );
+});
 
 // ---------------------------------------------------------
 

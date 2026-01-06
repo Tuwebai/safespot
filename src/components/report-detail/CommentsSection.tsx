@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
@@ -42,6 +43,8 @@ export function CommentsSection({
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
+
+
 
     // Global state for comment context menus (only one can be open)
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
@@ -173,6 +176,20 @@ export function CommentsSection({
         return { sightings: sightingsList, discussionComments: discussionList }
     }, [comments])
 
+    // Virtualization setup
+    const listRef = useRef<HTMLDivElement>(null)
+    const topLevelComments = useMemo(() =>
+        discussionComments.filter(c => !c.parent_id && !(c.is_thread === true)),
+        [discussionComments]
+    )
+
+    const rowVirtualizer = useWindowVirtualizer({
+        count: topLevelComments.length,
+        estimateSize: () => 150,
+        overscan: 5,
+        scrollMargin: listRef.current?.offsetTop ?? 0,
+    })
+
     // Calculate unique participants for mention prioritization
     const participants = useMemo(() => {
         const uniqueEntries = new Map<string, MentionParticipant>()
@@ -262,7 +279,7 @@ export function CommentsSection({
 
             {/* Comments List */}
             {viewMode === 'comments' && (
-                <div className="space-y-4">
+                <div ref={listRef} className="space-y-4 min-h-[200px]">
                     {/* Render Sightings First */}
                     {sightings.length > 0 && (
                         <div className="mb-6 space-y-3">
@@ -287,43 +304,64 @@ export function CommentsSection({
                         </Card>
                     ) : (
                         <>
-                            {discussionComments
-                                .filter(c => !c.parent_id && !(c.is_thread === true))
-                                .map((comment) => {
+                            <div
+                                style={{
+                                    height: `${rowVirtualizer.getTotalSize()}px`,
+                                    width: '100%',
+                                    position: 'relative',
+                                }}
+                            >
+                                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                                    const comment = topLevelComments[virtualRow.index]
                                     const isCommentOwner = comment.anonymous_id === currentAnonymousId
 
                                     return (
-                                        <CommentThread
-                                            key={comment.id}
-                                            comment={comment}
-                                            allComments={comments} // Original comments array for threading context
-                                            depth={0}
-                                            onReply={startReply}
-                                            onEdit={startEdit}
-                                            onDelete={handleDeleteComment}
-                                            onFlag={handleFlagComment}
-                                            onLikeChange={handleLikeChange}
-                                            isOwner={isCommentOwner}
-                                            isMod={currentAnonymousId === reportOwnerId} // Using isMod as "Report Owner" for pinning permission context
-                                            onPin={pinComment}
-                                            onUnpin={unpinComment}
-                                            replyingTo={replyingTo}
-                                            replyText={replyText}
-                                            onReplyTextChange={setReplyText}
-                                            onReplySubmit={submitReply}
-                                            onReplyCancel={cancelReply}
-                                            submittingReply={submitting === 'reply' && isProcessing(comment.id)}
-                                            editingCommentId={editingId}
-                                            editText={editText}
-                                            onEditTextChange={setEditText}
-                                            onEditSubmit={submitEdit}
-                                            onEditCancel={cancelEdit}
-                                            submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
-                                            activeMenuId={activeMenuId}
-                                            onMenuOpen={setActiveMenuId}
-                                        />
+                                        <div
+                                            key={virtualRow.key}
+                                            data-index={virtualRow.index}
+                                            ref={rowVirtualizer.measureElement}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                transform: `translateY(${virtualRow.start}px)`,
+                                            }}
+                                            className="pb-4"
+                                        >
+                                            <CommentThread
+                                                key={comment.id} // Important for React key reconciliation inside the virtual row
+                                                comment={comment}
+                                                allComments={comments} // Original comments array for threading context
+                                                depth={0}
+                                                onReply={startReply}
+                                                onEdit={startEdit}
+                                                onDelete={handleDeleteComment}
+                                                onFlag={handleFlagComment}
+                                                onLikeChange={handleLikeChange}
+                                                isOwner={isCommentOwner}
+                                                isMod={currentAnonymousId === reportOwnerId}
+                                                onPin={pinComment}
+                                                onUnpin={unpinComment}
+                                                replyingTo={replyingTo}
+                                                replyText={replyText}
+                                                onReplyTextChange={setReplyText}
+                                                onReplySubmit={submitReply}
+                                                onReplyCancel={cancelReply}
+                                                submittingReply={submitting === 'reply' && isProcessing(comment.id)}
+                                                editingCommentId={editingId}
+                                                editText={editText}
+                                                onEditTextChange={setEditText}
+                                                onEditSubmit={submitEdit}
+                                                onEditCancel={cancelEdit}
+                                                submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
+                                                activeMenuId={activeMenuId}
+                                                onMenuOpen={setActiveMenuId}
+                                            />
+                                        </div>
                                     )
                                 })}
+                            </div>
 
                             {/* Load More Button & Counter */}
                             {hasMore && (
