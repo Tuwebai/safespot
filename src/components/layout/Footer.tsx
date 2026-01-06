@@ -2,6 +2,11 @@ import { Link } from 'react-router-dom'
 import { MapPin, Github, Twitter, Mail } from 'lucide-react'
 
 export function Footer() {
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const mpUrl = "https://link.mercadopago.com.ar/safespotapp";
+  const mpDeepLink = `intent://link.mercadopago.com.ar/safespotapp#Intent;scheme=https;package=com.mercadopago.wallet;end`;
+  const donationLink = isAndroid ? mpDeepLink : mpUrl;
+
   return (
     <footer className="bg-dark-card border-t border-dark-border py-6">
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -41,7 +46,7 @@ export function Footer() {
                 <Twitter className="w-5 h-5" />
               </a>
               <a
-                href="mailto:contacto@safespot.com"
+                href="mailto:contacto@safespot.tuweb-ai.com"
                 className="text-foreground/70 hover:text-neon-green transition-colors"
               >
                 <Mail className="w-5 h-5" />
@@ -87,12 +92,12 @@ export function Footer() {
               </li>
               <li>
                 <a
-                  href="https://link.mercadopago.com.ar/safespotapp"
+                  href={donationLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-neon-green hover:text-neon-green/80 font-medium transition-colors flex items-center gap-2"
                 >
-                  💙 Apoyar Safespot
+                  💙 Apoyar Proyecto
                 </a>
               </li>
             </ul>
@@ -129,12 +134,12 @@ export function Footer() {
               © 2024 SafeSpot. Todos los derechos reservados.
             </p>
             <a
-              href="https://link.mercadopago.com.ar/safespotapp"
+              href={donationLink}
               target="_blank"
               rel="noopener noreferrer"
               className="md:hidden text-sm text-neon-green font-semibold hover:underline"
             >
-              💙 Apoyar SafeSpot
+              💙 Apoyar Proyecto
             </a>
           </div>
           <p className="text-sm text-foreground/70">
