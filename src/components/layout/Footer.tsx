@@ -4,7 +4,7 @@ import { MapPin, Github, Twitter, Mail } from 'lucide-react'
 export function Footer() {
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const mpUrl = "https://link.mercadopago.com.ar/safespotapp";
-  const mpDeepLink = `intent://link.mercadopago.com.ar/safespotapp#Intent;scheme=https;package=com.mercadopago.wallet;end`;
+  const mpDeepLink = `intent://link.mercadopago.com.ar/safespotapp#Intent;scheme=https;S.browser_fallback_url=https://link.mercadopago.com.ar/safespotapp;end`;
   const donationLink = isAndroid ? mpDeepLink : mpUrl;
 
   return (
