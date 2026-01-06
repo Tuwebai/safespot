@@ -7,8 +7,7 @@ import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
-import { Helmet } from 'react-helmet-async'
-import { generateSEOTags } from '@/lib/seo'
+import { SEO } from '@/components/SEO'
 
 // ============================================
 // MEMOIZED SUB-COMPONENTS
@@ -196,25 +195,13 @@ export function Home() {
     { name: 'Carteras', color: 'bg-pink-500' },
   ]
 
-  const seo = generateSEOTags({
-    title: 'SafeSpot - Reporta y Previene Robos en tu Zona',
-    description: 'Reporta y visualiza incidentes de seguridad en tu zona. Mapa colaborativo de la comunidad para moverte más seguro por la ciudad.',
-    canonical: 'https://safespot.netlify.app/',
-    type: 'website'
-  })
-
   return (
     <div className="min-h-screen bg-dark-bg">
-      <Helmet>
-        <title>{seo.title}</title>
-        <meta name="description" content={seo.description} />
-        <link rel="canonical" href={seo.canonical} />
-        {/* ... Rest of SEO Meta Tags ... */}
-        <meta property="og:type" content={seo.ogType} />
-        <meta property="og:url" content={seo.ogUrl} />
-        <meta property="og:title" content={seo.ogTitle} />
-        <meta property="og:description" content={seo.ogDescription} />
-      </Helmet>
+      <SEO
+        title="SafeSpot - Reporta y Previene Robos en tu Zona"
+        description="Reporta y visualiza incidentes de seguridad en tu zona. Mapa colaborativo de la comunidad para moverte más seguro por la ciudad."
+        type="website"
+      />
 
       <HeroSection />
 

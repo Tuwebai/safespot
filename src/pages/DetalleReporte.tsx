@@ -221,7 +221,7 @@ export function DetalleReporte() {
       <SEO
         title={`${category} en ${zone}`}
         description={`Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`}
-        url={`https://safespot.netlify.app/reporte/${report.id}`}
+        url={`https://safespot.tuweb-ai.com/reporte/${report.id}`}
         image={imageUrls.length > 0 ? imageUrls[0] : undefined}
         type="article"
         author="SafeSpot Community"

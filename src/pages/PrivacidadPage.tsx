@@ -144,7 +144,7 @@ export default function PrivacidadPage() {
                             <div className="bg-dark-bg p-4 rounded-lg border border-dark-border">
                                 <p className="text-sm">
                                     Para solicitudes de eliminación de datos, escribe a:
-                                    <span className="text-neon-green ml-1 font-mono">privacidad@safespot.app</span>
+                                    <span className="text-neon-green ml-1 font-mono">privacidad@safespot.tuweb-ai.com</span>
                                     <br />
                                     <span className="text-[10px] text-muted-foreground italic">Incluye tu identificador anónimo (si lo posees) o el detalle del reporte a remover.</span>
                                 </p>
@@ -158,7 +158,7 @@ export default function PrivacidadPage() {
                             ¿Tenés preguntas sobre tu privacidad?
                         </p>
                         <a
-                            href="mailto:privacidad@safespot.app"
+                            href="mailto:privacidad@safespot.tuweb-ai.com"
                             className="text-neon-green hover:underline"
                         >
                             Contactanos

@@ -92,7 +92,7 @@ export function Footer() {
                   rel="noopener noreferrer"
                   className="text-neon-green hover:text-neon-green/80 font-medium transition-colors flex items-center gap-2"
                 >
-                  💙 Apoyar Proyecto
+                  💙 Apoyar Safespot
                 </a>
               </li>
             </ul>

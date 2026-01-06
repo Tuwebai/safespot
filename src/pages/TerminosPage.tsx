@@ -160,7 +160,7 @@ export default function TerminosPage() {
                             ¿Tenés alguna consulta sobre estos términos?
                         </p>
                         <a
-                            href="mailto:legal@safespot.app"
+                            href="mailto:legal@safespot.tuweb-ai.com"
                             className="text-neon-green hover:underline"
                         >
                             Contactanos
