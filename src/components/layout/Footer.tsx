@@ -134,7 +134,7 @@ export function Footer() {
               rel="noopener noreferrer"
               className="md:hidden text-sm text-neon-green font-semibold hover:underline"
             >
-              💙 Apoyar Proyecto
+              💙 Apoyar SafeSpot
             </a>
           </div>
           <p className="text-sm text-foreground/70">
