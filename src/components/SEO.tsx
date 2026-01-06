@@ -27,7 +27,7 @@ export const SEO = ({
     const defaultDescription = 'La red comunitaria de seguridad ciudadana más grande. Reporta robos, visualiza alertas de incidentes en tu zona y cuidá a tu barrio con información en tiempo real.';
     const metaDescription = description || defaultDescription;
 
-    const siteUrl = 'https://safespot.app'; // Replace with actual production URL
+    const siteUrl = 'https://safespot.tuweb-ai.com'; // Actual production URL
     const currentUrl = url || siteUrl;
     const defaultImage = '/og-image.png'; // Make sure this exists in public/
     const metaImage = image || `${siteUrl}${defaultImage}`;

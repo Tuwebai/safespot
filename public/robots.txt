@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api
 
-Sitemap: https://safespot.app/sitemap.xml
+Sitemap: https://safespot.tuweb-ai.com/sitemap.xml
