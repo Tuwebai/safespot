@@ -341,13 +341,13 @@ router.get('/stats', async (req, res) => {
     // Parallelize valid counts for performance
     const [reportsCount, resolvedCount, usersCount] = await Promise.all([
       // Total Reports (Live)
-      supabase.from('reports').select('*', { count: 'exact', head: true }).not('deleted_at', 'is', 'null'),
+      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).not('deleted_at', 'is', 'null'),
 
       // Resolved Reports (Live)
-      supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'resuelto'),
+      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'resuelto'),
 
       // Total Users (Live)
-      supabase.from('anonymous_users').select('*', { count: 'exact', head: true })
+      supabaseAdmin.from('anonymous_users').select('*', { count: 'exact', head: true })
     ]);
 
     res.json({
@@ -377,7 +377,8 @@ router.get('/category-stats', async (req, res) => {
   // console.log('[STATS] GET /api/users/category-stats (Live)');
   try {
     // Perform efficient Group By Count
-    const { data, error } = await supabase
+    // CRITICAL: Use supabaseAdmin to bypass RLS
+    const { data, error } = await supabaseAdmin
       .from('reports')
       .select('category')
       .not('deleted_at', 'is', 'null');
