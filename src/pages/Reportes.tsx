@@ -742,7 +742,7 @@ export function Reportes() {
 
               <div
                 ref={parentRef}
-                className="w-full"
+                className="w-full relative"
               >
                 <div
                   style={{
@@ -946,10 +946,13 @@ export function Reportes() {
 
               {/* Segundo anuncio: Solo si hay 5 o más reportes */}
               {reports.length >= 5 && (
-                <div className="pt-8 pb-32">
+                <div className="pt-10 pb-10">
                   <AdBanner />
                 </div>
               )}
+
+              {/* Espaciador final para evitar que la barra de navegación móvil tape el contenido */}
+              <div className="h-32 md:h-12 w-full" />
             </div>
           )
         }
