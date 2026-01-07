@@ -63,8 +63,12 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       throw error;
     }
 
-    // FIX: Execute SET LOCAL and the main query separately.
-    // The pg driver does NOT allow multiple commands in a prepared statement (one with parameters).
+    // FIX FOR SUPABASE TRANSACTION MODE (Port 6543)
+    // We MUST wrap SET LOCAL and the query in a single transaction block (BEGIN...COMMIT)
+    // otherwise the pooler might reset the connection state between statements.
+
+    await client.query('BEGIN');
+
     if (anonymousId && anonymousId.trim() !== '') {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(anonymousId)) {
@@ -78,8 +82,18 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
 
     // Execute the actual query with its own parameters
     const result = await client.query(queryText, cleanParams);
+
+    await client.query('COMMIT');
+
     return result;
   } catch (error) {
+    // Rollback on error
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('[RLS] Rollback failed:', rollbackError.message);
+    }
+
     // Enhanced error logging for SQL syntax errors
     if (process.env.NODE_ENV === 'development') {
       console.error(`[RLS] Query failed:`, error.message);
