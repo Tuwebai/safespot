@@ -1,4 +1,4 @@
-import supabase, { supabaseAdmin } from '../config/supabase.js';
+import pool from '../config/database.js'; // Use direct DB pool
 import { logError, logSuccess } from './logger.js';
 
 // Local cache to avoid redundant Supabase lookups for existence check
@@ -11,7 +11,7 @@ const UPDATE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 /**
  * Ensure anonymous user exists in anonymous_users table
  * This function is idempotent - safe to call multiple times
- * Uses ONLY Supabase client (no SQL manual)
+ * Uses DIRECT SQL (pg pool) for performance and reliability
  * 
  * @param {string} anonymousId - UUID v4 of the anonymous user
  * @returns {Promise<boolean>} - true if user exists or was created, false on error
@@ -30,15 +30,10 @@ export async function ensureAnonymousUser(anonymousId) {
     // But if it's been a while, we should update last_active_at in background
     if (now - cachedEntry.lastChecked > UPDATE_INTERVAL_MS) {
       // Background update (fire and forget) to keep "active users" stats fresh
-      const client = supabaseAdmin || supabase;
-      client
-        .from('anonymous_users')
-        .update({ last_active_at: new Date().toISOString() })
-        .eq('anonymous_id', anonymousId)
-        .then(({ error }) => {
-          if (error) console.error('[AUTH] Failed to update last_active_at:', error.message);
-        })
-        .catch(err => console.error('[AUTH] Exception updating last_active_at:', err));
+      pool.query(
+        'UPDATE anonymous_users SET last_active_at = NOW() WHERE anonymous_id = $1',
+        [anonymousId]
+      ).catch(err => console.error('[AUTH] Exception updating last_active_at:', err.message));
 
       // Update cache timestamp immediately to prevent spamming
       existenceCache.set(anonymousId, { ...cachedEntry, lastChecked: now });
@@ -47,69 +42,53 @@ export async function ensureAnonymousUser(anonymousId) {
   }
 
   try {
-    // Use admin client to bypass RLS for system-level existence check/creation
-    const clientToUse = supabaseAdmin || supabase;
+    // 1. Try to INSERT directly (Optimistic: Assume new user mostly, or heavily cached)
+    // Using ON CONFLICT DO NOTHING + RETURNING to check if it was inserted
 
-    // Check if user already exists
-    const { data: existingUser, error: checkError } = await clientToUse
-      .from('anonymous_users')
-      .select('anonymous_id')
-      .eq('anonymous_id', anonymousId)
-      .maybeSingle();
+    // Note: We access pool directly, so we are running as the DB User (typically admin/postgres)
+    // This bypasses RLS naturally, which is what we want for this system-level check.
 
-    if (checkError) {
-      logError(checkError, null);
-      throw new Error(`Failed to check anonymous user: ${checkError.message}`);
-    }
+    // First, try to just select it (Read is cheaper than Write)
+    const checkResult = await pool.query(
+      'SELECT anonymous_id FROM anonymous_users WHERE anonymous_id = $1',
+      [anonymousId]
+    );
 
-    // If user exists, update cache and return
-    if (existingUser) {
+    if (checkResult.rows.length > 0) {
+      // User exists
       existenceCache.set(anonymousId, { exists: true, lastChecked: now });
 
-      // Also update last_active_at since this is a fresh lookup
-      clientToUse
-        .from('anonymous_users')
-        .update({ last_active_at: new Date().toISOString() })
-        .eq('anonymous_id', anonymousId)
-        .then(() => { }) // Silent success
-        .catch(() => { });
+      // Update activity asynchronously
+      pool.query(
+        'UPDATE anonymous_users SET last_active_at = NOW() WHERE anonymous_id = $1',
+        [anonymousId]
+      ).catch(() => { });
 
       return true;
     }
 
-    // User doesn't exist, create it
-    const { data: newUser, error: insertError } = await clientToUse
-      .from('anonymous_users')
-      .insert({
-        anonymous_id: anonymousId,
-        created_at: new Date().toISOString(),
-        last_active_at: new Date().toISOString(),
-        total_reports: 0,
-        total_comments: 0,
-        total_votes: 0,
-        points: 0,
-        level: 1
-      })
-      .select()
-      .single();
+    // User doesn't exist, Insert it
+    const insertResult = await pool.query(
+      `INSERT INTO anonymous_users (
+        anonymous_id, 
+        created_at, 
+        last_active_at, 
+        total_reports, 
+        total_comments, 
+        total_votes, 
+        points, 
+        level
+       ) VALUES ($1, NOW(), NOW(), 0, 0, 0, 0, 1)
+       ON CONFLICT (anonymous_id) DO NOTHING
+       RETURNING anonymous_id`,
+      [anonymousId]
+    );
 
-    if (insertError) {
-      // If error is due to duplicate (race condition), that's okay
-      if (insertError.code === '23505') {
-        logSuccess('Anonymous user already exists (race condition)', { anonymousId });
-        existenceCache.set(anonymousId, { exists: true, lastChecked: now });
-        return true;
-      }
-
-      logError(insertError, null);
-      throw new Error(`Failed to create anonymous user: ${insertError.message}`);
-    }
-
-    logSuccess('Anonymous user created', { anonymousId });
+    // If inserted (or race condition handled)
+    logSuccess('Anonymous user created/verified', { anonymousId });
 
     // Manage cache size
     if (existenceCache.size >= CACHE_LIMIT) {
-      // Very simple eviction: clear the first one (Iterator of keys)
       const firstKey = existenceCache.keys().next().value;
       existenceCache.delete(firstKey);
     }
@@ -118,6 +97,8 @@ export async function ensureAnonymousUser(anonymousId) {
     return true;
   } catch (error) {
     logError(error, null);
+    // Don't throw, just log. The downstream queryWithRLS might fail if user really doesn't exist,
+    // but we tried our best.
     throw error;
   }
 }

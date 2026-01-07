@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod'; // Assuming zod is available or use another validation method
-import fetch from 'node-fetch'; // Ensure node-fetch is available or use native fetch in Node 18+
+// import fetch from 'node-fetch'; // Native fetch is available in Node 18+
 
 const router = express.Router();
 
