@@ -44,10 +44,20 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
     const onSubmit = async (data: ContactFormData) => {
         setIsSubmitting(true);
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/contact`, {
+            // Use safe API request construction
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+            const anonymousId = localStorage.getItem('safespot_anonymous_id') || 'unknown-user';
+
+            // Normalize: Remove trailing slash and /api suffix if present to ensure clean base
+            const cleanBase = apiUrl.replace(/\/$/, '').replace(/\/api$/, '');
+
+            const response = await fetch(`${cleanBase}/api/contact`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Anonymous-Id': anonymousId,
+                },
+                body: JSON.stringify(data), // Corrected from formData to data
             });
 
             const result = await response.json();
