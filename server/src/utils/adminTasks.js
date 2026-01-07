@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { DB } from './db.js';
+import { sendWhatsAppAlert } from './whatsapp.js';
 
 const N8N_WEBHOOK_URL = process.env.N8N_ADMIN_TASKS_WEBHOOK_URL;
 
@@ -31,25 +32,13 @@ export const createAdminTask = async ({
         console.log(`[AdminTask] Created task ${task.id}: ${title} (${severity})`);
 
         // 2. Notify n8n via Webhook
-        if (N8N_WEBHOOK_URL) {
-            // Trigger n8n for high/critical or if it's a specific system alert
-            // Note: n8n workflow also has its own IF logic as per user requirement,
-            // but we send all tasks to let n8n decide and potentially log them elsewhere.
-            axios.post(N8N_WEBHOOK_URL, {
-                id: task.id,
-                type,
-                title,
-                description,
-                severity,
-                source,
-                metadata,
-                timestamp: new Date().toISOString()
-            }).catch(err => {
-                console.error('[AdminTask] Error notifying n8n:', err.message);
-            });
-        } else {
-            console.warn('[AdminTask] N8N_ADMIN_TASKS_WEBHOOK_URL not configured');
-        }
+        // 2. Notify n8n via Webhook
+        // Trigger generic high-priority alert via WhatsApp
+        await sendWhatsAppAlert(
+            `Nueva Tarea: ${title}`,
+            `Prioridad: ${severity}\nFuente: ${source}\n${description}`,
+            severity === 'critical' ? 'Alta' : 'Informativa'
+        );
 
         return task;
     } catch (error) {
