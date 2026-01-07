@@ -99,4 +99,25 @@ router.patch('/:id', async (req, res, next) => {
     }
 });
 
+/**
+ * DELETE /api/admin/tasks/:id
+ * Remove a task permanently
+ */
+router.delete('/:id', async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const db = DB.public();
+
+        const result = await db.delete('admin_tasks', { id });
+
+        if (!result.length) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        res.json({ message: 'Task deleted successfully', deletedId: id });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     CheckCircle2,
     Clock,
@@ -11,9 +11,13 @@ import {
     Terminal,
     ShieldAlert,
     Inbox,
-    X
+    X,
+    Trash2,
+    Play,
+    Check
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
 interface AdminTask {
@@ -157,11 +161,66 @@ export function TasksPage() {
     const [tasks, setTasks] = useState<AdminTask[]>([])
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
     const [filter, setFilter] = useState({
         status: '',
         severity: '',
         type: ''
     })
+    const navigate = useNavigate()
+
+    const handleViewDetails = (task: AdminTask) => {
+        if (task.metadata?.report_id) {
+            navigate(`/admin/moderation?reportId=${task.metadata.report_id}`)
+        } else if (task.metadata?.user_id) {
+            navigate(`/admin/users?search=${task.metadata.user_id}`)
+        } else {
+            alert(`Detalles de la Tarea:\n\n${task.description}\n\nNota: No hay un link directo para este tipo de evento.`)
+        }
+    }
+
+    const updateTaskStatus = async (taskId: string, newStatus: string) => {
+        try {
+            const token = localStorage.getItem('safespot_admin_token')
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks/${taskId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ status: newStatus })
+            })
+
+            if (response.ok) {
+                fetchTasks()
+                setActiveDropdownId(null)
+            }
+        } catch (error) {
+            console.error('Error updating task status:', error)
+        }
+    }
+
+    const deleteTask = async (taskId: string) => {
+        if (!confirm('¿Estás seguro de que quieres eliminar esta tarea permanentemente?')) return
+
+        try {
+            const token = localStorage.getItem('safespot_admin_token')
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks/${taskId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            if (response.ok) {
+                fetchTasks()
+                setActiveDropdownId(null)
+            }
+        } catch (error) {
+            console.error('Error deleting task:', error)
+        }
+    }
 
     const fetchTasks = async () => {
         try {
@@ -186,6 +245,17 @@ export function TasksPage() {
         const interval = setInterval(fetchTasks, 30000) // Auto-refresh every 30s
         return () => clearInterval(interval)
     }, [filter])
+
+    // Close dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setActiveDropdownId(null)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     const getSeverityColor = (severity: string) => {
         switch (severity) {
@@ -359,13 +429,54 @@ export function TasksPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button className="p-2 text-slate-400 hover:text-[#00ff88] bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105">
+                                            <div className="flex items-center justify-end gap-2 relative">
+                                                <button
+                                                    onClick={() => handleViewDetails(task)}
+                                                    className="p-2 text-slate-400 hover:text-[#00ff88] bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105"
+                                                    title="Ver origen del evento"
+                                                >
                                                     <ExternalLink className="h-4 w-4" />
                                                 </button>
-                                                <button className="p-2 text-slate-400 hover:text-white bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105">
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </button>
+
+                                                <div className="relative">
+                                                    <button
+                                                        onClick={() => setActiveDropdownId(activeDropdownId === task.id ? null : task.id)}
+                                                        className="p-2 text-slate-400 hover:text-white bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105"
+                                                    >
+                                                        <MoreVertical className="h-4 w-4" />
+                                                    </button>
+
+                                                    {activeDropdownId === task.id && (
+                                                        <div
+                                                            ref={dropdownRef}
+                                                            className="absolute right-0 top-full mt-2 w-48 bg-[#0f172a] border border-[#1e293b] rounded-xl shadow-2xl z-[100] py-1 animate-in zoom-in-95 duration-100 overflow-hidden"
+                                                        >
+                                                            {task.status === 'pending' && (
+                                                                <button
+                                                                    onClick={() => updateTaskStatus(task.id, 'in_progress')}
+                                                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
+                                                                >
+                                                                    <Play className="h-4 w-4 text-blue-400" /> Empezar Trabajo
+                                                                </button>
+                                                            )}
+                                                            {task.status !== 'done' && (
+                                                                <button
+                                                                    onClick={() => updateTaskStatus(task.id, 'done')}
+                                                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
+                                                                >
+                                                                    <Check className="h-4 w-4 text-[#00ff88]" /> Marcar Resuelta
+                                                                </button>
+                                                            )}
+                                                            <div className="h-[1px] bg-[#1e293b] my-1" />
+                                                            <button
+                                                                onClick={() => deleteTask(task.id)}
+                                                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" /> Eliminar Tarea
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
