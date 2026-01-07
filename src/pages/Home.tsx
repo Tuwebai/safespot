@@ -24,11 +24,11 @@ const HeroSection = memo(() => (
     <div className="container relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div className="text-center animate-fade-in">
         <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-6 text-foreground tracking-tight">
-          Reportar Robos y{' '}
-          <span className="gradient-text">Proteger tu Zona</span>
+          Tu zona segura,{' '}
+          <span className="gradient-text">siempre</span>
         </h1>
         <p className="text-lg md:text-xl text-foreground/70 max-w-3xl mx-auto mb-8">
-          SafeSpot es la mejor plataforma para reportar robos y ver reportes en tiempo real. Únete a la comunidad para reportar incidentes y recuperar objetos.
+          SafeSpot es la plataforma colaborativa que te ayuda a reportar robos y recuperar objetos robados junto con tu comunidad.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/crear-reporte" className="w-full sm:w-auto">

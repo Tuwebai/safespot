@@ -30,6 +30,7 @@ import adminHeatmapRouter from './routes/adminHeatmap.js';
 import adminUsersRouter from './routes/adminUsers.js';
 import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
+import contactRouter from './routes/contact.js';
 import { logCriticalError } from './utils/adminTasks.js';
 
 // Load environment variables
@@ -183,6 +184,7 @@ app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/contact', contactRouter); // Register Contact Route
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
 app.use('/api/admin/auth', adminAuthRouter);
 app.use('/api/admin', adminStatsRouter); // Mount at /api/admin so it becomes /api/admin/stats
