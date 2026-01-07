@@ -36,13 +36,13 @@ router.get('/:reportId', async (req, res) => {
 
     // Execute queries in parallel using raw SQL for better control and JOIN support
     const countPromise = queryWithRLS(
-      anonymousId || 'anon', // Use 'anon' if no ID provided for RLS context
+      anonymousId || '', // Use empty string if no ID provided for RLS context
       `SELECT COUNT(*) as count FROM comments WHERE report_id = $1 AND deleted_at IS NULL`,
       [reportId]
     );
 
     const dataPromise = queryWithRLS(
-      anonymousId || 'anon',
+      anonymousId || '',
       `SELECT 
          c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
          u.avatar_url, u.alias,
@@ -66,8 +66,8 @@ router.get('/:reportId', async (req, res) => {
              WHERE uz.anonymous_id = c.anonymous_id
              AND r.longitude IS NOT NULL AND r.latitude IS NOT NULL
              AND ST_DWithin(
-               ST_MakePoint(uz.lng, uz.lat)::geography,
-               ST_MakePoint(r.longitude, r.latitude)::geography,
+                ST_SetSRID(ST_MakePoint(uz.lng, uz.lat), 4326)::geography,
+                ST_SetSRID(ST_MakePoint(r.longitude, r.latitude), 4326)::geography,
                COALESCE(uz.radius_meters, 1000)
              )
            )
@@ -163,10 +163,20 @@ router.get('/:reportId', async (req, res) => {
       }
     });
   } catch (err) {
+    try {
+      const fs = await import('fs');
+      const debugInfo = {
+        message: err.message,
+        stack: err.stack,
+        reportId: req.params.reportId,
+        query: req.query,
+        timestamp: new Date().toISOString()
+      };
+      fs.writeFileSync('c:\\Users\\Usuario\\Documents\\Proyectos Web\\Safespot\\server\\DEBUG_COMMENTS_ERROR.json', JSON.stringify(debugInfo, null, 2));
+    } catch (e) { }
+
     logError(err, req);
-    res.status(500).json({
-      error: 'Unexpected server error'
-    });
+    res.status(500).json({ error: 'Unexpected server error', details: err.message });
   }
 });
 
@@ -296,8 +306,8 @@ router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), 
             WHERE uz.anonymous_id = i.anonymous_id
             AND r.longitude IS NOT NULL AND r.latitude IS NOT NULL
             AND ST_DWithin(
-              ST_MakePoint(uz.lng, uz.lat)::geography,
-              ST_MakePoint(r.longitude, r.latitude)::geography,
+                ST_SetSRID(ST_MakePoint(uz.lng, uz.lat), 4326)::geography,
+                ST_SetSRID(ST_MakePoint(r.longitude, r.latitude), 4326)::geography,
               COALESCE(uz.radius_meters, 1000)
             )
           )
@@ -499,6 +509,13 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
 
     const updatedComment = updateResult.rows[0];
 
+    // REALTIME: Broadcast update
+    try {
+      realtimeEvents.emitCommentUpdate(updatedComment.report_id, updatedComment);
+    } catch (err) {
+      logError(err, { context: 'realtimeEvents.emitCommentUpdate', reportId: updatedComment.report_id });
+    }
+
     logSuccess(`Comment ${id} updated by ${anonymousId}`, req);
 
     res.json({
@@ -561,6 +578,16 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden: You can only delete your own comments or comment is already deleted'
       });
+    }
+
+    const deletedId = id;
+    const reportId = checkResult.rows[0].report_id;
+
+    // REALTIME: Broadcast deletion
+    try {
+      realtimeEvents.emitCommentDelete(reportId, deletedId);
+    } catch (err) {
+      logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
     }
 
     res.json({
@@ -661,6 +688,13 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) 
       NotificationService.notifyLike('comment', id, anonymousId).catch(err => {
         logError(err, { context: 'notifyLike.comment', commentId: id });
       });
+
+      // REALTIME: Broadcast comment like update
+      try {
+        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 });
+      } catch (err) {
+        logError(err, { context: 'realtimeEvents.emitVoteUpdate.commentLike', commentId: id });
+      }
 
       return res.json({
         success: true,
@@ -769,11 +803,20 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
       .eq('id', id)
       .single();
 
+    const finalCount = updatedComment?.upvotes_count || Math.max(0, comment.upvotes_count - 1);
+
+    // REALTIME: Broadcast comment unlike update
+    try {
+      realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: finalCount });
+    } catch (err) {
+      logError(err, { context: 'realtimeEvents.emitVoteUpdate.commentUnlike', commentId: id });
+    }
+
     res.json({
       success: true,
       data: {
         liked: false,
-        upvotes_count: updatedComment?.upvotes_count || Math.max(0, comment.upvotes_count - 1)
+        upvotes_count: finalCount
       },
       message: 'Comment unliked successfully'
     });

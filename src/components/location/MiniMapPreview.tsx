@@ -15,8 +15,8 @@ L.Icon.Default.mergeOptions({
 });
 
 interface MiniMapPreviewProps {
-    lat?: number
-    lng?: number
+    lat?: number | string
+    lng?: number | string
 }
 
 // Component to handle map center updates
@@ -29,13 +29,15 @@ function ChangeView({ center }: { center: [number, number] }) {
 }
 
 export function MiniMapPreview({ lat, lng }: MiniMapPreviewProps) {
-    const hasLocation = typeof lat === 'number' && typeof lng === 'number'
+    const numLat = typeof lat === 'string' ? parseFloat(lat) : lat
+    const numLng = typeof lng === 'string' ? parseFloat(lng) : lng
+    const hasLocation = typeof numLat === 'number' && typeof numLng === 'number' && !isNaN(numLat) && !isNaN(numLng)
 
     // Memoize center to prevent unnecessary re-renders
     const center = useMemo<[number, number]>(() => {
-        if (hasLocation) return [lat!, lng!]
+        if (hasLocation) return [numLat!, numLng!]
         return [-31.416, -64.186] // Default Cordoba Center
-    }, [lat, lng, hasLocation])
+    }, [numLat, numLng, hasLocation])
 
     if (!hasLocation) {
         return (
@@ -61,7 +63,6 @@ export function MiniMapPreview({ lat, lng }: MiniMapPreviewProps) {
                 style={{ height: '100%', width: '100%' }}
             >
                 <TileLayer
-                    // Using Standard OSM for maximum legibility (Streets)
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 />

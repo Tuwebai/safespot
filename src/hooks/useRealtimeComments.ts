@@ -1,27 +1,31 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
-
-const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`
+import { API_BASE_URL } from '@/lib/api'
+import { upsertInList, patchItem, removeFromList } from '@/lib/realtime-utils'
 
 interface RealtimeComment {
     type: 'new-comment' | 'comment-update' | 'comment-delete' | 'connected' | 'report-update'
     comment?: any
     commentId?: string
     reportId?: string
+    senderId?: string
+    updates?: any // for partial updates like likes
 }
 
 /**
- * Hook to subscribe to real-time comment updates via Server-Sent Events (SSE)
+ * Real-time Comments Hook
  * 
- * @param reportId - The report ID to listen for comments
- * @param enabled - Whether to enable the SSE connection (default: true)
+ * Scope Mapping:
+ * - 'new-comment': Adds to comment list + patches report detail comments_count.
+ * - 'comment-update': Patches specific comment (likes/edits).
+ * - 'comment-delete': Removes from list + decrements report detail counter.
+ * - 'report-update': Patches report detail fields (status/stats).
  */
 export function useRealtimeComments(reportId: string | undefined, enabled = true) {
     const queryClient = useQueryClient()
+    const myId = localStorage.getItem('safespot_anonymous_id');
     const eventSourceRef = useRef<EventSource | null>(null)
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
 
     useEffect(() => {
         if (!reportId || !enabled) return
@@ -32,59 +36,58 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
             if (!isMounted) return
 
             try {
-                // console.log(`[SSE] Connecting to realtime comments for report ${reportId}`)
-
-                const eventSource = new EventSource(
-                    `${API_BASE_URL}/realtime/comments/${reportId}`
-                )
+                const eventSource = new EventSource(`${API_BASE_URL}/realtime/comments/${reportId}`)
                 eventSourceRef.current = eventSource
 
-                eventSource.onopen = () => {
-                    // console.log(`[SSE] Connected to report ${reportId}`)
-                }
-
-                const handleEvent = (event: MessageEvent) => {
+                eventSource.onmessage = (event) => {
                     try {
                         const data: RealtimeComment = JSON.parse(event.data)
-                        // console.log('[SSE] Received event:', data.type)
+                        const commentKey = queryKeys.comments.byReport(reportId);
+                        const reportKey = queryKeys.reports.detail(reportId);
+
+                        // Adjustment 3: SSE != Mutations Optimistic.
+                        const senderId = data.comment?.anonymous_id || data.senderId;
+                        if (senderId && senderId === myId) {
+                            return;
+                        }
 
                         switch (data.type) {
-                            case 'connected':
-                                // console.log('[SSE] Connection confirmed')
-                                break
-
                             case 'new-comment':
-                                // console.log('[SSE] New comment received, invalidating queries')
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.comments.byReport(reportId)
-                                })
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.reports.detail(reportId)
-                                })
+                                if (data.comment) {
+                                    // 1. Add comment to list
+                                    upsertInList(queryClient, commentKey as any, data.comment);
+
+                                    // 2. Increment counter in report detail
+                                    patchItem(queryClient, reportKey as any, reportId, (old: any) => ({
+                                        comments_count: (old.comments_count || 0) + 1
+                                    }));
+                                }
                                 break
 
                             case 'comment-update':
-                                // console.log('[SSE] Comment updated, invalidating queries')
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.comments.byReport(reportId)
-                                })
-                                break
-
-                            case 'report-update':
-                                // console.log('[SSE] Report updated (likes/stats), invalidating report detail')
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.reports.detail(reportId)
-                                })
+                                if (data.comment || (data.commentId && data.updates)) {
+                                    const id = data.commentId || data.comment?.id;
+                                    const updates = data.updates || data.comment;
+                                    patchItem(queryClient, commentKey as any, id, updates);
+                                }
                                 break
 
                             case 'comment-delete':
-                                // console.log('[SSE] Comment deleted, invalidating queries')
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.comments.byReport(reportId)
-                                })
-                                queryClient.invalidateQueries({
-                                    queryKey: queryKeys.reports.detail(reportId)
-                                })
+                                if (data.commentId) {
+                                    // 1. Remove from list
+                                    removeFromList(queryClient, commentKey as any, data.commentId);
+
+                                    // 2. Decrement counter in report detail
+                                    patchItem(queryClient, reportKey as any, reportId, (old: any) => ({
+                                        comments_count: Math.max(0, (old.comments_count || 0) - 1)
+                                    }));
+                                }
+                                break
+
+                            case 'report-update':
+                                if (data.updates) {
+                                    patchItem(queryClient, reportKey as any, reportId, data.updates);
+                                }
                                 break
                         }
                     } catch (err) {
@@ -92,42 +95,23 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
                     }
                 }
 
-                eventSource.addEventListener('connected', handleEvent as any);
-                eventSource.addEventListener('new-comment', handleEvent as any);
-                eventSource.addEventListener('comment-update', handleEvent as any);
-                eventSource.addEventListener('comment-delete', handleEvent as any);
-                eventSource.addEventListener('report-update', handleEvent as any);
-
                 eventSource.onerror = () => {
-                    // Only log error if not in closed state to avoid noise during unmount/reload
-                    if (eventSource.readyState !== EventSource.CLOSED) {
-                        // console.warn('[SSE] Connection issue (retrying automatically)')
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        // console.log('[SSE] Connection closed, will retry...')
                     }
-
-                    // Do NOT close manually. Let native EventSource retry logic work.
-                    // Only if it explicitly reaches CLOSED state unexpectedly might we want to intervene,
-                    // but usually the browser handles 3-second backoff automatically.
                 }
             } catch (err) {
                 console.error('[SSE] Failed to create EventSource:', err)
             }
         }
 
-        // Initial connection
         connect()
 
-        // Cleanup
         return () => {
             isMounted = false
-            // console.log(`[SSE] Disconnecting from report ${reportId}`)
-
             if (eventSourceRef.current) {
                 eventSourceRef.current.close()
                 eventSourceRef.current = null
-            }
-
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current)
             }
         }
     }, [reportId, enabled, queryClient])

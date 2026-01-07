@@ -72,7 +72,7 @@ export function Layout({ children }: LayoutProps) {
               ? "fixed inset-0 z-[60] h-screen w-screen overflow-hidden p-0 m-0 max-w-none"
               : isAdminPage
                 ? "w-full min-h-screen p-0 m-0"
-                : "min-h-[60vh] pb-16 md:pb-0 overflow-hidden"
+                : "min-h-[60vh] pb-16 md:pb-0"
           )}
         >
           <ErrorBoundary fallbackTitle="Ocurrió un error inesperado">

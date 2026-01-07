@@ -34,20 +34,23 @@ pool.on('error', (err) => {
 async function testConnection() {
   try {
     if (!process.env.DATABASE_URL) {
-      console.error('❌ DATABASE_URL no está definido en server/.env');
+      console.error('❌ [DATABASE] DATABASE_URL no está definido en server/.env');
       return;
     }
 
     // Esperar un poco antes de intentar conectar
-    // Esto da tiempo a que el sistema resuelva el DNS
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    console.log('🔍 Testing database connection...');
+    console.log('🔍 [DATABASE] Testing connection...');
     const result = await pool.query('SELECT NOW()');
-    console.log('✅ Database connection test successful');
-    console.log('   Database time:', result.rows[0].now);
+    console.log('✅ [DATABASE] Connection successful');
+    console.log('   [DATABASE] Remote Time:', result.rows[0].now);
 
-    // SQL for required tables
+    // Initial check: if we are in production, we might want to skip the heavy initSql
+    // but here we keep it safe with IF NOT EXISTS.
+
+    console.log('🏗️ [DATABASE] Checking schema health...');
+
     const initSql = `
       -- 1. Rate Limiting Table
       CREATE TABLE IF NOT EXISTS rate_limits (
@@ -58,9 +61,8 @@ async function testConnection() {
         reset_hour TIMESTAMP WITH TIME ZONE NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_hour ON rate_limits(reset_hour);
-
-      -- 1b. Performance Indexes for Gamification & Feeds
+      
+      -- 1b. Performance Indexes
       CREATE INDEX IF NOT EXISTS idx_reports_anonymous_id ON reports(anonymous_id);
       CREATE INDEX IF NOT EXISTS idx_comments_anonymous_id ON comments(anonymous_id);
       CREATE INDEX IF NOT EXISTS idx_votes_anonymous_id ON votes(anonymous_id);
@@ -79,11 +81,11 @@ async function testConnection() {
       );
       CREATE INDEX IF NOT EXISTS idx_followers_following ON followers(following_id);
 
-      -- 3. Add columns to anonymous_users if they don't exist
+      -- 3. Sync columns
       ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS followers_count INTEGER DEFAULT 0;
       ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS following_count INTEGER DEFAULT 0;
 
-      -- 4. Triggers to keep counts in sync
+      -- 4. Triggers (Idempotent creation)
       CREATE OR REPLACE FUNCTION update_follow_counts()
       RETURNS TRIGGER AS $$
       BEGIN
@@ -98,21 +100,21 @@ async function testConnection() {
       END;
       $$ LANGUAGE plpgsql;
 
-      DROP TRIGGER IF EXISTS trigger_update_follow_counts ON followers;
-      CREATE TRIGGER trigger_update_follow_counts
-          AFTER INSERT OR DELETE ON followers
-          FOR EACH ROW
-          EXECUTE FUNCTION update_follow_counts();
+      -- Use a DO block to safely create trigger
+      DO $$
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trigger_update_follow_counts') THEN
+              CREATE TRIGGER trigger_update_follow_counts
+              AFTER INSERT OR DELETE ON followers
+              FOR EACH ROW EXECUTE FUNCTION update_follow_counts();
+          END IF;
+      END $$;
 
-      -- 5. Initial sync for follow counts
-      UPDATE anonymous_users u
-      SET 
-        followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
-        following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
-      -- 6. Add caption and delivered status to chat_messages
+      -- 6. Chat features
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS caption TEXT;
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN DEFAULT FALSE;
-      -- 7. Update type check constraint for chat_messages
+      
+      -- 7. Constraints
       DO $$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chat_messages_type_check') THEN
@@ -130,31 +132,27 @@ async function testConnection() {
       CREATE INDEX IF NOT EXISTS idx_admin_tasks_created_at ON admin_tasks(created_at DESC);
     `;
 
+    // Only run the long script if we successfully connected
     await pool.query(initSql);
-    console.log('✅ Core database tables prepared (rate_limits, followers)');
+    console.log('✅ [DATABASE] Schema verification completed');
 
-    // Test if tables exist
-    const tablesCheck = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_name IN ('anonymous_users', 'reports', 'comments', 'votes', 'followers')
-      ORDER BY table_name
+    // Quick sync for counts (non-blocking) - Only runs if needed or periodically
+    // Removing the forced UPDATE on every startup to save resources in multi-process scenarios
+    /*
+    await pool.query(`
+      UPDATE anonymous_users u
+      SET 
+        followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
+        following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
     `);
+    */
 
-    if (tablesCheck.rows.length === 0) {
-      console.warn('⚠️  No se encontraron tablas. Ejecuta database/schema.sql');
-    } else {
-      console.log(`✅ Tablas encontradas: ${tablesCheck.rows.map(r => r.table_name).join(', ')}`);
-    }
   } catch (error) {
-    // No mostrar error si es ENOTFOUND - puede ser un problema temporal de DNS
-    if (error.code === 'ENOTFOUND') {
-      console.warn('⚠️  No se pudo resolver DNS en el test inicial.');
+    if (error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
+      console.warn('⚠️  [DATABASE] Warning: Temporary connection issue (DNS/Timeout).');
     } else {
-      console.error('❌ Database connection test failed:');
-      console.error('   Error:', error.message);
-      console.error('   Code:', error.code);
+      console.error('❌ [DATABASE] Critical Error during startup:');
+      console.error('   [DATABASE] Message:', error.message);
     }
   }
 }

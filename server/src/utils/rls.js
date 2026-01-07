@@ -69,6 +69,9 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
 
     await client.query('BEGIN');
 
+    // Safety: Set statement timeout for this specific session to avoid pool starvation
+    await client.query('SET statement_timeout = 15000'); // 15s timeout
+
     if (anonymousId && anonymousId.trim() !== '') {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(anonymousId)) {
@@ -113,6 +116,7 @@ export async function transactionWithRLS(anonymousId, callback) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SET statement_timeout = 30000'); // 30s for complex transactions
 
     // Set anonymous_id in session for RLS policies
     // CRITICAL FIX: Use literal interpolation, not parameters, to avoid conflict with main query

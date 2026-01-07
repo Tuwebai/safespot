@@ -15,22 +15,24 @@ L.Icon.Default.mergeOptions({
 });
 
 interface ReportMapFallbackProps {
-    lat?: number
-    lng?: number
+    lat?: number | string
+    lng?: number | string
     className?: string
 }
 
 export function ReportMapFallback({ lat, lng, className }: ReportMapFallbackProps) {
-    const hasLocation = typeof lat === 'number' && typeof lng === 'number'
+    const numLat = typeof lat === 'string' ? parseFloat(lat) : lat
+    const numLng = typeof lng === 'string' ? parseFloat(lng) : lng
+    const hasLocation = typeof numLat === 'number' && typeof numLng === 'number' && !isNaN(numLat) && !isNaN(numLng)
 
     // Default center (Cordoba/Argentina) if no location provided
     const defaultCenter: [number, number] = [-31.4161, -64.1867]
 
     // Memoize center
     const center = useMemo<[number, number]>(() => {
-        if (hasLocation) return [lat!, lng!]
+        if (hasLocation) return [numLat!, numLng!]
         return defaultCenter
-    }, [lat, lng, hasLocation])
+    }, [numLat, numLng, hasLocation])
 
     return (
         <div className={`w-full h-full relative z-0 ${className}`}>
@@ -47,15 +49,13 @@ export function ReportMapFallback({ lat, lng, className }: ReportMapFallbackProp
                 style={{ height: '100%', width: '100%' }}
             >
                 <TileLayer
-                    // CartoDB Voyager (cleaner looking for UI fallbacks)
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 />
                 {hasLocation && <Marker position={center} />}
             </MapContainer>
 
-            {/* Overlay gradient for text readability if title is over map */}
-            <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent pointer-events-none z-[400]" />
+            {/* Gradient removed for better legibility as requested by user */}
 
             {!hasLocation && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-[401] pointer-events-none">

@@ -69,82 +69,38 @@ registerRoute(
 // Intentar cargar datos frescos siempre.
 // Si la red tarda más de 10s, o falla, usar caché.
 // FetchOptions 'reload' fuerza a ignorar la caché HTTP del navegador para ir directo al servidor.
-// C. Llamadas a la API (STRICT NETWORK-ONLY - Enterprise Grade)
-// REGLA DE ORO: La UI jamás debe mostrar datos viejos.
-// Si no hay red, la petición falla y la UI debe mostrar estado "Offline/Pending", nunca cache.
-const apiHandler = new NetworkOnly({
-    plugins: [
-        {
-            // Custom timeout plugin to enforce 3s limit
-            requestWillFetch: async ({ request }) => {
-                // Clone request to add AbortSignal logic if needed by browser, 
-                // but Workbox handles strategy timeouts better via networkTimeoutSeconds won't work on NetworkOnly.
-                // We rely on standard fetch or client timeout.
-                // CRITICAL FIX: Do NOT inject headers into the REQUEST. This causes CORS preflight failures.
-                // The 'cache: no-store' option is sufficient to prevent browser caching of the response.
-                return new Request(request, {
-                    cache: 'no-store'
-                });
-            },
-            handlerDidError: async () => {
-                // If network fails, return 503 Service Unavailable
-                // This forces the UI to handle the error state instead of showing fallback content
-                return new Response(JSON.stringify({ error: 'Network Unavailable', code: 'OFFLINE_MODE' }), {
-                    status: 503,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-        }
-    ]
-});
+// C. Llamadas a la API (STRICT NETWORK-ONLY - Phase 1 Stabilization)
+// El Service Worker ya no maneja timeouts ni errores de API para evitar conflictos de estado.
+// React Query es ahora la única fuente de verdad y el encargado de los reintentos.
 
-// Helper to wrap with timeout functionality since NetworkOnly doesn't support networkTimeoutSeconds natively
-const timeoutWrapper = async (options: any) => {
-    const TIMEOUT_MS = 3000;
-    const timeoutPromise = new Promise<Response>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), TIMEOUT_MS)
-    );
-
-    try {
-        return await Promise.race([
-            apiHandler.handle(options),
-            timeoutPromise
-        ]);
-    } catch (error) {
-        // Return 504 Gateway Timeout if actual timeout
-        if (error instanceof Error && error.message === 'Request timed out') {
-            return new Response(JSON.stringify({ error: 'Request Timed Out', code: 'TIMEOUT' }), {
-                status: 504,
-                headers: { 'Content-Type': 'application/json' }
-            });
-        }
-        throw error;
-    }
-};
-
+// GET Requests: Network Only simple
 registerRoute(
     ({ url }) => url.pathname.startsWith('/api/'),
-    timeoutWrapper
+    new NetworkOnly({
+        plugins: [
+            {
+                // Solo registramos la petición sin interferir en el resultado
+                requestWillFetch: async ({ request }) => {
+                    return new Request(request, { cache: 'no-store' });
+                }
+            }
+        ]
+    }),
+    'GET'
 );
 
-// D. Background Sync para Mutaciones (POST, PUT, DELETE)
-// Si no hay red, guardamos la petición y la reintentamos cuando vuelva la conexión.
-// Ideal para reportes, comentarios, likes.
 const bgSyncPlugin = new BackgroundSyncPlugin('safespot-mutations-queue', {
-    maxRetentionTime: 24 * 60, // Reintentar por hasta 24 horas
+    maxRetentionTime: 24 * 60, // 24 hours
 });
 
-const mutationHandler = new NetworkOnly({
-    plugins: [bgSyncPlugin],
-});
-
-// Need to cast to specific HTTPMethod type for TS
 type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 (['POST', 'PUT', 'DELETE', 'PATCH'] as HTTPMethod[]).forEach(method => {
     registerRoute(
         ({ url }) => url.pathname.startsWith('/api/'),
-        mutationHandler,
+        new NetworkOnly({
+            plugins: [bgSyncPlugin],
+        }),
         method
     );
 });

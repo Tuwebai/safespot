@@ -7,6 +7,7 @@ import type { CategoryStats } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
+import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { SEO } from '@/components/SEO'
 
 // ============================================
@@ -158,6 +159,7 @@ const CategoryCard = memo(({ name, color, count }: { name: string, color: string
 // ============================================
 
 export function Home() {
+  useGlobalFeed()
   // ... hooks unchanged ...
   const { data: stats, isLoading: statsLoading, isError: statsError } = useGlobalStatsQuery()
   const { data: categoryStats, isLoading: categoryLoading, isError: categoryError } = useCategoryStatsQuery()

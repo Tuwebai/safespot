@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { useWindowVirtualizer } from '@tanstack/react-virtual'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
@@ -147,15 +146,15 @@ export function CommentsSection({
     const currentAnonymousId = getAnonymousIdSafe()
 
 
-    // Split comments into Sightings and Discussion
     const { sightings, discussionComments } = useMemo(() => {
         const sightingsList: SightingData[] = []
         const discussionList: typeof comments = []
 
+
         comments.forEach(c => {
             try {
                 // Peek content to see if it looks like JSON
-                if (c.content.trim().startsWith('{')) {
+                if (c.content && typeof c.content === 'string' && c.content.trim().startsWith('{')) {
                     const parsed = JSON.parse(c.content)
                     if (parsed.type === 'sighting') {
                         sightingsList.push({
@@ -167,8 +166,7 @@ export function CommentsSection({
                         return // Skip adding to discussion
                     }
                 }
-            } catch {
-                // Not JSON, treat as normal comment
+            } catch (err) {
             }
             discussionList.push(c)
         })
@@ -176,19 +174,12 @@ export function CommentsSection({
         return { sightings: sightingsList, discussionComments: discussionList }
     }, [comments])
 
-    // Virtualization setup
-    const listRef = useRef<HTMLDivElement>(null)
-    const topLevelComments = useMemo(() =>
-        discussionComments.filter(c => !c.parent_id && !(c.is_thread === true)),
-        [discussionComments]
-    )
+    const topLevelComments = useMemo(() => {
+        const filtered = discussionComments.filter(c => !c.parent_id && !(c.is_thread === true));
+        return filtered;
+    }, [discussionComments])
 
-    const rowVirtualizer = useWindowVirtualizer({
-        count: topLevelComments.length,
-        estimateSize: () => 150,
-        overscan: 5,
-        scrollMargin: listRef.current?.offsetTop ?? 0,
-    })
+    // Simplified list rendering (removing virtualization for stability)
 
     // Calculate unique participants for mention prioritization
     const participants = useMemo(() => {
@@ -279,7 +270,7 @@ export function CommentsSection({
 
             {/* Comments List */}
             {viewMode === 'comments' && (
-                <div ref={listRef} className="space-y-4 min-h-[200px]">
+                <div className="space-y-4 min-h-[200px]">
                     {/* Render Sightings First */}
                     {sightings.length > 0 && (
                         <div className="mb-6 space-y-3">
@@ -304,35 +295,15 @@ export function CommentsSection({
                         </Card>
                     ) : (
                         <>
-                            <div
-                                style={{
-                                    height: `${rowVirtualizer.getTotalSize()}px`,
-                                    width: '100%',
-                                    position: 'relative',
-                                }}
-                            >
-                                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                                    const comment = topLevelComments[virtualRow.index]
+                            <div className="space-y-4">
+                                {topLevelComments.map((comment) => {
                                     const isCommentOwner = comment.anonymous_id === currentAnonymousId
 
                                     return (
-                                        <div
-                                            key={virtualRow.key}
-                                            data-index={virtualRow.index}
-                                            ref={rowVirtualizer.measureElement}
-                                            style={{
-                                                position: 'absolute',
-                                                top: 0,
-                                                left: 0,
-                                                width: '100%',
-                                                transform: `translateY(${virtualRow.start}px)`,
-                                            }}
-                                            className="pb-4"
-                                        >
+                                        <div key={comment.id} className="pb-4">
                                             <CommentThread
-                                                key={comment.id} // Important for React key reconciliation inside the virtual row
                                                 comment={comment}
-                                                allComments={comments} // Original comments array for threading context
+                                                allComments={comments}
                                                 depth={0}
                                                 onReply={startReply}
                                                 onEdit={startEdit}

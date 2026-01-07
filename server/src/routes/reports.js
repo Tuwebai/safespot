@@ -16,6 +16,7 @@ import { exportReportPDF } from '../controllers/exportController.js';
 import { NotificationService } from '../utils/notificationService.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { sendNewReportNotification } from '../utils/whatsapp.js';
 
 const router = express.Router();
 
@@ -880,6 +881,9 @@ router.post('/',
       // REALTIME: Broadcast new report to global feed
       realtimeEvents.emitNewReport(data);
 
+      // WHATSAPP: Send notification (delayed to wait for images)
+      sendNewReportNotification(data.id);
+
       // Evaluate badges (await to include in response for real-time notification)
       let newBadges = [];
       try {
@@ -1109,6 +1113,13 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     }
 
     const updatedReport = updateResult.rows[0];
+
+    // REALTIME: Broadcast report update
+    try {
+      realtimeEvents.emitVoteUpdate('report', id, updatedReport);
+    } catch (err) {
+      logError(err, { context: 'realtimeEvents.emitReportUpdate', reportId: id });
+    }
 
     logSuccess('Report updated', { id, anonymousId });
 

@@ -4,7 +4,6 @@
  */
 
 import { ensureAnonymousId } from './identity';
-import { getCached, setCache } from './cache';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -12,14 +11,7 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
   ? rawApiUrl.replace(/\/$/, '')
   : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
-// ============================================
-// CACHE TTL CONSTANTS (in milliseconds)
-// ============================================
-export const CACHE_TTL = {
-  GAMIFICATION_SUMMARY: 30 * 1000,   // 30 seconds - profile + badges
-  BADGES_CATALOG: 5 * 60 * 1000,     // 5 minutes - static catalog
-  FAVORITES: 60 * 1000,               // 60 seconds - user's favorites list
-} as const;
+
 
 /**
  * Helper to pause execution
@@ -151,31 +143,7 @@ export async function apiRequest<T>(
  * @param options - Fetch options
  * @param ttlMs - Cache TTL in milliseconds (undefined = no cache)
  */
-async function apiRequestCached<T>(
-  endpoint: string,
-  options: RequestInit = {},
-  ttlMs?: number
-): Promise<T> {
-  // Only cache GET requests
-  const isGet = !options.method || options.method === 'GET';
 
-  if (isGet && ttlMs) {
-    const cached = getCached<T>(endpoint);
-    if (cached) {
-      return cached;
-    }
-  }
-
-  // Make actual request
-  const data = await apiRequest<T>(endpoint, options);
-
-  // Cache the response
-  if (isGet && ttlMs) {
-    setCache(endpoint, data, ttlMs);
-  }
-
-  return data;
-}
 
 // ============================================
 // REPORTS API
@@ -900,10 +868,8 @@ export const gamificationApi = {
    * CACHED: 30 seconds TTL - invalidated after user actions
    */
   getSummary: async (): Promise<GamificationSummaryResponse> => {
-    const response = await apiRequestCached<GamificationSummaryResponse>(
-      '/gamification/summary',
-      {},
-      CACHE_TTL.GAMIFICATION_SUMMARY
+    const response = await apiRequest<GamificationSummaryResponse>(
+      '/gamification/summary'
     );
     return {
       profile: response.profile,

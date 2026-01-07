@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi, ChatMessage } from '../../lib/api';
 import { useEffect, useState } from 'react';
 import { API_BASE_URL } from '../../lib/api';
+import { upsertInList, patchItem } from '@/lib/realtime-utils';
 
 const CHATS_KEYS = {
     rooms: ['chats', 'rooms'] as const,
@@ -9,7 +10,10 @@ const CHATS_KEYS = {
 };
 
 /**
- * Hook para obtener todas las salas de chat con actualizaciones en tiempo real
+ * Chat Rooms Hook
+ * 
+ * Scope Mapping:
+ * - 'chat-update': Patches canonical room status (last message, unread status) in sidebar.
  */
 export function useChatRooms() {
     const queryClient = useQueryClient();
@@ -18,7 +22,7 @@ export function useChatRooms() {
     const query = useQuery({
         queryKey: CHATS_KEYS.rooms,
         queryFn: () => chatsApi.getAllRooms(),
-        refetchInterval: 30000,
+        refetchInterval: 60000, // Menos agresivo ahora que hay SSE
     });
 
     useEffect(() => {
@@ -27,9 +31,48 @@ export function useChatRooms() {
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/user/${anonymousId}`;
         const eventSource = new EventSource(sseUrl);
 
-        eventSource.addEventListener('chat-update', () => {
-            // Invalidar lista de salas para reflejar nuevos mensajes/unread counts
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
+        eventSource.onmessage = (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'chat-update' || event.type === 'chat-update') {
+                    if (data.roomId && data.message) {
+                        // Adjustment 3: Skip if it's our own message being broadcasted back
+                        if (data.message.sender_id === anonymousId && data.action !== 'read') return;
+
+                        // Patch the rooms list with new message/status
+                        patchItem(queryClient, CHATS_KEYS.rooms as any, data.roomId, {
+                            last_message_content: data.message.content,
+                            last_message_at: data.message.created_at,
+                            last_message_sender_id: data.message.sender_id,
+                            unread_count: (data.action === 'read') ? 0 : undefined
+                        } as any);
+
+                        // If unread_count needs incrementing (and and action is not read)
+                        if (data.action !== 'read' && data.message.sender_id !== anonymousId) {
+                            patchItem(queryClient, CHATS_KEYS.rooms as any, data.roomId, (old: any) => ({
+                                unread_count: (old.unread_count || 0) + 1
+                            }));
+                        }
+                    }
+                }
+            } catch (err) {
+                // console.error('[SSE] Error patching chat rooms:', err);
+            }
+        };
+
+        // For backward compatibility with event listeners if used
+        eventSource.addEventListener('chat-update', (event: any) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.roomId) {
+                    patchItem(queryClient, CHATS_KEYS.rooms as any, data.roomId, {
+                        ...data.message,
+                        last_message_content: data.message?.content,
+                        unread_count: data.action === 'read' ? 0 : undefined
+                    } as any);
+                }
+            } catch (e) { }
         });
 
         return () => {
@@ -65,17 +108,26 @@ export function useChatMessages(roomId: string | undefined) {
         const eventSource = new EventSource(sseUrl);
 
         eventSource.addEventListener('new-message', (event: any) => {
-            const { message } = JSON.parse(event.data);
+            try {
+                const { message } = JSON.parse(event.data);
 
-            if (message.sender_id !== anonymousId) {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
-                    if (!old) return [message];
-                    if (old.some(m => m.id === message.id)) return old;
-                    return [...old, message];
-                });
+                if (message.sender_id !== anonymousId) {
+                    // 1. Add message to chat history
+                    upsertInList(queryClient, CHATS_KEYS.messages(roomId) as any, message);
 
-                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
-            }
+                    // 2. Patch room in sidebar without invalidation
+                    patchItem(queryClient, CHATS_KEYS.rooms as any, roomId, {
+                        last_message_content: message.content,
+                        last_message_at: message.created_at,
+                        last_message_sender_id: message.sender_id
+                    } as any);
+
+                    // Increment unread locally
+                    patchItem(queryClient, CHATS_KEYS.rooms as any, roomId, (old: any) => ({
+                        unread_count: (old.unread_count || 0) + 1
+                    }));
+                }
+            } catch (e) { }
         });
 
         eventSource.addEventListener('typing', (event: any) => {

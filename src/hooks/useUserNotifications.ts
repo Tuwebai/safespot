@@ -1,18 +1,20 @@
-
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { API_BASE_URL } from '@/lib/api';
+import { upsertInList, patchItem } from '@/lib/realtime-utils';
+import { queryKeys } from '@/lib/queryKeys';
 
 interface NotificationPayload {
     type: string;
     followerId?: string;
     followerAlias?: string;
-    reportId?: string; // ID of the report involved (for likes, comments, mentions)
+    reportId?: string;
     entityId?: string;
     targetType?: string;
     title?: string;
     message?: string;
+    notification?: any; // The full notification object for patching
 }
 
 export function useUserNotifications(onNotification?: (data: NotificationPayload) => void) {
@@ -25,35 +27,25 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
         const url = `${API_BASE_URL}/realtime/user/${anonymousId}`;
         const eventSource = new EventSource(url);
 
-        eventSource.onopen = () => {
-            console.log('[SSE] User Notifications Connected');
-        };
-
-        eventSource.addEventListener('notification', (event: MessageEvent) => {
+        eventSource.onmessage = (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data) as NotificationPayload;
-                console.log('[SSE] Notification received:', data.type, data);
+                // console.log('[SSE] Notification received:', data.type, data);
 
-                // 1. Always invalidate notifications list (update bell count)
-                queryClient.invalidateQueries({ queryKey: ['notifications'] });
+                // 1. Patch notifications list if full object is provided
+                if (data.notification) {
+                    upsertInList(queryClient, ['notifications'], data.notification);
+                }
 
-                // 2. Handle specific types
+                // 2. Handle specific types with atomic patches
                 if (data.type === 'follow') {
-                    // Update profile stats
+                    // Refresh profile to reflect new followers
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
                 }
 
-                // 3. Update Report/Comments if reportId is present (Likes, Comments, Mentions)
-                // This ensures that if I'm viewing the report, the like count or comments update instantly.
-                if (data.reportId) {
-                    queryClient.invalidateQueries({ queryKey: ['reports', data.reportId] });
-                    queryClient.invalidateQueries({ queryKey: ['comments', data.reportId] });
+                // Note: Like/Comment counters for reports are handled by 
+                // useGlobalFeed and useRealtimeComments to avoid double increments.
 
-                    // Also invalidate global feed stats if needed? 
-                    // Maybe overkill to invalidate 'reports' list, but individual report cache is good.
-                }
-
-                // Custom callback
                 if (onNotification) {
                     onNotification(data);
                 }
@@ -61,14 +53,12 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
             } catch (err) {
                 console.error('[SSE] Error parsing notification:', err);
             }
-        });
+        };
 
         eventSource.onerror = () => {
-            // console.error('[SSE] Connection error:', err);
-            eventSource.close();
-            // Reconnect logic is usually handled by browser or simple wrapper, 
-            // but for now we rely on browser's native reconnection for EventSource usually? 
-            // Actually native EventSource auto-reconnects.
+            if (eventSource.readyState === EventSource.CLOSED) {
+                // Connection closed
+            }
         };
 
         return () => {
