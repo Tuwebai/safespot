@@ -21,7 +21,21 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
 
     try {
-        // 1. Fetch user by email
+        // 1. Check against Environment Variables (Master Credentials)
+        const envEmail = process.env.ADMIN_EMAIL;
+        const envPassword = process.env.ADMIN_PASSWORD;
+
+        if (envEmail && envPassword && email === envEmail && password === envPassword) {
+            console.log('[AdminAuth] Login successful via .env master credentials');
+            const token = jwt.sign(
+                { id: 'master-admin', email: envEmail, role: 'admin' },
+                JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+            return res.json({ token, user: { email: envEmail, role: 'admin' } });
+        }
+
+        // 2. Fallback: Fetch user from database
         const { data: user, error } = await supabaseAdmin
             .from('admin_users')
             .select('*')
@@ -29,23 +43,22 @@ router.post('/login', loginLimiter, async (req, res) => {
             .single();
 
         if (error || !user) {
-            // Return generic error for security
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // 2. Compare password
+        // 3. Compare password
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // 3. Update last login
+        // 4. Update last login
         await supabaseAdmin
             .from('admin_users')
             .update({ last_login: new Date().toISOString() })
             .eq('id', user.id);
 
-        // 4. Generate JWT
+        // 5. Generate JWT
         const token = jwt.sign(
             {
                 id: user.id,

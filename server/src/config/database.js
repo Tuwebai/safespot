@@ -25,8 +25,9 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-  console.error('❌ Database connection error:', err);
-  process.exit(-1);
+  console.error('❌ Database connection pool error:', err);
+  // Important: We don't exit the process here to allow the server to recover 
+  // and attempt to reconnect on subsequent requests.
 });
 
 // Test connection on startup (async, no bloquea)
@@ -58,6 +59,13 @@ async function testConnection() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_hour ON rate_limits(reset_hour);
+
+      -- 1b. Performance Indexes for Gamification & Feeds
+      CREATE INDEX IF NOT EXISTS idx_reports_anonymous_id ON reports(anonymous_id);
+      CREATE INDEX IF NOT EXISTS idx_comments_anonymous_id ON comments(anonymous_id);
+      CREATE INDEX IF NOT EXISTS idx_votes_anonymous_id ON votes(anonymous_id);
+      CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC);
 
       -- 2. Follow System Table
       CREATE TABLE IF NOT EXISTS followers (
@@ -114,6 +122,12 @@ async function testConnection() {
       
       ALTER TABLE chat_messages ADD CONSTRAINT chat_messages_type_check 
         CHECK (type IN ('text', 'image', 'sighting', 'location'));
+
+      -- 8. Admin Tasks performance
+      CREATE INDEX IF NOT EXISTS idx_admin_tasks_status ON admin_tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_admin_tasks_severity ON admin_tasks(severity);
+      CREATE INDEX IF NOT EXISTS idx_admin_tasks_type ON admin_tasks(type);
+      CREATE INDEX IF NOT EXISTS idx_admin_tasks_created_at ON admin_tasks(created_at DESC);
     `;
 
     await pool.query(initSql);

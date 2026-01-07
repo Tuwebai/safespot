@@ -9,16 +9,16 @@ const TO_NUMBER = '543571416044'; // Verified number
  * @param {string} message - The detail body of the alert.
  * @param {string} priority - Priority level (default: 'Informativa').
  */
-export const sendWhatsAppAlert = async (title, message, priority = 'Informativa') => {
-    try {
-        await axios.post(WHATSAPP_WEBHOOK_URL, {
-            to: TO_NUMBER,
-            title: title,
-            message: message,
-            priority: priority
-        });
+export const sendWhatsAppAlert = (title, message, priority = 'Informativa') => {
+    // Non-blocking: We don't await the axios call to prevent 504 timeouts
+    axios.post(WHATSAPP_WEBHOOK_URL, {
+        to: TO_NUMBER,
+        title: title,
+        message: message,
+        priority: priority
+    }).then(() => {
         console.log('[WhatsApp] Alert sent successfully');
-    } catch (error) {
+    }).catch((error) => {
         console.error('[WhatsApp] Failed to send alert:', error.message);
-    }
+    });
 };

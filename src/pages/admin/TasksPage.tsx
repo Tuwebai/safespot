@@ -173,7 +173,7 @@ export function TasksPage() {
                 }
             })
             const data = await response.json()
-            setTasks(data)
+            setTasks(Array.isArray(data) ? data : [])
         } catch (error) {
             console.error('Error fetching tasks:', error)
         } finally {
@@ -236,10 +236,10 @@ export function TasksPage() {
             {/* Stats Quick View */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Pendientes', value: tasks.filter(t => t.status === 'pending').length, color: 'text-[#00ff88]' },
-                    { label: 'Críticas', value: tasks.filter(t => t.severity === 'critical').length, color: 'text-red-500' },
-                    { label: 'Bugs Reportados', value: tasks.filter(t => t.type === 'bug').length, color: 'text-orange-500' },
-                    { label: 'Resueltas hoy', value: tasks.filter(t => t.status === 'done').length, color: 'text-blue-400' },
+                    { label: 'Pendientes', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.status === 'pending').length, color: 'text-[#00ff88]' },
+                    { label: 'Críticas', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.severity === 'critical').length, color: 'text-red-500' },
+                    { label: 'Bugs Reportados', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.type === 'bug').length, color: 'text-orange-500' },
+                    { label: 'Resueltas hoy', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.status === 'done').length, color: 'text-blue-400' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-[#0f172a] border border-[#1e293b] p-4 rounded-xl">
                         <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">{stat.label}</p>

@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { DB } from './db.js';
 import { sendWhatsAppAlert } from './whatsapp.js';
 
@@ -33,8 +32,8 @@ export const createAdminTask = async ({
 
         // 2. Notify n8n via Webhook
         // 2. Notify n8n via Webhook
-        // Trigger generic high-priority alert via WhatsApp
-        await sendWhatsAppAlert(
+        // Trigger generic high-priority alert via WhatsApp (NON-BLOCKING)
+        sendWhatsAppAlert(
             `Nueva Tarea: ${title}`,
             `Prioridad: ${severity}\nFuente: ${source}\n${description}`,
             severity === 'critical' ? 'Alta' : 'Informativa'
