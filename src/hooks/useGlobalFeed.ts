@@ -19,7 +19,7 @@ export function useGlobalFeed() {
         const url = `${API_BASE_URL}/realtime/feed`
         const eventSource = new EventSource(url)
 
-        eventSource.onmessage = (event: MessageEvent) => {
+        const handleGlobalUpdate = (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data)
 
@@ -62,6 +62,8 @@ export function useGlobalFeed() {
                 console.error('[SSE] Error parsing global feed event:', err)
             }
         }
+
+        eventSource.addEventListener('global-report-update', handleGlobalUpdate)
 
         eventSource.onerror = () => {
             if (eventSource.readyState === EventSource.CLOSED) {

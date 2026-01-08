@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { queryWithRLS } from './rls.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 const WHATSAPP_WEBHOOK_URL = 'https://tuwebai.app.n8n.cloud/webhook/safespot-whatsapp';
 const TO_NUMBER = '543571416044'; // Verified number
@@ -24,11 +24,18 @@ export const sendNewReportNotification = (reportId) => {
     // Non-blocking wait
     setTimeout(async () => {
         try {
-            // Fetch the latest state of the report
-            const result = await queryWithRLS('', 'SELECT * FROM reports WHERE id = $1', [reportId]);
-            if (result.rows.length === 0) return;
+            // Fetch the latest state of the report using Admin client to pass RLS
+            const { data: report, error } = await supabaseAdmin
+                .from('reports')
+                .select('*')
+                .eq('id', reportId)
+                .single();
 
-            const report = result.rows[0];
+            if (error || !report) {
+                console.error('[WhatsApp] Report not found or error:', error?.message);
+                return;
+            }
+
             let imageUrl = null;
 
             // Handle images
@@ -55,6 +62,8 @@ export const sendNewReportNotification = (reportId) => {
                 `*Ubicación:* 📍 ${report.address || report.zone || 'No especificada'}\n\n` +
                 `*Relato:* ${report.description}`;
 
+            console.log('[WhatsApp] Sending notification for report:', reportId);
+
             axios.post(WHATSAPP_WEBHOOK_URL, {
                 to: TO_NUMBER,
                 type: 'new_report',
@@ -62,6 +71,8 @@ export const sendNewReportNotification = (reportId) => {
                 message: formattedMessage,
                 mediaUrl: imageUrl,
                 reportId: report.id
+            }).catch(err => {
+                console.error('[WhatsApp] Webhook post failed:', err.message);
             });
 
         } catch (error) {

@@ -16,6 +16,7 @@ import { useReportDetail } from '@/hooks/useReportDetail'
 import { useReportEditor } from '@/hooks/useReportEditor'
 import { useFlagManager } from '@/hooks/useFlagManager'
 import { useRealtimeComments } from '@/hooks/useRealtimeComments'
+import { useReportDeletionListener } from '@/hooks/useReportDeletionListener'
 
 // Components
 import {
@@ -96,6 +97,9 @@ export function DetalleReporte() {
 
   // REALTIME: Subscribe to instant comment updates via SSE
   useRealtimeComments(id)
+
+  // REALTIME: Listen for report deletion to redirect
+  useReportDeletionListener(id)
 
   const createChatMutation = useCreateChatMutation();
 
