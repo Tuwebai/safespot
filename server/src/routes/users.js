@@ -341,10 +341,10 @@ router.get('/stats', async (req, res) => {
     // Parallelize valid counts for performance
     const [reportsCount, resolvedCount, usersCount] = await Promise.all([
       // Total Reports (Live)
-      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).not('deleted_at', 'is', 'null'),
+      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).is('deleted_at', null),
 
       // Resolved Reports (Live)
-      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'resuelto'),
+      supabaseAdmin.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'resuelto').is('deleted_at', null),
 
       // Total Users (Live)
       supabaseAdmin.from('anonymous_users').select('*', { count: 'exact', head: true })
