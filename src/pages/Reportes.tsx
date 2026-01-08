@@ -34,54 +34,15 @@ import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { AdBanner } from '@/components/AdBanner'
+import { ReportCard } from '@/components/ReportCard'
+import { reportsCache } from '@/lib/cache-helpers'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
 // ============================================
 
-const getStatusColor = (status: Report['status']) => {
-  switch (status) {
-    case 'pendiente':
-      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-    case 'en_proceso':
-      return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-    case 'resuelto':
-      return 'bg-green-500/20 text-green-400 border-green-500/30'
-    case 'cerrado':
-      return 'bg-red-500/20 text-red-400 border-red-500/30'
-    default:
-      return ''
-  }
-}
-
-const STATUS_LABELS: Record<Report['status'], string> = {
-  'pendiente': 'Buscando',
-  'en_proceso': 'En Proceso',
-  'resuelto': 'Recuperado',
-  'cerrado': 'Expirado'
-}
-
-const getStatusLabel = (status: Report['status']) => STATUS_LABELS[status] || status
-
-const CATEGORY_COLORS: Record<string, string> = {
-  'Robo de Bicicleta': 'bg-red-500',
-  'Robo de Vehículo': 'bg-orange-500',
-  'Robo de Objetos Personales': 'bg-purple-500',
-  'Pérdida de Objetos': 'bg-blue-500',
-  'Encontrado': 'bg-green-500',
-  'Otros': 'bg-gray-500'
-}
-
-const getCategoryColor = (category: string) => CATEGORY_COLORS[category] || 'bg-gray-500'
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('es-AR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })
-}
+// ... (Helpers can remain if other components use them, or be removed. I'll leave them to avoid large deletions for now, cleanup later)
+// Keep helper functions for now...
 
 // ============================================
 // COMPONENT
@@ -188,19 +149,16 @@ export function Reportes() {
   const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
 
   const handleFavoriteUpdate = useCallback((reportId: string, newState: boolean) => {
-    // Optimistically update cache
-    queryClient.setQueryData<Report[]>(
-      queryKeys.reports.list(filters),
-      (old) => old?.map(r => r.id === reportId ? { ...r, is_favorite: newState } : r)
-    )
-  }, [queryClient, filters])
+    // SSOT Update: We patch the canonical report, and ReportCard updates itself.
+    reportsCache.patch(queryClient, reportId, { is_favorite: newState })
+  }, [queryClient])
 
   const handleFlag = useCallback((e: React.MouseEvent, reportId: string) => {
     e.preventDefault()
     e.stopPropagation()
 
-    // Validaciones frontend
-    const report = reports.find((r: Report) => r.id === reportId)
+    // Retrieve report from SSOT cache
+    const report = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
     if (!report) return
 
     const currentAnonymousId = getAnonymousIdSafe()
@@ -223,13 +181,13 @@ export function Reportes() {
     // Abrir modal
     setFlaggingReportId(reportId)
     setIsFlagDialogOpen(true)
-  }, [reports, flaggingReports])
+  }, [flaggingReports, queryClient]) // Removed 'reports' dependency
 
   const handleFlagSubmit = useCallback(async (reason: string) => {
     if (!flaggingReportId) return
 
     const reportId = flaggingReportId
-    const report = reports.find((r: Report) => r.id === reportId)
+    const report = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
 
     if (!report) {
       setIsFlagDialogOpen(false)
@@ -248,21 +206,14 @@ export function Reportes() {
     // Marcar como en proceso
     setFlaggingReports(prev => new Set(prev).add(reportId))
 
-    // Save previous state for rollback
-    const previousReports = queryClient.getQueryData<Report[]>(queryKeys.reports.list(filters))
+    // Snapshot can be just the report object if we only revert that
+    const previousReport = report
 
-    // Optimistic update: actualizar cache inmediatamente
-    queryClient.setQueryData<Report[]>(
-      queryKeys.reports.list(filters),
-      (old) => old?.map(r => {
-        if (r.id !== reportId) return r
-        return {
-          ...r,
-          is_flagged: true,
-          flags_count: (r.flags_count ?? 0) + 1
-        }
-      })
-    )
+    // Optimistic update: SSOT Patch
+    reportsCache.patch(queryClient, reportId, (old) => ({
+      is_flagged: true,
+      flags_count: (old.flags_count ?? 0) + 1
+    }))
 
     try {
       await reportsApi.flag(reportId, reason.trim())
@@ -271,9 +222,9 @@ export function Reportes() {
       setIsFlagDialogOpen(false)
       setFlaggingReportId(null)
     } catch (error) {
-      // Revertir optimistic update en caso de error
-      if (previousReports) {
-        queryClient.setQueryData(queryKeys.reports.list(filters), previousReports)
+      // Revertir optimistic update SSOT
+      if (previousReport) {
+        reportsCache.patch(queryClient, reportId, previousReport)
       }
 
       const errorMessage = error instanceof Error ? error.message : ''
@@ -293,7 +244,7 @@ export function Reportes() {
         return newSet
       })
     }
-  }, [flaggingReportId, reports, toast, queryClient, filters])
+  }, [flaggingReportId, toast, queryClient])
 
 
 
@@ -746,19 +697,9 @@ export function Reportes() {
                   }}
                 >
                   {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    // Filtra y mapea los reportes para asegurar que solo se procesen los válidos.
-                    const validReports = reports.filter((report: Report) => {
-                      return (
-                        report != null &&
-                        typeof report === 'object' &&
-                        report.id != null &&
-                        typeof report.id === 'string' &&
-                        report.title != null &&
-                        typeof report.title === 'string'
-                      )
-                    })
+                    // reports is now string[] (IDs)
                     const startIndex = virtualRow.index * columns
-                    const rowItems = validReports.slice(startIndex, startIndex + columns)
+                    const rowItems = reports.slice(startIndex, startIndex + columns)
 
                     return (
                       <div
@@ -778,159 +719,14 @@ export function Reportes() {
                         }}
                         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
                       >
-                        {rowItems.map((report: Report) => (
-                          <SmartLink
-                            key={report.id}
-                            to={`/reporte/${report.id}`}
-                            prefetchReportId={report.id}
-                            prefetchRoute="DetalleReporte"
-                            className="block h-full no-underline"
-                          >
-                            <AnimatedCard className="h-full">
-                              <Card className={`group bg-card border-border hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden relative shadow-lg ${report.priority_zone ? 'ring-1 ring-neon-green/40 border-neon-green/40' : ''}`}>
-                                {report.priority_zone && (
-                                  <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
-                                    report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
-                                      'bg-amber-500 text-white'
-                                    }`}>
-                                    {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                                    {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                                    {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                                    {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
-                                  </div>
-                                )}
-
-                                <div className="relative aspect-video w-full overflow-hidden bg-muted/50">
-                                  {/* Imagen optimizada */}
-                                  {/* Imagen optimizada o Mapa Fallback */}
-                                  {Array.isArray(report.image_urls) && report.image_urls.length > 0 ? (
-                                    <div className="relative overflow-hidden w-full h-full">
-                                      <OptimizedImage
-                                        src={report.image_urls[0]}
-                                        alt={report.title}
-                                        aspectRatio={16 / 9}
-                                        priority={false}
-                                        className="w-full h-full object-cover"
-                                      />
-                                      <div className="absolute top-2 right-2 flex gap-2 z-10">
-                                        <Badge className={getStatusColor(report.status)}>
-                                          {getStatusLabel(report.status)}
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <ReportMapFallback
-                                      lat={report.latitude}
-                                      lng={report.longitude}
-                                    />
-                                  )}
-                                </div>
-
-                                <CardContent className="p-6 flex-1 flex flex-col">
-                                  <div className="flex items-start justify-between mb-2">
-                                    <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
-                                      {report.title}
-                                    </h3>
-                                    {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
-                                      <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                                        {getStatusLabel(report.status)}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                                    <div className={`w-3 h-3 rounded-full ${getCategoryColor(report.category)}`} />
-                                    <span>{report.category}</span>
-                                  </div>
-
-                                  <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
-                                    {report.description}
-                                  </p>
-
-                                  <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
-                                    <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                                    <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
-                                    <div className="flex items-center gap-2">
-                                      <Avatar className="h-6 w-6 border border-white/10 shrink-0">
-                                        <AvatarImage
-                                          src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
-                                          alt="Avatar"
-                                        />
-                                        <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
-                                          {report.anonymous_id.substring(0, 2).toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div className="flex flex-col">
-                                        {report.alias && (
-                                          <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
-                                        )}
-                                        <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center space-x-4">
-                                      <div className="flex items-center gap-1" title="Hilos">
-                                        <GitBranch className="h-4 w-4" />
-                                        <span>{report.threads_count ?? 0}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1" title="Comentarios">
-                                        <MessageCircle className="h-4 w-4" />
-                                        <span>{report.comments_count}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
-                                    <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                                    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                                      <FavoriteButton
-                                        reportId={report.id}
-                                        isFavorite={report.is_favorite ?? false}
-                                        onToggle={(newState) => handleFavoriteUpdate(report.id, newState)}
-                                      />
-                                      {(() => {
-                                        const currentAnonymousId = getAnonymousIdSafe()
-                                        const isOwner = report?.anonymous_id === currentAnonymousId
-                                        const isFlagged = report?.is_flagged ?? false
-                                        const isFlagging = flaggingReports.has(report.id)
-
-                                        if (isOwner) return null
-
-                                        if (isFlagged) {
-                                          return (
-                                            <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
-                                              Denunciado
-                                            </span>
-                                          )
-                                        }
-
-                                        return (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.preventDefault()
-                                              handleFlag(e, report.id)
-                                            }}
-                                            disabled={isFlagging}
-                                            className="hover:text-yellow-400"
-                                            title={isFlagging ? 'Reportando...' : 'Reportar contenido inapropiado'}
-                                          >
-                                            {isFlagging ? (
-                                              <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                                            ) : (
-                                              <Flag className="h-4 w-4" />
-                                            )}
-                                          </Button>
-                                        )
-                                      })()}
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            </AnimatedCard>
-                          </SmartLink>
+                        {rowItems.map((reportId: string) => (
+                          <ReportCard
+                            key={reportId}
+                            reportId={reportId}
+                            onToggleFavorite={(newState) => handleFavoriteUpdate(reportId, newState)}
+                            onFlag={(e) => handleFlag(e, reportId)}
+                            isFlagging={flaggingReports.has(reportId)}
+                          />
                         ))}
                       </div>
                     )

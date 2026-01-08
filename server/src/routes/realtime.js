@@ -27,24 +27,48 @@ router.get('/comments/:reportId', (req, res) => {
     // Start Keep-Alive Heartbeat (2s interval for stability)
     stream.startHeartbeat(2000);
 
-    // Event Handlers
+    // Event Handlers - STRICT CONTRACT ADAPTERS
     const handleNewComment = ({ comment, originClientId }) => {
-        stream.send('new-comment', { comment, originClientId });
+        stream.send('new-comment', {
+            id: comment.id,
+            partial: comment,
+            originClientId
+        });
     };
 
     const handleCommentUpdate = ({ comment, originClientId }) => {
-        stream.send('comment-update', { comment, originClientId });
+        stream.send('comment-update', {
+            id: comment.id,
+            partial: comment,
+            originClientId
+        });
     };
 
     const handleCommentDelete = ({ commentId, originClientId }) => {
-        stream.send('comment-delete', { commentId, originClientId });
+        stream.send('comment-delete', {
+            id: commentId,
+            partial: null,
+            originClientId
+        });
     };
 
     const handleReportUpdate = (payload) => {
-        // Payload already structure as { ...updates, originClientId } or similar from eventEmitter
-        // But for report-update, emitVoteUpdate emits: { ...updates, originClientId }
-        // stream.send expects an object.
-        stream.send('report-update', payload);
+        // Payload from eventEmitter.emitVoteUpdate: { ...updates, originClientId }
+        // We need to extract ID. 
+        // Note: report-update events usually come from emitVoteUpdate('report', id, updates)
+        // Check eventEmitter.js: emit(`report-update:${id}`, { ...updates, originClientId })
+        // It does NOT include ID in the object, because the channel includes it.
+        // But the handler needs it? checking realtime.js:43... it receives 'payload'.
+        // If the payload from emitVoteUpdate doesn't have ID, we can't send it?
+        // Wait, the listener `realtimeEvents.on('report-update:${reportId}', ...)`
+        // We know reportId from scope!
+
+        const { originClientId, ...updates } = payload;
+        stream.send('report-update', {
+            id: reportId,
+            partial: updates,
+            originClientId
+        });
     };
 
     // Subscribe to system events
@@ -198,8 +222,31 @@ router.get('/feed', (req, res) => {
     stream.startHeartbeat(10000); // 10s heartbeat for global feed (less aggressive)
 
     const handleGlobalUpdate = (data) => {
-        // data already contains type, report/reportId, originClientId from eventEmitter.js or reports.js
-        stream.send('global-report-update', data);
+        // Demultiplex global events into specific strict events:
+        // 1. New Report
+        if (data.type === 'new-report') {
+            stream.send('report-create', {
+                id: data.report.id,
+                partial: data.report,
+                originClientId: data.originClientId
+            });
+        }
+        // 2. Stats/Status Update
+        else if (data.type === 'stats-update' || data.type === 'report-update') {
+            stream.send('report-update', {
+                id: data.reportId || data.id,
+                partial: data.updates || data.partial, // Handle both formats if flexible, but strict is 'updates' from emitter
+                originClientId: data.originClientId
+            });
+        }
+        // 3. Deletion
+        else if (data.type === 'delete') {
+            stream.send('report-delete', {
+                id: data.reportId,
+                partial: null,
+                originClientId: data.originClientId
+            });
+        }
     };
 
     realtimeEvents.on('global-report-update', handleGlobalUpdate);

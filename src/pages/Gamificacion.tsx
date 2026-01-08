@@ -417,11 +417,23 @@ export function Gamificacion() {
                     ))}
                   </div>
                 </div>
-              ) : (
+              ) : loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
                     <div key={i} className="h-12 bg-dark-border/50 rounded-lg animate-pulse" />
                   ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-6 text-center space-y-3">
+                  <div className="h-12 w-12 rounded-full bg-dark-bg border border-dark-border/50 flex items-center justify-center">
+                    <Award className="h-6 w-6 text-muted-foreground/50" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground">Sin insignias aún</h3>
+                    <p className="text-sm text-muted-foreground mt-1 max-w-[200px] mx-auto leading-relaxed">
+                      Participa en la comunidad reportando y votando para desbloquear tu primera insignia.
+                    </p>
+                  </div>
                 </div>
               )}
             </CardContent>

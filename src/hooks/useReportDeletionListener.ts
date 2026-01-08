@@ -15,11 +15,11 @@ export function useReportDeletionListener(reportId?: string) {
 
         eventSource.onmessage = null // Explicitly nullify default handler
 
-        eventSource.addEventListener('global-report-update', (event: MessageEvent) => {
+        eventSource.addEventListener('report-delete', (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data)
 
-                if (data.type === 'delete' && data.reportId === reportId) {
+                if (data.id === reportId) {
                     // Show toast
                     error("Reporte eliminado: El autor ha eliminado este reporte.", 5000);
 

@@ -1,4 +1,7 @@
 import { useCallback, useReducer, useMemo } from 'react'
+import { useQueries } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/queryKeys'
+import type { Comment } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
@@ -138,14 +141,34 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
     // For now we don't handle deep pagination in this simplified hook 
     // but the query supports it.
     const {
-        data: commentsData,
+        data: commentsIdsOrData,
         isLoading,
         isFetching: isLoadingMore,
         refetch
     } = useCommentsQuery(reportId)
 
-    const comments = useMemo(() => commentsData?.comments ?? [], [commentsData?.comments])
-    const hasMore = !!commentsData?.nextCursor
+    // Normalize IDs
+    const commentIds: string[] = useMemo(() => {
+        if (!commentsIdsOrData) return []
+        if (Array.isArray(commentsIdsOrData)) return commentsIdsOrData
+        return (commentsIdsOrData as any).comments || []
+    }, [commentsIdsOrData])
+
+    // Hydrate comments from SSOT (Canonical Cache)
+    const commentQueries = useQueries({
+        queries: commentIds.map(id => ({
+            queryKey: queryKeys.comments.detail(id),
+            staleTime: Infinity,
+        }))
+    })
+
+    const comments = useMemo(() => {
+        return commentQueries
+            .map(q => q.data as Comment | undefined)
+            .filter((c): c is Comment => !!c)
+    }, [commentQueries])
+
+    const hasMore = !!(commentsIdsOrData as any)?.nextCursor
 
     // ============================================
     // MUTATIONS

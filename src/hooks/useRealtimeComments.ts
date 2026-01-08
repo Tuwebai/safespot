@@ -1,17 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '@/lib/queryKeys'
 import { API_BASE_URL } from '@/lib/api'
-import { upsertInList, patchItem, removeFromList } from '@/lib/realtime-utils'
+import { reportsCache, commentsCache } from '@/lib/cache-helpers'
+import { getClientId } from '@/lib/clientId'
 
-interface RealtimeComment {
-    type: 'new-comment' | 'comment-update' | 'comment-delete' | 'connected' | 'report-update'
-    comment?: any
-    commentId?: string
-    reportId?: string
-    senderId?: string
-    updates?: any // for partial updates like likes
-}
 
 /**
  * Real-time Comments Hook
@@ -24,91 +16,73 @@ interface RealtimeComment {
  */
 export function useRealtimeComments(reportId: string | undefined, enabled = true) {
     const queryClient = useQueryClient()
-    const myId = localStorage.getItem('safespot_anonymous_id');
     const eventSourceRef = useRef<EventSource | null>(null)
 
     useEffect(() => {
         if (!reportId || !enabled) return
 
-        let isMounted = true
+        const eventSource = new EventSource(`${API_BASE_URL}/realtime/comments/${reportId}`)
+        eventSourceRef.current = eventSource
 
-        const connect = () => {
-            if (!isMounted) return
+        const myClientId = getClientId();
 
+        // 1. New Comment
+        eventSource.addEventListener('new-comment', (event: MessageEvent) => {
             try {
-                const eventSource = new EventSource(`${API_BASE_URL}/realtime/comments/${reportId}`)
-                eventSourceRef.current = eventSource
+                const data = JSON.parse(event.data)
+                if (data.originClientId === myClientId) return
 
-                eventSource.onmessage = (event) => {
-                    try {
-                        const data: RealtimeComment = JSON.parse(event.data)
-                        const commentKey = queryKeys.comments.byReport(reportId);
-                        const reportKey = queryKeys.reports.detail(reportId);
-
-                        // Adjustment 3: SSE != Mutations Optimistic.
-                        const senderId = data.comment?.anonymous_id || data.senderId;
-                        if (senderId && senderId === myId) {
-                            return;
-                        }
-
-                        switch (data.type) {
-                            case 'new-comment':
-                                if (data.comment) {
-                                    // 1. Add comment to list
-                                    upsertInList(queryClient, commentKey as any, data.comment);
-
-                                    // 2. Increment counter in report detail
-                                    patchItem(queryClient, reportKey as any, reportId, (old: any) => ({
-                                        comments_count: (old.comments_count || 0) + 1
-                                    }));
-                                }
-                                break
-
-                            case 'comment-update':
-                                if (data.comment || (data.commentId && data.updates)) {
-                                    const id = data.commentId || data.comment?.id;
-                                    const updates = data.updates || data.comment;
-                                    patchItem(queryClient, commentKey as any, id, updates);
-                                }
-                                break
-
-                            case 'comment-delete':
-                                if (data.commentId) {
-                                    // 1. Remove from list
-                                    removeFromList(queryClient, commentKey as any, data.commentId);
-
-                                    // 2. Decrement counter in report detail
-                                    patchItem(queryClient, reportKey as any, reportId, (old: any) => ({
-                                        comments_count: Math.max(0, (old.comments_count || 0) - 1)
-                                    }));
-                                }
-                                break
-
-                            case 'report-update':
-                                if (data.updates) {
-                                    patchItem(queryClient, reportKey as any, reportId, data.updates);
-                                }
-                                break
-                        }
-                    } catch (err) {
-                        console.error('[SSE] Error parsing event data:', err)
-                    }
-                }
-
-                eventSource.onerror = () => {
-                    if (eventSource.readyState === EventSource.CLOSED) {
-                        // console.log('[SSE] Connection closed, will retry...')
-                    }
-                }
+                // Uses cache helper which handles list append + report counter increment
+                commentsCache.append(queryClient, data.partial)
             } catch (err) {
-                console.error('[SSE] Failed to create EventSource:', err)
+                console.error('[SSE] Error processing new-comment:', err)
+            }
+        })
+
+        // 2. Comment Update
+        eventSource.addEventListener('comment-update', (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data)
+                if (data.originClientId === myClientId) return
+
+                commentsCache.patch(queryClient, data.id, data.partial)
+            } catch (err) {
+                console.error('[SSE] Error processing comment-update:', err)
+            }
+        })
+
+        // 3. Comment Delete
+        eventSource.addEventListener('comment-delete', (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data)
+                if (data.originClientId === myClientId) return
+
+                // Helper handles list removal + report counter decrement
+                commentsCache.remove(queryClient, data.id, reportId)
+            } catch (err) {
+                console.error('[SSE] Error processing comment-delete:', err)
+            }
+        })
+
+        // 4. Report Update (e.g. status change while viewing details)
+        eventSource.addEventListener('report-update', (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data)
+                if (data.originClientId === myClientId) return
+
+                reportsCache.patch(queryClient, data.id, data.partial)
+            } catch (err) {
+                console.error('[SSE] Error processing report-update:', err)
+            }
+        })
+
+        eventSource.onerror = () => {
+            if (eventSource.readyState === EventSource.CLOSED) {
+                // console.log('[SSE] Connection closed')
             }
         }
 
-        connect()
-
         return () => {
-            isMounted = false
             if (eventSourceRef.current) {
                 eventSourceRef.current.close()
                 eventSourceRef.current = null

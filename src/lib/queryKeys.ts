@@ -38,6 +38,9 @@ export const queryKeys = {
         // Paginated comments
         byReportPaginated: (reportId: string, cursor?: string) =>
             ['comments', reportId, { cursor }] as const,
+
+        // Single comment detail (SSOT)
+        detail: (commentId: string) => ['comments', 'detail', commentId] as const,
     },
 
     // ============================================
