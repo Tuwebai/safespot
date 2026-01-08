@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi, ChatMessage } from '../../lib/api';
 import { useEffect, useState } from 'react';
 import { API_BASE_URL } from '../../lib/api';
-import { upsertInList, patchItem } from '@/lib/realtime-utils';
+import { getClientId } from '@/lib/clientId';
 
 const CHATS_KEYS = {
     rooms: ['chats', 'rooms'] as const,
@@ -37,8 +37,8 @@ export function useChatRooms() {
 
                 if (data.type === 'chat-update' || event.type === 'chat-update') {
                     if (data.roomId && data.message) {
-                        // Adjustment 3: Skip if it's our own message being broadcasted back
-                        if (data.message.sender_id === anonymousId && data.action !== 'read') return;
+                        // ECHO SUPPRESSION: Ignore events originated by this specific browser tab
+                        if (data.originClientId === getClientId()) return;
 
                         // Patch the rooms list with new message/status
                         patchItem(queryClient, CHATS_KEYS.rooms as any, data.roomId, {
@@ -109,9 +109,13 @@ export function useChatMessages(roomId: string | undefined) {
 
         eventSource.addEventListener('new-message', (event: any) => {
             try {
-                const { message } = JSON.parse(event.data);
+                const { message, originClientId } = JSON.parse(event.data);
 
-                if (message.sender_id !== anonymousId) {
+                // ECHO SUPPRESSION: Ignore if this tab sent the message
+                if (originClientId === getClientId()) return;
+
+                // Process valid message from others OR from other tabs of same user
+                {
                     // 1. Add message to chat history
                     upsertInList(queryClient, CHATS_KEYS.messages(roomId) as any, message);
 

@@ -183,7 +183,7 @@ export function useCreateReportMutation() {
         },
         onSettled: () => {
             // Final sync with server
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.all }) // Disabled for smooth transition (Echo Suppression handles this)
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },

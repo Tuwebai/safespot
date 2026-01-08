@@ -4,6 +4,8 @@ import { queryKeys } from '@/lib/queryKeys'
 import { API_BASE_URL } from '@/lib/api'
 import { upsertInList, patchItem, removeFromList } from '@/lib/realtime-utils'
 
+import { getClientId } from '@/lib/clientId'
+
 /**
  * Global Real-time Feed Hook
  * 
@@ -23,11 +25,10 @@ export function useGlobalFeed() {
             try {
                 const data = JSON.parse(event.data)
 
-                // Adjustment 3: SSE != Mutations Optimistic.
-                // If we have the sender ID, we skip patching if it's us to avoid double increments
-                const senderId = data.report?.anonymous_id || data.senderId;
-                if (senderId && senderId === myId) {
-                    // console.log('[SSE] Skipping update from self');
+                // ECHO SUPPRESSION: Ignore events originated by this specific browser tab
+                // This replaces the old "senderId === myId" check which caused issues with multi-tabs
+                if (data.originClientId === getClientId()) {
+                    // console.log('[SSE] Suppressed echo from self');
                     return;
                 }
 

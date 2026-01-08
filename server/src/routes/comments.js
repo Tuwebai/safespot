@@ -401,8 +401,9 @@ router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), 
     }
 
     // REALTIME: Broadcast new comment to all connected clients
+    const clientId = req.headers['x-client-id'];
     try {
-      realtimeEvents.emitNewComment(req.body.report_id, data);
+      realtimeEvents.emitNewComment(req.body.report_id, data, clientId);
     } catch (err) {
       // Ignore realtime errors to not break comment creation
       logError(err, { context: 'realtimeEvents.emitNewComment', reportId: req.body.report_id });
@@ -511,7 +512,8 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
 
     // REALTIME: Broadcast update
     try {
-      realtimeEvents.emitCommentUpdate(updatedComment.report_id, updatedComment);
+      const clientId = req.headers['x-client-id'];
+      realtimeEvents.emitCommentUpdate(updatedComment.report_id, updatedComment, clientId);
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentUpdate', reportId: updatedComment.report_id });
     }
@@ -585,7 +587,8 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
 
     // REALTIME: Broadcast deletion
     try {
-      realtimeEvents.emitCommentDelete(reportId, deletedId);
+      const clientId = req.headers['x-client-id'];
+      realtimeEvents.emitCommentDelete(reportId, deletedId, clientId);
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
     }
@@ -691,7 +694,8 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) 
 
       // REALTIME: Broadcast comment like update
       try {
-        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 });
+        const clientId = req.headers['x-client-id'];
+        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 }, clientId);
       } catch (err) {
         logError(err, { context: 'realtimeEvents.emitVoteUpdate.commentLike', commentId: id });
       }

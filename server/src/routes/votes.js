@@ -219,12 +219,19 @@ router.post('/', requireAnonymousId, validate(voteSchema), async (req, res) => {
 
     // REALTIME: Fetch updated count and broadcast
     // Run asynchronously to not block response
+    const clientId = req.headers['x-client-id'];
     (async () => {
       try {
         if (report_id) {
           const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
           // Also update the reports table cache if you use it, but for now just broadcast the count
-          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count });
+          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count }, clientId);
+        } else if (comment_id) {
+          // For comments, we can rely on the trigger content or fetch count if needed
+          // realtimeEvents.emitVoteUpdate is called in comment_likes too, but this endpoint handles generic votes
+          // Actually, votes.js handles generic votes but comment likes are often handled in comments.js specific route? 
+          // Wait, votes.js is the generic one. Let's support comment votes here too just in case.
+          // But for now, specifically report votes are critical here.
         }
       } catch (err) {
         logError(err, { context: 'realtimeParam.vote' });

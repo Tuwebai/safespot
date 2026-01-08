@@ -114,7 +114,7 @@ export function useCreateCommentMutation() {
                 }
             )
 
-            return { previousComments, previousReport, reportId: newCommentData.report_id }
+            return { previousComments, previousReport, reportId: newCommentData.report_id, optimisticComment }
         },
         onError: (_, _variables, context) => {
             if (context?.reportId) {
@@ -132,13 +132,54 @@ export function useCreateCommentMutation() {
                 }
             }
         },
-        onSuccess: (newComment, _variables) => {
+        onSuccess: (newComment, variables, context) => {
+            // CHECKPOINT: Manual Reconciliation (Temp ID -> Real ID)
+            // This replaces the "nuclear" invalidateQueries approach
+            queryClient.setQueriesData(
+                { queryKey: queryKeys.comments.byReport(variables.report_id) },
+                (old: any) => {
+                    const swapId = (list: any[]) => list.map(c =>
+                        c.id === context?.optimisticComment?.id ? newComment : c
+                    );
+
+                    if (!old) return [newComment];
+                    if (Array.isArray(old)) return swapId(old);
+
+                    if (old.pages) {
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any) => ({
+                                ...page,
+                                data: swapId(page.data || [])
+                            }))
+                        };
+                    }
+                    if (old.comments) {
+                        return { ...old, comments: swapId(old.comments) };
+                    }
+                    return old;
+                }
+            );
+
+            // Update Report Counter Authoritatively (Optional, but good practice)
+            // We already did this optimistically, but server might have different count
+            queryClient.setQueryData(
+                queryKeys.reports.detail(variables.report_id),
+                (old: any) => {
+                    // If we want to trust the optimistic count, we do nothing.
+                    // But strictly speaking, the mutation response usually doesn't return the new count of the REPORT.
+                    // It returns the COMMENT. 
+                    // So we stick with our optimistic increment which is already correct.
+                    return old;
+                }
+            );
+
             // Check for badges
             triggerBadgeCheck(newComment.newBadges)
         },
         onSettled: (_, __, variables) => {
-            // Final sync with server to replace temp ID with real one
-            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(variables.report_id) })
+            // Only invalidate report detail to sync counters eventually, but NOT the comments list
+            // This prevents the "flicker" / "scroll jump"
             queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(variables.report_id) })
         },
     })

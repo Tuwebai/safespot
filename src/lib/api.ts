@@ -4,6 +4,7 @@
  */
 
 import { ensureAnonymousId } from './identity';
+import { getClientId } from './clientId';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -12,30 +13,25 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
   : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
 
-
 /**
- * Helper to pause execution
- */
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * Get headers with anonymous_id
+ * Get headers with anonymous_id and client_id
  */
 function getHeaders(): HeadersInit {
   const anonymousId = ensureAnonymousId();
+  const clientId = getClientId();
   return {
     'X-Anonymous-Id': anonymousId,
+    'X-Client-ID': clientId,
   };
 }
 
 /**
- * API Request wrapper with error handling, offline detection and retries
+ * API Request wrapper with error handling and offline detection
+ * "Dumb Pipe" implementation: Fails fast, delegates retries to React Query.
  */
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
-  retries = 3,
-  backoff = 500,
   timeout = 15000 // 15 seconds default timeout
 ): Promise<T> {
   // 1. Check offline status immediately
@@ -73,10 +69,13 @@ export async function apiRequest<T>(
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
 
+    // Link signal if provided in options, otherwise use timeout controller
+    const signal = options.signal || controller.signal;
+
     const response = await fetch(url, {
       ...options,
       headers,
-      signal: controller.signal,
+      signal,
     });
     clearTimeout(id);
 
@@ -93,19 +92,8 @@ export async function apiRequest<T>(
       message: `HTTP ${response.status}: ${response.statusText}`,
     }));
 
-    // 2. Handle HTTP errors
+    // 2. Handle HTTP errors - FAIL FAST (No internal retries)
     if (!response.ok) {
-      // Logic to decide if we should retry
-      // Retry on 502, 503, 504 (Server errors)
-      const shouldRetry = [502, 503, 504].includes(response.status);
-
-      if (shouldRetry && retries > 0) {
-        console.warn(`Request failed with ${response.status}. Retrying in ${backoff}ms... (${retries} attempts left)`);
-        await wait(backoff);
-        return apiRequest<T>(endpoint, options, retries - 1, backoff * 2);
-      }
-
-      // If not retriable or no retries left, throw error
       const error = new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`) as Error & { status?: number };
       error.status = response.status;
       throw error;
@@ -118,20 +106,21 @@ export async function apiRequest<T>(
     const isNetworkError = error instanceof TypeError || (error instanceof Error && error.message === 'Failed to fetch');
     const isTimeout = error instanceof DOMException && error.name === 'AbortError';
 
+    // Enhance error objects for React Query to detect logic
     if (isTimeout) {
       const timeoutError = new Error('La solicitud tardó demasiado. Por favor, verificá tu conexión.') as any;
-      timeoutError.message = 'La solicitud tardó demasiado. Por favor, verificá tu conexión.'; // Explicitly set message
-      timeoutError.code = 'TIMEOUT'; // Add a code we can check if needed
+      timeoutError.status = 408; // Request Timeout simulation
+      timeoutError.code = 'TIMEOUT';
       throw timeoutError;
     }
 
-    if (isNetworkError && retries > 0) {
-      console.warn(`Network error. Retrying in ${backoff}ms... (${retries} attempts left)`);
-      await wait(backoff);
-      return apiRequest<T>(endpoint, options, retries - 1, backoff * 2);
+    if (isNetworkError) {
+      // Pass through as is, React Query handles 'error instanceof TypeError' as network error typically
+      // We can attach a status 0 to indicate network fail if we want
+      (error as any).status = 0;
     }
 
-    // Pass through if not retriable
+    // Pass through immediately
     throw error;
   }
 }

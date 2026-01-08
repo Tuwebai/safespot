@@ -28,20 +28,22 @@ router.get('/comments/:reportId', (req, res) => {
     stream.startHeartbeat(2000);
 
     // Event Handlers
-    const handleNewComment = (comment) => {
-        stream.send('new-comment', { comment });
+    const handleNewComment = ({ comment, originClientId }) => {
+        stream.send('new-comment', { comment, originClientId });
     };
 
-    const handleCommentUpdate = (comment) => {
-        stream.send('comment-update', { comment });
+    const handleCommentUpdate = ({ comment, originClientId }) => {
+        stream.send('comment-update', { comment, originClientId });
     };
 
-    const handleCommentDelete = (payload) => {
-        stream.send('comment-delete', payload);
+    const handleCommentDelete = ({ commentId, originClientId }) => {
+        stream.send('comment-delete', { commentId, originClientId });
     };
 
     const handleReportUpdate = (payload) => {
-        // Broadcast generic report updates (e.g. stats/likes)
+        // Payload already structure as { ...updates, originClientId } or similar from eventEmitter
+        // But for report-update, emitVoteUpdate emits: { ...updates, originClientId }
+        // stream.send expects an object.
         stream.send('report-update', payload);
     };
 
@@ -78,8 +80,8 @@ router.get('/chats/:roomId', (req, res) => {
     stream.startHeartbeat(2000);
 
     // Event Handlers
-    const handleNewMessage = (message) => {
-        stream.send('new-message', { message });
+    const handleNewMessage = ({ message, originClientId }) => {
+        stream.send('new-message', { message, originClientId });
     };
 
     const handleTyping = (data) => {
@@ -196,6 +198,7 @@ router.get('/feed', (req, res) => {
     stream.startHeartbeat(10000); // 10s heartbeat for global feed (less aggressive)
 
     const handleGlobalUpdate = (data) => {
+        // data already contains type, report/reportId, originClientId from eventEmitter.js or reports.js
         stream.send('global-report-update', data);
     };
 

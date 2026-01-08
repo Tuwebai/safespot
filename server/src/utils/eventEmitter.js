@@ -14,19 +14,21 @@ class RealtimeEvents extends EventEmitter {
      * Emit a new comment event
      * @param {string} reportId - The report ID
      * @param {object} comment - The comment data
+     * @param {string} [originClientId] - The Client ID that caused this event (to exclude from echo)
      */
-    emitNewComment(reportId, comment) {
-        this.emit(`comment:${reportId}`, comment);
-        console.log(`[Realtime] Emitted new comment for report ${reportId}`);
+    emitNewComment(reportId, comment, originClientId) {
+        this.emit(`comment:${reportId}`, { comment, originClientId });
+        console.log(`[Realtime] Emitted new comment for report ${reportId} (Client: ${originClientId || 'unknown'})`);
     }
 
     /**
      * Emit a comment update event
      * @param {string} reportId - The report ID
      * @param {object} comment - The updated comment data
+     * @param {string} [originClientId]
      */
-    emitCommentUpdate(reportId, comment) {
-        this.emit(`comment-update:${reportId}`, comment);
+    emitCommentUpdate(reportId, comment, originClientId) {
+        this.emit(`comment-update:${reportId}`, { comment, originClientId });
         console.log(`[Realtime] Emitted comment update for report ${reportId}`);
     }
 
@@ -34,33 +36,40 @@ class RealtimeEvents extends EventEmitter {
      * Emit a comment delete event
      * @param {string} reportId - The report ID
      * @param {string} commentId - The deleted comment ID
+     * @param {string} [originClientId]
      */
-    emitCommentDelete(reportId, commentId) {
-        this.emit(`comment-delete:${reportId}`, { commentId });
+    emitCommentDelete(reportId, commentId, originClientId) {
+        this.emit(`comment-delete:${reportId}`, { commentId, originClientId });
         console.log(`[Realtime] Emitted comment delete for report ${reportId}`);
-    }
-
-    /**
-     * Emit a user ban/unban event
-     * @param {string} anonymousId - The user ID
-     * @param {object} data - { status: 'banned' | 'active', reason: string }
-     */
-    emitUserBan(anonymousId, data) {
-        this.emit(`user-status:${anonymousId}`, data);
-        console.log(`[Realtime] Emitted user status change for ${anonymousId}`, data);
     }
 
     /**
      * Emit a new report event (Global Feed)
      * @param {object} report - The full report object (or minimal summary)
+     * @param {string} [originClientId]
      */
-    emitNewReport(report) {
+    emitNewReport(report, originClientId) {
         // Broadcast to 'global-report-update' channel which /api/realtime/feed listens to
         this.emit('global-report-update', {
             type: 'new-report',
-            report: report
+            report: report,
+            originClientId
         });
-        console.log(`[Realtime] Emitted new report ${report.id} to global feed`);
+        console.log(`[Realtime] Emitted new report ${report.id} to global feed (Client: ${originClientId || 'unknown'})`);
+    }
+
+    /**
+     * Emit a global report deletion event
+     * @param {string} reportId
+     * @param {string} [originClientId]
+     */
+    emitReportDelete(reportId, originClientId) {
+        this.emit('global-report-update', {
+            type: 'delete',
+            reportId,
+            originClientId
+        });
+        console.log(`[Realtime] Emitted report delete ${reportId} (Client: ${originClientId || 'unknown'})`);
     }
 
     /**
@@ -68,25 +77,23 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} type - 'report' or 'comment'
      * @param {string} id - The Item ID
      * @param {object} updates - Changed fields (e.g. { upvotes_count: 5 })
+     * @param {string} [originClientId]
      */
-    emitVoteUpdate(type, id, updates) {
+    emitVoteUpdate(type, id, updates, originClientId) {
         if (type === 'report') {
             // Update detail view listeners
-            this.emit(`report-update:${id}`, updates);
+            this.emit(`report-update:${id}`, { ...updates, originClientId });
 
             // Update global feed listeners
             this.emit('global-report-update', {
                 type: 'stats-update',
                 reportId: id,
-                updates
+                updates,
+                originClientId
             });
         } else if (type === 'comment') {
             // Update comment listeners (in report detail)
-            // Note: comments are usually listened to via the parent report channel
-            // We might need to handle this differently if we don't have reportId here.
-            // But usually we do or can fetch it. 
-            // For now, let's assume specific comment update.
-            this.emit(`comment-update:${id}`, updates); // This might need a reportId prefix if clients listen by report
+            this.emit(`comment-update:${id}`, { ...updates, originClientId });
         }
         console.log(`[Realtime] Emitted vote update for ${type} ${id}`, updates);
     }

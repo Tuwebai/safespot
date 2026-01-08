@@ -230,7 +230,8 @@ router.post('/:roomId/messages', async (req, res) => {
         }
 
         // Notificar via SSE a la sala específica
-        realtimeEvents.emit(`chat:${roomId}`, newMessage);
+        const clientId = req.headers['x-client-id'];
+        realtimeEvents.emit(`chat:${roomId}`, { message: newMessage, originClientId: clientId });
 
         // 3. ENVIAR NOTIFICACIÓN PUSH NATIVA (Si el destinatario está offline)
         (async () => {
