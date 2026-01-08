@@ -210,9 +210,8 @@ export function useCreateReportForm() {
         createReport(payload)
             .then((newReport) => {
                 // Background: Navigate to detail page after short delay
-                setTimeout(() => {
-                    navigate(`/reporte/${newReport.id}`, { replace: true })
-                }, 800) // Let user see the report in the list first
+                // No redirection to detail, stay in list as requested
+
 
                 // Trigger badge check
                 triggerBadgeCheck(newReport.newBadges)
