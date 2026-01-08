@@ -1,0 +1,160 @@
+{
+    "name": "Safespot WhatsApp Integration V4",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "safespot-whatsapp",
+                "options": {}
+            },
+            "id": "webhook-1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ],
+            "webhookId": "safespot-whatsapp"
+        },
+        {
+            "parameters": {
+                "dataType": "string",
+                "value1": "={{ $json.body.event }}",
+                "rules": {
+                    "rules": [
+                        {
+                            "operation": "equals",
+                            "value2": "NEW_REPORT"
+                        },
+                        {
+                            "operation": "equals",
+                            "value2": "APP_ERROR"
+                        },
+                        {
+                            "operation": "equals",
+                            "value2": "SYSTEM_LOG"
+                        },
+                        {
+                            "operation": "equals",
+                            "value2": "ADMIN_TASK"
+                        }
+                    ]
+                }
+            },
+            "id": "switch-1",
+            "name": "Event Switch",
+            "type": "n8n-nodes-base.switch",
+            "typeVersion": 1,
+            "position": [
+                350,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://graph.facebook.com/v17.0/{{ $json.body.payload.phone_id || 'YOUR_PHONE_ID' }}/messages",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "facebookGraphApi",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"543571416044\", \"type\": \"text\", \"text\": {\"body\": \"🚨 *NUEVO REPORTE*\\n\\n*Asunto:* {{ $json.body.payload.title }}\\n*Categoría:* {{ $json.body.payload.category }}\\n*Zona:* {{ $json.body.payload.zone || 'N/A' }}\\n\\n*Relato:* {{ $json.body.payload.description }}\\n\\n📍 [Ver en Mapa]({{ $json.body.payload.googleMapsLink }})\"}}",
+                "options": {}
+            },
+            "id": "wa-report",
+            "name": "WhatsApp - Report",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                700,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://graph.facebook.com/v17.0/{{ $json.body.payload.phone_id || 'YOUR_PHONE_ID' }}/messages",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "facebookGraphApi",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"543571416044\", \"type\": \"text\", \"text\": {\"body\": \"⚠️ *ERROR SERVIDOR*\\n\\n*Mensaje:* {{ $json.body.payload.message }}\\n*Path:* {{ $json.body.payload.context.path || 'N/A' }}\\n\\n```{{ $json.body.payload.stack ? $json.body.payload.stack.substring(0, 300) : '' }}...```\"}}",
+                "options": {}
+            },
+            "id": "wa-error",
+            "name": "WhatsApp - Error",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                700,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://graph.facebook.com/v17.0/{{ $json.body.payload.phone_id || 'YOUR_PHONE_ID' }}/messages",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "facebookGraphApi",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"543571416044\", \"type\": \"text\", \"text\": {\"body\": \"ℹ️ *{{ $json.body.payload.title || 'LOG' }}*\\n\\n{{ $json.body.payload.message }}\"}}",
+                "options": {}
+            },
+            "id": "wa-log",
+            "name": "WhatsApp - Log",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                700,
+                500
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Event Switch",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Event Switch": {
+            "main": [
+                [
+                    {
+                        "node": "WhatsApp - Report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "WhatsApp - Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "WhatsApp - Log",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "WhatsApp - Log",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

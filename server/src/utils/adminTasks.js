@@ -1,7 +1,7 @@
 import { DB } from './db.js';
 import { sendWhatsAppAlert } from './whatsapp.js';
 
-const N8N_WEBHOOK_URL = process.env.N8N_ADMIN_TASKS_WEBHOOK_URL;
+
 
 /**
  * Utility to create admin tasks and notify n8n if critical
@@ -35,7 +35,7 @@ export const createAdminTask = async ({
         // Trigger generic high-priority alert via WhatsApp (NON-BLOCKING)
         sendWhatsAppAlert(
             `Nueva Tarea: ${title}`,
-            `Prioridad: ${severity}\nFuente: ${source}\n${description}`,
+            `Prioridad: ${severity}\nFuente: ${source}\n\n${description}`,
             severity === 'critical' ? 'Alta' : 'Informativa'
         );
 

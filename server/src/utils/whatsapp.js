@@ -1,30 +1,32 @@
 import axios from 'axios';
 import { supabaseAdmin } from '../config/supabase.js';
 
-const WHATSAPP_WEBHOOK_URL = 'https://tuwebai.app.n8n.cloud/webhook/safespot-whatsapp';
-const TO_NUMBER = '543571416044'; // Verified number
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 /**
- * Sends a structured alert to WhatsApp.
+ * Generic function to send events to n8n
+ * @param {string} eventType - The type of event (NEW_REPORT, APP_ERROR, ADMIN_TASK, LOG)
+ * @param {object} payload - The data to send
  */
-export const sendWhatsAppAlert = (title, message, priority = 'Informativa') => {
-    axios.post(WHATSAPP_WEBHOOK_URL, {
-        to: TO_NUMBER,
-        title: title,
-        message: message,
-        priority: priority
-    }).catch((error) => console.error('[WhatsApp] Send failed:', error.message));
+const postToN8N = (eventType, payload) => {
+    // We return the promise so critical handlers (like uncaughtException) can await it
+    return axios.post(N8N_WEBHOOK_URL, {
+        event: eventType,
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        payload: payload
+    }).catch(err => {
+        console.error(`[WhatsApp] Failed to send ${eventType} to n8n:`, err.message);
+    });
 };
 
 /**
  * Sends a notification for a new report.
- * Waits 5 seconds to ensure images are uploaded if the client sends them in a separate request.
+ * Waits 5 seconds to ensure images are uploaded.
  */
 export const sendNewReportNotification = (reportId) => {
-    // Non-blocking wait
     setTimeout(async () => {
         try {
-            // Fetch the latest state of the report using Admin client to pass RLS
             const { data: report, error } = await supabaseAdmin
                 .from('reports')
                 .select('*')
@@ -32,63 +34,59 @@ export const sendNewReportNotification = (reportId) => {
                 .single();
 
             if (error || !report) {
-                console.error('[WhatsApp] Report not found or error:', error?.message);
+                console.error('[WhatsApp] Report not found for notification:', reportId);
                 return;
             }
 
-            let imageUrl = null;
-
-            // Handle images
-            if (report.image_urls && Array.isArray(report.image_urls) && report.image_urls.length > 0) {
-                imageUrl = report.image_urls[0];
-            } else if (typeof report.image_urls === 'string' && report.image_urls.startsWith('[')) {
-                try {
-                    const parsed = JSON.parse(report.image_urls);
-                    if (Array.isArray(parsed) && parsed.length > 0) imageUrl = parsed[0];
-                } catch (e) { }
+            // Normalize images
+            let images = [];
+            if (report.image_urls) {
+                if (Array.isArray(report.image_urls)) images = report.image_urls;
+                else if (typeof report.image_urls === 'string') {
+                    try { images = JSON.parse(report.image_urls); } catch (e) { }
+                }
             }
 
-            // Fallback to static map if no image - Synchronizing with the app's "Carto Voyager" aesthetic
-            if (!imageUrl && report.latitude && report.longitude) {
-                // Leaflet is the library, but the app uses Carto Voyager tiles for its clean look.
-                // We'll use a high-quality static map service that provides a similar clean, professional aesthetic.
-                imageUrl = `https://static-map.openstreetmap.fr/staticmap.php?center=${report.latitude},${report.longitude}&zoom=16&size=600x600&markers=${report.latitude},${report.longitude},default`;
-            }
-
-            // Pre-format the message to avoid n8n escaping issues
-            const emoji = getEmoji(report.category);
-            const formattedMessage = `*Asunto:* ${report.title}\n` +
-                `*Categoría:* ${emoji} ${report.category}\n` +
-                `*Ubicación:* 📍 ${report.address || report.zone || 'No especificada'}\n\n` +
-                `*Relato:* ${report.description}`;
-
-            console.log('[WhatsApp] Sending notification for report:', reportId);
-
-            axios.post(WHATSAPP_WEBHOOK_URL, {
-                to: TO_NUMBER,
-                type: 'new_report',
-                title: '🚨 *NUEVO REPORTE EN SAFESPOT*',
-                message: formattedMessage,
-                mediaUrl: imageUrl,
-                reportId: report.id
-            }).catch(err => {
-                console.error('[WhatsApp] Webhook post failed:', err.message);
+            postToN8N('NEW_REPORT', {
+                reportId: report.id,
+                title: report.title,
+                description: report.description,
+                category: report.category,
+                zone: report.zone,
+                address: report.address,
+                latitude: report.latitude,
+                longitude: report.longitude,
+                image: images.length > 0 ? images[0] : null,
+                googleMapsLink: `https://www.google.com/maps?q=${report.latitude},${report.longitude}`
             });
 
-        } catch (error) {
-            console.error('[WhatsApp] Report notification failed:', error.message);
+        } catch (err) {
+            console.error('[WhatsApp] Error processing new report notification:', err);
         }
-    }, 5000); // 5 second buffer for image uploads
+    }, 5000);
 };
 
-function getEmoji(category) {
-    const emojis = {
-        'Seguridad': '🛡️',
-        'Vandalismo': '🔨',
-        'Accidente': '🚑',
-        'Iluminación': '💡',
-        'Infraestructura': '🚧',
-        'Otros': '❓'
-    };
-    return emojis[category] || '📢';
-}
+/**
+ * Sends a generic log or alert to WhatsApp
+ */
+export const sendWhatsAppAlert = (title, message, priority = 'Informativa') => {
+    postToN8N('SYSTEM_LOG', {
+        title,
+        message,
+        priority
+    });
+};
+
+/**
+ * Sends an error notification
+ */
+export const notifyError = (error, context = {}) => {
+    // Avoid circular loops if axios fails
+    if (error.isAxiosError && error.config?.url?.includes('n8n')) return Promise.resolve();
+
+    return postToN8N('APP_ERROR', {
+        message: error.message || 'Unknown Error',
+        stack: error.stack,
+        context: context
+    });
+};

@@ -32,9 +32,10 @@ import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
 import contactRouter from './routes/contact.js';
 import { logCriticalError } from './utils/adminTasks.js';
+import { notifyError } from './utils/whatsapp.js';
 
 // Load environment variables
-dotenv.config();
+// dotenv.config(); (Redundant, already called at top)
 
 const app = express();
 
@@ -334,15 +335,29 @@ const gracefulShutdown = (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+
+
 // Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', async (err) => {
   console.error('❌ UNCAUGHT EXCEPTION:', err);
+  try {
+    await notifyError(err, { type: 'UNCAUGHT_EXCEPTION' });
+  } catch (e) {
+    console.error('Failed to notify error:', e);
+  }
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('❌ UNHANDLED REJECTION:', reason);
+  try {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    await notifyError(err, { type: 'UNHANDLED_REJECTION' });
+  } catch (e) {
+    console.error('Failed to notify rejection:', e);
+  }
   process.exit(1);
 });
+
 
 export default app;
