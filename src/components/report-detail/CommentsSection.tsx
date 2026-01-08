@@ -96,8 +96,8 @@ export function CommentsSection({
     }, [loadComments])
 
     // Handle like change locally
-    const handleLikeChange = useCallback((commentId: string, _liked: boolean, _newCount: number) => {
-        toggleLike(commentId)
+    const handleLikeChange = useCallback((commentId: string, liked: boolean, _newCount: number) => {
+        toggleLike(commentId, liked)
     }, [toggleLike])
 
     // Handle delete with confirmation
@@ -107,9 +107,9 @@ export function CommentsSection({
     }, [deleteComment])
 
     // Handle flag with confirmation
-    const handleFlagComment = useCallback(async (commentId: string) => {
+    const handleFlagComment = useCallback(async (commentId: string, isFlagged: boolean, ownerId: string) => {
         if (!confirm('¿Estás seguro de que quieres reportar este comentario como inapropiado?')) return
-        await flagComment(commentId)
+        await flagComment(commentId, isFlagged, ownerId)
     }, [flagComment])
 
     // Handle sighting submission

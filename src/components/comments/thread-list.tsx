@@ -12,9 +12,9 @@ interface ThreadListProps {
   comments: Comment[]
   onNewThread?: () => void
   onReply?: (commentId: string) => void
-  onEdit?: (commentId: string) => void
+  onEdit?: (commentId: string, content: string) => void
   onDelete?: (commentId: string) => void
-  onFlag?: (commentId: string) => void
+  onFlag?: (commentId: string, isFlagged: boolean, ownerId: string) => void
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
   onPin?: (commentId: string) => void
   onUnpin?: (commentId: string) => void

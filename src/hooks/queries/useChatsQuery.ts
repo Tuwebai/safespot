@@ -179,6 +179,31 @@ export function useChatMessages(roomId: string | undefined) {
 }
 
 /**
+ * Hook to get just the list of IDs for virtualization
+ */
+export function useChatMessageIds(roomId: string | undefined) {
+    return useQuery({
+        queryKey: CHATS_KEYS.messages(roomId || ''),
+        queryFn: () => roomId ? chatsApi.getMessages(roomId) : Promise.resolve([]),
+        enabled: !!roomId,
+        select: (data) => data.map(m => m.id),
+    });
+}
+
+/**
+ * Hook to get a single message by ID from the cache
+ */
+export function useChatMessage(roomId: string, messageId: string) {
+    return useQuery({
+        queryKey: CHATS_KEYS.messages(roomId),
+        enabled: false, // Purely for cache reading usually, but here we want reactivity
+
+        select: (data: ChatMessage[]) => data.find((m) => m.id === messageId),
+    });
+}
+
+
+/**
  * Mutation para enviar mensajes
  */
 export function useSendMessageMutation() {
@@ -313,3 +338,40 @@ export function useMarkAsDeliveredMutation() {
         },
     });
 }
+
+// Helpers
+function patchItem(queryClient: any, queryKey: any[], id: string, patch: any | ((old: any) => any)) {
+    queryClient.setQueriesData({ queryKey }, (oldData: any) => {
+        if (!oldData) return oldData;
+
+        // If it's an array
+        if (Array.isArray(oldData)) {
+            return oldData.map(item => {
+                if (item.id === id || item.roomId === id) {
+                    const updates = typeof patch === 'function' ? patch(item) : patch;
+                    return { ...item, ...updates };
+                }
+                return item;
+            });
+        }
+        return oldData;
+    });
+}
+
+function upsertInList(queryClient: any, queryKey: any[], newItem: any) {
+    queryClient.setQueryData(queryKey, (oldList: any[]) => {
+        if (!oldList) return [newItem];
+
+        const index = oldList.findIndex(item => item.id === newItem.id);
+        if (index > -1) {
+            // Update existing
+            const newList = [...oldList];
+            const existingItem = newList[index];
+            newList[index] = { ...existingItem, ...newItem };
+            return newList;
+        }
+        // Append new
+        return [...oldList, newItem];
+    });
+}
+

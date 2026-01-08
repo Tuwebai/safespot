@@ -593,6 +593,18 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
     }
 
+    // CRITICAL FIX: Manually decrement report counter because DB trigger might not handle soft deletes
+    try {
+      await queryWithRLS(
+        anonymousId,
+        `UPDATE reports SET comments_count = GREATEST(0, comments_count - 1) WHERE id = $1`,
+        [reportId]
+      );
+    } catch (err) {
+      console.error('[DELETE_COMMENT] Failed to decrement report count:', err);
+      // Don't fail the request, just log it
+    }
+
     res.json({
       success: true,
       message: 'Comment deleted successfully'

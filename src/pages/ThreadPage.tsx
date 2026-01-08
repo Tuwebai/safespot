@@ -89,8 +89,8 @@ export function ThreadPage() {
     const currentAnonymousId = getAnonymousIdSafe()
 
     // 4. Handlers
-    const handleLikeChange = useCallback((id: string) => {
-        toggleLike(id)
+    const handleLikeChange = useCallback((id: string, liked: boolean, _count: number) => {
+        toggleLike(id, liked)
     }, [toggleLike])
 
     const handleDelete = useCallback(async (id: string) => {
@@ -100,9 +100,9 @@ export function ThreadPage() {
         }
     }, [deleteComment, commentId, reportId, navigate])
 
-    const handleFlag = useCallback(async (id: string) => {
+    const handleFlag = useCallback(async (id: string, isFlagged: boolean, ownerId: string) => {
         if (confirm('¿Reportar como inapropiado?')) {
-            await flagComment(id)
+            await flagComment(id, isFlagged, ownerId)
         }
     }, [flagComment])
 

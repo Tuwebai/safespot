@@ -32,9 +32,9 @@ interface EnhancedCommentProps {
   isOwner?: boolean
   isMod?: boolean
   onReply?: (commentId: string) => void
-  onEdit?: (commentId: string) => void
+  onEdit?: (commentId: string, content: string) => void
   onDelete?: (commentId: string) => void
-  onFlag?: (commentId: string) => void
+  onFlag?: (commentId: string, isFlagged: boolean, ownerId: string) => void
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
   onPin?: (commentId: string) => void
   onUnpin?: (commentId: string) => void
@@ -403,7 +403,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                     <button
                       onClick={() => {
                         if (!comment.is_flagged) {
-                          onFlag?.(comment.id)
+                          onFlag?.(comment.id, comment.is_flagged || false, comment.anonymous_id)
                           closeMenu()
                         }
                       }}
@@ -426,7 +426,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                       {/* Edit */}
                       <button
                         onClick={() => {
-                          onEdit?.(comment.id)
+                          onEdit?.(comment.id, comment.content)
                           closeMenu()
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"

@@ -11,26 +11,24 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { getAvatarUrl } from '@/lib/avatar'
-import { Badge } from '@/components/ui/badge'
+
+
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, GitBranch, MessageCircle, Flag, Home, Briefcase, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
+import { Search, MapPin, Filter, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
-import { AnimatedCard } from '@/components/ui/animated'
+
 import { BottomSheet } from '@/components/ui/bottom-sheet'
-import { OptimizedImage } from '@/components/OptimizedImage'
-import { FavoriteButton } from '@/components/FavoriteButton'
-import { SmartLink } from '@/components/SmartLink'
+
 import { useReportsQuery } from '@/hooks/queries'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
+
 import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
-import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
+
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { AdBanner } from '@/components/AdBanner'

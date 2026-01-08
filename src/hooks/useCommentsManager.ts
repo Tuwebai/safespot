@@ -337,17 +337,14 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         }
     }, [state.submitting, reportId, deleteMutation, toast])
 
-    const flagComment = useCallback(async (commentId: string) => {
-        const comment = comments.find(c => c.id === commentId)
-        if (!comment) return
-
-        if (comment.is_flagged) {
+    const flagComment = useCallback(async (commentId: string, isFlagged: boolean, ownerId: string) => {
+        if (isFlagged) {
             toast.warning('Ya has reportado este comentario')
             return
         }
 
         const currentAnonymousId = getAnonymousIdSafe()
-        if (comment.anonymous_id === currentAnonymousId) {
+        if (ownerId === currentAnonymousId) {
             toast.warning('No puedes reportar tu propio comentario')
             return
         }
@@ -367,26 +364,21 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [comments, state.submitting, flagMutation, toast])
+    }, [state.submitting, flagMutation, toast])
 
-    const toggleLike = useCallback(async (commentId: string) => {
+    const toggleLike = useCallback(async (commentId: string, isLiked: boolean) => {
         // Radical Optimistic UI: No blocking check. We trust the mutation queue and optimistic state.
-
-        const comment = comments.find(c => c.id === commentId)
-        if (!comment) return
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'like', id: commentId } })
 
-        const wasLiked = comment.liked_by_me ?? false
-
         try {
-            await likeMutation.mutateAsync({ id: commentId, isLiked: wasLiked })
+            await likeMutation.mutateAsync({ id: commentId, isLiked })
         } catch (error) {
             handleErrorWithMessage(error, 'Error al dar like', toast.error, 'useCommentsManager.toggleLike')
         } finally {
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [comments, state.submitting, state.processingId, likeMutation, toast])
+    }, [state.submitting, state.processingId, likeMutation, toast])
 
     const pinComment = useCallback(async (commentId: string) => {
         if (!reportId) return
@@ -420,12 +412,9 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
         dispatch({ type: 'CANCEL_REPLY' })
     }, [])
 
-    const startEdit = useCallback((commentId: string) => {
-        const comment = comments.find(c => c.id === commentId)
-        if (comment) {
-            dispatch({ type: 'START_EDIT', payload: { id: commentId, text: comment.content } })
-        }
-    }, [comments])
+    const startEdit = useCallback((commentId: string, currentContent: string) => {
+        dispatch({ type: 'START_EDIT', payload: { id: commentId, text: currentContent } })
+    }, [])
 
     const cancelEdit = useCallback(() => {
         dispatch({ type: 'CANCEL_EDIT' })

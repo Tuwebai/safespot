@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatMessages, useSendMessageMutation, useMarkAsReadMutation, useMarkAsDeliveredMutation } from '../../hooks/queries/useChatsQuery';
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -74,8 +75,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const sendMessageMutation = useSendMessageMutation();
     const markAsReadMutation = useMarkAsReadMutation();
     const markAsDeliveredMutation = useMarkAsDeliveredMutation();
-    const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Virtualization Refs
+    const parentRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
@@ -84,27 +88,41 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         ? { alias: room.participant_b_alias, id: room.participant_b }
         : { alias: room.participant_a_alias, id: room.participant_a };
 
-    // Auto-scroll al fondo y marcar como leído al recibir mensajes
-    useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
+    // Initialize Virtualizer
+    const rowVirtualizer = useVirtualizer({
+        count: messages?.length ?? 0,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 80, // Avg message height guess
+        overscan: 5,
+    });
 
-        // Si hay mensajes nuevos que no envié yo, marcar como leído
-        const lastMessage = messages?.[messages.length - 1];
-        if (lastMessage && lastMessage.sender_id !== anonymousId && !lastMessage.is_read) {
-            markAsReadMutation.mutate(room.id);
-        }
-    }, [messages, room.id, anonymousId]);
+    // Auto-scroll logic
+    const lastMessageCount = useRef(0);
 
-    // Marcar como leído al entrar o cuando llegan mensajes
+    useLayoutEffect(() => {
+        if (messages && messages.length > lastMessageCount.current) {
+            // New messages arrived. 
+            // In a real app, check if user is at bottom before force scrolling, 
+            // but for "Instant App" feel, standard behavior is snap to bottom on new msg.
+            rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
+            lastMessageCount.current = messages.length;
+
+            // Mark as read check
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage && lastMessage.sender_id !== anonymousId && !lastMessage.is_read) {
+                markAsReadMutation.mutate(room.id);
+            }
+        }
+    }, [messages, room.id, anonymousId, rowVirtualizer, markAsReadMutation]);
+
+    // Marcar como leído al entrar o cuando llegan mensajes (Legacy effect kept for safety)
     useEffect(() => {
         if (room.id) {
             markAsReadMutation.mutate(room.id);
             // También marcamos como entregado explícitamente al abrir
             markAsDeliveredMutation.mutate(room.id);
         }
-    }, [room.id, messages?.length]); // Re-ejecutar si la cantidad de mensajes cambia
+    }, [room.id, markAsReadMutation, markAsDeliveredMutation]); // Removed messages length dep, handled above
 
     // Notificar cuando el usuario escribe
     useEffect(() => {
@@ -161,7 +179,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         setPreviewUrl(url);
     };
 
-
     const cancelImageSelection = () => {
         setSelectedFile(null);
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -215,57 +232,104 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 {/* Report Context (Expandable) */}
                 <ChatReportContext reportId={room.report_id} />
 
-                {/* Messages Area */}
-                <div className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50" ref={scrollRef}>
-                    <div className="space-y-4">
-                        {messagesLoading ? (
-                            <div className="text-center text-muted-foreground py-10 uppercase tracking-widest text-xs">Cargando mensajes...</div>
-                        ) : messages?.length === 0 ? (
-                            <div className="text-center py-10">
-                                <p className="text-muted-foreground text-xs italic">No hay mensajes aún. ¡Iniciá la conversación!</p>
-                            </div>
-                        ) : (
-                            messages?.map((msg) => (
-                                <div
-                                    key={msg.id}
-                                    className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} `}
-                                >
-                                    <div className={`flex gap-2 max-w-[85%] ${isMe(msg) ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        {!isMe(msg) && (
-                                            <div
-                                                className="relative group cursor-pointer shrink-0"
-                                                onClick={() => navigate(`/usuario/${msg.sender_alias}`)}
-                                            >
-                                                <img
-                                                    src={getAvatarUrl(msg.sender_alias || 'Anon')}
-                                                    alt="Avatar"
-                                                    className="w-8 h-8 rounded-full border border-border mt-1"
-                                                />
-                                            </div>
-                                        )}
-                                        <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-[85%] sm:max-w-[75%]`}>
-                                            <div
-                                                className={`relative px-3 py-2 rounded-2xl text-sm shadow-sm ${isMe(msg)
-                                                    ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                                    : 'bg-muted text-foreground border border-border rounded-tl-none'
-                                                    }`}
-                                            >
-                                                {msg.type === 'image' ? (
-                                                    <div className="flex flex-col gap-1">
-                                                        <div className="max-w-[200px] sm:max-w-[300px] overflow-hidden rounded-lg">
-                                                            <ChatImage
-                                                                src={msg.content}
-                                                                localUrl={msg.localUrl}
-                                                                alt="Mensaje de imagen"
-                                                                className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                                onClick={() => window.open(msg.content, '_blank')}
-                                                            />
-                                                        </div>
-                                                        <div className="flex justify-between items-end gap-2 pl-1">
-                                                            <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
-                                                                {msg.caption}
+                {/* Messages Area - VIRTUALIZED */}
+                <div
+                    className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50"
+                    ref={parentRef}
+                >
+                    {messagesLoading ? (
+                        <div className="text-center text-muted-foreground py-10 uppercase tracking-widest text-xs">Cargando mensajes...</div>
+                    ) : !messages || messages.length === 0 ? (
+                        <div className="text-center py-10">
+                            <p className="text-muted-foreground text-xs italic">No hay mensajes aún. ¡Iniciá la conversación!</p>
+                        </div>
+                    ) : (
+                        <div
+                            style={{
+                                height: `${rowVirtualizer.getTotalSize()}px`,
+                                width: '100%',
+                                position: 'relative',
+                            }}
+                        >
+                            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                                const msg = messages[virtualRow.index];
+                                return (
+                                    <div
+                                        key={virtualRow.key}
+                                        ref={rowVirtualizer.measureElement}
+                                        data-index={virtualRow.index}
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            transform: `translateY(${virtualRow.start}px)`,
+                                        }}
+                                        className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4`}
+                                    >
+                                        <div className={`flex gap-2 max-w-[85%] ${isMe(msg) ? 'flex-row-reverse' : 'flex-row'}`}>
+                                            {!isMe(msg) && (
+                                                <div
+                                                    className="relative group cursor-pointer shrink-0"
+                                                    onClick={() => navigate(`/usuario/${msg.sender_alias}`)}
+                                                >
+                                                    <img
+                                                        src={getAvatarUrl(msg.sender_alias || 'Anon')}
+                                                        alt="Avatar"
+                                                        className="w-8 h-8 rounded-full border border-border mt-1"
+                                                    />
+                                                </div>
+                                            )}
+                                            <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-[85%] sm:max-w-[75%]`}>
+                                                <div
+                                                    className={`relative px-3 py-2 rounded-2xl text-sm shadow-sm ${isMe(msg)
+                                                        ? 'bg-primary text-primary-foreground rounded-tr-none'
+                                                        : 'bg-muted text-foreground border border-border rounded-tl-none'
+                                                        }`}
+                                                >
+                                                    {msg.type === 'image' ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="max-w-[200px] sm:max-w-[300px] overflow-hidden rounded-lg">
+                                                                <ChatImage
+                                                                    src={msg.content}
+                                                                    localUrl={msg.localUrl}
+                                                                    alt="Mensaje de imagen"
+                                                                    className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                                                                    onClick={() => window.open(msg.content, '_blank')}
+                                                                />
                                                             </div>
-                                                            <div className="flex items-center gap-1 shrink-0 pb-0.5">
+                                                            <div className="flex justify-between items-end gap-2 pl-1">
+                                                                <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
+                                                                    {msg.caption}
+                                                                </div>
+                                                                <div className="flex items-center gap-1 shrink-0 pb-0.5">
+                                                                    <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                                                                        {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
+                                                                    </span>
+                                                                    {isMe(msg) && (
+                                                                        <div className="flex items-center">
+                                                                            {msg.is_read ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                                                                            ) : msg.is_delivered ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                            ) : (
+                                                                                <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="relative">
+                                                            <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block">
+                                                                {msg.content}
+                                                                {/* Spacer to reserve space for absolute timestamp */}
+                                                                <span className="inline-block w-12 h-3" aria-hidden="true"></span>
+                                                            </span>
+
+                                                            {/* Timestamp Absolute Bottom Right */}
+                                                            <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
                                                                 <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                     {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                                 </span>
@@ -280,46 +344,21 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                         )}
                                                                     </div>
                                                                 )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="relative">
-                                                        <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block">
-                                                            {msg.content}
-                                                            {/* Spacer to reserve space for absolute timestamp */}
-                                                            <span className="inline-block w-12 h-3" aria-hidden="true"></span>
-                                                        </span>
-
-                                                        {/* Timestamp Absolute Bottom Right */}
-                                                        <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
-                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                             </span>
-                                                            {isMe(msg) && (
-                                                                <div className="flex items-center">
-                                                                    {msg.is_read ? (
-                                                                        <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                    ) : msg.is_delivered ? (
-                                                                        <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                    ) : (
-                                                                        <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </span>
-                                                    </div>
-                                                )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     {isOtherTyping && (
                         <div className="flex items-center gap-2 mt-4 px-2">
+                            {/* ... typing indicator ... */}
                             <div className="flex gap-1 items-center">
                                 <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                                 <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
