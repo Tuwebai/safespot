@@ -1370,6 +1370,15 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
 
     logSuccess('Report deleted', { id, anonymousId });
 
+
+
+    // REALTIME: Broadcast soft delete
+    realtimeEvents.emit('global-report-update', {
+      type: 'delete',
+      reportId: id,
+      senderId: anonymousId // Explicit sender for echo suppression
+    });
+
     res.json({
       success: true,
       message: 'Report deleted successfully'

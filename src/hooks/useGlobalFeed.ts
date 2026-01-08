@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { API_BASE_URL } from '@/lib/api'
-import { upsertInList, patchItem } from '@/lib/realtime-utils'
+import { upsertInList, patchItem, removeFromList } from '@/lib/realtime-utils'
 
 /**
  * Global Real-time Feed Hook
@@ -46,6 +46,17 @@ export function useGlobalFeed() {
                     // Adjustment 2: Explicit Scope (All lists + Detail)
                     patchItem(queryClient, queryKeys.reports.all as any, data.reportId, data.updates);
                     patchItem(queryClient, queryKeys.reports.detail(data.reportId) as any, data.reportId, data.updates);
+                }
+                else if (data.type === 'delete' && data.reportId) {
+                    // Adjustment 4: Handle Deletions (Push + Patch)
+                    // 1. Remove from all report lists
+                    removeFromList(queryClient, queryKeys.reports.all as any, data.reportId);
+
+                    // 2. Decrement global stats
+                    queryClient.setQueryData(queryKeys.stats.global, (old: any) => {
+                        if (!old) return old;
+                        return { ...old, total_reports: Math.max(0, (old.total_reports || 1) - 1) };
+                    });
                 }
             } catch (err) {
                 console.error('[SSE] Error parsing global feed event:', err)

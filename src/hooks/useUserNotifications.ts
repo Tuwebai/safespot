@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { API_BASE_URL } from '@/lib/api';
-import { upsertInList, patchItem } from '@/lib/realtime-utils';
-import { queryKeys } from '@/lib/queryKeys';
+import { upsertInList } from '@/lib/realtime-utils';
+
 
 interface NotificationPayload {
     type: string;
