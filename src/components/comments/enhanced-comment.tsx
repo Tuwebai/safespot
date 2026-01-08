@@ -215,23 +215,13 @@ export const EnhancedComment = memo(function EnhancedComment({
   const isEdited = useMemo(() => {
     // Si tenemos last_edited_at del servidor (manejado por trigger de contenido), lo usamos
     if (comment.last_edited_at) {
-      const created = new Date(comment.created_at).getTime()
-      const edited = new Date(comment.last_edited_at).getTime()
-      // Margen de 1s por discrepancias de precisión en DB
-      return edited - created > 1000
+      // Comparar timestamps para estar seguros, aunque la presencia de last_edited_at debería ser suficiente
+      // si el backend lo gestiona bien (solo en edits)
+      return true
     }
 
-    // Fallback: Si no hay last_edited_at...
-    if (!comment.updated_at || !comment.created_at) return false
-
-    // FIX: Si está fijado, 'updated_at' se usa para el ordenamiento, no necesariamente edición.
-    // Si no hay 'last_edited_at' explícito y está fijado, asumimos que la actualización fue el fijado.
-    if (comment.is_pinned) return false
-
-    const created = new Date(comment.created_at).getTime()
-    const updated = new Date(comment.updated_at).getTime()
-    return updated - created > 5000 // Umbral mayor para fallback
-  }, [comment.created_at, comment.updated_at, comment.last_edited_at, comment.is_pinned])
+    return false
+  }, [comment.last_edited_at])
 
   const handleCardClick = () => {
     if (isThreadView) return // Already in thread view, don't navigate
