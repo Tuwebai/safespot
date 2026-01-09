@@ -5,13 +5,21 @@ import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
 
+export interface UserPresence {
+    status: 'online' | 'offline';
+    last_seen_at: string | null;
+}
+
+
 
 const CHATS_KEYS = {
     rooms: ['chats', 'rooms'] as const,
     conversation: (id: string) => ['chats', 'conversation', id] as const,
     messages: (convId: string) => ['chats', 'messages', convId] as const,
     message: (id: string) => ['chats', 'message', id] as const,
+    presence: (userId: string) => ['users', 'presence', userId] as const,
 };
+
 
 /**
  * Chat Rooms Hook
@@ -30,6 +38,15 @@ export function useChatRooms() {
             // Store each room in detail cache for individual reactivity
             rooms.forEach(room => {
                 queryClient.setQueryData(CHATS_KEYS.conversation(room.id), room);
+
+                // Seed Presence Cache if available
+                if (room.other_participant_id) {
+                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(room.other_participant_id), {
+                        status: room.is_online ? 'online' : 'offline',
+                        last_seen_at: room.other_participant_last_seen || null
+                    });
+                }
+
             });
             return rooms;
         },
@@ -106,15 +123,28 @@ export function useChatRooms() {
             }
         };
 
+        const handlePresenceUpdate = (event: any) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.userId) {
+                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(data.userId), data.partial);
+                }
+
+            } catch (e) { }
+        };
+
         eventSource.addEventListener('chat-update', handleUpdate);
         eventSource.addEventListener('chat-rollback', handleRollback);
+        eventSource.addEventListener('presence-update', handlePresenceUpdate);
         eventSource.onmessage = handleUpdate; // Handle raw messages too
 
         return () => {
             eventSource.close();
             eventSource.removeEventListener('chat-update', handleUpdate);
             eventSource.removeEventListener('chat-rollback', handleRollback);
+            eventSource.removeEventListener('presence-update', handlePresenceUpdate);
         };
+
     }, [anonymousId, queryClient]);
 
     return query;
@@ -139,9 +169,9 @@ export function useChatMessages(convId: string | undefined) {
     const queryClient = useQueryClient();
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
-    // Real-time state for typing and presence
+    // Real-time state for typing
     const [isTyping, setIsTyping] = useState(false);
-    const [isOtherOnline, setIsOtherOnline] = useState(false);
+
 
     const query = useQuery({
         queryKey: CHATS_KEYS.messages(convId || ''),
@@ -192,14 +222,8 @@ export function useChatMessages(convId: string | undefined) {
             }
         });
 
-        eventSource.addEventListener('presence', (event: any) => {
-            const data = JSON.parse(event.data);
-            if (data.userId !== anonymousId) {
-                setIsOtherOnline(data.status === 'online');
-            }
-        });
-
         eventSource.addEventListener('messages-read', (event: any) => {
+
             const data = JSON.parse(event.data);
             // Si el otro leyó mis mensajes, actualizamos is_read localmente
             if (data.readerId !== anonymousId) {
@@ -226,8 +250,9 @@ export function useChatMessages(convId: string | undefined) {
         };
     }, [convId, anonymousId, queryClient]);
 
-    return { ...query, isOtherTyping: isTyping, isOtherOnline };
+    return { ...query, isOtherTyping: isTyping };
 }
+
 
 /**
  * Hook to get just the list of IDs for virtualization
@@ -252,6 +277,27 @@ export function useChatMessage(roomId: string, messageId: string) {
         select: (data: ChatMessage[]) => data.find((m) => m.id === messageId),
     });
 }
+
+/**
+ * Hook to get canonical presence for a user
+ */
+export function useUserPresence(userId: string | undefined) {
+    const queryClient = useQueryClient();
+
+    return useQuery({
+        queryKey: CHATS_KEYS.presence(userId || ''),
+        queryFn: async (): Promise<UserPresence | null> => {
+            if (!userId) return null;
+            // Initially, we might want to fetch last_seen from DB if not in cache
+            // For now, if it's not in cache, we assume offline/unknown
+            return queryClient.getQueryData<UserPresence>(CHATS_KEYS.presence(userId)) || { status: 'offline', last_seen_at: null };
+        },
+        enabled: !!userId,
+        staleTime: Infinity,
+    });
+}
+
+
 
 
 /**

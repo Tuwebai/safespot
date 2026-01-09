@@ -973,7 +973,13 @@ export interface ChatRoom {
   last_message_type: 'text' | 'image' | 'sighting' | 'location' | null;
   unread_count: number;
   last_message_sender_id?: string;
+  other_participant_id?: string;
+  other_participant_last_seen?: string;
+  is_online?: boolean;
 }
+
+
+
 
 export interface ChatMessage {
   id: string;

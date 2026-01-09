@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { useChatMessages, useSendMessageMutation, useMarkAsReadMutation, useMarkAsDeliveredMutation } from '../../hooks/queries/useChatsQuery';
+import { useChatMessages, useSendMessageMutation, useMarkAsReadMutation, useMarkAsDeliveredMutation, useUserPresence } from '../../hooks/queries/useChatsQuery';
+
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
 import {
@@ -72,9 +73,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const {
         data: messages,
         isLoading: messagesLoading,
-        isOtherTyping,
-        isOtherOnline
+        isOtherTyping
     } = useChatMessages(room.id);
+    const { data: presence } = useUserPresence(room.other_participant_id);
+
     const sendMessageMutation = useSendMessageMutation();
     const markAsReadMutation = useMarkAsReadMutation();
     const markAsDeliveredMutation = useMarkAsDeliveredMutation();
@@ -244,7 +246,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             @{otherParticipant.alias}
                         </h3>
                         <div className="flex items-center gap-1.5 h-4">
-                            {isOtherOnline ? (
+                            {presence?.status === 'online' ? (
                                 <span className="text-[10px] text-primary font-bold animate-pulse flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-primary" />
                                     EN LÍNEA
@@ -253,10 +255,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
                             ) : (
                                 <span className="text-[10px] text-muted-foreground truncate">
-                                    {room.report_category ? `Chat vinculado a: ${room.report_title}` : 'Mensaje Directo'}
+                                    {presence?.last_seen_at
+                                        ? `visto por últ. vez ${format(new Date(presence.last_seen_at), "HH:mm 'hs'", { locale: es })}`
+                                        : (room.report_category ? `Chat vinculado a: ${room.report_title}` : null)
+                                    }
                                 </span>
                             )}
                         </div>
+
                     </div>
                 </div>
 

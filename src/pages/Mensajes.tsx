@@ -312,16 +312,13 @@ const Mensajes: React.FC = () => {
                                                                 {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
                                                             </span>
                                                         </div>
-                                                        <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
-                                                            {room.report_id ? (
-                                                                <>
-                                                                    <span>{room.report_title || 'Reporte Contextual'}</span>
-                                                                    <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
-                                                                </>
-                                                            ) : (
-                                                                'Mensaje Directo'
-                                                            )}
-                                                        </p>
+                                                        {room.report_id && (
+                                                            <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
+                                                                <span>{room.report_title || 'Reporte Contextual'}</span>
+                                                                <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
+                                                            </p>
+                                                        )}
+
                                                         <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${(room as any).is_typing ? 'text-primary font-bold animate-pulse' : room.unread_count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                                                             {(room as any).is_typing ? (
                                                                 'Escribiendo...'

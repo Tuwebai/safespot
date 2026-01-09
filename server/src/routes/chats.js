@@ -3,7 +3,9 @@ import { queryWithRLS } from '../utils/rls.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { sanitizeContent } from '../utils/sanitize.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { presenceTracker } from '../utils/presenceTracker.js';
 import multer from 'multer';
+
 import { supabaseAdmin } from '../config/supabase.js';
 import { validateImageBuffer, requireAnonymousId } from '../utils/validation.js';
 import { imageUploadLimiter } from '../utils/rateLimiter.js';
@@ -43,7 +45,11 @@ router.get('/', async (req, res) => {
         -- Obtener el alias/avatar del OTRO participante (para DMs)
         u_other.alias as other_participant_alias,
         u_other.avatar_url as other_participant_avatar,
+        u_other.anonymous_id as other_participant_id,
+        u_other.last_seen_at as other_participant_last_seen,
         m.content as last_message_content,
+
+
         m.type as last_message_type,
         m.sender_id as last_message_sender_id,
         (
@@ -69,7 +75,14 @@ router.get('/', async (req, res) => {
     `;
 
         const result = await queryWithRLS(anonymousId, chatQuery, [anonymousId]);
-        res.json(result.rows);
+
+        const roomsWithPresence = result.rows.map(row => ({
+            ...row,
+            is_online: presenceTracker.isOnline(row.other_participant_id)
+        }));
+
+        res.json(roomsWithPresence);
+
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -148,7 +161,10 @@ router.post('/', async (req, res) => {
                 r.category as report_category,
                 u_other.alias as other_participant_alias,
                 u_other.avatar_url as other_participant_avatar,
+                u_other.anonymous_id as other_participant_id,
+                u_other.last_seen_at as other_participant_last_seen,
                 0 as unread_count
+
             FROM conversations c
             LEFT JOIN reports r ON c.report_id = r.id
             LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
@@ -163,6 +179,7 @@ router.post('/', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
 
 /**
  * GET /api/chats/:roomId/messages
@@ -231,13 +248,14 @@ router.post('/:roomId/messages', async (req, res) => {
                 message: previewMessage,
                 originClientId: clientId
             });
+
         });
 
         const insertQuery = `
-          INSERT INTO chat_messages (id, conversation_id, sender_id, content, type, caption)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING *
-        `;
+          INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption)
+        VALUES($1, $2, $3, $4, $5, $6)
+        RETURNING *
+            `;
 
         let newMessage;
         try {
@@ -267,6 +285,7 @@ router.post('/:roomId/messages', async (req, res) => {
 
         // Notificar via SSE a la sala específica (Backward compatibility)
         realtimeEvents.emit(`chat:${roomId}`, { message: newMessage, originClientId: clientId });
+
 
 
         // 3. ENVIAR NOTIFICACIÓN PUSH NATIVA (Si el destinatario está offline)
@@ -344,13 +363,13 @@ router.patch('/:roomId/read', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
-            realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
+            realtimeEvents.emit(`user - chat - update:${anonymousId} `, {
                 roomId,
                 action: 'read'
             });
 
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
-            realtimeEvents.emit(`chat-read:${roomId}`, {
+            realtimeEvents.emit(`chat - read:${roomId} `, {
                 readerId: anonymousId
             });
         }
@@ -379,7 +398,7 @@ router.patch('/:roomId/delivered', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
-            realtimeEvents.emit(`chat-delivered:${roomId}`, {
+            realtimeEvents.emit(`chat - delivered:${roomId} `, {
                 receiverId: anonymousId
             });
         }
@@ -419,6 +438,7 @@ router.post('/:roomId/typing', async (req, res) => {
                 isTyping: !!isTyping
             });
         });
+
 
         res.json({ success: true });
 
@@ -462,7 +482,7 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
         // 3. Subir a Supabase
         const bucketName = 'report-images'; // Reutilizamos el mismo bucket por ahora o uno de chats si existe
         const fileExt = file.originalname.split('.').pop();
-        const fileName = `chats/${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileName = `chats / ${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
             .from(bucketName)

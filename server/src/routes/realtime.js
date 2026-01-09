@@ -1,8 +1,10 @@
 import express from 'express';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { SSEResponse } from '../utils/sseResponse.js';
+import { presenceTracker } from '../utils/presenceTracker.js';
 
 const router = express.Router();
+
 
 /**
  * SSE endpoint for real-time comment updates
@@ -206,16 +208,41 @@ router.get('/user/:anonymousId', (req, res) => {
         stream.send('chat-rollback', data);
     };
 
+    const handlePresenceUpdate = (data) => {
+        stream.send('presence-update', data);
+    };
+
     realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);
+
     realtimeEvents.on(`user-notification:${anonymousId}`, handleNotification);
     realtimeEvents.on(`user-chat-rollback:${anonymousId}`, handleRollback);
+    realtimeEvents.on('presence-update', handlePresenceUpdate);
 
+    // FASE 1: Registrar conexión en PresenceTracker
+    presenceTracker.addConnection(anonymousId);
 
     req.on('close', () => {
+        // FASE 1: Registrar desconexión
+        const lastSeen = presenceTracker.removeConnection(anonymousId);
+
+        if (lastSeen) {
+            // Update DB only on actual disconnect (last tab)
+            (async () => {
+                try {
+                    const { pool } = await import('../config/database.js');
+                    await pool.query('UPDATE anonymous_users SET last_seen_at = $1 WHERE anonymous_id = $2', [lastSeen, anonymousId]);
+                } catch (err) {
+                    console.error('[Presence] Error updating last_seen_at:', err);
+                }
+            })();
+        }
+
+
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
         realtimeEvents.off(`user-notification:${anonymousId}`, handleNotification);
         realtimeEvents.off(`user-chat-rollback:${anonymousId}`, handleRollback);
+        realtimeEvents.off('presence-update', handlePresenceUpdate);
     });
 
 });

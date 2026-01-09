@@ -133,7 +133,13 @@ async function testConnection() {
 
       -- 9. Chat Global Schema Fixes
       ALTER TABLE chat_messages ALTER COLUMN room_id DROP NOT NULL;
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_to_id UUID;
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP WITH TIME ZONE;
+      
+      -- 10. Presence & Profile
+      ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     `;
+
 
 
     // Only run the long script if we successfully connected
