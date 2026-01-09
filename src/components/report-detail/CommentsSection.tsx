@@ -21,7 +21,6 @@ import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/su
 export interface CommentsSectionProps {
     reportId: string
     totalCount: number
-    onCommentCountChange: (delta: number) => void
     reportOwnerId?: string
     reportOwnerAlias?: string
     reportOwnerAvatar?: string
@@ -34,7 +33,6 @@ export interface CommentsSectionProps {
 export function CommentsSection({
     reportId,
     totalCount,
-    onCommentCountChange,
     reportOwnerId,
     reportOwnerAlias,
     reportOwnerAvatar
@@ -50,7 +48,6 @@ export function CommentsSection({
 
     const commentsManager = useCommentsManager({
         reportId,
-        onCommentCountChange,
     })
 
     const {

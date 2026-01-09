@@ -267,6 +267,7 @@ router.get('/feed', (req, res) => {
 
     const handleGlobalUpdate = (data) => {
         // Demultiplex global events into specific strict events:
+
         // 1. New Report
         if (data.type === 'new-report') {
             stream.send('report-create', {
@@ -275,19 +276,35 @@ router.get('/feed', (req, res) => {
                 originClientId: data.originClientId
             });
         }
-        // 2. Stats/Status Update
-        else if (data.type === 'stats-update' || data.type === 'report-update') {
+        // 2. Report/Stats Update
+        else if (data.type === 'report-update' || data.type === 'stats-update') {
             stream.send('report-update', {
                 id: data.reportId || data.id,
-                partial: data.updates || data.partial, // Handle both formats if flexible, but strict is 'updates' from emitter
+                partial: data.updates || data.partial,
                 originClientId: data.originClientId
             });
         }
-        // 3. Deletion
+        // 3. Status Change (Counters)
+        else if (data.type === 'status-change') {
+            stream.send('status-change', {
+                id: data.reportId,
+                prevStatus: data.prevStatus,
+                newStatus: data.newStatus,
+                originClientId: data.originClientId
+            });
+        }
+        // 4. New User (Counters)
+        else if (data.type === 'new-user') {
+            stream.send('user-create', {
+                anonymousId: data.anonymousId
+            });
+        }
+        // 5. Deletion
         else if (data.type === 'delete') {
             stream.send('report-delete', {
                 id: data.reportId,
-                partial: null,
+                category: data.category,
+                status: data.status,
                 originClientId: data.originClientId
             });
         }

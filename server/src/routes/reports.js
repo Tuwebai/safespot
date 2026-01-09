@@ -879,7 +879,7 @@ router.post('/',
       });
 
       // REALTIME: Broadcast new report to global feed
-      realtimeEvents.emitNewReport(data);
+      realtimeEvents.emitNewReport(data, req.headers['x-client-id']);
 
       // WHATSAPP: Send notification (delayed to wait for images)
       sendNewReportNotification(data.id);
@@ -1044,7 +1044,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
 
     // Check if report exists and belongs to user
     const checkResult = await queryWithRLS(anonymousId, `
-      SELECT anonymous_id FROM reports WHERE id = $1
+      SELECT anonymous_id, status FROM reports WHERE id = $1
     `, [id]);
 
     if (checkResult.rows.length === 0) {
@@ -1054,6 +1054,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     }
 
     const report = checkResult.rows[0];
+    const prevStatus = report.status;
 
     if (report.anonymous_id !== anonymousId) {
       return res.status(403).json({
@@ -1116,7 +1117,12 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
 
     // REALTIME: Broadcast report update
     try {
-      realtimeEvents.emitVoteUpdate('report', id, updatedReport);
+      realtimeEvents.emitVoteUpdate('report', id, updatedReport, req.headers['x-client-id']);
+
+      // If status changed, emit a dedicated status change event for counters
+      if (req.body.status && req.body.status !== prevStatus) {
+        realtimeEvents.emitStatusChange(id, prevStatus, req.body.status, req.headers['x-client-id']);
+      }
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitReportUpdate', reportId: id });
     }
@@ -1344,7 +1350,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
 
     // Check if report exists and belongs to user
     const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id, anonymous_id FROM reports WHERE id = $1 AND anonymous_id = $2
+      SELECT id, anonymous_id, category, status FROM reports WHERE id = $1 AND anonymous_id = $2
     `, [id, anonymousId]);
 
     if (checkResult.rows.length === 0) {
@@ -1376,7 +1382,9 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     realtimeEvents.emit('global-report-update', {
       type: 'delete',
       reportId: id,
-      senderId: anonymousId // Explicit sender for echo suppression
+      category: checkResult.rows[0].category,
+      status: checkResult.rows[0].status,
+      originClientId: req.headers['x-client-id']
     });
 
     res.json({

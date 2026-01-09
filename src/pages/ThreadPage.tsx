@@ -24,7 +24,6 @@ export function ThreadPage() {
     // (Reusing manager logic - we fetch all to have full context for ancestors/descendants)
     const commentsManager = useCommentsManager({
         reportId,
-        onCommentCountChange: () => { } // Optional: sync count if needed
     })
 
     const {

@@ -112,6 +112,36 @@ class RealtimeEvents extends EventEmitter {
         });
         console.log(`[Realtime] Emitted badge earned for ${anonymousId}`, badge.code);
     }
+
+    /**
+     * Emit a new user creation event (Global Stats)
+     * @param {string} anonymousId
+     */
+    emitNewUser(anonymousId) {
+        this.emit('global-report-update', {
+            type: 'new-user',
+            anonymousId
+        });
+        console.log(`[Realtime] Emitted new user creation: ${anonymousId}`);
+    }
+
+    /**
+     * Emit a report status change (Global Stats)
+     * @param {string} reportId
+     * @param {string} prevStatus
+     * @param {string} newStatus
+     * @param {string} [originClientId]
+     */
+    emitStatusChange(reportId, prevStatus, newStatus, originClientId) {
+        this.emit('global-report-update', {
+            type: 'status-change',
+            reportId,
+            prevStatus,
+            newStatus,
+            originClientId
+        });
+        console.log(`[Realtime] Emitted status change for ${reportId}: ${prevStatus} -> ${newStatus}`);
+    }
 }
 
 // Export singleton instance

@@ -17,6 +17,7 @@ import { getClientId } from '@/lib/clientId'
 export function useRealtimeComments(reportId: string | undefined, enabled = true) {
     const queryClient = useQueryClient()
     const eventSourceRef = useRef<EventSource | null>(null)
+    const processedEvents = useRef(new Set<string>())
 
     useEffect(() => {
         if (!reportId || !enabled) return
@@ -26,26 +27,41 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
 
         const myClientId = getClientId();
 
+        // Helper to handle idempotency
+        const shouldProcess = (eventId?: string) => {
+            if (!eventId) return true; // Fallback if backend doesn't provide ID
+            if (processedEvents.current.has(eventId)) return false;
+            processedEvents.current.add(eventId);
+            return true;
+        };
+
         // 1. New Comment
         eventSource.addEventListener('new-comment', (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data)
                 if (data.originClientId === myClientId) return
+                if (!shouldProcess(data.eventId)) return
 
-                // Uses cache helper which handles list append + report counter increment
+                // Uses cache helper which handles list append + report counter increment (Atomic)
                 commentsCache.append(queryClient, data.partial)
             } catch (err) {
                 console.error('[SSE] Error processing new-comment:', err)
             }
         })
 
-        // 2. Comment Update
+        // 2. Comment Update (e.g. Likes, Edits)
         eventSource.addEventListener('comment-update', (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data)
                 if (data.originClientId === myClientId) return
+                if (!shouldProcess(data.eventId)) return
 
-                commentsCache.patch(queryClient, data.id, data.partial)
+                // If it's a like delta, use atomic helper
+                if (data.isLikeDelta) {
+                    commentsCache.applyLikeDelta(queryClient, data.id, data.delta);
+                } else {
+                    commentsCache.patch(queryClient, data.id, data.partial)
+                }
             } catch (err) {
                 console.error('[SSE] Error processing comment-update:', err)
             }
@@ -56,8 +72,9 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
             try {
                 const data = JSON.parse(event.data)
                 if (data.originClientId === myClientId) return
+                if (!shouldProcess(data.eventId)) return
 
-                // Helper handles list removal + report counter decrement
+                // Helper handles list removal + report counter decrement (Atomic)
                 commentsCache.remove(queryClient, data.id, reportId)
             } catch (err) {
                 console.error('[SSE] Error processing comment-delete:', err)

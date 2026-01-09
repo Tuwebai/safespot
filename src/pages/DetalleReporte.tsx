@@ -1,6 +1,5 @@
 import { useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 // import { Helmet } from 'react-helmet-async'
 // import { generateSEOTags } from '@/lib/seo' 
 import { generateReportStructuredData } from '@/lib/seo'
@@ -11,7 +10,6 @@ import { ReportCardSkeleton as ReportSkeleton } from '@/components/ui/skeletons'
 import { ArrowLeft, MapPin, MessageSquare } from 'lucide-react'
 import { ShareButton } from '@/components/ShareButton'
 import { useCreateChatMutation } from '@/hooks/queries/useChatsQuery'
-import { reportsCache } from '@/lib/cache-helpers'
 
 // Hooks
 import { useReportDetail } from '@/hooks/useReportDetail'
@@ -121,16 +119,7 @@ export function DetalleReporte() {
 
   const isOwner = report?.anonymous_id === localStorage.getItem('safespot_anonymous_id');
 
-  const queryClient = useQueryClient()
 
-  // Handler for comment count changes - Updates Canonical Cache
-  const handleCommentCountChange = useCallback((delta: number) => {
-    if (id) {
-      reportsCache.patch(queryClient, id, (old) => ({
-        comments_count: Math.max(0, (old.comments_count || 0) + delta)
-      }))
-    }
-  }, [id, queryClient])
 
   // Handler for favorite toggle - MUST be before any returns (Rules of Hooks)
   const handleFavoriteToggle = useCallback((newState: boolean) => {
@@ -329,7 +318,6 @@ export function DetalleReporte() {
             <CommentsSection
               reportId={id!}
               totalCount={initialReport?.comments_count || 0}
-              onCommentCountChange={handleCommentCountChange}
               reportOwnerId={initialReport?.anonymous_id}
               reportOwnerAlias={initialReport?.alias || undefined}
               reportOwnerAvatar={initialReport?.avatar_url || undefined}

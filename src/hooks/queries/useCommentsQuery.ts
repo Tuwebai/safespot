@@ -42,7 +42,21 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
         enabled: !!reportId,
         staleTime: 30 * 1000, // Consider data stale after 30s
         refetchOnWindowFocus: true, // Refetch when user returns to the tab
-        refetchInterval: 2000, // Poll every 2s for near-instant updates
+        // SAFETY: Firewall against cache corruption (Object[] -> string[])
+        select: (data: any) => {
+            if (!data) return data;
+
+            const extractIds = (list: any[]) => list.map(item => {
+                if (typeof item === 'object' && item !== null && 'id' in item) {
+                    return item.id
+                }
+                return item
+            });
+
+            if (Array.isArray(data)) return extractIds(data)
+            if (data.comments) return { ...data, comments: extractIds(data.comments) }
+            return data
+        }
     })
 }
 
@@ -109,12 +123,6 @@ export function useCreateCommentMutation() {
             }
         },
         onSuccess: (newComment, variables, context) => {
-            // 1. Remove Optimistic Comment (Cleanup)
-            // We use the helper to remove the temp ID from lists and decrement counter (temporarily)
-            // But wait, we just want to SWAP it.
-            // Using remove then append might cause a flicker in counter ( +1 -> -1 -> +1 ).
-            // Better to just SWAP the ID in the list and UPDATE the detail.
-
             // A. Store Real Detail
             commentsCache.store(queryClient, newComment)
 
@@ -135,8 +143,6 @@ export function useCreateCommentMutation() {
             triggerBadgeCheck(newComment.newBadges)
         },
         onSettled: () => {
-            // Invalidate report to ensure consistency eventually
-            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(variables.report_id) })
         },
     })
 }
@@ -227,13 +233,13 @@ export function useToggleLikeCommentMutation() {
             isLiked ? commentsApi.unlike(id) : commentsApi.like(id),
         onMutate: async ({ id, isLiked }) => {
             await queryClient.cancelQueries({ queryKey: queryKeys.comments.detail(id) })
-            const previousComment = queryClient.getQueryData(queryKeys.comments.detail(id))
+            const previousComment = queryClient.getQueryData<Comment>(queryKeys.comments.detail(id))
 
-            // USE HELPER: Functional Patch supported!
-            commentsCache.patch(queryClient, id, (old) => ({
-                liked_by_me: !isLiked,
-                upvotes_count: (old.upvotes_count || 0) + (isLiked ? -1 : 1)
-            }))
+            // USE HELPER: Atomic Delta
+            if (previousComment) {
+                commentsCache.patch(queryClient, id, { liked_by_me: !isLiked })
+                commentsCache.applyLikeDelta(queryClient, id, isLiked ? -1 : 1)
+            }
 
             return { id, previousComment }
         },
@@ -242,9 +248,9 @@ export function useToggleLikeCommentMutation() {
                 queryClient.setQueryData(queryKeys.comments.detail(context.id), context.previousComment)
             }
         },
-        onSettled: (data) => {
+        onSettled: () => {
             triggerBadgeCheck()
-            if (data) commentsCache.store(queryClient, data as any)
+            // SSE will handle the final sync via comment-update event
         },
     })
 }

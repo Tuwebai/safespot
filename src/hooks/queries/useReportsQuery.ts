@@ -57,14 +57,9 @@ export function useReportsQuery(filters?: ReportFilters) {
             // SIDE EFFECT: Normalize data into canonical cache
             const ids = reportsCache.store(queryClient, data)
 
-            // Only cache the IDs for the default view to localStorage
-            // We also need to cache the details if we want offline support, 
-            // but for now let's stick to the architecture.
-            // (Simplification: We store the full array in LS for hydration, but app uses IDs)
+            // SIDE EFFECT: Persist default view
             if (isDefaultQuery) {
-                try {
-                    localStorage.setItem('safespot_reports_all_v2', JSON.stringify(data))
-                } catch (e) { }
+                localStorage.setItem('safespot_reports_all_v2', JSON.stringify(data))
             }
 
             return ids
@@ -197,12 +192,6 @@ export function useCreateReportMutation() {
         },
         onSuccess: (serverReport, _variables, context) => {
             // Replace temporary report with real server report
-            // The list currently has tempId. The Detail has tempId.
-            // We need to:
-            // 1. Store real detail (reportsCache.store)
-            // 2. Swap tempId for realId in lists
-            // 3. Remove temp detail
-
             if (context?.tempId) {
                 // 1. Store Real Detail
                 reportsCache.store(queryClient, [serverReport])
@@ -210,11 +199,26 @@ export function useCreateReportMutation() {
                 // 2. Swap ID in Lists
                 queryClient.setQueriesData<string[]>(
                     { queryKey: ['reports', 'list'] },
-                    (oldIds) => oldIds ? oldIds.map(id => id === context.tempId ? serverReport.id : id) : []
+                    (oldIds) => {
+                        if (!oldIds) return []
+                        // Map tempId to realId
+                        return oldIds.map(id => id === context.tempId ? serverReport.id : id)
+                    }
                 )
 
                 // 3. Remove Optimistic Detail
                 queryClient.removeQueries({ queryKey: queryKeys.reports.detail(context.tempId) })
+
+                // 4. Update localStorage (for default view persistence)
+                const defaultKey = queryKeys.reports.list()
+                const defaultIds = queryClient.getQueryData<string[]>(defaultKey)
+                if (defaultIds && defaultIds.includes(serverReport.id)) {
+                    // Re-capture full reports for storage
+                    const allReports = defaultIds
+                        .map(id => queryClient.getQueryData<Report>(queryKeys.reports.detail(id)))
+                        .filter(Boolean) as Report[]
+                    localStorage.setItem('safespot_reports_all_v2', JSON.stringify(allReports))
+                }
             }
         },
         onError: (_err, _newReport, context) => {
@@ -381,22 +385,8 @@ export function useToggleFavoriteMutation() {
 
             // 3. Optimistically update Detail Cache
             if (previousDetail) {
-                queryClient.setQueryData<Report>(
-                    queryKeys.reports.detail(reportId),
-                    { ...previousDetail, is_favorite: !previousDetail.is_favorite }
-                )
+                reportsCache.patch(queryClient, reportId, { is_favorite: !previousDetail.is_favorite })
             }
-
-            // 4. Optimistically update ALL Report Lists (Explorar, Reportes, etc.)
-            // We use setQueriesData to match any list key starting with ['reports', 'list']
-            queryClient.setQueriesData<Report[]>(
-                { queryKey: ['reports', 'list'] },
-                (old) => old?.map(report =>
-                    report.id === reportId
-                        ? { ...report, is_favorite: !report.is_favorite }
-                        : report
-                )
-            )
 
             return { previousDetail }
         },
@@ -405,15 +395,6 @@ export function useToggleFavoriteMutation() {
             if (context?.previousDetail) {
                 queryClient.setQueryData(queryKeys.reports.detail(reportId), context.previousDetail)
             }
-            // Rollback Lists (invert the toggle back)
-            queryClient.setQueriesData<Report[]>(
-                { queryKey: ['reports', 'list'] },
-                (old) => old?.map(report =>
-                    report.id === reportId
-                        ? { ...report, is_favorite: !report.is_favorite }
-                        : report
-                )
-            )
         },
         onSettled: (_, __, reportId) => {
             // Refetch essential data to stay in sync with server
@@ -445,19 +426,8 @@ export function useFlagReportMutation() {
 
             // Optimistically update Detail
             if (previousDetail) {
-                queryClient.setQueryData<Report>(
-                    queryKeys.reports.detail(reportId),
-                    { ...previousDetail, is_flagged: true }
-                )
+                reportsCache.patch(queryClient, reportId, { is_flagged: true })
             }
-
-            // Optimistically update ALL Lists
-            queryClient.setQueriesData<Report[]>(
-                { queryKey: ['reports', 'list'] },
-                (old) => old?.map(report =>
-                    report.id === reportId ? { ...report, is_flagged: true } : report
-                )
-            )
 
             return { previousDetail, reportId }
         },
@@ -467,13 +437,6 @@ export function useFlagReportMutation() {
                 if (context.previousDetail) {
                     queryClient.setQueryData(queryKeys.reports.detail(context.reportId), context.previousDetail)
                 }
-                // Rollback lists
-                queryClient.setQueriesData<Report[]>(
-                    { queryKey: ['reports', 'list'] },
-                    (old) => old?.map(report =>
-                        report.id === context.reportId ? { ...report, is_flagged: false } : report
-                    )
-                )
             }
         },
         onSettled: (_, __, { reportId }) => {

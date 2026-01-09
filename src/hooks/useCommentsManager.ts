@@ -127,10 +127,9 @@ function commentsReducer(state: CommentsState, action: CommentsAction): Comments
 
 interface UseCommentsManagerProps {
     reportId: string | undefined
-    onCommentCountChange?: (delta: number) => void
 }
 
-export function useCommentsManager({ reportId, onCommentCountChange }: UseCommentsManagerProps) {
+export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     const toast = useToast()
     const [state, dispatch] = useReducer(commentsReducer, initialState)
 
@@ -235,13 +234,12 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
                 content: rich || plain, // Try rich first, fallback to plain
             })
 
-            onCommentCountChange?.(1)
             triggerBadgeCheck()
         } catch (error) {
             handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'useCommentsManager.submitComment')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.commentText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.commentText, state.submitting, normalizeCommentPayload, createMutation, toast])
 
     const submitReply = useCallback(async (parentId: string) => {
         const { plain, rich } = normalizeCommentPayload(state.replyText)
@@ -265,13 +263,12 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
                 parent_id: parentId,
             })
 
-            onCommentCountChange?.(1)
             triggerBadgeCheck()
         } catch (error) {
             handleErrorWithMessage(error, 'Error al responder', toast.error, 'useCommentsManager.submitReply')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.replyText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.replyText, state.submitting, normalizeCommentPayload, createMutation, toast])
 
     const submitThread = useCallback(async () => {
         const { plain, rich } = normalizeCommentPayload(state.threadText)
@@ -293,14 +290,13 @@ export function useCommentsManager({ reportId, onCommentCountChange }: UseCommen
             })
 
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'thread' })
-            onCommentCountChange?.(1)
             triggerBadgeCheck()
             // toast.success removed as per user request
         } catch (error) {
             handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')
             dispatch({ type: 'END_SUBMIT' })
         }
-    }, [reportId, state.threadText, state.submitting, normalizeCommentPayload, createMutation, onCommentCountChange, toast])
+    }, [reportId, state.threadText, state.submitting, normalizeCommentPayload, createMutation, toast])
 
     const submitEdit = useCallback(async (commentId: string) => {
         const { plain, rich } = normalizeCommentPayload(state.editText)

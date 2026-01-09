@@ -1,5 +1,6 @@
 import pool from '../config/database.js'; // Use direct DB pool
 import { logError, logSuccess } from './logger.js';
+import { realtimeEvents } from './eventEmitter.js';
 
 // Local cache to avoid redundant Supabase lookups for existence check
 // UUID keys are small, but we use a Map to keep it simple.
@@ -85,7 +86,12 @@ export async function ensureAnonymousUser(anonymousId) {
     );
 
     // If inserted (or race condition handled)
-    logSuccess('Anonymous user created/verified', { anonymousId });
+    if (insertResult.rows.length > 0) {
+      logSuccess('Anonymous user created', { anonymousId });
+      realtimeEvents.emitNewUser(anonymousId);
+    } else {
+      logSuccess('Anonymous user verified (already exists)', { anonymousId });
+    }
 
     // Manage cache size
     if (existenceCache.size >= CACHE_LIMIT) {
