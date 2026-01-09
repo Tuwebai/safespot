@@ -138,6 +138,33 @@ router.get('/chats/:roomId', (req, res) => {
     realtimeEvents.on(`chat-delivered:${roomId}`, handleDelivered);
     realtimeEvents.on(`chat-presence:${roomId}`, handlePresence);
 
+    // Initial Presence Snapshot: Tell the connecting user if the other participant is online
+    (async () => {
+        try {
+            // Find the other participant in this room
+            const roomResult = await pool.query(
+                'SELECT participant_a, participant_b FROM chat_rooms WHERE id = $1',
+                [roomId]
+            );
+
+            if (roomResult.rows.length > 0) {
+                const room = roomResult.rows[0];
+                const otherId = room.participant_a === anonymousId ? room.participant_b : room.participant_a;
+
+                if (otherId) {
+                    const isOtherOnline = presenceTracker.isOnline(otherId);
+                    // Send initial state directly to this specific stream
+                    stream.send('presence', {
+                        userId: otherId,
+                        status: isOtherOnline ? 'online' : 'offline'
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('[SSE] Error sending presence snapshot:', err);
+        }
+    })();
+
     // Notificar que ESTE usuario entró (Online)
     if (anonymousId) {
         realtimeEvents.emit(`chat-presence:${roomId}`, {

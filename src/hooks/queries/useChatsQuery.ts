@@ -85,16 +85,15 @@ export function useChatRooms() {
                 if (data.message) {
                     const message = data.message;
 
-                    // 1. Patch Global Inbox List (Sidebar)
-                    patchItem(queryClient, CHATS_KEYS.rooms as any, convId, {
+                    // 1. Promote & Patch Room in Inbox (Sidebar)
+                    patchAndPromote(queryClient, CHATS_KEYS.rooms as any, convId, (old: any) => ({
                         last_message_content: message.content,
                         last_message_at: message.created_at,
                         last_message_sender_id: message.sender_id,
-                        unread_count: data.action === 'read' ? 0 : undefined
-                    } as any);
+                        unread_count: data.action === 'read' ? 0 : (old?.unread_count || 0) + (message.sender_id !== anonymousId ? 1 : 0)
+                    }));
 
                     // 2. Patch Individual Messages List (If active)
-                    // This is the key fix for real-time reflecting in ChatWindow
                     upsertInList(queryClient, CHATS_KEYS.messages(convId) as any, message);
 
                     // 3. Patch Room Detail Cache
@@ -206,21 +205,21 @@ export function useChatMessages(convId: string | undefined) {
 
                 // Process valid message from others OR from other tabs of same user
                 {
-                    // 1. Add message to chat history
-                    upsertInList(queryClient, CHATS_KEYS.messages(convId) as any, message);
-
-                    // 2. Patch room in sidebar without invalidation
-                    patchItem(queryClient, CHATS_KEYS.rooms as any, convId, {
+                    // 1. Promote & Patch Room in Inbox (Background sync)
+                    patchAndPromote(queryClient, CHATS_KEYS.rooms as any, convId, {
                         last_message_content: message.content,
                         last_message_at: message.created_at,
                         last_message_sender_id: message.sender_id,
-                        is_typing: false // Reset typing on message arrival
-                    } as any);
+                        is_typing: false, // Reset typing on message arrival
+                    });
 
+                    // 2. Add message to chat history
+                    upsertInList(queryClient, CHATS_KEYS.messages(convId) as any, message);
 
-                    // Increment unread locally
-                    patchItem(queryClient, CHATS_KEYS.rooms as any, convId, (old: any) => ({
-                        unread_count: (old.unread_count || 0) + 1
+                    // 3. Increment unread locally in detail cache (reactive)
+                    queryClient.setQueryData(CHATS_KEYS.conversation(convId), (old: any) => ({
+                        ...old,
+                        unread_count: (old?.unread_count || 0) + (message.sender_id !== anonymousId ? 1 : 0)
                     }));
                 }
             } catch (e) { }
@@ -254,6 +253,19 @@ export function useChatMessages(convId: string | undefined) {
                     return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
                 });
             }
+        });
+
+        eventSource.addEventListener('presence', (event: any) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.userId) {
+                    // Force zero-latency presence update for partners in the same room
+                    queryClient.setQueryData(CHATS_KEYS.presence(data.userId), {
+                        status: data.status,
+                        last_seen_at: data.status === 'offline' ? new Date().toISOString() : null
+                    });
+                }
+            } catch (e) { }
         });
 
         eventSource.onmessage = (event) => {
@@ -392,7 +404,14 @@ export function useSendMessageMutation() {
                 return [...(old || []), optimisticMessage];
             });
 
-            // Update Conversation detail cache (last message)
+            // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY (Atomic Reordering)
+            patchAndPromote(queryClient, CHATS_KEYS.rooms as any, variables.roomId, {
+                last_message_content: optimisticMessage.content,
+                last_message_at: optimisticMessage.created_at,
+                last_message_sender_id: optimisticMessage.sender_id
+            });
+
+            // 2. Update Conversation detail cache (last message)
             queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId), (old: any) => ({
                 ...old,
                 last_message_content: optimisticMessage.content,
@@ -427,10 +446,13 @@ export function useSendMessageMutation() {
                 return old.filter(m => !m.id.startsWith('temp-')).concat(confirmedMessage);
             });
 
-            // Actualizar lista de salas
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
-
-            // NO revocamos el blob aquí, lo hará el componente ChatImage tras cargar la imagen real
+            // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY on success (reconcile)
+            patchAndPromote(queryClient, CHATS_KEYS.rooms as any, variables.roomId, {
+                last_message_content: confirmedMessage.content,
+                last_message_at: confirmedMessage.created_at,
+                last_message_sender_id: confirmedMessage.sender_id,
+                unread_count: 0
+            });
         },
 
         onSettled: (_data, _error, variables) => {
@@ -461,9 +483,12 @@ export function useMarkAsReadMutation() {
     return useMutation({
         mutationFn: (roomId: string) => chatsApi.markAsRead(roomId),
         onSuccess: (_, roomId) => {
-            // 1. Patch Global Inbox List instead of invalidating
+            const anonymousId = localStorage.getItem('safespot_anonymous_id');
+
+            // 1. Patch Global Inbox List (Sidebar)
             patchItem(queryClient, CHATS_KEYS.rooms as any, roomId, {
-                unread_count: 0
+                unread_count: 0,
+                is_typing: false // Clear typing state when marked as read
             });
 
             // 2. Patch Detail Conversation
@@ -472,11 +497,9 @@ export function useMarkAsReadMutation() {
                 unread_count: 0
             }));
 
-
             // 3. Patch Messages list
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
                 if (!old) return old;
-                const anonymousId = localStorage.getItem('safespot_anonymous_id');
                 return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
             });
         },
@@ -509,7 +532,8 @@ function patchItem(queryClient: any, queryKey: any[], id: string, patch: any | (
         // If it's an array
         if (Array.isArray(oldData)) {
             return oldData.map(item => {
-                if (item.id === id || item.roomId === id) {
+                const itemId = item.id || item.roomId;
+                if (itemId === id) {
                     const updates = typeof patch === 'function' ? patch(item) : patch;
                     return { ...item, ...updates };
                 }
@@ -517,6 +541,29 @@ function patchItem(queryClient: any, queryKey: any[], id: string, patch: any | (
             });
         }
         return oldData;
+    });
+}
+
+/**
+ * Enterprise Helper: Patches an item and promotes it to the top of the list.
+ * Critical for "WhatsApp-Grade" Inbox reordering without refetches.
+ */
+function patchAndPromote(queryClient: any, queryKey: any[], id: string, patch: any | ((old: any) => any)) {
+    queryClient.setQueryData(queryKey, (oldData: any) => {
+        if (!oldData || !Array.isArray(oldData)) return oldData;
+
+        const index = oldData.findIndex(item => item.id === id || item.roomId === id);
+        if (index === -1) return oldData;
+
+        const item = oldData[index];
+        const updates = typeof patch === 'function' ? patch(item) : patch;
+        const updatedItem = { ...item, ...updates };
+
+        // 1. Remove from current position
+        const filtered = oldData.filter((_: any, i: number) => i !== index);
+
+        // 2. Insert at index 0
+        return [updatedItem, ...filtered];
     });
 }
 

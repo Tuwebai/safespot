@@ -293,10 +293,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
                             ) : (
                                 <span className="text-[10px] text-muted-foreground truncate">
-                                    {presence?.last_seen_at
-                                        ? `visto por últ. vez ${format(new Date(presence.last_seen_at), "HH:mm 'hs'", { locale: es })}`
-                                        : (room.report_category ? `Chat vinculado a: ${room.report_title}` : null)
-                                    }
+                                    {presence?.last_seen_at ? (() => {
+                                        const date = new Date(presence.last_seen_at);
+                                        const now = new Date();
+                                        const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+                                        let dayLabel = "";
+                                        if (diffInDays === 0 && now.getDate() === date.getDate()) {
+                                            dayLabel = "hoy";
+                                        } else if (diffInDays === 1 || (diffInDays === 0 && now.getDate() !== date.getDate())) {
+                                            dayLabel = "ayer";
+                                        } else {
+                                            dayLabel = format(date, "d 'de' MMM", { locale: es });
+                                        }
+
+                                        return `últ. vez ${dayLabel} a las ${format(date, "HH:mm")}`;
+                                    })() : (room.report_category ? `Chat vinculado a: ${room.report_title}` : null)}
                                 </span>
                             )}
                         </div>

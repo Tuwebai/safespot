@@ -1,6 +1,78 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useChatRooms, useConversation } from '../hooks/queries/useChatsQuery';
+import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
+import { ChatRoom } from '../lib/api';
+
+interface ChatRoomItemProps {
+    room: ChatRoom;
+    isActive: boolean;
+    onClick: () => void;
+}
+
+const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) => {
+    const { data: presence } = useUserPresence(room.other_participant_id);
+    const isOnline = presence?.status === 'online';
+
+    return (
+        <div
+            onClick={onClick}
+            className={`p-4 cursor-pointer transition-colors border-l-4 ${isActive
+                ? 'bg-primary/10 border-primary'
+                : 'border-transparent hover:bg-muted/50'
+                }`}
+        >
+            <div className="flex gap-3">
+                <div className="relative shrink-0">
+                    <Avatar className="w-12 h-12 border border-border mt-1">
+                        <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
+                        <AvatarFallback className="font-bold text-xs uppercase">
+                            {room.other_participant_alias?.substring(0, 2) || '??'}
+                        </AvatarFallback>
+                    </Avatar>
+
+                    {/* Online Indicator */}
+                    {isOnline && (
+                        <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-primary rounded-full border-2 border-card ring-1 ring-primary/20 animate-in fade-in zoom-in duration-300" />
+                    )}
+
+                    {room.unread_count > 0 && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background animate-in zoom-in duration-300">
+                            {room.unread_count}
+                        </span>
+                    )}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start">
+                        <h4 className="text-foreground font-semibold text-xs truncate">@{room.other_participant_alias}</h4>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
+                        </span>
+                    </div>
+                    {room.report_id && (
+                        <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
+                            <span>{room.report_title || 'Reporte Contextual'}</span>
+                            <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
+                        </p>
+                    )}
+
+                    <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${(room as any).is_typing ? 'text-primary font-bold animate-pulse' : room.unread_count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                        {(room as any).is_typing ? (
+                            'Escribiendo...'
+                        ) : room.last_message_type === 'image' ? (
+                            <>
+                                <Camera className="w-3.5 h-3.5 shrink-0" />
+                                <span>Imagen</span>
+                            </>
+                        ) : (
+                            room.last_message_content || 'Iniciá la conversación...'
+                        )}
+                    </p>
+
+                </div>
+            </div>
+        </div>
+    );
+};
 
 import { ChatWindow } from '../components/chat/ChatWindow';
 import { getAvatarUrl } from '../lib/avatar';
@@ -279,64 +351,14 @@ const Mensajes: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="divide-y divide-border/50">
-                                    {filteredRooms.map((room) => {
-                                        const isActive = selectedRoomId === room.id;
-
-                                        return (
-                                            <div
-                                                key={room.id}
-                                                onClick={() => setSelectedRoomId(room.id)}
-                                                className={`p-4 cursor-pointer transition-colors border-l-4 ${isActive
-                                                    ? 'bg-primary/10 border-primary'
-                                                    : 'border-transparent hover:bg-muted/50'
-                                                    }`}
-                                            >
-                                                <div className="flex gap-3">
-                                                    <div className="relative shrink-0">
-                                                        <Avatar className="w-12 h-12 border border-border mt-1">
-                                                            <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
-                                                            <AvatarFallback className="font-bold text-xs uppercase">
-                                                                {room.other_participant_alias?.substring(0, 2) || '??'}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        {room.unread_count > 0 && (
-                                                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background">
-                                                                {room.unread_count}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex justify-between items-start">
-                                                            <h4 className="text-foreground font-semibold text-xs truncate">@{room.other_participant_alias}</h4>
-                                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                                                {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
-                                                            </span>
-                                                        </div>
-                                                        {room.report_id && (
-                                                            <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
-                                                                <span>{room.report_title || 'Reporte Contextual'}</span>
-                                                                <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
-                                                            </p>
-                                                        )}
-
-                                                        <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${(room as any).is_typing ? 'text-primary font-bold animate-pulse' : room.unread_count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
-                                                            {(room as any).is_typing ? (
-                                                                'Escribiendo...'
-                                                            ) : room.last_message_type === 'image' ? (
-                                                                <>
-                                                                    <Camera className="w-3.5 h-3.5 shrink-0" />
-                                                                    <span>Imagen</span>
-                                                                </>
-                                                            ) : (
-                                                                room.last_message_content || 'Iniciá la conversación...'
-                                                            )}
-                                                        </p>
-
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                    {filteredRooms.map((room) => (
+                                        <ChatRoomItem
+                                            key={room.id}
+                                            room={room}
+                                            isActive={selectedRoomId === room.id}
+                                            onClick={() => setSelectedRoomId(room.id)}
+                                        />
+                                    ))}
                                 </div>
                             )}
                         </div>
