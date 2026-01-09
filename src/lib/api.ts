@@ -959,27 +959,25 @@ export const notificationsApi = {
 
 export interface ChatRoom {
   id: string;
-  report_id: string;
-  participant_a: string;
-  participant_b: string;
+  report_id: string | null;
+  type: 'dm' | 'group';
   last_message_at: string;
-  status: 'active' | 'archived';
   created_at: string;
-  report_title: string;
-  report_category: string;
-  participant_a_alias: string;
-  participant_a_avatar: string;
-  participant_b_alias: string;
-  participant_b_avatar: string;
+  metadata?: any;
+  // Joined fields
+  report_title?: string;
+  report_category?: string;
+  other_participant_alias?: string;
+  other_participant_avatar?: string;
   last_message_content?: string;
-  last_message_type: 'text' | 'image' | 'sighting' | null;
-  last_message_caption?: string;
+  last_message_type: 'text' | 'image' | 'sighting' | 'location' | null;
   unread_count: number;
+  last_message_sender_id?: string;
 }
 
 export interface ChatMessage {
   id: string;
-  room_id: string;
+  conversation_id: string;
   sender_id: string;
   content: string;
   type: 'text' | 'image' | 'sighting' | 'location';

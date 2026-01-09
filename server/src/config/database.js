@@ -130,7 +130,11 @@ async function testConnection() {
       CREATE INDEX IF NOT EXISTS idx_admin_tasks_severity ON admin_tasks(severity);
       CREATE INDEX IF NOT EXISTS idx_admin_tasks_type ON admin_tasks(type);
       CREATE INDEX IF NOT EXISTS idx_admin_tasks_created_at ON admin_tasks(created_at DESC);
+
+      -- 9. Chat Global Schema Fixes
+      ALTER TABLE chat_messages ALTER COLUMN room_id DROP NOT NULL;
     `;
+
 
     // Only run the long script if we successfully connected
     await pool.query(initSql);

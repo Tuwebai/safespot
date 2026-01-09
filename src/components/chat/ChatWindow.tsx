@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+
 import { useVirtualizer } from '@tanstack/react-virtual';
+
 import { useChatMessages, useSendMessageMutation, useMarkAsReadMutation, useMarkAsDeliveredMutation } from '../../hooks/queries/useChatsQuery';
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -10,7 +12,8 @@ import {
     X,
     ArrowLeft,
     Check,
-    CheckCheck
+    CheckCheck,
+    MessageSquare
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -84,9 +87,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
-    const otherParticipant = room.participant_a === anonymousId
-        ? { alias: room.participant_b_alias, id: room.participant_b }
-        : { alias: room.participant_a_alias, id: room.participant_a };
+    const otherParticipant = {
+        alias: room.other_participant_alias || 'Anon',
+        avatar: room.other_participant_avatar
+    };
 
     // Initialize Virtualizer
     const rowVirtualizer = useVirtualizer({
@@ -98,50 +102,77 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     // Auto-scroll logic
     const lastMessageCount = useRef(0);
+    const lastRoomId = useRef<string | null>(null);
+    const hasMarkedRead = useRef(false);
+
 
     useLayoutEffect(() => {
-        if (messages && messages.length > lastMessageCount.current) {
-            // New messages arrived. 
-            // In a real app, check if user is at bottom before force scrolling, 
-            // but for "Instant App" feel, standard behavior is snap to bottom on new msg.
+        if (!messages) return;
+
+        // Reset if room changes
+        if (lastRoomId.current !== room.id) {
+            lastMessageCount.current = 0;
+            lastRoomId.current = room.id;
+            hasMarkedRead.current = false;
+        }
+
+        if (messages.length > lastMessageCount.current) {
             rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
             lastMessageCount.current = messages.length;
 
-            // Mark as read check
+            // Mark as read check for incoming messages
             const lastMessage = messages[messages.length - 1];
             if (lastMessage && lastMessage.sender_id !== anonymousId && !lastMessage.is_read) {
                 markAsReadMutation.mutate(room.id);
             }
         }
-    }, [messages, room.id, anonymousId, rowVirtualizer, markAsReadMutation]);
+    }, [messages, room.id, anonymousId, rowVirtualizer]); // Removed mutations from deps
 
-    // Marcar como leído al entrar o cuando llegan mensajes (Legacy effect kept for safety)
+    // Marcar como leído al entrar o cuando cambia la sala
     useEffect(() => {
-        if (room.id) {
-            markAsReadMutation.mutate(room.id);
-            // También marcamos como entregado explícitamente al abrir
-            markAsDeliveredMutation.mutate(room.id);
-        }
-    }, [room.id, markAsReadMutation, markAsDeliveredMutation]); // Removed messages length dep, handled above
+        if (!room.id || hasMarkedRead.current) return;
 
-    // Notificar cuando el usuario escribe
-    useEffect(() => {
-        if (!message.trim()) {
-            chatsApi.notifyTyping(room.id, false);
-            return;
-        }
+        const performInitialMarking = async () => {
+            if (markAsReadMutation.isPending || markAsDeliveredMutation.isPending) return;
 
-        chatsApi.notifyTyping(room.id, true);
-
-        const timeout = setTimeout(() => {
-            chatsApi.notifyTyping(room.id, false);
-        }, 3000);
-
-        return () => {
-            clearTimeout(timeout);
-            chatsApi.notifyTyping(room.id, false);
+            if (room.unread_count > 0) {
+                // MarkAsRead en el backend ya marca como delivered=true también
+                markAsReadMutation.mutate(room.id);
+            } else {
+                markAsDeliveredMutation.mutate(room.id);
+            }
+            hasMarkedRead.current = true;
         };
+
+        performInitialMarking();
+    }, [room.id, room.unread_count]);
+
+
+
+
+    // Notificar cuando el usuario escribe (WhatsApp Style: persistente si hay texto)
+    const lastTypingStatus = useRef(false);
+
+    useEffect(() => {
+        const hasText = message.trim().length > 0;
+
+        // Solo enviamos si el estado cambió REALMENTE
+        if (hasText !== lastTypingStatus.current) {
+            chatsApi.notifyTyping(room.id, hasText);
+            lastTypingStatus.current = hasText;
+        }
     }, [message, room.id]);
+
+    // Cleanup al cerrar el chat
+    useEffect(() => {
+        return () => {
+            if (lastTypingStatus.current) {
+                chatsApi.notifyTyping(room.id, false);
+            }
+        };
+    }, [room.id]);
+
+
 
     const handleSend = async () => {
         if ((!message.trim() && !selectedFile) || sendMessageMutation.isPending) return;
@@ -234,16 +265,29 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                 {/* Messages Area - VIRTUALIZED */}
                 <div
-                    className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50"
+                    className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50 flex flex-col"
                     ref={parentRef}
                 >
                     {messagesLoading ? (
-                        <div className="text-center text-muted-foreground py-10 uppercase tracking-widest text-xs">Cargando mensajes...</div>
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                            <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                            <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-[0.2em]">Sincronizando mensajes...</p>
+                        </div>
                     ) : !messages || messages.length === 0 ? (
-                        <div className="text-center py-10">
-                            <p className="text-muted-foreground text-xs italic">No hay mensajes aún. ¡Iniciá la conversación!</p>
+                        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center animate-in fade-in zoom-in duration-500">
+                            <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mb-6 relative">
+                                <MessageSquare className="text-muted-foreground/20 w-10 h-10" />
+                                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                                    <Send className="w-3 h-3 text-primary-foreground" />
+                                </div>
+                            </div>
+                            <h4 className="text-foreground font-bold text-lg mb-2">¡Iniciá la charla!</h4>
+                            <p className="text-muted-foreground text-xs max-w-[240px] leading-relaxed">
+                                Saludá a <span className="text-primary font-bold">@{otherParticipant.alias}</span>. Las mejores colaboraciones empiezan con un simple "Hola".
+                            </p>
                         </div>
                     ) : (
+
                         <div
                             style={{
                                 height: `${rowVirtualizer.getTotalSize()}px`,
@@ -356,22 +400,35 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         </div>
                     )}
 
-                    {isOtherTyping && (
-                        <div className="flex items-center gap-2 mt-4 px-2">
-                            {/* ... typing indicator ... */}
-                            <div className="flex gap-1 items-center">
-                                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                            </div>
-                            <span className="text-[10px] text-muted-foreground italic">
-                                Escribiendo...
-                            </span>
-                        </div>
-                    )}
+                </div>
+
+
+                {/* Typing Indicator Slot (Fixed above input) */}
+                <div className="px-4 h-6 flex items-center">
+                    <AnimatePresence>
+                        {isOtherTyping && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 5 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 5 }}
+                                className="flex items-center gap-2"
+                            >
+                                <div className="flex gap-1 items-center">
+                                    <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                    <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                    <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"></span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground italic lowercase">
+                                    {room.type === 'group' ? `@${otherParticipant.alias} está escribiendo...` : 'escribiendo...'}
+                                </span>
+
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
                 {/* Image Preview Overlay */}
+
                 {previewUrl && (
                     <div className="bg-background/80 backdrop-blur-md border-t border-border p-4 transition-all duration-300">
                         <div className="flex items-center gap-4 max-w-2xl mx-auto">

@@ -145,14 +145,17 @@ router.get('/chats/:roomId', (req, res) => {
         (async () => {
             try {
                 const { queryWithRLS } = await import('../utils/rls.js');
-                await queryWithRLS(anonymousId,
-                    'UPDATE chat_messages SET is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND is_delivered = false',
+                const result = await queryWithRLS(anonymousId,
+                    'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
                     [roomId, anonymousId]
                 );
-                // Notificar que se entregaron mensajes
-                realtimeEvents.emit(`chat-delivered:${roomId}`, {
-                    receiverId: anonymousId
-                });
+
+                // SOLO emitir si realmente se actualizaron mensajes
+                if (result.rowCount > 0) {
+                    realtimeEvents.emit(`chat-delivered:${roomId}`, {
+                        receiverId: anonymousId
+                    });
+                }
             } catch (err) {
                 console.error('[SSE] Error marking as delivered on connect:', err);
             }
@@ -199,14 +202,22 @@ router.get('/user/:anonymousId', (req, res) => {
         stream.send('notification', data);
     };
 
+    const handleRollback = (data) => {
+        stream.send('chat-rollback', data);
+    };
+
     realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);
     realtimeEvents.on(`user-notification:${anonymousId}`, handleNotification);
+    realtimeEvents.on(`user-chat-rollback:${anonymousId}`, handleRollback);
+
 
     req.on('close', () => {
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
         realtimeEvents.off(`user-notification:${anonymousId}`, handleNotification);
+        realtimeEvents.off(`user-chat-rollback:${anonymousId}`, handleRollback);
     });
+
 });
 
 /**

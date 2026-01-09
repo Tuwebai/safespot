@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { useReportDetailQuery } from '../../hooks/queries/useReportsQuery';
 import { MiniMapPreview } from '../location/MiniMapPreview';
+
 import { Badge } from '../ui/badge';
 import { ChevronDown, ChevronUp, MapPin, Calendar, Info } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface ChatReportContextProps {
-    reportId: string;
+    reportId?: string | null;
 }
+
 
 export const ChatReportContext: React.FC<ChatReportContextProps> = ({ reportId }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const { data: report, isLoading } = useReportDetailQuery(reportId);
+    const { data: report, isLoading } = useReportDetailQuery(reportId ?? undefined);
 
     if (!reportId || isLoading || !report) return null;
 

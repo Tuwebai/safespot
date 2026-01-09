@@ -37,35 +37,35 @@ router.get('/', async (req, res) => {
     try {
         const chatQuery = `
       SELECT 
-        cr.*,
-        COALESCE(r.title, 'Chat Directo') as report_title,
+        c.*,
+        r.title as report_title,
         r.category as report_category,
-        u1.alias as participant_a_alias,
-        u1.avatar_url as participant_a_avatar,
-        u2.alias as participant_b_alias,
-        u2.avatar_url as participant_b_avatar,
+        -- Obtener el alias/avatar del OTRO participante (para DMs)
+        u_other.alias as other_participant_alias,
+        u_other.avatar_url as other_participant_avatar,
         m.content as last_message_content,
         m.type as last_message_type,
-        m.caption as last_message_caption,
         m.sender_id as last_message_sender_id,
         (
           SELECT COUNT(*)::int 
           FROM chat_messages 
-          WHERE room_id = cr.id AND sender_id != $1 AND is_read = false
+          WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false
         ) as unread_count
-      FROM chat_rooms cr
-      LEFT JOIN reports r ON cr.report_id = r.id
-      JOIN anonymous_users u1 ON cr.participant_a = u1.anonymous_id
-      JOIN anonymous_users u2 ON cr.participant_b = u2.anonymous_id
+      FROM conversation_members cm
+      JOIN conversations c ON cm.conversation_id = c.id
+      LEFT JOIN reports r ON c.report_id = r.id
+      -- Join con el otro miembro para obtener su perfil (asumiendo 1-a-1 por ahora)
+      LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
+      LEFT JOIN anonymous_users u_other ON cm_other.user_id = u_other.anonymous_id
       LEFT JOIN LATERAL (
-        SELECT content, sender_id, type, caption 
+        SELECT content, sender_id, type 
         FROM chat_messages 
-        WHERE room_id = cr.id 
+        WHERE conversation_id = c.id 
         ORDER BY created_at DESC 
         LIMIT 1
       ) m ON true
-      WHERE cr.participant_a = $1 OR cr.participant_b = $1
-      ORDER BY cr.last_message_at DESC
+      WHERE cm.user_id = $1
+      ORDER BY c.last_message_at DESC
     `;
 
         const result = await queryWithRLS(anonymousId, chatQuery, [anonymousId]);
@@ -84,15 +84,10 @@ router.post('/', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { report_id, recipient_id } = req.body;
 
-    if (!anonymousId) {
-        return res.status(400).json({ error: 'Anonymous ID required' });
-    }
-
-    if (!report_id && !recipient_id) {
-        return res.status(400).json({ error: 'Either report_id or recipient_id is required' });
-    }
+    if (!anonymousId) return res.status(400).json({ error: 'Anonymous ID required' });
 
     try {
+        let conversationId;
         let participantB = recipient_id;
 
         // Si hay reporte, el destinatario es el dueño del reporte
@@ -102,56 +97,71 @@ router.post('/', async (req, res) => {
             participantB = reportResult.rows[0].anonymous_id;
         }
 
-        if (participantB === anonymousId) {
-            return res.status(400).json({ error: 'Cannot start a chat with yourself' });
-        }
+        if (participantB === anonymousId) return res.status(400).json({ error: 'Cannot start a chat with yourself' });
 
-        // Determinar participantes (ordenados para consistencia si quisiéramos, pero la query busca por ID)
-        // La tabla tiene participant_a y participant_b.
-        // Para DMs (report_id IS NULL), usaremos un constraint único compuesto.
-
-        let createRoomQuery;
-        let queryParams;
+        // Verificar si ya existe una conversación entre ambos miembros para este contexto
+        let existingConvQuery;
+        let existingConvParams;
 
         if (report_id) {
-            // Lógica existente para reportes
-            createRoomQuery = `
-              INSERT INTO chat_rooms (report_id, participant_a, participant_b)
-              VALUES ($1, $2, $3)
-              ON CONFLICT (report_id, participant_a, participant_b) 
-              DO UPDATE SET status = 'active'
-              RETURNING *
+            existingConvQuery = `
+                SELECT c.id FROM conversations c
+                JOIN conversation_members cm1 ON cm1.conversation_id = c.id
+                JOIN conversation_members cm2 ON cm2.conversation_id = c.id
+                WHERE c.report_id = $1 AND cm1.user_id = $2 AND cm2.user_id = $3
             `;
-            queryParams = [report_id, anonymousId, participantB];
+            existingConvParams = [report_id, anonymousId, participantB];
         } else {
-            // Nueva lógica para DMs (Direct Messages)
-            // Intentamos buscar si ya existe la sala entre estos dos sin reporte
-            // Nota: participant_a y participant_b no tienen orden garantizado, así que verificamos ambos lados
-            // O usamos el UNIQUE INDEX que creamos (participant_a, participant_b) WHERE report_id IS NULL
-            // Para simplificar, siempre guardamos el menor ID en A y el mayor en B para consistencia en DMs si se desea,
-            // pero Postgres ON CONFLICT requiere coincidencia exacta de columnas del index.
-            // El índice es (participant_a, participant_b). Así que debemos probar ambas combinaciones o normalizar.
-
-            // Vamos a normalizar IDs para DMs para aprovechar el índice único simple
-            const [user1, user2] = [anonymousId, participantB].sort();
-
-            createRoomQuery = `
-              INSERT INTO chat_rooms (report_id, participant_a, participant_b)
-              VALUES (NULL, $1, $2)
-              ON CONFLICT (participant_a, participant_b) WHERE report_id IS NULL
-              DO UPDATE SET status = 'active'
-              RETURNING *
+            existingConvQuery = `
+                SELECT c.id FROM conversations c
+                JOIN conversation_members cm1 ON cm1.conversation_id = c.id
+                JOIN conversation_members cm2 ON cm2.conversation_id = c.id
+                WHERE c.report_id IS NULL AND c.type = 'dm' AND cm1.user_id = $1 AND cm2.user_id = $2
             `;
-            queryParams = [user1, user2];
+            existingConvParams = [anonymousId, participantB];
         }
 
-        const roomResult = await queryWithRLS(anonymousId, createRoomQuery, queryParams);
-        res.status(201).json(roomResult.rows[0]);
+        const existingResult = await queryWithRLS(anonymousId, existingConvQuery, existingConvParams);
+
+        if (existingResult.rows.length > 0) {
+            conversationId = existingResult.rows[0].id;
+        } else {
+            // Iniciar Transacción (vía scripts de logic o queries directas)
+            const newConv = await queryWithRLS(anonymousId,
+                'INSERT INTO conversations (report_id, type) VALUES ($1, $2) RETURNING id',
+                [report_id || null, 'dm']
+            );
+            conversationId = newConv.rows[0].id;
+
+            // Agregar miembros
+            await queryWithRLS(anonymousId,
+                'INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2), ($1, $3)',
+                [conversationId, anonymousId, participantB]
+            );
+        }
+
+        // Obtener la sala completa con metadata para que el frontend tenga el alias/avatar inmediatamente
+        const fullRoomQuery = `
+            SELECT 
+                c.*,
+                r.title as report_title,
+                r.category as report_category,
+                u_other.alias as other_participant_alias,
+                u_other.avatar_url as other_participant_avatar,
+                0 as unread_count
+            FROM conversations c
+            LEFT JOIN reports r ON c.report_id = r.id
+            LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
+            LEFT JOIN anonymous_users u_other ON cm_other.user_id = u_other.anonymous_id
+            WHERE c.id = $2
+        `;
+        const fullRoom = await queryWithRLS(anonymousId, fullRoomQuery, [anonymousId, conversationId]);
+
+        res.status(201).json(fullRoom.rows[0]);
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
     }
-
 });
 
 /**
@@ -167,15 +177,11 @@ router.get('/:roomId/messages', async (req, res) => {
       SELECT cm.*, u.alias as sender_alias, u.avatar_url as sender_avatar
       FROM chat_messages cm
       JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
-      WHERE cm.room_id = $1
+      WHERE cm.conversation_id = $1
       ORDER BY cm.created_at ASC
     `;
 
         const result = await queryWithRLS(anonymousId, messagesQuery, [roomId]);
-
-        // Marcar como entregados y leídos
-        await queryWithRLS(anonymousId, 'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE room_id = $1 AND sender_id != $2', [roomId, anonymousId]);
-
         res.json(result.rows);
     } catch (err) {
         logError(err, req);
@@ -190,90 +196,122 @@ router.get('/:roomId/messages', async (req, res) => {
 router.post('/:roomId/messages', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
+    const clientId = req.headers['x-client-id'];
     const { content, type = 'text', caption } = req.body;
+
 
     if (!content) return res.status(400).json({ error: 'Content is required' });
 
     try {
         const sanitizedArr = sanitizeContent(content, 'chat.message', { anonymousId });
+
         const sanitized = Array.isArray(sanitizedArr) ? sanitizedArr[0] : sanitizedArr;
+        const newMessageId = crypto.randomUUID();
+
+        // 1. OBTENER MIEMBROS PARA EMISIÓN TEMPRANA (Optimismo de Servidor)
+        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);
+        const members = memberResult.rows;
+
+        const previewMessage = {
+            id: newMessageId,
+            conversation_id: roomId,
+            sender_id: anonymousId,
+            content: sanitized,
+            type: type || 'text',
+            caption: caption || null,
+            created_at: new Date().toISOString(),
+            is_read: false,
+            is_delivered: false
+        };
+
+        // NOTIFICAR INMEDIATAMENTE (Messenger-grade speed)
+        members.forEach(member => {
+            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+                roomId,
+                message: previewMessage,
+                originClientId: clientId
+            });
+        });
 
         const insertQuery = `
-      INSERT INTO chat_messages (room_id, sender_id, content, type, caption)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
+          INSERT INTO chat_messages (id, conversation_id, sender_id, content, type, caption)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING *
+        `;
 
-        const result = await queryWithRLS(anonymousId, insertQuery, [
-            roomId,
-            anonymousId,
-            sanitized,
-            type || 'text',
-            caption || null
-        ]);
-        const newMessage = result.rows[0];
-
-        // Actualizar last_message_at en la sala
-        await queryWithRLS(anonymousId, 'UPDATE chat_rooms SET last_message_at = NOW() WHERE id = $1', [roomId]);
-
-        // Obtener destinatario para notificación global
-        const roomResult = await queryWithRLS(anonymousId, 'SELECT participant_a, participant_b FROM chat_rooms WHERE id = $1', [roomId]);
-        if (roomResult.rows.length > 0) {
-            const room = roomResult.rows[0];
-            const recipientId = room.participant_a === anonymousId ? room.participant_b : room.participant_a;
-
-            // Notificar al destinatario sobre actualización en su bandeja
-            realtimeEvents.emit(`user-chat-update:${recipientId}`, {
+        let newMessage;
+        try {
+            const result = await queryWithRLS(anonymousId, insertQuery, [
+                newMessageId,
                 roomId,
-                message: newMessage
+                anonymousId,
+                sanitized,
+                type || 'text',
+                caption || null
+            ]);
+            newMessage = result.rows[0];
+
+            // Actualizar last_message_at en la sala
+            await queryWithRLS(anonymousId, 'UPDATE conversations SET last_message_at = NOW() WHERE id = $1', [roomId]);
+        } catch (dbError) {
+            console.error('[DATABASE] Error saving message, rolling back:', dbError);
+            // NOTIFICAR ROLLBACK A LOS CLIENTES
+            members.forEach(member => {
+                realtimeEvents.emit(`user-chat-rollback:${member.user_id}`, {
+                    roomId,
+                    messageId: newMessageId
+                });
             });
+            throw dbError; // Propagar error para respuesta 500
         }
 
-        // Notificar via SSE a la sala específica
-        const clientId = req.headers['x-client-id'];
+        // Notificar via SSE a la sala específica (Backward compatibility)
         realtimeEvents.emit(`chat:${roomId}`, { message: newMessage, originClientId: clientId });
+
 
         // 3. ENVIAR NOTIFICACIÓN PUSH NATIVA (Si el destinatario está offline)
         (async () => {
+
             try {
-                const roomData = roomResult.rows[0];
-                const recipientId = roomData.participant_a === anonymousId ? roomData.participant_b : roomData.participant_a;
+                // Notificar a todos los miembros EXCEPTO al remitente
+                const otherMembers = memberResult.rows.filter(m => m.user_id !== anonymousId);
 
-                // Buscar suscripciones activas del destinatario
-                const { data: subs, error: subError } = await supabaseAdmin
-                    .from('push_subscriptions')
-                    .select('*')
-                    .eq('anonymous_id', recipientId)
-                    .eq('is_active', true)
-                    .order('created_at', { ascending: false })
-                    .limit(5); // Notificar hasta 5 dispositivos
+                for (const member of otherMembers) {
+                    const recipientId = member.user_id;
 
-                if (!subError && subs && subs.length > 0) {
-                    const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
+                    // Buscar suscripciones activas del destinatario
+                    const { data: subs, error: subError } = await supabaseAdmin
+                        .from('push_subscriptions')
+                        .select('*')
+                        .eq('anonymous_id', recipientId)
+                        .eq('is_active', true)
+                        .order('created_at', { ascending: false })
+                        .limit(5); // Notificar hasta 5 dispositivos
 
-                    // Obtener info extra de la sala para el payload (alias, titulo)
-                    const roomInfoQuery = `
-                        SELECT r.title as report_title, 
-                               u.alias as sender_alias
-                        FROM chat_rooms cr
-                        LEFT JOIN reports r ON cr.report_id = r.id
-                        JOIN anonymous_users u ON u.anonymous_id = $1
-                        WHERE cr.id = $2
-                    `;
-                    const roomInfo = await queryWithRLS(anonymousId, roomInfoQuery, [anonymousId, roomId]);
+                    if (!subError && subs && subs.length > 0) {
+                        const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
 
-                    if (roomInfo.rows.length > 0) {
-                        const payload = createChatNotificationPayload(
-                            { ...newMessage, sender_alias: roomInfo.rows[0].sender_alias },
-                            { report_title: roomInfo.rows[0].report_title || 'Mensaje Directo' }
-                        );
+                        // Obtener info extra para el payload
+                        const senderResult = await queryWithRLS(anonymousId, 'SELECT alias FROM anonymous_users WHERE anonymous_id = $1', [anonymousId]);
+                        const roomResult = await queryWithRLS(anonymousId, 'SELECT report_id FROM conversations WHERE id = $1', [roomId]);
+
+                        const senderAlias = senderResult.rows[0]?.alias || 'Alguien';
+                        const reportId = roomResult.rows[0]?.report_id;
+
+                        const payload = createChatNotificationPayload({
+                            senderAlias,
+                            messageContent: type === 'image' ? '📷 Foto enviada' : content,
+                            roomId,
+                            reportId
+                        });
 
                         await sendBatchNotifications(
                             subs.map(s => ({
                                 subscription: { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth },
                                 subscriptionId: s.id
                             })),
-                            payload
+                            payload,
+                            recipientId
                         );
                     }
                 }
@@ -298,23 +336,26 @@ router.patch('/:roomId/read', async (req, res) => {
     const { roomId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
+        const result = await queryWithRLS(anonymousId,
+            'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
             [roomId, anonymousId]
         );
 
-        // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
-        realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
-            roomId,
-            action: 'read'
-        });
+        // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
+        if (result.rowCount > 0) {
+            // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
+            realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
+                roomId,
+                action: 'read'
+            });
 
-        // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
-        realtimeEvents.emit(`chat-read:${roomId}`, {
-            readerId: anonymousId
-        });
+            // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
+            realtimeEvents.emit(`chat-read:${roomId}`, {
+                readerId: anonymousId
+            });
+        }
 
-        res.json({ success: true });
+        res.json({ success: true, count: result.rowCount });
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -330,22 +371,26 @@ router.patch('/:roomId/delivered', async (req, res) => {
     const { roomId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'UPDATE chat_messages SET is_delivered = true WHERE room_id = $1 AND sender_id != $2 AND is_delivered = false',
+        const result = await queryWithRLS(anonymousId,
+            'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
             [roomId, anonymousId]
         );
 
-        // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
-        realtimeEvents.emit(`chat-delivered:${roomId}`, {
-            receiverId: anonymousId
-        });
+        // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
+        if (result.rowCount > 0) {
+            // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
+            realtimeEvents.emit(`chat-delivered:${roomId}`, {
+                receiverId: anonymousId
+            });
+        }
 
-        res.json({ success: true });
+        res.json({ success: true, count: result.rowCount });
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
 
 /**
  * POST /api/chats/:roomId/typing
@@ -357,15 +402,26 @@ router.post('/:roomId/typing', async (req, res) => {
     const { isTyping } = req.body;
 
     try {
-        // Emitir evento de escritura para esta sala
-        // No necesitamos verificar RLS aquí estrictamente para la emisión, 
-        // pero el suscriptor de SSE sí tendrá contexto de sala.
+        // 1. Notificar vía SSE a la sala específica (ChatWindow)
         realtimeEvents.emit(`chat-typing:${roomId}`, {
             senderId: anonymousId,
             isTyping: !!isTyping
         });
 
+        // 2. Notificar vía Canal Global (Inbox/Sidebar)
+        // Buscamos a los otros miembros de la conversación
+        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2', [roomId, anonymousId]);
+
+        memberResult.rows.forEach(member => {
+            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+                roomId,
+                action: 'typing',
+                isTyping: !!isTyping
+            });
+        });
+
         res.json({ success: true });
+
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -387,18 +443,13 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
 
     try {
         // 1. Verificar que el usuario sea parte de la sala
-        const roomResult = await queryWithRLS(anonymousId,
-            'SELECT participant_a, participant_b FROM chat_rooms WHERE id = $1',
-            [roomId]
+        const memberResult = await queryWithRLS(anonymousId,
+            'SELECT id FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+            [roomId, anonymousId]
         );
 
-        if (roomResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Chat room not found' });
-        }
-
-        const room = roomResult.rows[0];
-        if (room.participant_a !== anonymousId && room.participant_b !== anonymousId) {
-            return res.status(403).json({ error: 'Forbidden: You are not a participant of this chat' });
+        if (memberResult.rows.length === 0) {
+            return res.status(403).json({ error: 'Forbidden: You are not a member of this conversation' });
         }
 
         if (!supabaseAdmin) {
