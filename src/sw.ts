@@ -76,16 +76,7 @@ registerRoute(
 // GET Requests: Network Only simple
 registerRoute(
     ({ url }) => url.pathname.startsWith('/api/'),
-    new NetworkOnly({
-        plugins: [
-            {
-                // Solo registramos la petición sin interferir en el resultado
-                requestWillFetch: async ({ request }) => {
-                    return new Request(request, { cache: 'no-store' });
-                }
-            }
-        ]
-    }),
+    new NetworkOnly(),
     'GET'
 );
 

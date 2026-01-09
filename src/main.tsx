@@ -8,10 +8,11 @@ import { initializeIdentity } from './lib/identity'
 
 import { HelmetProvider } from 'react-helmet-async'
 
-const init = () => {
+const init = async () => {
   try {
-    // Non-blocking identity initialization
-    initializeIdentity().catch(console.error);
+    // BLOCKING identity initialization: 
+    // This ensures FIRST requests use the CANONICAL ID from persistence
+    await initializeIdentity();
 
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
@@ -24,7 +25,6 @@ const init = () => {
     );
   } catch (error) {
     console.error('Failed to initialize application:', error);
-    // Fallback UI rendering if needed, though less likely to reach here with non-blocking init
   }
 };
 

@@ -32,7 +32,7 @@ function getHeaders(): HeadersInit {
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
-  timeout = 15000 // 15 seconds default timeout
+  timeout = 45000 // 45 seconds default timeout (Accommodates Render cold starts)
 ): Promise<T> {
   // 1. Check offline status immediately
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -989,7 +989,13 @@ export interface ChatMessage {
   type: 'text' | 'image' | 'sighting' | 'location';
   is_read: boolean;
   is_delivered: boolean;
+  reply_to_id?: string;
+  reply_to_content?: string;
+  reply_to_type?: string;
+  reply_to_sender_alias?: string;
+  reply_to_sender_id?: string;
   created_at: string;
+
   sender_alias?: string;
   sender_avatar?: string;
   caption?: string;
@@ -1028,18 +1034,26 @@ export const chatsApi = {
   /**
    * Send a message to a room
    */
-  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string): Promise<ChatMessage> => {
+  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string, replyToId?: string): Promise<ChatMessage> => {
     return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, type, caption })
+      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId })
     });
   },
+
 
   markAsRead: async (roomId: string): Promise<{ success: boolean }> => {
     return apiRequest<{ success: boolean }>(`/chats/${roomId}/read`, {
       method: 'PATCH',
     });
   },
+
+  deleteMessage: async (roomId: string, messageId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  },
+
 
   /**
    * Mark all messages in a room as delivered

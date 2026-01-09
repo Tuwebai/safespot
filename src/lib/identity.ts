@@ -206,7 +206,10 @@ export function getAnonymousId(): string {
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem(L1_KEY);
     if (isValidUUID(stored)) {
-      return stored;
+      // Clean prefix if it somehow leaked into storage (paranoid check)
+      const cleanId = stored.includes('|') ? stored.split('|')[1] : stored;
+      cachedId = cleanId;
+      return cleanId;
     }
   }
 
@@ -218,7 +221,10 @@ export function getAnonymousId(): string {
  */
 export function ensureAnonymousId(): string {
   const id = getAnonymousId();
-  if (id) return id;
+  if (id) {
+    // Ensure what we return is always clean
+    return id.includes('|') ? id.split('|')[1] : id;
+  }
 
   // If we get here and it was never initialized, this is an emergency
   const emergencyId = generateUUID();
