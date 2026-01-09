@@ -3,7 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { useChatMessages, useSendMessageMutation, useMarkAsReadMutation, useMarkAsDeliveredMutation, useUserPresence } from '../../hooks/queries/useChatsQuery';
+import {
+    useChatMessages,
+    useSendMessageMutation,
+    useMarkAsReadMutation,
+    useMarkAsDeliveredMutation,
+    useUserPresence,
+    useDeleteMessageMutation
+} from '../../hooks/queries/useChatsQuery';
+
 
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -14,8 +22,19 @@ import {
     ArrowLeft,
     Check,
     CheckCheck,
-    MessageSquare
+    MessageSquare,
+    ChevronDown,
+    Reply,
+    Trash2
 } from 'lucide-react';
+
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -24,6 +43,7 @@ import { es } from 'date-fns/locale';
 
 import { useNavigate } from 'react-router-dom';
 import { ChatReportContext } from './ChatReportContext';
+
 
 interface ChatImageProps {
     src: string;
@@ -39,8 +59,6 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
 
     useEffect(() => {
         if (!src) return;
-
-        // Si el src remoto es el mismo que el actual (ya sea blob o remoto), no hacemos nada
         if (src === currentSrc && isLoaded) return;
 
         const img = new Image();
@@ -49,7 +67,7 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
             setCurrentSrc(src);
             setIsLoaded(true);
         };
-    }, [src, localUrl]);
+    }, [src, localUrl, currentSrc, isLoaded]);
 
     return (
         <img
@@ -69,6 +87,11 @@ interface ChatWindowProps {
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const navigate = useNavigate();
+    const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+    const anonymousId = localStorage.getItem('safespot_anonymous_id');
+
+
+
     const [message, setMessage] = useState('');
     const {
         data: messages,
@@ -78,6 +101,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const { data: presence } = useUserPresence(room.other_participant_id);
 
     const sendMessageMutation = useSendMessageMutation();
+    const deleteMessageMutation = useDeleteMessageMutation();
     const markAsReadMutation = useMarkAsReadMutation();
     const markAsDeliveredMutation = useMarkAsDeliveredMutation();
 
@@ -87,7 +111,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
     const otherParticipant = {
         alias: room.other_participant_alias || 'Anon',
@@ -98,20 +121,35 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const rowVirtualizer = useVirtualizer({
         count: messages?.length ?? 0,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 80, // Avg message height guess
+        estimateSize: () => 80,
         overscan: 5,
     });
+
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Focus input when replying
+    useEffect(() => {
+        if (replyingTo && inputRef.current) {
+            // Small delay to ensure the DOM has updated (reply preview bar appearing)
+            const timer = setTimeout(() => {
+                inputRef.current?.focus();
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [replyingTo]);
+
+
 
     // Auto-scroll logic
     const lastMessageCount = useRef(0);
     const lastRoomId = useRef<string | null>(null);
     const hasMarkedRead = useRef(false);
 
+    const isMe = (msg: ChatMessage) => msg.sender_id === anonymousId;
 
     useLayoutEffect(() => {
         if (!messages) return;
 
-        // Reset if room changes
         if (lastRoomId.current !== room.id) {
             lastMessageCount.current = 0;
             lastRoomId.current = room.id;
@@ -122,15 +160,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
             lastMessageCount.current = messages.length;
 
-            // Mark as read check for incoming messages
             const lastMessage = messages[messages.length - 1];
-            if (lastMessage && lastMessage.sender_id !== anonymousId && !lastMessage.is_read) {
+            if (lastMessage && !isMe(lastMessage) && !lastMessage.is_read) {
                 markAsReadMutation.mutate(room.id);
             }
         }
-    }, [messages, room.id, anonymousId, rowVirtualizer]); // Removed mutations from deps
+    }, [messages, room.id, anonymousId, rowVirtualizer]);
 
-    // Marcar como leído al entrar o cuando cambia la sala
     useEffect(() => {
         if (!room.id || hasMarkedRead.current) return;
 
@@ -138,7 +174,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             if (markAsReadMutation.isPending || markAsDeliveredMutation.isPending) return;
 
             if (room.unread_count > 0) {
-                // MarkAsRead en el backend ya marca como delivered=true también
                 markAsReadMutation.mutate(room.id);
             } else {
                 markAsDeliveredMutation.mutate(room.id);
@@ -149,23 +184,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         performInitialMarking();
     }, [room.id, room.unread_count]);
 
-
-
-
-    // Notificar cuando el usuario escribe (WhatsApp Style: persistente si hay texto)
     const lastTypingStatus = useRef(false);
-
     useEffect(() => {
         const hasText = message.trim().length > 0;
-
-        // Solo enviamos si el estado cambió REALMENTE
         if (hasText !== lastTypingStatus.current) {
             chatsApi.notifyTyping(room.id, hasText);
             lastTypingStatus.current = hasText;
         }
     }, [message, room.id]);
 
-    // Cleanup al cerrar el chat
     useEffect(() => {
         return () => {
             if (lastTypingStatus.current) {
@@ -173,8 +200,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             }
         };
     }, [room.id]);
-
-
 
     const handleSend = async () => {
         if ((!message.trim() && !selectedFile) || sendMessageMutation.isPending) return;
@@ -184,22 +209,38 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             const fileToSend = selectedFile;
             const captionToSend = selectedFile ? message : undefined;
 
-            // Optimistic clear
             setMessage('');
             cancelImageSelection();
 
-            await sendMessageMutation.mutateAsync({
-                roomId: room.id,
-                content: contentToSend,
-                type: fileToSend ? 'image' : 'text',
-                caption: captionToSend,
-                file: fileToSend || undefined
-            });
+            if (contentToSend.trim() || fileToSend) {
+                // Clear state IMMEDIATELY for 0ms lag feel
+                const replyData = replyingTo ? {
+                    id: replyingTo.id,
+                    content: replyingTo.content,
+                    type: replyingTo.type,
+                    sender_alias: replyingTo.sender_alias,
+                    sender_id: replyingTo.sender_id
+                } : null;
+
+                setReplyingTo(null);
+
+                await sendMessageMutation.mutateAsync({
+                    roomId: room.id,
+                    content: contentToSend,
+                    type: fileToSend ? 'image' : 'text',
+                    file: fileToSend || undefined,
+                    caption: captionToSend,
+                    replyToId: replyData?.id,
+                    replyToContent: replyData?.content,
+                    replyToType: replyData?.type,
+                    replyToSenderAlias: replyData?.sender_alias,
+                    replyToSenderId: replyData?.sender_id
+                });
+            }
+
 
         } catch (error) {
             console.error('Error sending message:', error);
-            // Optional: Restore message on error if robust error handling is desired, 
-            // but for now we follow the "instant" pattern.
         }
     };
 
@@ -219,8 +260,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const isMe = (msg: ChatMessage) => msg.sender_id === anonymousId;
-
     return (
         <motion.div
             className="h-full w-full"
@@ -234,7 +273,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             }}
         >
             <Card className="flex flex-col h-full bg-background border-border overflow-hidden shadow-2xl">
-                {/* Header */}
                 <div className="p-4 border-b border-border flex items-center gap-3 bg-card/50">
                     {onBack && (
                         <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden text-muted-foreground">
@@ -262,14 +300,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 </span>
                             )}
                         </div>
-
                     </div>
                 </div>
 
-                {/* Report Context (Expandable) */}
                 <ChatReportContext reportId={room.report_id} />
 
-                {/* Messages Area - VIRTUALIZED */}
                 <div
                     className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50 flex flex-col"
                     ref={parentRef}
@@ -293,7 +328,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             </p>
                         </div>
                     ) : (
-
                         <div
                             style={{
                                 height: `${rowVirtualizer.getTotalSize()}px`,
@@ -330,56 +364,67 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                     />
                                                 </div>
                                             )}
-                                            <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-[85%] sm:max-w-[75%]`}>
-                                                <div
-                                                    className={`relative px-3 py-2 rounded-2xl text-sm shadow-sm ${isMe(msg)
-                                                        ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                                        : 'bg-muted text-foreground border border-border rounded-tl-none'
-                                                        }`}
-                                                >
-                                                    {msg.type === 'image' ? (
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="max-w-[200px] sm:max-w-[300px] overflow-hidden rounded-lg">
-                                                                <ChatImage
-                                                                    src={msg.content}
-                                                                    localUrl={msg.localUrl}
-                                                                    alt="Mensaje de imagen"
-                                                                    className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                                    onClick={() => window.open(msg.content, '_blank')}
-                                                                />
-                                                            </div>
-                                                            <div className="flex justify-between items-end gap-2 pl-1">
-                                                                <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
-                                                                    {msg.caption}
-                                                                </div>
-                                                                <div className="flex items-center gap-1 shrink-0 pb-0.5">
-                                                                    <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                        {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
-                                                                    </span>
-                                                                    {isMe(msg) && (
-                                                                        <div className="flex items-center">
-                                                                            {msg.is_read ? (
-                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                            ) : msg.is_delivered ? (
-                                                                                <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                            ) : (
-                                                                                <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="relative">
-                                                            <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block">
-                                                                {msg.content}
-                                                                {/* Spacer to reserve space for absolute timestamp */}
-                                                                <span className="inline-block w-12 h-3" aria-hidden="true"></span>
-                                                            </span>
+                                            <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-full sm:max-w-[100%]`}>
+                                                {msg.type === 'image' ? (
+                                                    <div className={`p-1.5 rounded-lg overflow-hidden relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
+                                                        {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <button
+                                                                    type="button"
+                                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                                    className={`absolute top-0 right-0 h-8 w-10 flex items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
+                                                                        ${isMe(msg)
+                                                                            ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
+                                                                            : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
+                                                                >
+                                                                    <ChevronDown className="w-4 h-4 mt-1" />
+                                                                </button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="w-40">
+                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)}>
+                                                                    <Reply className="w-4 h-4 mr-2" /> Responder
+                                                                </DropdownMenuItem>
+                                                                {isMe(msg) && (
+                                                                    <DropdownMenuItem
+                                                                        className="text-destructive focus:text-destructive"
+                                                                        onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
 
-                                                            {/* Timestamp Absolute Bottom Right */}
-                                                            <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
+                                                        {msg.reply_to_id && (
+                                                            <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[200px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
+                                                                <div className="font-bold text-[11px]">
+                                                                    {msg.reply_to_sender_id === anonymousId ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                                                                </div>
+                                                                <div className="line-clamp-2 text-foreground/80 leading-normal">
+                                                                    {msg.reply_to_type === 'image' ? (
+                                                                        <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                                                                    ) : msg.reply_to_content}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
+                                                            <ChatImage
+                                                                src={msg.content}
+                                                                localUrl={msg.localUrl}
+                                                                alt="Mensaje de imagen"
+                                                                className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                                                                onClick={() => window.open(msg.content, '_blank')}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex justify-between items-end gap-2 pl-1">
+                                                            <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
+                                                                {msg.caption}
+                                                            </div>
+
+                                                            <div className="flex items-center gap-1 shrink-0 pb-0.5">
                                                                 <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                     {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                                 </span>
@@ -394,22 +439,91 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                         )}
                                                                     </div>
                                                                 )}
-                                                            </span>
+                                                            </div>
                                                         </div>
-                                                    )}
-                                                </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className={`px-3 py-2 rounded-lg relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
+                                                        {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <button
+                                                                    type="button"
+                                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                                    className={`absolute top-0 right-0 h-8 w-10 flex items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
+                                                                        ${isMe(msg)
+                                                                            ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
+                                                                            : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
+                                                                >
+                                                                    <ChevronDown className="w-4 h-4 mt-1" />
+                                                                </button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="w-40">
+                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)}>
+                                                                    <Reply className="w-4 h-4 mr-2" /> Responder
+                                                                </DropdownMenuItem>
+                                                                {isMe(msg) && (
+                                                                    <DropdownMenuItem
+                                                                        className="text-destructive focus:text-destructive"
+                                                                        onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+
+                                                        {msg.reply_to_id && (
+                                                            <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[180px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
+                                                                <div className="font-bold text-[11px]">
+                                                                    {msg.reply_to_sender_id === anonymousId ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                                                                </div>
+                                                                <div className="line-clamp-2 text-foreground/80 leading-normal">
+                                                                    {msg.reply_to_type === 'image' ? (
+                                                                        <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                                                                    ) : msg.reply_to_content}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block pb-1">
+                                                            {msg.content}
+                                                            <span className="inline-block w-14 h-3" aria-hidden="true"></span>
+                                                        </span>
+
+                                                        <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
+                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                                                                {msg.created_at ? (() => {
+                                                                    const d = new Date(msg.created_at);
+                                                                    return isNaN(d.getTime()) ? '...' : format(d, 'HH:mm', { locale: es });
+                                                                })() : '...'}
+                                                            </span>
+
+                                                            {isMe(msg) && (
+                                                                <div className="flex items-center">
+                                                                    {msg.is_read ? (
+                                                                        <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                                                                    ) : msg.is_delivered ? (
+                                                                        <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                    ) : (
+                                                                        <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
+
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
                     )}
-
                 </div>
 
 
-                {/* Typing Indicator Slot (Fixed above input) */}
                 <div className="px-4 h-6 flex items-center">
                     <AnimatePresence>
                         {isOtherTyping && (
@@ -427,13 +541,41 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <span className="text-[10px] text-muted-foreground italic lowercase">
                                     {room.type === 'group' ? `@${otherParticipant.alias} está escribiendo...` : 'escribiendo...'}
                                 </span>
-
                             </motion.div>
                         )}
                     </AnimatePresence>
                 </div>
 
-                {/* Image Preview Overlay */}
+                <AnimatePresence>
+                    {replyingTo && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="px-4 pb-2"
+                        >
+                            <div className="bg-muted/50 border-l-4 border-primary rounded-r-lg p-2 relative group">
+                                <div className="text-[10px] font-bold text-primary mb-1 uppercase tracking-wider">
+                                    Respondiendo a {replyingTo.sender_id === anonymousId ? 'Tú' : replyingTo.sender_alias}
+                                </div>
+
+                                <div className="text-xs text-muted-foreground truncate max-w-[90%]">
+                                    {replyingTo.type === 'image' ? (
+                                        <span className="flex items-center gap-1">
+                                            <ImageIcon className="w-3 h-3" /> Foto
+                                        </span>
+                                    ) : replyingTo.content}
+                                </div>
+                                <button
+                                    onClick={() => setReplyingTo(null)}
+                                    className="absolute top-1 right-1 p-1 hover:bg-background/50 rounded-full transition-colors"
+                                >
+                                    <X className="w-3.5 h-3.5 text-muted-foreground" />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {previewUrl && (
                     <div className="bg-background/80 backdrop-blur-md border-t border-border p-4 transition-all duration-300">
@@ -459,7 +601,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                     </div>
                 )}
 
-                {/* Input Area */}
                 <div className="p-4 bg-card border-t border-border">
                     <div className="flex items-center gap-2">
                         <input
@@ -478,9 +619,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         >
                             <ImageIcon className="h-5 w-5" />
                         </Button>
-
-
                         <Input
+                            ref={inputRef}
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -488,6 +628,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             className="bg-muted border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/50"
                             disabled={sendMessageMutation.isPending}
                         />
+
                         <Button
                             onClick={handleSend}
                             disabled={(!message.trim() && !selectedFile) || sendMessageMutation.isPending}

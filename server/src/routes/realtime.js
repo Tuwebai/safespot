@@ -2,6 +2,8 @@ import express from 'express';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { SSEResponse } from '../utils/sseResponse.js';
 import { presenceTracker } from '../utils/presenceTracker.js';
+import pool from '../config/database.js';
+
 
 const router = express.Router();
 
@@ -229,12 +231,16 @@ router.get('/user/:anonymousId', (req, res) => {
             // Update DB only on actual disconnect (last tab)
             (async () => {
                 try {
-                    const { pool } = await import('../config/database.js');
-                    await pool.query('UPDATE anonymous_users SET last_seen_at = $1 WHERE anonymous_id = $2', [lastSeen, anonymousId]);
+                    // Safety check for the pool (imported at top level)
+                    if (pool && typeof pool.query === 'function') {
+                        await pool.query('UPDATE anonymous_users SET last_seen_at = $1 WHERE anonymous_id = $2', [lastSeen, anonymousId]);
+                    }
                 } catch (err) {
                     console.error('[Presence] Error updating last_seen_at:', err);
                 }
             })();
+
+
         }
 
 

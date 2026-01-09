@@ -13,12 +13,14 @@ export interface UserPresence {
 
 
 const CHATS_KEYS = {
+    all: ['chats'] as const,
     rooms: ['chats', 'rooms'] as const,
     conversation: (id: string) => ['chats', 'conversation', id] as const,
     messages: (convId: string) => ['chats', 'messages', convId] as const,
     message: (id: string) => ['chats', 'message', id] as const,
     presence: (userId: string) => ['users', 'presence', userId] as const,
 };
+
 
 
 /**
@@ -116,7 +118,16 @@ export function useChatRooms() {
                 } else if (data.action === 'typing') {
                     // Handle typing status in sidebar/inbox
                     patchItem(queryClient, CHATS_KEYS.rooms as any, convId, { is_typing: data.isTyping } as any);
+                } else if (data.action === 'message-deleted') {
+                    // 1. Remover de la lista de mensajes si está abierta
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId), (old) => {
+                        return old?.filter(m => m.id !== data.messageId) || [];
+                    });
+
+                    // 2. Invalidar para que se recargue el preview en la lista de chats
+                    queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
                 }
+
 
             } catch (err) {
                 // console.error('[SSE Global] Error:', err);
@@ -245,7 +256,17 @@ export function useChatMessages(convId: string | undefined) {
             }
         });
 
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.action === 'message-deleted') {
+                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                    return old?.filter(m => m.id !== data.messageId) || [];
+                });
+            }
+        };
+
         return () => {
+
             eventSource.close();
         };
     }, [convId, anonymousId, queryClient]);
@@ -310,15 +331,27 @@ export function useSendMessageMutation() {
 
 
     return useMutation({
-        mutationFn: async ({ roomId, content, type, caption, file }: { roomId: string; content: string; type?: 'text' | 'image' | 'sighting' | 'location', caption?: string, file?: File }) => {
+        mutationFn: async ({ roomId, content, type, caption, file, replyToId }: {
+            roomId: string;
+            content: string;
+            type?: 'text' | 'image' | 'sighting' | 'location',
+            caption?: string,
+            file?: File,
+            replyToId?: string,
+            replyToContent?: string;
+            replyToType?: string;
+            replyToSenderAlias?: string;
+            replyToSenderId?: string;
+        }) => {
             if (type === 'image' && file) {
                 // 1. Subir la imagen primero si es un archivo
                 const { url } = await chatsApi.uploadChatImage(roomId, file);
                 // 2. Enviar el mensaje con la URL final
-                return chatsApi.sendMessage(roomId, url, type, caption);
+                return chatsApi.sendMessage(roomId, url, type, caption, replyToId);
             }
-            return chatsApi.sendMessage(roomId, content, type, caption);
+            return chatsApi.sendMessage(roomId, content, type, caption, replyToId);
         },
+
 
         onMutate: async (variables) => {
             // Cancelar refetches salientes
@@ -343,9 +376,17 @@ export function useSendMessageMutation() {
                 caption: variables.caption,
                 is_read: false,
                 is_delivered: false,
+                reply_to_id: variables.replyToId,
+                reply_to_content: variables.replyToContent,
+                reply_to_type: variables.replyToType,
+                reply_to_sender_alias: variables.replyToSenderAlias || 'Mensaje',
+                reply_to_sender_id: variables.replyToSenderId,
+
                 created_at: new Date().toISOString(),
                 sender_alias: 'Tú',
             };
+
+
 
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId), (old) => {
                 return [...(old || []), optimisticMessage];
@@ -496,3 +537,32 @@ function upsertInList(queryClient: any, queryKey: any[], newItem: any) {
     });
 }
 
+export const useDeleteMessageMutation = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ roomId, messageId }: { roomId: string; messageId: string }) => {
+            return chatsApi.deleteMessage(roomId, messageId);
+        },
+        onMutate: async ({ roomId, messageId }) => {
+            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(roomId) });
+            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId));
+
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+                return old?.filter(m => m.id !== messageId) || [];
+            });
+
+            return { previousMessages };
+        },
+        onError: (_err, variables, context) => {
+            if (context?.previousMessages) {
+                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId), context.previousMessages);
+            }
+        },
+        onSettled: (_data, _err, variables) => {
+            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
+            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.all });
+        }
+
+    });
+};
