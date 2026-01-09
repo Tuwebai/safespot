@@ -191,12 +191,24 @@ router.get('/:roomId/messages', async (req, res) => {
 
     try {
         const messagesQuery = `
-      SELECT cm.*, u.alias as sender_alias, u.avatar_url as sender_avatar
+      SELECT 
+        cm.*, 
+        u.alias as sender_alias, 
+        u.avatar_url as sender_avatar,
+        -- Datos del mensaje respondido
+        rm.content as reply_to_content,
+        rm.type as reply_to_type,
+        ru.alias as reply_to_sender_alias,
+        rm.sender_id as reply_to_sender_id
       FROM chat_messages cm
       JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+      LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
+      LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
+
       WHERE cm.conversation_id = $1
       ORDER BY cm.created_at ASC
     `;
+
 
         const result = await queryWithRLS(anonymousId, messagesQuery, [roomId]);
         res.json(result.rows);
@@ -214,7 +226,8 @@ router.post('/:roomId/messages', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
     const clientId = req.headers['x-client-id'];
-    const { content, type = 'text', caption } = req.body;
+    const { content, type = 'text', caption, reply_to_id } = req.body;
+
 
 
     if (!content) return res.status(400).json({ error: 'Content is required' });
@@ -236,110 +249,190 @@ router.post('/:roomId/messages', async (req, res) => {
             content: sanitized,
             type: type || 'text',
             caption: caption || null,
-            created_at: new Date().toISOString(),
             is_read: false,
-            is_delivered: false
+            is_delivered: false,
+            reply_to_id: reply_to_id || null,
+            created_at: new Date().toISOString()
         };
 
+
+
         // NOTIFICAR INMEDIATAMENTE (Messenger-grade speed)
-        members.forEach(member => {
-            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
-                roomId,
-                message: previewMessage,
-                originClientId: clientId
+        (async () => {
+            let replyContext = {};
+            if (reply_to_id) {
+                try {
+                    const replyResult = await queryWithRLS(anonymousId,
+                        'SELECT m.content, m.type, u.alias, m.sender_id FROM chat_messages m JOIN anonymous_users u ON m.sender_id = u.anonymous_id WHERE m.id = $1',
+                        [reply_to_id]
+                    );
+
+                    if (replyResult.rows.length > 0) {
+                        const r = replyResult.rows[0];
+                        replyContext = {
+                            reply_to_content: r.content,
+                            reply_to_type: r.type,
+                            reply_to_sender_alias: r.alias,
+                            reply_to_sender_id: r.sender_id
+                        };
+                    }
+                } catch (e) {
+                    console.error('[SSE] Error fetching reply context for emission:', e);
+                }
+            }
+
+            const broadcastMessage = { ...previewMessage, ...replyContext };
+
+            members.forEach(member => {
+                realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+                    roomId,
+                    message: broadcastMessage,
+                    originClientId: clientId
+                });
             });
 
-        });
+            // Backward compatibility
+            realtimeEvents.emit(`chat:${roomId}`, { message: broadcastMessage, originClientId: clientId });
+        })();
+
 
         const insertQuery = `
-          INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption)
-        VALUES($1, $2, $3, $4, $5, $6)
+          INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption, reply_to_id)
+        VALUES($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
+
             `;
 
         let newMessage;
         try {
+            // 2. INSERT into database
             const result = await queryWithRLS(anonymousId, insertQuery, [
                 newMessageId,
                 roomId,
                 anonymousId,
                 sanitized,
                 type || 'text',
-                caption || null
+                caption || null,
+                reply_to_id || null
             ]);
-            newMessage = result.rows[0];
 
-            // Actualizar last_message_at en la sala
+            // 3. Fetch it back with all JOINs for the response (Eliminates flicker)
+            const fullMessageQuery = `
+                SELECT 
+                    cm.*, 
+                    u.alias as sender_alias, 
+                    u.avatar_url as sender_avatar,
+                    rm.content as reply_to_content,
+                    rm.type as reply_to_type,
+                    ru.alias as reply_to_sender_alias,
+                    rm.sender_id as reply_to_sender_id
+                FROM chat_messages cm
+                JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+                LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
+                LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
+                WHERE cm.id = $1
+            `;
+
+            const fullResult = await queryWithRLS(anonymousId, fullMessageQuery, [newMessageId]);
+            newMessage = fullResult.rows[0];
+
+            // 4. Update conversations metadata
             await queryWithRLS(anonymousId, 'UPDATE conversations SET last_message_at = NOW() WHERE id = $1', [roomId]);
         } catch (dbError) {
             console.error('[DATABASE] Error saving message, rolling back:', dbError);
-            // NOTIFICAR ROLLBACK A LOS CLIENTES
             members.forEach(member => {
-                realtimeEvents.emit(`user-chat-rollback:${member.user_id}`, {
-                    roomId,
-                    messageId: newMessageId
-                });
+                realtimeEvents.emit(`user-chat-rollback:${member.user_id}`, { roomId, messageId: newMessageId });
             });
-            throw dbError; // Propagar error para respuesta 500
+            throw dbError;
         }
 
-        // Notificar via SSE a la sala específica (Backward compatibility)
-        realtimeEvents.emit(`chat:${roomId}`, { message: newMessage, originClientId: clientId });
-
-
-
-        // 3. ENVIAR NOTIFICACIÓN PUSH NATIVA (Si el destinatario está offline)
+        // 5. Native Push Notifications (Async)
         (async () => {
-
             try {
-                // Notificar a todos los miembros EXCEPTO al remitente
-                const otherMembers = memberResult.rows.filter(m => m.user_id !== anonymousId);
-
+                const otherMembers = members.filter(m => m.user_id !== anonymousId);
                 for (const member of otherMembers) {
                     const recipientId = member.user_id;
-
-                    // Buscar suscripciones activas del destinatario
-                    const { data: subs, error: subError } = await supabaseAdmin
+                    const { data: subs } = await supabaseAdmin
                         .from('push_subscriptions')
                         .select('*')
                         .eq('anonymous_id', recipientId)
                         .eq('is_active', true)
-                        .order('created_at', { ascending: false })
-                        .limit(5); // Notificar hasta 5 dispositivos
+                        .limit(5);
 
-                    if (!subError && subs && subs.length > 0) {
+                    if (subs && subs.length > 0) {
                         const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
-
-                        // Obtener info extra para el payload
                         const senderResult = await queryWithRLS(anonymousId, 'SELECT alias FROM anonymous_users WHERE anonymous_id = $1', [anonymousId]);
                         const roomResult = await queryWithRLS(anonymousId, 'SELECT report_id FROM conversations WHERE id = $1', [roomId]);
 
-                        const senderAlias = senderResult.rows[0]?.alias || 'Alguien';
-                        const reportId = roomResult.rows[0]?.report_id;
-
                         const payload = createChatNotificationPayload({
-                            senderAlias,
+                            senderAlias: senderResult.rows[0]?.alias || 'Alguien',
                             messageContent: type === 'image' ? '📷 Foto enviada' : content,
                             roomId,
-                            reportId
+                            reportId: roomResult.rows[0]?.report_id
                         });
 
                         await sendBatchNotifications(
-                            subs.map(s => ({
-                                subscription: { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth },
-                                subscriptionId: s.id
-                            })),
+                            subs.map(s => ({ subscription: { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth }, subscriptionId: s.id })),
                             payload,
                             recipientId
                         );
                     }
                 }
-            } catch (notifyErr) {
-                console.error('[Push] Error triggering chat notification:', notifyErr);
-            }
+            } catch (pErr) { console.error('[Push] Chat error:', pErr); }
         })();
 
         res.status(201).json(newMessage);
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+
+/**
+ * DELETE /api/chats/:roomId/messages/:messageId
+ * Elimina un mensaje para todos (Solo el remitente)
+ */
+router.delete('/:roomId/messages/:messageId', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId, messageId } = req.params;
+
+    try {
+        // 1. Verificar propiedad del mensaje
+        const msgResult = await queryWithRLS(anonymousId,
+            'SELECT sender_id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+            [messageId, roomId]
+        );
+
+        if (msgResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+
+        if (msgResult.rows[0].sender_id !== anonymousId) {
+            return res.status(403).json({ error: 'Forbidden: You can only delete your own messages' });
+        }
+
+        // 2. Eliminar mensaje
+        await queryWithRLS(anonymousId, 'DELETE FROM chat_messages WHERE id = $1', [messageId]);
+
+        // 3. Notificar a todos los miembros
+        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);
+
+        memberResult.rows.forEach(member => {
+            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+                roomId,
+                action: 'message-deleted',
+                messageId
+            });
+        });
+
+        realtimeEvents.emit(`chat:${roomId}`, {
+            action: 'message-deleted',
+            messageId
+        });
+
+        res.json({ success: true });
+
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -363,13 +456,13 @@ router.patch('/:roomId/read', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
-            realtimeEvents.emit(`user - chat - update:${anonymousId} `, {
+            realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
                 roomId,
                 action: 'read'
             });
 
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
-            realtimeEvents.emit(`chat - read:${roomId} `, {
+            realtimeEvents.emit(`chat-read:${roomId}`, {
                 readerId: anonymousId
             });
         }
@@ -398,7 +491,7 @@ router.patch('/:roomId/delivered', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
-            realtimeEvents.emit(`chat - delivered:${roomId} `, {
+            realtimeEvents.emit(`chat-delivered:${roomId}`, {
                 receiverId: anonymousId
             });
         }
@@ -482,7 +575,7 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
         // 3. Subir a Supabase
         const bucketName = 'report-images'; // Reutilizamos el mismo bucket por ahora o uno de chats si existe
         const fileExt = file.originalname.split('.').pop();
-        const fileName = `chats / ${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileName = `chats/${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
             .from(bucketName)
@@ -514,7 +607,7 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
 
     } catch (err) {
         logError(err, req);
-        res.status(status || 500).json({
+        res.status(500).json({
             error: err.message || 'Internal server error'
         });
     }
