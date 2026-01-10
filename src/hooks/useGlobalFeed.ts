@@ -4,6 +4,7 @@ import { API_BASE_URL } from '@/lib/api'
 import { reportsCache, statsCache } from '@/lib/cache-helpers'
 
 import { getClientId } from '@/lib/clientId'
+import { ssePool } from '@/lib/ssePool'
 
 /**
  * Global Real-time Feed Hook
@@ -22,6 +23,13 @@ export function useGlobalFeed() {
     useEffect(() => {
         const url = `${API_BASE_URL}/realtime/feed`
         const myClientId = getClientId()
+
+        // Helper to handle idempotency
+        const shouldProcess = (eventId?: string) => {
+            if (!eventId) return true;
+            if (processedReports.current.has(eventId) || processedUsers.current.has(eventId)) return false;
+            return true;
+        };
 
         // 1. Report Creation
         const unsubCreate = ssePool.subscribe(url, 'report-create', (event: MessageEvent) => {

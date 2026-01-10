@@ -38,9 +38,9 @@ class SSEPool {
 
             // Handle default 'message' event and error logging
             source.onmessage = (e) => this.dispatch(url, 'message', e);
-            source.onerror = (e) => {
+            source.onerror = () => {
                 // If closed by server, cleanup will happen on unsubscribe
-                // console.warn(`[SSEPool] Error on ${url}`, e);
+                // console.warn(`[SSEPool] Error on ${url}`);
             };
         }
 

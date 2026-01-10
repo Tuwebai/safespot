@@ -454,10 +454,6 @@ export function useMarkAsDeliveredMutation() {
 }
 
 // Helpers removed - using chatCache
-// function patchItem... (Removed)
-// function patchAndPromote... (Removed)
-// function upsertInList... (Removed)
-import { chatCache } from '../../lib/chatCache';
 
 export const useDeleteMessageMutation = () => {
     const queryClient = useQueryClient();
