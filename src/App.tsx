@@ -82,7 +82,7 @@ function App() {
                 <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
                 <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
                 <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
-                <Route path="/mensajes" element={<Mensajes />} />
+                <Route path="/mensajes/:roomId?" element={<Mensajes />} />
 
                 {/* --- ADMIN ROUTES (Protected by Guard) --- */}
                 {/* 

@@ -1,7 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Search, MessageSquare, ArrowLeft, Camera, Plus, X, User } from 'lucide-react';
+
 import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
-import { ChatRoom } from '../lib/api';
+import { ChatRoom, UserProfile, chatsApi, usersApi } from '../lib/api';
+import { getAvatarUrl } from '../lib/avatar';
+import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/Avatar';
+import { useToast } from '../components/ui/toast';
+import { useDebounce } from '../hooks/useDebounce';
+import { SEO } from '../components/SEO';
+import { ChatWindow } from '../components/chat/ChatWindow';
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -74,30 +88,16 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
     );
 };
 
-import { ChatWindow } from '../components/chat/ChatWindow';
-import { getAvatarUrl } from '../lib/avatar';
-import { Search, MessageSquare, ArrowLeft, Camera } from 'lucide-react';
-import { Input } from '../components/ui/input';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { SEO } from '../components/SEO';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button } from '../components/ui/button';
-import { usersApi, UserProfile, chatsApi } from '../lib/api';
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/Avatar';
-import { Plus, X, User } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useToast } from '../components/ui/toast';
-import { useDebounce } from '../hooks/useDebounce';
+
 
 
 
 const Mensajes: React.FC = () => {
+    const { roomId: urlRoomId } = useParams<{ roomId?: string }>();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const toast = useToast();
     const { data: rooms, isLoading } = useChatRooms();
-    const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
 
@@ -124,7 +124,7 @@ const Mensajes: React.FC = () => {
         });
     }, [rooms, searchTerm]);
 
-    const { data: selectedRoom } = useConversation(selectedRoomId || undefined);
+    const { data: selectedRoom } = useConversation(urlRoomId);
 
 
 
@@ -155,7 +155,7 @@ const Mensajes: React.FC = () => {
         mutationFn: (recipientId: string) => chatsApi.createRoom({ recipientId }),
         onSuccess: (newRoom) => {
             queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
-            setSelectedRoomId(newRoom.id);
+            handleSelectRoom(newRoom.id);
             setIsNewChatOpen(false);
             setUserSearchTerm('');
         },
@@ -168,21 +168,14 @@ const Mensajes: React.FC = () => {
         createChatMutation.mutate(recipientId);
     };
 
-
-    // Deep linking support
-    const [searchParams] = useSearchParams();
-    const deepLinkRoomId = searchParams.get('roomId');
-
-    React.useEffect(() => {
-        if (deepLinkRoomId && rooms) {
-            const exists = rooms.some(r => r.id === deepLinkRoomId);
-            if (exists && selectedRoomId !== deepLinkRoomId) {
-                setSelectedRoomId(deepLinkRoomId);
-            }
+    // Navigation helper
+    const handleSelectRoom = (id: string | null) => {
+        if (id) {
+            navigate(`/mensajes/${id}`);
+        } else {
+            navigate('/mensajes');
         }
-    }, [deepLinkRoomId, rooms, selectedRoomId]);
-
-
+    };
 
     // Variantes para las animaciones
     const sidebarVariants = {
@@ -205,7 +198,7 @@ const Mensajes: React.FC = () => {
             />
 
             {/* Inbox Sidebar */}
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="wait" >
                 {(!selectedRoom || window.innerWidth >= 768) && (
                     <motion.div
                         key="sidebar"
@@ -355,8 +348,8 @@ const Mensajes: React.FC = () => {
                                         <ChatRoomItem
                                             key={room.id}
                                             room={room}
-                                            isActive={selectedRoomId === room.id}
-                                            onClick={() => setSelectedRoomId(room.id)}
+                                            isActive={urlRoomId === room.id}
+                                            onClick={() => handleSelectRoom(room.id)}
                                         />
                                     ))}
                                 </div>
@@ -364,15 +357,14 @@ const Mensajes: React.FC = () => {
                         </div>
                     </motion.div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
 
             {/* Chat Content Pane */}
-            <div className={`flex-1 flex flex-col bg-background/50 ${selectedRoomId ? 'fixed inset-0 z-50 md:relative md:inset-auto md:z-0' : 'hidden md:flex'}`}>
+            <div className={`flex-1 flex flex-col bg-background/50 ${urlRoomId ? 'fixed inset-0 z-50 md:relative md:inset-auto md:z-0' : 'hidden md:flex'}`}>
                 <AnimatePresence mode="wait">
-                    {selectedRoomId ? (
-
+                    {urlRoomId ? (
                         <motion.div
-                            key={`chat-${selectedRoomId}`}
+                            key={`chat-${urlRoomId}`}
                             variants={chatVariants}
                             initial="initial"
                             animate="animate"
@@ -382,11 +374,10 @@ const Mensajes: React.FC = () => {
                             {selectedRoom && (
                                 <ChatWindow
                                     room={selectedRoom}
-                                    onBack={() => setSelectedRoomId(null)}
+                                    onBack={() => handleSelectRoom(null)}
                                 />
                             )}
                         </motion.div>
-
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center hidden md:flex text-center p-8">
                             <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mb-4">

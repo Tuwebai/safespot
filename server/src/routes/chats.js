@@ -285,7 +285,7 @@ router.post('/:roomId/messages', async (req, res) => {
             const broadcastMessage = { ...previewMessage, ...replyContext };
 
             members.forEach(member => {
-                realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+                realtimeEvents.emitUserChatUpdate(member.user_id, {
                     roomId,
                     message: broadcastMessage,
                     originClientId: clientId
@@ -293,7 +293,7 @@ router.post('/:roomId/messages', async (req, res) => {
             });
 
             // Backward compatibility
-            realtimeEvents.emit(`chat:${roomId}`, { message: broadcastMessage, originClientId: clientId });
+            realtimeEvents.emitChatMessage(roomId, broadcastMessage, clientId);
         })();
 
 
@@ -477,7 +477,7 @@ router.patch('/:roomId/read', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
-            realtimeEvents.emit(`user-chat-update:${anonymousId}`, {
+            realtimeEvents.emitUserChatUpdate(anonymousId, {
                 roomId,
                 action: 'read'
             });

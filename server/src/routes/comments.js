@@ -1020,11 +1020,17 @@ router.post('/:id/pin', requireAnonymousId, async (req, res) => {
     }
 
     // 3. Pin the comment
-    await queryWithRLS(
+    const pinResult = await queryWithRLS(
       anonymousId,
-      `UPDATE comments SET is_pinned = true, updated_at = NOW() WHERE id = $1`,
+      `UPDATE comments SET is_pinned = true, updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
+
+    // 4. Broadcast Realtime Update
+    if (pinResult.rows.length > 0) {
+      const clientId = req.headers['x-client-id'];
+      realtimeEvents.emitCommentUpdate(comment.report_id, pinResult.rows[0], clientId);
+    }
 
     res.json({ success: true, message: 'Comment pinned' });
   } catch (err) {
@@ -1050,7 +1056,13 @@ router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
       return res.status(403).json({ error: 'Only the report owner can unpin comments' });
     }
 
-    await queryWithRLS(anonymousId, `UPDATE comments SET is_pinned = false WHERE id = $1`, [id]);
+    const unpinResult = await queryWithRLS(anonymousId, `UPDATE comments SET is_pinned = false WHERE id = $1 RETURNING *`, [id]);
+
+    // Broadcast Realtime Update
+    if (unpinResult.rows.length > 0) {
+      const clientId = req.headers['x-client-id'];
+      realtimeEvents.emitCommentUpdate(report.id || comment.report_id, unpinResult.rows[0], clientId);
+    }
 
     res.json({ success: true, message: 'Comment unpinned' });
   } catch (err) {

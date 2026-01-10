@@ -138,8 +138,7 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
         }
 
         // Emit stats update to refresh global counters
-        realtimeEvents.emit('global-report-update', {
-            type: 'stats-update',
+        realtimeEvents.emitGlobalUpdate('stats-update', {
             action,
             reportId: id
         });

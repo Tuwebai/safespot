@@ -11,6 +11,7 @@ class PresenceTracker {
     constructor() {
         this.TTL_SECONDS = 60;
         this.PREFIX = 'presence:user:';
+        this.SESSION_PREFIX = 'presence:sessions:';
     }
 
     /**
@@ -36,25 +37,50 @@ class PresenceTracker {
     }
 
     /**
-     * Mark a user as offline (Explicit Logout)
+     * Track a new connection for a user
      * @param {string} userId 
      */
-    async markOffline(userId) {
-        if (!redis || redis.status !== 'ready') return;
-
-        const key = `${this.PREFIX}${userId}`;
+    async trackConnect(userId) {
+        if (!redis) return;
+        const sessionKey = `${this.SESSION_PREFIX}${userId}`;
         try {
-            await redis.del(key);
-            console.log(`[Presence] Marked ${userId} offline`);
-
-            // Notify via Pub/Sub that user went offline explicitly
-            realtimeEvents.broadcast('presence-update', {
-                userId,
-                status: 'offline',
-                lastSeen: new Date().toISOString()
-            });
+            await redis.incr(sessionKey);
+            // Refresh main presence key too
+            await this.markOnline(userId);
         } catch (err) {
-            console.error(`[Presence] Failed to mark offline ${userId}:`, err);
+            console.error('[Presence] Error incrementing sessions:', err);
+        }
+    }
+
+    /**
+     * Track a disconnection. 
+     * If sessions reach 0, broadcast offline.
+     * @param {string} userId 
+     */
+    async trackDisconnect(userId) {
+        if (!redis) return;
+        const sessionKey = `${this.SESSION_PREFIX}${userId}`;
+        try {
+            const sessions = await redis.decr(sessionKey);
+
+            if (sessions <= 0) {
+                // Ensure it doesn't go below 0
+                await redis.del(sessionKey);
+
+                // Last tab closed! Clear presence and notify
+                await redis.del(`${this.PREFIX}${userId}`);
+
+                realtimeEvents.broadcast('presence-update', {
+                    userId,
+                    status: 'offline',
+                    lastSeen: new Date().toISOString()
+                });
+
+                // Backward compatibility: Also notify per-room if needed (handled by caller if specific)
+                console.log(`[Presence] Last session closed for ${userId}. User is now Offline.`);
+            }
+        } catch (err) {
+            console.error('[Presence] Error decrementing sessions:', err);
         }
     }
 

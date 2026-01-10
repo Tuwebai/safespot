@@ -76,8 +76,9 @@ export class SSEResponse {
     /**
      * Start the keep-alive heartbeat
      * @param {number} intervalMs - Interval in milliseconds (Default: 5s)
+     * @param {Function} [onHeartbeat] - Optional callback to run on each heartbeat
      */
-    startHeartbeat(intervalMs = 5000) {
+    startHeartbeat(intervalMs = 5000, onHeartbeat) {
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
 
         this.heartbeatInterval = setInterval(() => {
@@ -89,6 +90,10 @@ export class SSEResponse {
             // Comment lines starting with ':' are ignored by the EventSource client
             // but keep the TCP connection active.
             this.res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+
+            if (onHeartbeat) {
+                onHeartbeat();
+            }
 
             if (typeof this.res.flush === 'function') {
                 this.res.flush();

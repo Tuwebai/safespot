@@ -176,7 +176,7 @@ router.get('/chats/:roomId', (req, res) => {
 
     // Notificar que ESTE usuario entró (Online)
     if (anonymousId) {
-        realtimeEvents.emit(`chat-presence:${roomId}`, {
+        realtimeEvents.emitChatStatus('presence', roomId, {
             userId: anonymousId,
             status: 'online'
         });
@@ -192,7 +192,7 @@ router.get('/chats/:roomId', (req, res) => {
 
                 // SOLO emitir si realmente se actualizaron mensajes
                 if (result.rowCount > 0) {
-                    realtimeEvents.emit(`chat-delivered:${roomId}`, {
+                    realtimeEvents.emitChatStatus('delivered', roomId, {
                         receiverId: anonymousId
                     });
                 }
@@ -205,7 +205,7 @@ router.get('/chats/:roomId', (req, res) => {
     req.on('close', () => {
         // Notificar que ESTE usuario salió (Offline)
         if (anonymousId) {
-            realtimeEvents.emit(`chat-presence:${roomId}`, {
+            realtimeEvents.emitChatStatus('presence', roomId, {
                 userId: anonymousId,
                 status: 'offline'
             });
@@ -232,7 +232,10 @@ router.get('/user/:anonymousId', (req, res) => {
     console.log(`[SSE] Client connected for user notifications ${anonymousId} (Events ID: ${realtimeEvents.instanceId})`);
 
     stream.send('connected', { anonymousId });
-    stream.startHeartbeat(2000);
+    stream.startHeartbeat(15000, () => {
+        // Refresh Redis presence on every heartbeat (15s < 60s TTL)
+        presenceTracker.markOnline(anonymousId);
+    });
 
     const handleChatUpdate = (data) => {
         stream.send('chat-update', data);
@@ -256,14 +259,14 @@ router.get('/user/:anonymousId', (req, res) => {
     realtimeEvents.on(`user-chat-rollback:${anonymousId}`, handleRollback);
     realtimeEvents.on('presence-update', handlePresenceUpdate);
 
-    // FASE 3: Registrar conexión en PresenceTracker (Initial Ping)
-    presenceTracker.markOnline(anonymousId);
+    // FASE 3: Registrar conexión con contador de sesiones (Multi-tab)
+    presenceTracker.trackConnect(anonymousId);
 
     req.on('close', () => {
-        // FASE 3: Presence Cleanup is handled by Redis TTL (Heartbeat)
-        // We do strictly NOT delete the key here to support multi-tab (stateless).
-        // If the client is truly gone, he won't send heartbeats, and Redis will expire the key.
-        // Also removed DB writes to 'anonymous_users' to comply with "No writes in Postgres" rule.
+        // FASE 3: Decrementar sesiones (Stateless multi-tab)
+        // Solo si es la última pestaña, se emite 'offline' dentro de trackDisconnect.
+        presenceTracker.trackDisconnect(anonymousId);
+
         console.log(`[SSE] Client disconnected ${anonymousId}`);
 
         stream.cleanup();

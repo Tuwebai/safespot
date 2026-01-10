@@ -120,7 +120,7 @@ export const NotificationService = {
             if (notifications.length > 0) {
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
-                        realtimeEvents.emit(`user-notification:${notification.anonymous_id}`, {
+                        realtimeEvents.emitUserNotification(notification.anonymous_id, {
                             type: 'proximity',
                             notification
                         });
@@ -230,7 +230,7 @@ export const NotificationService = {
             // 5. Emit Real-time Event (SSE)
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
-                realtimeEvents.emit(`user-notification:${report.anonymous_id}`, {
+                realtimeEvents.emitUserNotification(report.anonymous_id, {
                     type: type,
                     notification // SSOT: Send the full object from DB (contains .id)
                 });
@@ -293,7 +293,7 @@ export const NotificationService = {
                 // Emit Real-time Events
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
-                        realtimeEvents.emit(`user-notification:${notification.anonymous_id}`, {
+                        realtimeEvents.emitUserNotification(notification.anonymous_id, {
                             type: 'similar', // or 'proximity' depending on frontend usage, but 'similar' is specific
                             notification
                         });
@@ -405,7 +405,7 @@ export const NotificationService = {
             // 4. Emit Real-time Event (SSE)
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
-                realtimeEvents.emit(`user-notification:${parent.anonymous_id}`, {
+                realtimeEvents.emitUserNotification(parent.anonymous_id, {
                     type: 'reply',
                     notification
                 });
@@ -481,7 +481,7 @@ export const NotificationService = {
             // 4. Emit Real-time Event (SSE)
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
-                realtimeEvents.emit(`user-notification:${targetAnonymousId}`, {
+                realtimeEvents.emitUserNotification(targetAnonymousId, {
                     type: 'mention',
                     notification // SSOT: Includes .id for deduplication
                 });
@@ -576,7 +576,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
 
                 // 4a. Private Notification (to owner)
-                realtimeEvents.emit(`user-notification:${owner.anonymous_id}`, {
+                realtimeEvents.emitUserNotification(owner.anonymous_id, {
                     type: 'like',
                     notification,
                     // Keep these for potential counter updates if valid, 
@@ -697,7 +697,7 @@ export const NotificationService = {
             // 4. Emit Real-time Event (SSE)
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
-                realtimeEvents.emit(`user-notification:${followedId}`, {
+                realtimeEvents.emitUserNotification(followedId, {
                     type: 'follow',
                     notification,
                     followerId,

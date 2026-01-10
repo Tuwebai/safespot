@@ -43,7 +43,9 @@ class RealtimeEvents extends EventEmitter {
                         // Filter loopback (Own events are already emitted locally in broadcast)
                         if (origin !== this.instanceId) {
                             super.emit(eventName, payload);
-                            // console.log(`[Realtime] Received remote event: ${eventName} (ID: ${eventId}) from ${origin}`);
+                            console.log(`[Realtime] 📥 Received from Redis: ${eventName} (ID: ${eventId}) from ${origin}`);
+                        } else {
+                            // console.log(`[Realtime] 🔂 Ignored loopback: ${eventName} (ID: ${eventId})`);
                         }
                     } catch (err) {
                         console.error('[Realtime] Error parsing Redis message:', err);
@@ -271,6 +273,38 @@ class RealtimeEvents extends EventEmitter {
             originClientId
         });
         console.log(`[Realtime] Broadcasted status change for ${reportId}`);
+    }
+
+    /**
+     * Emit a user ban/unban event
+     * @param {string} anonymousId
+     * @param {object} payload - { status, reason }
+     */
+    emitUserBan(anonymousId, payload) {
+        this.broadcast(`user-status:${anonymousId}`, payload);
+        console.log(`[Realtime] Broadcasted ban event for ${anonymousId}`);
+    }
+
+    /**
+     * Emit a user-specific notification
+     * @param {string} anonymousId
+     * @param {object} payload - { type, notification, ... }
+     */
+    emitUserNotification(anonymousId, payload) {
+        this.broadcast(`user-notification:${anonymousId}`, payload);
+        console.log(`[Realtime] Broadcasted notification for user ${anonymousId}`);
+    }
+
+    /**
+     * Emit a general global update
+     * @param {string} type
+     * @param {object} payload
+     */
+    emitGlobalUpdate(type, payload) {
+        this.broadcast('global-report-update', {
+            ...payload,
+            type
+        });
     }
 }
 

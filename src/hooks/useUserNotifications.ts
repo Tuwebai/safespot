@@ -4,6 +4,7 @@ import { getAnonymousIdSafe } from '@/lib/identity';
 import { API_BASE_URL } from '@/lib/api';
 import { upsertInList } from '@/lib/realtime-utils';
 import { NOTIFICATIONS_QUERY_KEY } from './queries/useNotificationsQuery';
+import { ssePool } from '@/lib/ssePool';
 
 // ... (inside component)
 
@@ -29,20 +30,17 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
         if (!anonymousId) return;
 
         const url = `${API_BASE_URL}/realtime/user/${anonymousId}`;
-        const eventSource = new EventSource(url);
 
         // Helper to handle incoming notifications
         const handleEvent = (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data) as NotificationPayload;
-                // console.log('[SSE] Notification received:', event.type, data);
 
                 // 1. Patch notifications list if full object is provided
                 if (data.notification) {
                     upsertInList(queryClient, NOTIFICATIONS_QUERY_KEY, data.notification);
 
-                    // 1.5 Play sound for new notification (if it's a new entry)
-                    // We check if it's new because SSE might resend on reconnect
+                    // 1.5 Play sound for new notification
                     const notified = JSON.parse(localStorage.getItem('safespot_seen_sse_ids') || '[]');
                     if (!notified.includes(data.notification.id)) {
                         import('./useBadgeNotifications').then(({ playBadgeSound }) => playBadgeSound());
@@ -54,46 +52,37 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
 
                 // 2. Handle specific types with atomic patches
                 if (data.type === 'achievement') {
-                    // Trigger immediate check to show the badge unlock UI
-                    import('./useBadgeNotifications').then(({ triggerBadgeCheck }) => {
-                        triggerBadgeCheck();
-                    });
+                    import('./useBadgeNotifications').then(({ triggerBadgeCheck }) => triggerBadgeCheck());
                 }
 
                 if (data.type === 'follow') {
-                    // Refresh profile to reflect new followers
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
                 }
 
-                if (onNotification) {
-                    onNotification(data);
-                }
+                if (onNotification) onNotification(data);
             } catch (err) {
                 console.error('[SSE] Error parsing notification:', err);
             }
         };
 
-        // Listen for 'notification' events (Standardized Backend Event)
-        eventSource.addEventListener('notification', handleEvent);
+        // Listen for 'notification' events
+        const unsubscribe = ssePool.subscribe(url, 'notification', (event) => {
+            handleEvent(event as MessageEvent);
+        });
 
-        // Also listen for 'message' just in case
-        eventSource.onmessage = handleEvent;
-
-        eventSource.onerror = () => {
-            if (eventSource.readyState === EventSource.CLOSED) {
-                // Connection closed
-            }
-        };
-
-        eventSource.onerror = () => {
-            if (eventSource.readyState === EventSource.CLOSED) {
-                // Connection closed
-            }
-        };
+        // Also listen for 'presence-update' for global reactivity
+        const unsubscribePresence = ssePool.subscribe(url, 'presence-update', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.userId) {
+                    queryClient.setQueryData(['users', 'presence', data.userId], data.partial);
+                }
+            } catch (e) { }
+        });
 
         return () => {
-            eventSource.removeEventListener('notification', handleEvent);
-            eventSource.close();
+            unsubscribe();
+            unsubscribePresence();
         };
     }, [anonymousId, queryClient, onNotification]);
 }

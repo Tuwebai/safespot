@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
+import { ssePool } from '@/lib/ssePool';
+import { chatCache } from '../../lib/chatCache';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -59,9 +61,34 @@ export function useChatRooms() {
         if (!anonymousId) return;
 
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/user/${anonymousId}`;
-        const eventSource = new EventSource(sseUrl);
 
-        const handleRollback = (event: any) => {
+        const unsubscribeUpdate = ssePool.subscribe(sseUrl, 'chat-update', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                const convId = data.roomId;
+                if (!convId) return;
+                if (data.originClientId === getClientId()) return;
+
+                if (data.message) {
+                    const message = data.message;
+                    const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
+                    chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
+                } else if (data.action === 'read') {
+                    chatCache.markRoomAsRead(queryClient, convId);
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                        if (!old) return old;
+                        return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
+                    });
+                } else if (data.action === 'typing') {
+                    queryClient.setQueryData(CHATS_KEYS.rooms, (old: any) => {
+                        if (!old || !Array.isArray(old)) return old;
+                        return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
+                    });
+                }
+            } catch (err) { }
+        });
+
+        const unsubscribeRollback = ssePool.subscribe(sseUrl, 'chat-rollback', (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.roomId && data.messageId) {
@@ -71,72 +98,21 @@ export function useChatRooms() {
                     });
                 }
             } catch (e) { }
-        };
+        });
 
-        const handleUpdate = (event: any) => {
-            try {
-                const data = JSON.parse(event.data);
-                const convId = data.roomId;
-                if (!convId) return;
-
-                // ECHO SUPPRESSION: Ignore if this tab sent the message
-                if (data.originClientId === getClientId()) return;
-
-                if (data.message) {
-                    const message = data.message;
-                    /**
-                     * INBOX AUTHORITY
-                     * Updates the list of rooms, moves active room to top,
-                     * and increments unread count safely.
-                     */
-                    // Dirty but effective: Check if we are currently looking at this room
-                    const isActiveRoom = window.location.pathname.includes(convId);
-                    chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
-
-                } else if (data.action === 'read') {
-                    // Mark as read globally
-                    chatCache.markRoomAsRead(queryClient, convId);
-
-                    // Update messages visibility (Delivery Status)
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
-                        if (!old) return old;
-                        return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
-                    });
-                } else if (data.action === 'typing') {
-                    // Handle typing status in sidebar/inbox (Direct Patch)
-                    queryClient.setQueryData(CHATS_KEYS.rooms, (old: any) => {
-                        if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
-                    });
-                } else if (data.action === 'message-deleted') {
-                    // Not handled in Inbox summary yet
-                }
-
-            } catch (err) {
-                // console.error('[SSE Global] Error:', err);
-            }
-        };
-
-        const handlePresenceUpdate = (event: any) => {
+        const unsubscribePresence = ssePool.subscribe(sseUrl, 'presence-update', (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.userId) {
                     queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(data.userId), data.partial);
                 }
-
             } catch (e) { }
-        };
-
-        eventSource.addEventListener('chat-update', handleUpdate);
-        eventSource.addEventListener('chat-rollback', handleRollback);
-        eventSource.addEventListener('presence-update', handlePresenceUpdate);
-        eventSource.onmessage = handleUpdate; // Handle raw messages too
+        });
 
         return () => {
-            eventSource.close();
-            eventSource.removeEventListener('chat-update', handleUpdate);
-            eventSource.removeEventListener('chat-rollback', handleRollback);
-            eventSource.removeEventListener('presence-update', handlePresenceUpdate);
+            unsubscribeUpdate();
+            unsubscribeRollback();
+            unsubscribePresence();
         };
 
     }, [anonymousId, queryClient]);
@@ -178,62 +154,50 @@ export function useChatMessages(convId: string | undefined) {
         if (!convId || !anonymousId) return;
 
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${convId}?anonymousId=${anonymousId}`;
-        const eventSource = new EventSource(sseUrl);
 
-        eventSource.addEventListener('new-message', (event: any) => {
+        const unsubNewMessage = ssePool.subscribe(sseUrl, 'new-message', (event) => {
             try {
                 const { message, originClientId } = JSON.parse(event.data);
-
-                // ECHO SUPPRESSION: Ignore if this tab sent the message
                 if (originClientId === getClientId()) return;
+                chatCache.appendMessage(queryClient, message);
+            } catch (e) { }
+        });
 
-                // Process valid message from others OR from other tabs of same user
-                {
-                    /**
-                     * ROOM AUTHORITY
-                     * Only responsibility: Append message to CURRENT thread.
-                     * Does NOT patch the inbox (Room List).
-                     */
-                    chatCache.appendMessage(queryClient, message);
+        const unsubTyping = ssePool.subscribe(sseUrl, 'typing', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.senderId !== anonymousId) setIsTyping(data.isTyping);
+            } catch (e) { }
+        });
+
+        const unsubRead = ssePool.subscribe(sseUrl, 'messages-read', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.readerId !== anonymousId) {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                        if (!old) return old;
+                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
+                    });
                 }
             } catch (e) { }
         });
 
-        eventSource.addEventListener('typing', (event: any) => {
-            const data = JSON.parse(event.data);
-            if (data.senderId !== anonymousId) {
-                setIsTyping(data.isTyping);
-            }
+        const unsubDelivered = ssePool.subscribe(sseUrl, 'messages-delivered', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.receiverId !== anonymousId) {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                        if (!old) return old;
+                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
+                    });
+                }
+            } catch (e) { }
         });
 
-        eventSource.addEventListener('messages-read', (event: any) => {
-
-            const data = JSON.parse(event.data);
-            // Si el otro leyó mis mensajes, actualizamos is_read localmente
-            if (data.readerId !== anonymousId) {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
-                    if (!old) return old;
-                    return old.map(m => m.sender_id === anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
-                });
-            }
-        });
-
-        eventSource.addEventListener('messages-delivered', (event: any) => {
-            const data = JSON.parse(event.data);
-            // Si el otro recibió mis mensajes, actualizamos is_delivered localmente
-            if (data.receiverId !== anonymousId) {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
-                    if (!old) return old;
-                    return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
-                });
-            }
-        });
-
-        eventSource.addEventListener('presence', (event: any) => {
+        const unsubPresence = ssePool.subscribe(sseUrl, 'presence', (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.userId) {
-                    // Force zero-latency presence update for partners in the same room
                     queryClient.setQueryData(CHATS_KEYS.presence(data.userId), {
                         status: data.status,
                         last_seen_at: data.status === 'offline' ? new Date().toISOString() : null
@@ -242,18 +206,24 @@ export function useChatMessages(convId: string | undefined) {
             } catch (e) { }
         });
 
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.action === 'message-deleted') {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
-                    return old?.filter(m => m.id !== data.messageId) || [];
-                });
-            }
-        };
+        const unsubMessage = ssePool.subscribe(sseUrl, 'message', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.action === 'message-deleted') {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                        return old?.filter(m => m.id !== data.messageId) || [];
+                    });
+                }
+            } catch (e) { }
+        });
 
         return () => {
-
-            eventSource.close();
+            unsubNewMessage();
+            unsubTyping();
+            unsubRead();
+            unsubDelivered();
+            unsubPresence();
+            unsubMessage();
         };
     }, [convId, anonymousId, queryClient]);
 
