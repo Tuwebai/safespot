@@ -138,6 +138,7 @@ async function testConnection() {
       
       -- 10. Presence & Profile
       ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS interest_radius_meters INTEGER DEFAULT 1000;
     `;
 
 

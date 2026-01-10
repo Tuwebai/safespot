@@ -34,16 +34,17 @@ export const NotificationService = {
                 WITH matched_recipients AS (
                     -- General proximity matched from settings
                     SELECT 
-                        ns.anonymous_id,
+                        u.anonymous_id,
                         'proximity' as alert_type,
                         NULL as zone_type,
                         ST_Distance(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
                     FROM notification_settings ns
+                    JOIN anonymous_users u ON ns.anonymous_id = u.anonymous_id
                     WHERE 
                         ns.proximity_alerts = true
                         AND ns.anonymous_id != $3
                         AND ns.notifications_today < ns.max_notifications_per_day
-                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, ns.radius_meters)
+                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, u.interest_radius_meters)
                     
                     UNION ALL
                     
@@ -258,11 +259,12 @@ export const NotificationService = {
                 WITH eligible_recipients AS (
                     SELECT ns.anonymous_id
                     FROM notification_settings ns
+                    JOIN anonymous_users u ON ns.anonymous_id = u.anonymous_id
                     WHERE 
                         ns.similar_reports = true
                         AND ns.anonymous_id != $2
                         AND ns.notifications_today < ns.max_notifications_per_day
-                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, ${NOTIFICATIONS.SIMILAR_REPORTS_RADIUS_METERS})
+                        AND ST_DWithin(ns.location, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography, u.interest_radius_meters)
                 )
                 INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
                 SELECT 

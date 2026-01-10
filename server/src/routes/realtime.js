@@ -5,7 +5,47 @@ import { presenceTracker } from '../utils/presenceTracker.js';
 import pool from '../config/database.js';
 
 
+import redis, { redisSubscriber } from '../config/redis.js';
+
 const router = express.Router();
+
+/**
+ * GET /api/realtime/status
+ * Health check for the real-time infrastructure (Redis + SSE Tracker)
+ */
+router.get('/status', async (req, res) => {
+    try {
+        const redisStatus = redis ? redis.status : 'disabled';
+        const subStatus = redisSubscriber ? redisSubscriber.status : 'disabled';
+
+        // Quick DB check
+        const dbStart = Date.now();
+        await pool.query('SELECT 1');
+        const dbLatency = Date.now() - dbStart;
+
+        res.json({
+            success: true,
+            status: (redisStatus === 'ready' || redisStatus === 'connect') ? 'healthy' : 'degraded',
+            timestamp: new Date().toISOString(),
+            infrastructure: {
+                redis: redisStatus,
+                redis_subscriber: subStatus,
+                database: 'ok',
+                db_latency_ms: dbLatency,
+                instance_id: realtimeEvents.instanceId
+            },
+            metrics: {
+                total_online: await presenceTracker.getOnlineCount()
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            status: 'unhealthy',
+            error: err.message
+        });
+    }
+});
 
 
 /**

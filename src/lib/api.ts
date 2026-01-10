@@ -594,6 +594,7 @@ export interface UserProfile {
   followers_count?: number;
   following_count?: number;
   is_following?: boolean;
+  interest_radius_meters?: number;
 }
 
 export interface GlobalStats {
@@ -623,7 +624,13 @@ export const usersApi = {
   /**
    * Update user profile (e.g. avatar, theme)
    */
-  updateProfile: async (data: { avatar_url?: string | null, theme?: string, accent_color?: string, alias?: string }): Promise<UserProfile> => {
+  updateProfile: async (data: {
+    avatar_url?: string | null,
+    theme?: string,
+    accent_color?: string,
+    alias?: string,
+    interest_radius_meters?: number
+  }): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),

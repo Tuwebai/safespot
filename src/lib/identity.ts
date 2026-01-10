@@ -246,6 +246,63 @@ export function validateAnonymousId(id: string): void {
   }
 }
 
+/** Update identity across all layers */
+export async function updateIdentity(newId: string): Promise<void> {
+  if (!isValidUUID(newId)) throw new Error('Invalid Anonymous ID');
+
+  const cleanId = newId.includes('|') ? newId.split('|')[1] : newId;
+  cachedId = cleanId;
+  const versionedId = `${ID_VERSION}|${cleanId}`;
+
+  localStorage.setItem(L1_KEY, cleanId);
+  setCookie(L2_KEY, versionedId);
+  await setIDB('current_id', versionedId);
+}
+
+/** Export identity as a JSON file download */
+export function exportIdentity(): void {
+  const id = getAnonymousId();
+  if (!id) return;
+
+  const data = {
+    anonymous_id: id,
+    exported_at: new Date().toISOString(),
+    app: "SafeSpot",
+    version: ID_VERSION
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `safespot-identity-${id.substring(0, 8)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/** 
+ * Import identity from a JSON file.
+ * Returns true if successful.
+ */
+export async function importIdentity(file: File): Promise<boolean> {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    if (data.app !== "SafeSpot" || !data.anonymous_id || !isValidUUID(data.anonymous_id)) {
+      throw new Error('Archivo de identidad inválido o de otra aplicación');
+    }
+
+    await updateIdentity(data.anonymous_id);
+    return true;
+  } catch (err) {
+    console.error('[Identity] Import failed:', err);
+    throw err;
+  }
+}
+
 /** Reset identity (Testing only) */
 export function resetIdentity(): void {
   cachedId = null;

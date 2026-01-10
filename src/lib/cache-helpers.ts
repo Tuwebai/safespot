@@ -623,7 +623,7 @@ export const statsCache = {
     /**
      * Decrement global report count and specific category count
      */
-    applyReportDelete: (queryClient: QueryClient, category: string, status?: string) => {
+    applyReportDelete: (queryClient: QueryClient, _category: string, status?: string) => {
         // 1. Update Global Counters
         statsCache.applyDelta(queryClient, 'total_reports', -1);
 
@@ -633,6 +633,9 @@ export const statsCache = {
         }
 
         // 2. Update Category Breakdown
+        // HISTORICAL TOTALS: We do NOT decrement category stats on deletion
+        // per user requirement: "conteo total histórico"
+        /*
         queryClient.setQueryData(queryKeys.stats.categories, (old: any) => {
             if (!old) return old;
             return {
@@ -640,6 +643,7 @@ export const statsCache = {
                 [category]: Math.max(0, (old[category] || 0) - 1)
             };
         });
+        */
     },
 
     /**

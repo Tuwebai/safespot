@@ -147,10 +147,10 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
 router.put('/profile', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { avatar_url, theme, accent_color, alias } = req.body;
+    const { avatar_url, theme, accent_color, alias, interest_radius_meters } = req.body;
 
     // Validate if any field is provided
-    if (avatar_url === undefined && theme === undefined && accent_color === undefined && alias === undefined) {
+    if (avatar_url === undefined && theme === undefined && accent_color === undefined && alias === undefined && interest_radius_meters === undefined) {
       return res.status(400).json({ error: 'No fields to update provided' });
     }
 
@@ -170,6 +170,14 @@ router.put('/profile', requireAnonymousId, async (req, res) => {
     if (accent_color !== undefined) {
       updates.push(`accent_color = $${paramIndex++}`);
       values.push(accent_color);
+    }
+    if (interest_radius_meters !== undefined) {
+      const radius = parseInt(interest_radius_meters);
+      if (isNaN(radius) || radius < 100 || radius > 10000) {
+        return res.status(400).json({ error: 'Radio de interés inválido (100m - 10km)' });
+      }
+      updates.push(`interest_radius_meters = $${paramIndex++}`);
+      values.push(radius);
     }
     if (alias !== undefined) {
       // Basic validation for alias
@@ -376,8 +384,7 @@ router.get('/category-stats', async (req, res) => {
     // CRITICAL: Use supabaseAdmin to bypass RLS
     const { data, error } = await supabaseAdmin
       .from('reports')
-      .select('category')
-      .not('deleted_at', 'is', 'null');
+      .select('category');
 
     if (error) throw error;
 

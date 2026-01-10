@@ -124,7 +124,9 @@ router.get('/', async (req, res) => {
 
       const userLat = validatedGeo.lat;
       const userLng = validatedGeo.lng;
-      const radiusMeters = validatedGeo.radius_meters;
+      // If radius was not in query, we pass null to let SQL use user setting
+      const explicitRadius = req.query.radius ? validatedGeo.radius_meters : null;
+      const defaultRadius = 1000;
 
       // Parse cursor for geographic feed
       const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -222,7 +224,7 @@ router.get('/', async (req, res) => {
           ) uz ON true
           WHERE 
             r.deleted_at IS NULL
-            AND ST_DWithin(r.location, ul.point, $3)
+            AND ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8), 1000))
             AND r.location IS NOT NULL
             ${additionalWhere}
             AND (
@@ -244,7 +246,7 @@ router.get('/', async (req, res) => {
         dataParams = [
           userLat,           // $1
           userLng,           // $2
-          radiusMeters,      // $3
+          explicitRadius,    // $3
           cursorDistance,    // $4
           cursorDate,        // $5
           cursorId,          // $6
@@ -274,7 +276,7 @@ router.get('/', async (req, res) => {
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
           WHERE 
             r.deleted_at IS NULL
-            AND ST_DWithin(r.location, ul.point, $3)
+            AND ST_DWithin(r.location, ul.point, COALESCE($3, 1000))
             AND r.location IS NOT NULL
             ${additionalWhere}
             AND (
@@ -292,7 +294,7 @@ router.get('/', async (req, res) => {
         dataParams = [
           userLat,
           userLng,
-          radiusMeters,
+          explicitRadius,
           cursorDistance,
           cursorDate,
           cursorId,

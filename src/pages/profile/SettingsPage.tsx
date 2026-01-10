@@ -3,8 +3,10 @@ import { Button } from '@/components/ui/button';
 import {
     ArrowLeft, Bell, Palette, Monitor, Map as MapIcon,
     Eye, Shield, RefreshCw, Ghost, UserX, MapPin,
-    Database, Trash2, Info
+    Database, Info, Compass, Download, Upload,
+    AlertTriangle, Activity
 } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import { NotificationSettingsSection } from '@/components/NotificationSettingsSection';
 import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -12,13 +14,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
-import { getAnonymousIdSafe } from '@/lib/identity';
+import { useState, useEffect, useRef } from 'react';
+import { getAnonymousIdSafe, exportIdentity, importIdentity } from '@/lib/identity';
 import { getAvatarUrl } from '@/lib/avatar';
 import { usersApi } from '@/lib/api';
 import { handleError } from '@/lib/errorHandler';
 import { useToast } from '@/components/ui/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { RealtimeStatusIndicator } from '@/components/RealtimeStatusIndicator';
 
 export function SettingsPage() {
     const navigate = useNavigate();
@@ -42,11 +45,21 @@ export function SettingsPage() {
     const [hideAvatar, setHideAvatar] = useState(false);
     const [ghostMode, setGhostMode] = useState(false);
 
-    // Load Profile for Privacy (Avatar)
-    const { refetch: refetchProfile } = useQuery({
+    // --- NEW: PHASE 5 (Interest Radius) ---
+    const [interestRadius, setInterestRadius] = useState(1000);
+    const [isSavingRadius, setIsSavingRadius] = useState(false);
+
+    // Load Profile
+    const { refetch: refetchProfile, data: profile } = useQuery({
         queryKey: ['profile'],
-        queryFn: () => usersApi.getProfile()
+        queryFn: () => usersApi.getProfile(),
     });
+
+    useEffect(() => {
+        if (profile?.interest_radius_meters) {
+            setInterestRadius(profile.interest_radius_meters);
+        }
+    }, [profile]);
 
     useEffect(() => {
         // Load from localStorage
@@ -82,6 +95,59 @@ export function SettingsPage() {
             toast.success("Identidad visual regenerada");
         } catch (err) {
             handleError(err, toast.error, 'Settings.regenerateIdentity');
+        }
+    };
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isImporting, setIsImporting] = useState(false);
+
+    const handleExportIdentity = () => {
+        exportIdentity();
+        toast.success("Factura de identidad descargada");
+    };
+
+    const handleImportIdentity = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!confirm("⚠️ ¿Estás seguro? Tu identidad actual será reemplazada y la aplicación se reiniciará.")) {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        setIsImporting(true);
+        try {
+            await importIdentity(file);
+            toast.success("Identidad restaurada con éxito");
+
+            // Artificial delay for UX
+            setTimeout(() => {
+                queryClient.clear();
+                window.location.reload();
+            }, 1500);
+        } catch (err: any) {
+            handleError(err, toast.error, 'Settings.importIdentity');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const handleRadiusChange = async (val: number) => {
+        setInterestRadius(val);
+    };
+
+    const handleSaveRadius = async () => {
+        setIsSavingRadius(true);
+        try {
+            await usersApi.updateProfile({ interest_radius_meters: interestRadius });
+            toast.success(`Burbuja de seguridad actualizada a ${interestRadius}m`);
+            // Invalidate feeds to force reload with new radius
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+        } catch (err) {
+            handleError(err, toast.error, 'Settings.saveRadius');
+        } finally {
+            setIsSavingRadius(false);
         }
     };
 
@@ -256,13 +322,56 @@ export function SettingsPage() {
 
                     <Card className="bg-dark-card border-dark-border">
                         <CardHeader>
-                            <CardTitle className="text-lg">Comportamiento</CardTitle>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Compass className="w-5 h-5 text-neon-green" />
+                                Burbuja de Seguridad
+                            </CardTitle>
+                            <CardDescription>
+                                Radio de interés para notificaciones y feed de reportes.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-end">
+                                    <span className="text-sm font-medium">Distancia</span>
+                                    <span className="text-2xl font-bold text-neon-green">
+                                        {interestRadius >= 1000 ? `${(interestRadius / 1000).toFixed(1)}km` : `${interestRadius}m`}
+                                    </span>
+                                </div>
+                                <Slider
+                                    min={500}
+                                    max={5000}
+                                    step={100}
+                                    value={interestRadius}
+                                    onValueChange={handleRadiusChange}
+                                />
+                                <div className="flex justify-between text-[10px] text-muted-foreground uppercase tracking-widest">
+                                    <span>Personal</span>
+                                    <span>Barrial</span>
+                                    <span>Distrital</span>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={handleSaveRadius}
+                                disabled={isSavingRadius || interestRadius === profile?.interest_radius_meters}
+                                className="w-full bg-neon-green/20 hover:bg-neon-green/30 text-neon-green border border-neon-green/30"
+                            >
+                                {isSavingRadius ? 'Guardando...' : 'Guardar Radio'}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="bg-dark-card border-dark-border">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <MapPin className="w-4 h-4" /> Comportamiento
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
-                                    <label className="text-base font-medium flex items-center gap-2">
-                                        <MapPin className="w-4 h-4" /> Auto-centrar Mapa
+                                    <label className="text-base font-medium">
+                                        Auto-centrar Mapa
                                     </label>
                                     <p className="text-sm text-muted-foreground">Centra el mapa en tu ubicación al iniciar.</p>
                                 </div>
@@ -311,6 +420,51 @@ export function SettingsPage() {
                                     <p className="text-sm text-muted-foreground">Navega sin aparecer online (No sumas puntos de presencia).</p>
                                 </div>
                                 <Switch checked={ghostMode} onCheckedChange={(v) => { setGhostMode(v); persist('safespot_ghost_mode', v); }} />
+                            </div>
+
+                            <div className="border-t border-white/5 pt-6 space-y-4">
+                                <h4 className="font-bold text-sm flex items-center gap-2">
+                                    <Database className="w-4 h-4 text-blue-400" />
+                                    Respaldo Extremo
+                                </h4>
+                                <p className="text-xs text-muted-foreground">
+                                    SafeSpot no usa correos. Si pierdes este navegador, pierdes tu reputación.
+                                    Descarga tu identidad para restaurarla en otro dispositivo.
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Button
+                                        onClick={handleExportIdentity}
+                                        variant="outline"
+                                        className="gap-2 border-blue-500/30 hover:bg-blue-500/10 text-blue-400"
+                                    >
+                                        <Download className="w-4 h-4" /> Exportar
+                                    </Button>
+
+                                    <Button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        variant="outline"
+                                        disabled={isImporting}
+                                        className="gap-2 border-orange-500/30 hover:bg-orange-500/10 text-orange-400"
+                                    >
+                                        <Upload className="w-4 h-4" /> {isImporting ? 'Importando...' : 'Restaurar'}
+                                    </Button>
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleImportIdentity}
+                                        accept=".json"
+                                        className="hidden"
+                                    />
+                                </div>
+
+                                <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg flex gap-3 text-orange-200/80">
+                                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                                    <p className="text-[10px] leading-tight">
+                                        <strong>IMPORTANTE:</strong> Cualquiera con tu archivo de identidad puede suplantarte.
+                                        Mantenlo en un lugar seguro y no lo compartas.
+                                    </p>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
@@ -361,8 +515,19 @@ export function SettingsPage() {
                                     }}
                                     className="gap-2"
                                 >
-                                    <Trash2 className="w-4 h-4" /> Restablecer
                                 </Button>
+                            </div>
+
+                            <div className="border-t border-white/5 pt-6 space-y-4">
+                                <h4 className="font-bold text-sm flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-neon-green" />
+                                    Salud del Sistema
+                                </h4>
+                                <Card className="bg-black/40 border-white/5 shadow-inner">
+                                    <CardContent className="pt-6">
+                                        <RealtimeStatusIndicator />
+                                    </CardContent>
+                                </Card>
                             </div>
                         </CardContent>
                     </Card>
