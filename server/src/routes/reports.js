@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer } from '../utils/validation.js';
+import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer, isValidUuid } from '../utils/validation.js';
 import { validate } from '../utils/validateMiddleware.js';
 import { reportSchema, geoQuerySchema } from '../utils/schemas.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
@@ -627,6 +627,11 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     const anonymousId = req.headers['x-anonymous-id'] || '';
 
+    // Graceful handling for temp IDs
+    if (id.startsWith('temp-') || !isValidUuid(id)) {
+      return res.status(404).json({ error: 'Report not found (Optimistic state)' });
+    }
+
     // threads_count is now a denormalized column (no subquery needed)
     const reportResult = await queryWithRLS(anonymousId, `
       SELECT r.*, u.avatar_url, u.alias
@@ -947,6 +952,11 @@ router.get('/:id/related', async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.headers['x-anonymous-id'] || '';
+
+    // Graceful handling for temp IDs
+    if (id.startsWith('temp-') || !isValidUuid(id)) {
+      return res.json({ success: true, data: [] });
+    }
 
     // 1. Get reference report
     const referenceResult = await queryWithRLS(anonymousId, `

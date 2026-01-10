@@ -11,10 +11,12 @@ const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 export const usePresenceHeartbeat = () => {
     useEffect(() => {
         const sendHeartbeat = async () => {
-            // Reliable ID source: localStorage (set by identity.ts)
-            // We use this even if the user profile query hasn't finished loading.
-            const anonymousId = localStorage.getItem('anonymous_id');
+            // Check Ghost Mode
+            const isGhost = localStorage.getItem('safespot_ghost_mode') === 'true';
+            if (isGhost) return;
 
+            // Reliable ID source: localStorage (set by identity.ts)
+            const anonymousId = localStorage.getItem('anonymous_id');
             if (!anonymousId) return;
 
             try {
@@ -44,7 +46,13 @@ export const usePresenceHeartbeat = () => {
         sendHeartbeat();
 
         // 2. Interval Ping
-        const intervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+        const intervalId = setInterval(() => {
+            // Re-check ghost mode inside the interval to be reactive without re-mounting
+            const isGhost = localStorage.getItem('safespot_ghost_mode') === 'true';
+            if (!isGhost) {
+                sendHeartbeat();
+            }
+        }, HEARTBEAT_INTERVAL);
 
         // 3. Visibility Change (Immediate Ping on Tab Focus)
         // This handles cases where the user comes back after >60s of background suspension

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usersApi } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
-import { cn } from '@/lib/utils'
+
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,15 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
-import { TrendingUp, Calendar, FileText, ThumbsUp, Palette } from 'lucide-react'
+import { TrendingUp, Calendar, FileText, ThumbsUp, Bell } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
-import { NotificationSettingsSection } from '@/components/NotificationSettingsSection'
-import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection'
+// import { NotificationSettingsSection } from '@/components/NotificationSettingsSection' // Moved to SettingsPage
+// import { AlertZoneStatusSection } from '@/components/AlertZoneStatusSection' // Moved to SettingsPage
 import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuery'
 import { Lock, ChevronRight, Award } from 'lucide-react'
 import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation'
@@ -29,7 +29,7 @@ import { queryKeys } from '@/lib/queryKeys'
 export function Perfil() {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const { openCustomizer } = useTheme()
+  const { } = useTheme()
 
   // Use React Query for real-time gamification data
   const {
@@ -128,29 +128,6 @@ export function Perfil() {
           {/* Columna Principal */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Personalización de Apariencia */}
-            <div className="bg-card border border-border/50 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none" />
-              <div className="flex items-center gap-4 relative z-10">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-inner">
-                  <Palette size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">Personaliza tu Experiencia</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Elige entre temas oscuros, claros o minimalistas y tu color favorito.
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={openCustomizer}
-                size="lg"
-                className="w-full sm:w-auto glow-effect font-semibold relative z-10"
-              >
-                <Palette className="mr-2 h-4 w-4" />
-                Cambiar Apariencia
-              </Button>
-            </div>
 
             {/* Información del Usuario */}
             <Card className="bg-card border-border card-glow">
@@ -171,35 +148,6 @@ export function Perfil() {
 
                     {/* Actions Overlay / Buttons */}
                     <div className="absolute -bottom-2 -right-2 flex space-x-1">
-                      {/* Regenerate Random */}
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className={cn(
-                          "h-8 w-8 rounded-full bg-dark-card border-neon-green/50 hover:bg-neon-green hover:text-black transition-colors"
-                        )}
-                        onClick={() => {
-                          // Optimistic Update: Update UI immediately
-                          const randomSeed = Math.random().toString(36).substring(7);
-                          const newAvatarUrl = getAvatarUrl(`${anonymousId}-${randomSeed}`);
-
-                          // 1. Update local state immediately
-                          const previousProfile = profile;
-                          setProfile(prev => prev ? { ...prev, avatar_url: newAvatarUrl } : null);
-
-                          // 2. Persist in background (fire and forget from UI perspective, handle error)
-                          usersApi.updateProfile({ avatar_url: newAvatarUrl })
-                            .catch((err) => {
-                              // Revert on error
-                              setProfile(previousProfile);
-                              handleError(err, toast.error, 'Perfil.regenerateAvatar');
-                            });
-                        }}
-                        title="Generar aleatorio"
-                        disabled={loading}
-                      >
-                        <span className="text-xs">🎲</span>
-                      </Button>
 
                       {/* Upload Custom */}
                       <div className="relative">
@@ -475,11 +423,23 @@ export function Perfil() {
               </CardContent>
             </Card>
 
-            {/* Modo Alerta por Zonas */}
-            <AlertZoneStatusSection />
-
-            {/* Notificaciones */}
-            <NotificationSettingsSection />
+            {/* Configuración de Alertas (Enlace a nueva página) */}
+            <Link to="/perfil/configuracion">
+              <Card className="bg-card border-border hover:border-neon-green/50 transition-colors group cursor-pointer">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-full bg-neon-green/10 flex items-center justify-center text-neon-green">
+                      <Bell size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold group-hover:text-neon-green transition-colors">Configuración General</h3>
+                      <p className="text-sm text-muted-foreground">Zonas, notificaciones y más</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-neon-green transition-colors" />
+                </CardContent>
+              </Card>
+            </Link>
 
             {/* CTA Crear Reporte */}
             <Card className="bg-card border-border border-neon-green/20">

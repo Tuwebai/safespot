@@ -3,7 +3,16 @@
  * Centrally managed to allow easy style changes (e.g., switching from Bottts to Notionists).
  */
 
-export const getAvatarUrl = (seed: string | null | undefined): string => {
+export const getAvatarUrl = (seed: string | null | undefined, forceShow: boolean = false): string => {
+    // Check if user wants to hide public avatar
+    // forceShow is used for settings page/preview
+    const isHidden = !forceShow && typeof window !== 'undefined' && localStorage.getItem('safespot_hide_avatar') === 'true';
+
+    if (isHidden) {
+        // Return a generic neutral avatar
+        return `https://api.dicebear.com/9.x/notionists/svg?seed=hidden-user&backgroundColor=d1d5db&backgroundType=solid`;
+    }
+
     // Fallback for missing seed
     const safeSeed = seed || 'default-avatar';
 

@@ -429,6 +429,11 @@ export function SafeSpotMapClient({
     isSearching,
     activateZoneType: externalActivateZoneType
 }: SafeSpotMapProps) {
+    // --- LOAD SAVED SETTINGS ---
+    const mapStyle = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_style') || 'streets') : 'streets';
+    const autoCenterEnabled = typeof window !== 'undefined' ? (localStorage.getItem('safespot_auto_center') !== 'false') : true; // Default true
+    const cleanMap = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_density') === 'true') : false;
+
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
     const { zones, saveZone } = useUserZones()
     const hasCenteredRef = useRef(false)
@@ -509,8 +514,8 @@ export function SafeSpotMapClient({
             console.error('[Map] Settings fetch failed', e)
         }
 
-        // 4. Browser Geolocation
-        if ('geolocation' in navigator && isMountedRef.current) {
+        // 4. Browser Geolocation (Only if auto-center is enabled or no priority zones)
+        if (autoCenterEnabled && 'geolocation' in navigator && isMountedRef.current) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
                     // Double check component is still mounted
@@ -664,11 +669,29 @@ export function SafeSpotMapClient({
                 <ZoneMarkers />
 
                 <TileLayer
-                    attribution='&copy; CARTO'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png"
+                    attribution={mapStyle === 'streets' ? '&copy; CARTO' : '&copy; Esri'}
+                    url={
+                        mapStyle === 'satellite'
+                            ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                            : mapStyle === 'hybrid'
+                                ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png"
+                    }
                 />
 
-                <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
+                {mapStyle === 'hybrid' && (
+                    <TileLayer
+                        attribution="&copy; Esri"
+                        url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                        zIndex={100}
+                    />
+                )}
+
+                <MarkerClusterGroup
+                    chunkedLoading
+                    maxClusterRadius={cleanMap ? 80 : 60}
+                    disableClusteringAtZoom={cleanMap ? undefined : 17}
+                >
                     {validReports.map((report) => (
                         <Marker
                             key={report.id}

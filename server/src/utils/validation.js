@@ -21,6 +21,13 @@ export function validateAnonymousId(anonymousId) {
 }
 
 /**
+ * Generic UUID validator (non-throwing)
+ */
+export function isValidUuid(id) {
+  return typeof id === 'string' && uuidValidate(id);
+}
+
+/**
  * Validates geographic coordinates strictly
  * Rules:
  * - Must be typeof 'number'

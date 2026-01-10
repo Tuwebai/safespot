@@ -142,11 +142,12 @@ class RealtimeEvents extends EventEmitter {
     /**
      * Emit a vote/like update
      * @param {string} type - 'report' or 'comment'
-     * @param {string} id
-     * @param {object} updates
+     * @param {string} id - The ID of the item being liked
+     * @param {object} updates - The updates object
      * @param {string} [originClientId]
+     * @param {string} [reportId] - ONLY for comments, to route correctly to report stream
      */
-    emitVoteUpdate(type, id, updates, originClientId) {
+    emitVoteUpdate(type, id, updates, originClientId, reportId) {
         if (type === 'report') {
             this.broadcast(`report-update:${id}`, { ...updates, originClientId });
             this.broadcast('global-report-update', {
@@ -156,9 +157,42 @@ class RealtimeEvents extends EventEmitter {
                 originClientId
             });
         } else if (type === 'comment') {
+            // DEPRECATED for likes, but kept for general updates:
             this.broadcast(`comment-update:${id}`, { ...updates, originClientId });
+
+            // NEW Atomic Routing (if reportId provided):
+            if (reportId) {
+                this.broadcast(`comment-update:${reportId}`, {
+                    id,
+                    ...updates,
+                    originClientId
+                });
+            }
         }
-        // console.log(`[Realtime] Broadcasted vote update for ${type} ${id}`);
+    }
+
+    /**
+     * Emit a comment like/unlike (Atomic Delta)
+     * @param {string} reportId
+     * @param {string} commentId
+     * @param {number} delta - +1 or -1
+     * @param {string} originClientId
+     */
+    emitCommentLike(reportId, commentId, delta, originClientId) {
+        this.broadcast(`comment-update:${reportId}`, {
+            id: commentId,
+            delta,
+            isLikeDelta: true,
+            originClientId
+        });
+
+        // Also broadcast to comment-specific channel for any direct listeners
+        this.broadcast(`comment-update:${commentId}`, {
+            id: commentId,
+            delta,
+            isLikeDelta: true,
+            originClientId
+        });
     }
 
     /**

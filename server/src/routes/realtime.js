@@ -40,11 +40,20 @@ router.get('/comments/:reportId', (req, res) => {
         });
     };
 
-    const handleCommentUpdate = ({ comment, originClientId }) => {
+    const handleCommentUpdate = (data) => {
+        const { comment, id, originClientId, ...rest } = data;
+
+        // SSE Contract:
+        // id: Target entity ID
+        // partial: Object with updated fields
+        // originClientId: for echo suppression
+        // ...deltas: for atomic updates
+
         stream.send('comment-update', {
-            id: comment.id,
-            partial: comment,
-            originClientId
+            id: id || comment?.id,
+            partial: comment || (Object.keys(rest).length > 0 ? rest : null),
+            originClientId,
+            ...rest // Keep for deltas like isLikeDelta
         });
     };
 

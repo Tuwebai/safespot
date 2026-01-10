@@ -202,7 +202,8 @@ export const EnhancedComment = memo(function EnhancedComment({
 
   const handleLike = () => {
     // Delegate entirely to parent mutation (which handles optimistic UI)
-    onLikeChange?.(comment.id, !comment.liked_by_me, 0)
+    // Pass CURRENT like state so mutation knows which way to toggle
+    onLikeChange?.(comment.id, !!comment.liked_by_me, 0)
   }
 
   const isThread = comment.is_thread === true

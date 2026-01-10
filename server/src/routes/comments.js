@@ -14,6 +14,7 @@ import { NotificationService } from '../utils/notificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { extractMentions } from '../utils/mentions.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
+import { isValidUuid } from '../utils/validation.js';
 
 const router = express.Router();
 
@@ -28,6 +29,23 @@ router.get('/:reportId', async (req, res) => {
     const { reportId } = req.params;
     const anonymousId = req.headers['x-anonymous-id'];
     const { page, limit } = req.query;
+
+    // Graceful handling for temp IDs (Optimistic UI)
+    if (reportId.startsWith('temp-') || !isValidUuid(reportId)) {
+      return res.json({
+        success: true,
+        data: [],
+        count: 0,
+        pagination: {
+          page: 1,
+          limit: Math.min(50, parseInt(limit, 10) || 20),
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false
+        }
+      });
+    }
 
     // Parse pagination parameters with defaults and validation
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -631,7 +649,7 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) 
     // Verify comment exists
     const { data: comment, error: commentError } = await supabase
       .from('comments')
-      .select('id, upvotes_count')
+      .select('id, upvotes_count, report_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -704,12 +722,15 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) 
         logError(err, { context: 'notifyLike.comment', commentId: id });
       });
 
-      // REALTIME: Broadcast comment like update
+      // REALTIME: Broadcast comment like update (Atomic Delta)
       try {
         const clientId = req.headers['x-client-id'];
-        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 }, clientId);
+        realtimeEvents.emitCommentLike(comment.report_id, id, 1, clientId);
+
+        // Backward compatibility for generic listeners
+        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 }, clientId, comment.report_id);
       } catch (err) {
-        logError(err, { context: 'realtimeEvents.emitVoteUpdate.commentLike', commentId: id });
+        logError(err, { context: 'realtimeEvents.emitCommentLike.commentLike', commentId: id });
       }
 
       return res.json({
@@ -769,7 +790,7 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
     // Verify comment exists
     const { data: comment, error: commentError } = await supabase
       .from('comments')
-      .select('id, upvotes_count')
+      .select('id, upvotes_count, report_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -821,11 +842,15 @@ router.delete('/:id/like', requireAnonymousId, async (req, res) => {
 
     const finalCount = updatedComment?.upvotes_count || Math.max(0, comment.upvotes_count - 1);
 
-    // REALTIME: Broadcast comment unlike update
+    // REALTIME: Broadcast comment unlike update (Atomic Delta)
     try {
-      realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: finalCount });
+      const clientId = req.headers['x-client-id'];
+      realtimeEvents.emitCommentLike(comment.report_id, id, -1, clientId);
+
+      // Backward compatibility
+      realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: finalCount }, clientId, comment.report_id);
     } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitVoteUpdate.commentUnlike', commentId: id });
+      logError(err, { context: 'realtimeEvents.emitCommentLike.commentUnlike', commentId: id });
     }
 
     res.json({

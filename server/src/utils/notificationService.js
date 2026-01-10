@@ -96,7 +96,6 @@ export const NotificationService = {
                         $5,
                         $5
                     FROM unique_recipients
-                    FROM unique_recipients
                     RETURNING *
                 ),
                 updated_settings AS (
@@ -277,7 +276,6 @@ export const NotificationService = {
                     'report',
                     $5,
                     $5
-                FROM eligible_recipients
                 FROM eligible_recipients
                 RETURNING *
             `, [report.category, report.anonymous_id, report.latitude, report.longitude, report.id]);
@@ -591,28 +589,12 @@ export const NotificationService = {
                     reportId: owner.report_id
                 });
 
-                // 4b. Public Broadcast (to report viewers - for Realtime Counters)
+                // 4b. Public Broadcast (REMOVED: Handled on-site by action routes to avoid duplication)
+                /*
                 if (targetType === 'report') {
-                    // Updates the report view (like count)
-                    realtimeEvents.emit(`report-update:${targetId}`, {
-                        type: 'stats-update',
-                        reportId: targetId
-                    });
-
-                    // Broadcast to Global Feed (Home Page Counters)
-                    realtimeEvents.emit('global-report-update', {
-                        type: 'stats-update',
-                        reportId: targetId
-                    });
-                } else if (targetType === 'comment' && owner.report_id) {
-                    // Updates the comment list (like count on comment)
-                    // We treat it as 'comment-update' so the frontend refreshes the list
-                    realtimeEvents.emit(`comment-update:${owner.report_id}`, {
-                        commentId: targetId,
-                        reportId: owner.report_id,
-                        action: 'like'
-                    });
+                    ...
                 }
+                */
 
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
