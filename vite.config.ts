@@ -11,7 +11,8 @@ export default defineConfig({
       strategies: 'injectManifest', // Use custom SW
       srcDir: 'src',
       filename: 'sw.ts', // Source file is now TS
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // Manual update flow
+      injectRegister: null, // We register manually in main.tsx
       includeAssets: ['favicon.ico', 'robots.txt'],
       devOptions: {
         enabled: true,
@@ -62,6 +63,10 @@ export default defineConfig({
   },
   server: {
     port: 5174,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

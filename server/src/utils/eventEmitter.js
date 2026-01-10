@@ -8,6 +8,8 @@ class RealtimeEvents extends EventEmitter {
     constructor() {
         super();
         this.setMaxListeners(100); // Allow many concurrent SSE connections
+        this.instanceId = Math.random().toString(36).substring(7);
+        console.log(`[RealtimeEvents] Instance created: ${this.instanceId}`);
     }
 
     /**

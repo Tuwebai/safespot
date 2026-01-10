@@ -25,7 +25,10 @@ import {
     MessageSquare,
     ChevronDown,
     Reply,
-    Trash2
+    Trash2,
+    SmilePlus,
+    Pin,
+    Star
 } from 'lucide-react';
 
 import {
@@ -202,7 +205,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     }, [room.id]);
 
     const handleSend = async () => {
-        if ((!message.trim() && !selectedFile) || sendMessageMutation.isPending) return;
+        if (!message.trim() && !selectedFile) return;
 
         try {
             const contentToSend = message;
@@ -380,7 +383,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                 {msg.type === 'image' ? (
                                                     <div className={`p-1.5 rounded-lg overflow-hidden relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
                                                         {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                        <DropdownMenu>
+                                                        <DropdownMenu modal={false}>
                                                             <DropdownMenuTrigger asChild>
                                                                 <button
                                                                     type="button"
@@ -393,16 +396,29 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                     <ChevronDown className="w-4 h-4 mt-1" />
                                                                 </button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-40">
-                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)}>
-                                                                    <Reply className="w-4 h-4 mr-2" /> Responder
+                                                            <DropdownMenuContent
+                                                                align={isMe(msg) ? 'end' : 'start'}
+                                                                sideOffset={5}
+                                                                className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                                                            >
+                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                    <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <SmilePlus className="w-4 h-4 mr-3 opacity-50" /> Reaccionar
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <Pin className="w-4 h-4 mr-3 opacity-50" /> Fijar
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <Star className="w-4 h-4 mr-3 opacity-50" /> Destacar
                                                                 </DropdownMenuItem>
                                                                 {isMe(msg) && (
                                                                     <DropdownMenuItem
-                                                                        className="text-destructive focus:text-destructive"
+                                                                        className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
                                                                         onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
                                                                     >
-                                                                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                                                                        <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
                                                                     </DropdownMenuItem>
                                                                 )}
                                                             </DropdownMenuContent>
@@ -457,7 +473,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                 ) : (
                                                     <div className={`px-3 py-2 rounded-lg relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
                                                         {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                        <DropdownMenu>
+                                                        <DropdownMenu modal={false}>
                                                             <DropdownMenuTrigger asChild>
                                                                 <button
                                                                     type="button"
@@ -470,16 +486,29 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                     <ChevronDown className="w-4 h-4 mt-1" />
                                                                 </button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-40">
-                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)}>
-                                                                    <Reply className="w-4 h-4 mr-2" /> Responder
+                                                            <DropdownMenuContent
+                                                                align={isMe(msg) ? 'end' : 'start'}
+                                                                sideOffset={5}
+                                                                className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                                                            >
+                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                    <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <SmilePlus className="w-4 h-4 mr-3 opacity-50" /> Reaccionar
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <Pin className="w-4 h-4 mr-3 opacity-50" /> Fijar
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
+                                                                    <Star className="w-4 h-4 mr-3 opacity-50" /> Destacar
                                                                 </DropdownMenuItem>
                                                                 {isMe(msg) && (
                                                                     <DropdownMenuItem
-                                                                        className="text-destructive focus:text-destructive"
+                                                                        className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
                                                                         onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
                                                                     >
-                                                                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                                                                        <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
                                                                     </DropdownMenuItem>
                                                                 )}
                                                             </DropdownMenuContent>
@@ -503,7 +532,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                             <span className="inline-block w-14 h-3" aria-hidden="true"></span>
                                                         </span>
 
-                                                        <span className="absolute bottom-[-4px] right-0 flex items-center gap-1 select-none">
+                                                        <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
                                                             <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                 {msg.created_at ? (() => {
                                                                     const d = new Date(msg.created_at);
@@ -627,7 +656,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             size="icon"
                             className={`text-muted-foreground hover:text-foreground shrink-0 ${previewUrl ? 'text-primary' : ''}`}
                             onClick={() => fileInputRef.current?.click()}
-                            disabled={sendMessageMutation.isPending}
                         >
                             <ImageIcon className="h-5 w-5" />
                         </Button>
@@ -638,12 +666,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             placeholder={previewUrl ? "Añadir leyenda..." : "Escribí un mensaje..."}
                             className="bg-muted border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/50"
-                            disabled={sendMessageMutation.isPending}
                         />
 
                         <Button
                             onClick={handleSend}
-                            disabled={(!message.trim() && !selectedFile) || sendMessageMutation.isPending}
+                            disabled={!message.trim() && !selectedFile}
                             className="shrink-0 rounded-xl"
                         >
                             <Send className="h-4 w-4" />

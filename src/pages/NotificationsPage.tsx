@@ -147,9 +147,10 @@ export default function NotificationsPage() {
                         <Button
                             size="sm"
                             onClick={() => subscribe()}
+                            disabled={loading}
                             className="neon-glow bg-neon-green text-dark-bg hover:bg-neon-green/90 font-bold whitespace-nowrap w-full sm:w-auto"
                         >
-                            Activar Ahora
+                            {loading ? 'Activando...' : 'Activar Ahora'}
                         </Button>
                     </CardContent>
                 </Card>

@@ -3,6 +3,7 @@ import { requireAnonymousId } from '../utils/validation.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { logError } from '../utils/logger.js';
 import { DB } from '../utils/db.js';
+import { NOTIFICATIONS } from '../config/constants.js';
 
 // Router triggers restart
 const router = express.Router();
@@ -96,7 +97,7 @@ router.get('/settings', requireAnonymousId, async (req, res) => {
             const insertResult = await db.query(`
                 INSERT INTO notification_settings 
                 (anonymous_id, proximity_alerts, report_activity, similar_reports, radius_meters, max_notifications_per_day)
-                VALUES ($1, false, false, false, 1000, 5)
+                VALUES ($1, false, false, false, 1000, ${NOTIFICATIONS.DEFAULT_MAX_NOTIFICATIONS_PER_DAY})
                 ON CONFLICT (anonymous_id) DO NOTHING
                 RETURNING *
             `, [anonymousId]);

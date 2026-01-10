@@ -100,6 +100,7 @@ router.post('/', async (req, res) => {
     if (!anonymousId) return res.status(400).json({ error: 'Anonymous ID required' });
 
     try {
+        console.log(`[Chats] Using RealtimeEvents Instance: ${realtimeEvents.instanceId}`);
         let conversationId;
         let participantB = recipient_id;
 
@@ -362,13 +363,21 @@ router.post('/:roomId/messages', async (req, res) => {
                     if (subs && subs.length > 0) {
                         const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
                         const senderResult = await queryWithRLS(anonymousId, 'SELECT alias FROM anonymous_users WHERE anonymous_id = $1', [anonymousId]);
-                        const roomResult = await queryWithRLS(anonymousId, 'SELECT report_id FROM conversations WHERE id = $1', [roomId]);
+
+                        // FIX: Fetch report title for notification context
+                        const roomResult = await queryWithRLS(anonymousId, `
+                            SELECT c.report_id, r.title as report_title 
+                            FROM conversations c
+                            LEFT JOIN reports r ON c.report_id = r.id 
+                            WHERE c.id = $1
+                        `, [roomId]);
 
                         const payload = createChatNotificationPayload({
                             senderAlias: senderResult.rows[0]?.alias || 'Alguien',
                             messageContent: type === 'image' ? '📷 Foto enviada' : content,
                             roomId,
-                            reportId: roomResult.rows[0]?.report_id
+                            reportId: roomResult.rows[0]?.report_id,
+                            reportTitle: roomResult.rows[0]?.report_title
                         });
 
                         await sendBatchNotifications(

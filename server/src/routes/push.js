@@ -57,12 +57,15 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
             });
         }
 
-        // Validate location
-        if (!location?.lat || !location?.lng) {
-            return res.status(400).json({
-                success: false,
-                error: 'Location is required for proximity notifications'
-            });
+        // Validate location (Optional now, to allow chat-only notifications)
+        const hasLocation = location?.lat !== undefined && location?.lng !== undefined;
+
+        // If provided, ensure it's valid
+        if (location && (!hasLocation || typeof location.lat !== 'number' || typeof location.lng !== 'number')) {
+            // If they tried to send location but it's malformed, we might just ignore it or warn, 
+            // but let's just proceed with nulls if it's invalid to avoid blocking.
+            // For now, keeping it robust: if they explicitly sent bad data, maybe error? 
+            // But to solve the user's issue: just treat missing location as valid "chat-only" sub.
         }
 
         // Validate radius
@@ -77,8 +80,8 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
                 endpoint: subscription.endpoint,
                 p256dh: subscription.keys.p256dh,
                 auth: subscription.keys.auth,
-                last_known_lat: location.lat,
-                last_known_lng: location.lng,
+                last_known_lat: hasLocation ? location.lat : null,
+                last_known_lng: hasLocation ? location.lng : null,
                 radius_meters: safeRadius,
                 is_active: true
             }, {

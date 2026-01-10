@@ -220,7 +220,7 @@ router.get('/user/:anonymousId', (req, res) => {
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    console.log(`[SSE] Client connected for user notifications ${anonymousId}`);
+    console.log(`[SSE] Client connected for user notifications ${anonymousId} (Events ID: ${realtimeEvents.instanceId})`);
 
     stream.send('connected', { anonymousId });
     stream.startHeartbeat(2000);

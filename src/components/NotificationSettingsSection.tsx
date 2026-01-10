@@ -7,6 +7,7 @@ import { Bell, MapPin, Shield, Zap, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 export function NotificationSettingsSection() {
     const [settings, setSettings] = useState<NotificationSettings | null>(null);
@@ -16,7 +17,8 @@ export function NotificationSettingsSection() {
     const [permissionStatus, setPermissionStatus] = useState<PermissionState>('prompt');
     const [locationName, setLocationName] = useState<string | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const { success, error } = useToast();
+    const { success, error, toast } = useToast();
+    const { isSubscribed, subscribe, updateServiceLocation } = usePushNotifications();
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -57,6 +59,22 @@ export function NotificationSettingsSection() {
 
         const newVal = !settings[key];
         const updated = { ...settings, [key]: newVal };
+
+        // Logic specific to Proximity Alerts
+        if (key === 'proximity_alerts' && newVal === true) {
+            // 1. Ensure Push is Enabled
+            if (!isSubscribed) {
+                // We don't block on subscribe, but if it fails user sees error from hook
+                subscribe();
+            }
+
+            // 2. Ensure Location is set
+            if (!settings.last_known_lat || !settings.last_known_lng) {
+                // Trigger location prompt immediately
+                handleUpdateLocation();
+                // We don't stop the toggle, we let it turn on, but location prompt appears
+            }
+        }
 
         // Optimistic update
         setSettings(updated);
@@ -113,7 +131,7 @@ export function NotificationSettingsSection() {
                         console.warn('Reverse geocoding failed', e);
                     }
 
-                    // 2. Save everything to backend
+                    // 2. Save everything to backend settings
                     await notificationsApi.updateSettings({
                         lat: latitude,
                         lng: longitude,
@@ -121,7 +139,10 @@ export function NotificationSettingsSection() {
                         province
                     } as any);
 
-                    // 3. Update local state
+                    // 3. Sync with Push Service (so proximity push works)
+                    updateServiceLocation(latitude, longitude);
+
+                    // 4. Update local state
                     setSettings(prev => prev ? {
                         ...prev,
                         last_known_lat: latitude,
@@ -145,7 +166,13 @@ export function NotificationSettingsSection() {
                 if (err.code === err.PERMISSION_DENIED) {
                     setPermissionStatus('denied');
                 }
-                error('No se pudo obtener tu ubicación.');
+                // USER REQUEST: Si tiene ubicación desactivada que no de error, 
+                // pero indique claramente que debe activar.
+                toast({
+                    title: "Ubicación desactivada",
+                    description: "Para recibir alertas cercanas, activá el GPS o permití la ubicación.",
+                    variant: "default"
+                });
                 setSaving(false);
             }
         );
@@ -262,7 +289,6 @@ export function NotificationSettingsSection() {
                     </div>
                 </div>
 
-                {/* Radius Selector */}
                 {/* Radius Selector */}
                 {(settings?.proximity_alerts || settings?.similar_reports) && (
                     <div className="pt-6 border-t border-dark-border space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">

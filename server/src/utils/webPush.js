@@ -252,8 +252,9 @@ export function createActivityNotificationPayload({ type, title, message, report
  * @returns {NotificationPayload}
  */
 export function createChatNotificationPayload(message, room) {
-    const senderAlias = message.sender_alias || 'Alguien';
-    const reportTitle = room.report_title || 'un reporte';
+    const senderAlias = message.senderAlias || message.sender_alias || 'Alguien';
+    // FIX: Allow explicit reportTitle passing or fallback to room object
+    const reportTitle = message.reportTitle || room?.report_title || 'un reporte';
 
     return {
         title: `💬 Nuevo mensaje de @${senderAlias}`,

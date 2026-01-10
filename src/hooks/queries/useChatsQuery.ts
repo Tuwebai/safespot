@@ -84,49 +84,33 @@ export function useChatRooms() {
 
                 if (data.message) {
                     const message = data.message;
+                    /**
+                     * INBOX AUTHORITY
+                     * Updates the list of rooms, moves active room to top,
+                     * and increments unread count safely.
+                     */
+                    // Dirty but effective: Check if we are currently looking at this room
+                    const isActiveRoom = window.location.pathname.includes(convId);
+                    chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
 
-                    // 1. Promote & Patch Room in Inbox (Sidebar)
-                    patchAndPromote(queryClient, CHATS_KEYS.rooms as any, convId, (old: any) => ({
-                        last_message_content: message.content,
-                        last_message_at: message.created_at,
-                        last_message_sender_id: message.sender_id,
-                        unread_count: data.action === 'read' ? 0 : (old?.unread_count || 0) + (message.sender_id !== anonymousId ? 1 : 0)
-                    }));
-
-                    // 2. Patch Individual Messages List (If active)
-                    upsertInList(queryClient, CHATS_KEYS.messages(convId) as any, message);
-
-                    // 3. Patch Room Detail Cache
-                    queryClient.setQueryData(CHATS_KEYS.conversation(convId), (old: any) => ({
-                        ...(old || {}),
-                        last_message_content: message.content,
-                        last_message_at: message.created_at,
-                        last_message_sender_id: message.sender_id,
-                        unread_count: data.action === 'read' ? 0 : (old?.unread_count || 0) + (message.sender_id !== anonymousId ? 1 : 0)
-                    }));
                 } else if (data.action === 'read') {
-                    // Handle read status updates via global channel
-                    patchItem(queryClient, CHATS_KEYS.rooms as any, convId, { unread_count: 0 });
-                    queryClient.setQueryData(CHATS_KEYS.conversation(convId), (old: any) => ({ ...old, unread_count: 0 }));
+                    // Mark as read globally
+                    chatCache.markRoomAsRead(queryClient, convId);
 
-                    // Update messages visibility
+                    // Update messages visibility (Delivery Status)
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
                 } else if (data.action === 'typing') {
-                    // Handle typing status in sidebar/inbox
-                    patchItem(queryClient, CHATS_KEYS.rooms as any, convId, { is_typing: data.isTyping } as any);
-                } else if (data.action === 'message-deleted') {
-                    // 1. Remover de la lista de mensajes si está abierta
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId), (old) => {
-                        return old?.filter(m => m.id !== data.messageId) || [];
+                    // Handle typing status in sidebar/inbox (Direct Patch)
+                    queryClient.setQueryData(CHATS_KEYS.rooms, (old: any) => {
+                        if (!old || !Array.isArray(old)) return old;
+                        return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
                     });
-
-                    // 2. Invalidar para que se recargue el preview en la lista de chats
-                    queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
+                } else if (data.action === 'message-deleted') {
+                    // Not handled in Inbox summary yet
                 }
-
 
             } catch (err) {
                 // console.error('[SSE Global] Error:', err);
@@ -205,22 +189,12 @@ export function useChatMessages(convId: string | undefined) {
 
                 // Process valid message from others OR from other tabs of same user
                 {
-                    // 1. Promote & Patch Room in Inbox (Background sync)
-                    patchAndPromote(queryClient, CHATS_KEYS.rooms as any, convId, {
-                        last_message_content: message.content,
-                        last_message_at: message.created_at,
-                        last_message_sender_id: message.sender_id,
-                        is_typing: false, // Reset typing on message arrival
-                    });
-
-                    // 2. Add message to chat history
-                    upsertInList(queryClient, CHATS_KEYS.messages(convId) as any, message);
-
-                    // 3. Increment unread locally in detail cache (reactive)
-                    queryClient.setQueryData(CHATS_KEYS.conversation(convId), (old: any) => ({
-                        ...old,
-                        unread_count: (old?.unread_count || 0) + (message.sender_id !== anonymousId ? 1 : 0)
-                    }));
+                    /**
+                     * ROOM AUTHORITY
+                     * Only responsibility: Append message to CURRENT thread.
+                     * Does NOT patch the inbox (Room List).
+                     */
+                    chatCache.appendMessage(queryClient, message);
                 }
             } catch (e) { }
         });
@@ -405,11 +379,7 @@ export function useSendMessageMutation() {
             });
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY (Atomic Reordering)
-            patchAndPromote(queryClient, CHATS_KEYS.rooms as any, variables.roomId, {
-                last_message_content: optimisticMessage.content,
-                last_message_at: optimisticMessage.created_at,
-                last_message_sender_id: optimisticMessage.sender_id
-            });
+            chatCache.applyInboxUpdate(queryClient, optimisticMessage, anonymousId || '', true);
 
             // 2. Update Conversation detail cache (last message)
             queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId), (old: any) => ({
@@ -447,12 +417,7 @@ export function useSendMessageMutation() {
             });
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY on success (reconcile)
-            patchAndPromote(queryClient, CHATS_KEYS.rooms as any, variables.roomId, {
-                last_message_content: confirmedMessage.content,
-                last_message_at: confirmedMessage.created_at,
-                last_message_sender_id: confirmedMessage.sender_id,
-                unread_count: 0
-            });
+            chatCache.applyInboxUpdate(queryClient, confirmedMessage, anonymousId || '', true);
         },
 
         onSettled: (_data, _error, variables) => {
@@ -486,16 +451,10 @@ export function useMarkAsReadMutation() {
             const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
             // 1. Patch Global Inbox List (Sidebar)
-            patchItem(queryClient, CHATS_KEYS.rooms as any, roomId, {
-                unread_count: 0,
-                is_typing: false // Clear typing state when marked as read
-            });
+            chatCache.markRoomAsRead(queryClient, roomId);
 
-            // 2. Patch Detail Conversation
-            queryClient.setQueryData(CHATS_KEYS.conversation(roomId), (old: any) => ({
-                ...old,
-                unread_count: 0
-            }));
+            // 2. Patch Detail Conversation (Handled inside markRoomAsRead but explicit check here if needed or redundant)
+            // chatCache.markRoomAsRead already handles detail cache.
 
             // 3. Patch Messages list
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
@@ -524,65 +483,11 @@ export function useMarkAsDeliveredMutation() {
     });
 }
 
-// Helpers
-function patchItem(queryClient: any, queryKey: any[], id: string, patch: any | ((old: any) => any)) {
-    queryClient.setQueriesData({ queryKey }, (oldData: any) => {
-        if (!oldData) return oldData;
-
-        // If it's an array
-        if (Array.isArray(oldData)) {
-            return oldData.map(item => {
-                const itemId = item.id || item.roomId;
-                if (itemId === id) {
-                    const updates = typeof patch === 'function' ? patch(item) : patch;
-                    return { ...item, ...updates };
-                }
-                return item;
-            });
-        }
-        return oldData;
-    });
-}
-
-/**
- * Enterprise Helper: Patches an item and promotes it to the top of the list.
- * Critical for "WhatsApp-Grade" Inbox reordering without refetches.
- */
-function patchAndPromote(queryClient: any, queryKey: any[], id: string, patch: any | ((old: any) => any)) {
-    queryClient.setQueryData(queryKey, (oldData: any) => {
-        if (!oldData || !Array.isArray(oldData)) return oldData;
-
-        const index = oldData.findIndex(item => item.id === id || item.roomId === id);
-        if (index === -1) return oldData;
-
-        const item = oldData[index];
-        const updates = typeof patch === 'function' ? patch(item) : patch;
-        const updatedItem = { ...item, ...updates };
-
-        // 1. Remove from current position
-        const filtered = oldData.filter((_: any, i: number) => i !== index);
-
-        // 2. Insert at index 0
-        return [updatedItem, ...filtered];
-    });
-}
-
-function upsertInList(queryClient: any, queryKey: any[], newItem: any) {
-    queryClient.setQueryData(queryKey, (oldList: any[]) => {
-        if (!oldList) return [newItem];
-
-        const index = oldList.findIndex(item => item.id === newItem.id);
-        if (index > -1) {
-            // Update existing
-            const newList = [...oldList];
-            const existingItem = newList[index];
-            newList[index] = { ...existingItem, ...newItem };
-            return newList;
-        }
-        // Append new
-        return [...oldList, newItem];
-    });
-}
+// Helpers removed - using chatCache
+// function patchItem... (Removed)
+// function patchAndPromote... (Removed)
+// function upsertInList... (Removed)
+import { chatCache } from '../../lib/chatCache';
 
 export const useDeleteMessageMutation = () => {
     const queryClient = useQueryClient();
@@ -610,6 +515,5 @@ export const useDeleteMessageMutation = () => {
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
             queryClient.invalidateQueries({ queryKey: CHATS_KEYS.all });
         }
-
     });
 };

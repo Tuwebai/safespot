@@ -1,340 +1,14 @@
-/**
- * usePushNotifications Hook
- * 
- * Manages Web Push API subscriptions with privacy-first approach.
- * Only requests permission when user explicitly opts in.
- */
+import { useState, useEffect, useCallback } from 'react';
+import { apiRequest } from '../lib/api';
+import { useToast } from '../components/ui/toast/useToast';
 
-import { useState, useCallback, useEffect } from 'react';
-import { useToast } from '@/components/ui/toast';
-import { ensureAnonymousId } from '@/lib/identity';
+const VAPID_PUBLIC_KEY_URL = '/push/vapid-key';
+const SUBSCRIBE_URL = '/push/subscribe';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
-
-// ============================================
-// TYPES
-// ============================================
-
-interface PushStatus {
-    isSupported: boolean;
-    isSubscribed: boolean;
-    permission: NotificationPermission | 'default';
-    radius: number;
-    hasLocation: boolean;
-    isLoading: boolean;
-    error: string | null;
-}
-
-// ============================================
-// HOOK
-// ============================================
-
-export function usePushNotifications() {
-    const toast = useToast();
-    const [status, setStatus] = useState<PushStatus>({
-        isSupported: false,
-        isSubscribed: false,
-        permission: 'default',
-        radius: 500,
-        hasLocation: false,
-        isLoading: true,
-        error: null
-    });
-
-    // Check if push is supported
-    const isSupported = typeof window !== 'undefined'
-        && 'serviceWorker' in navigator
-        && 'PushManager' in window
-        && 'Notification' in window;
-
-
-    // Check current subscription status
-    const checkStatus = useCallback(async () => {
-        try {
-            setStatus(prev => ({ ...prev, isLoading: true, error: null }));
-
-            // 1. Check browser reality
-            const registration = await navigator.serviceWorker.ready;
-            const existingSub = await registration.pushManager.getSubscription();
-
-            // 2. Check server record
-            const anonymousId = ensureAnonymousId();
-            const response = await fetch(`${API_BASE}/api/push/status`, {
-                headers: { 'X-Anonymous-Id': anonymousId }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to check status');
-            }
-
-            const { data } = await response.json();
-
-            // Reconcile: We are only "subscribed" if both browser and server agree.
-            // If browser has a sub but server doesn't know about it, we should re-sync.
-            // If server thinks we have one but browser doesn't, we need to re-subscribe.
-            const isBrowserSubscribed = !!existingSub;
-            const isServerSubscribed = !!data.isSubscribed;
-
-            setStatus(prev => ({
-                ...prev,
-                isSupported: true,
-                isSubscribed: isBrowserSubscribed && isServerSubscribed,
-                permission: Notification.permission,
-                radius: data.radius || 500,
-                hasLocation: data.hasLocation || false,
-                isLoading: false
-            }));
-        } catch (error) {
-            console.error('Error checking push status:', error);
-            setStatus(prev => ({
-                ...prev,
-                isSupported: true,
-                isLoading: false,
-                error: 'Error verificando estado'
-            }));
-        }
-    }, []);
-
-    // ============================================
-    // INITIALIZATION
-    // ============================================
-
-    useEffect(() => {
-        if (!isSupported) {
-            setStatus(prev => ({ ...prev, isSupported: false, isLoading: false }));
-            return;
-        }
-
-        checkStatus();
-    }, [isSupported, checkStatus]);
-
-    // ============================================
-    // SUBSCRIBE
-    // ============================================
-
-    const subscribe = useCallback(async (radius: number = 500) => {
-        if (!isSupported) {
-            toast.error('Tu navegador no soporta notificaciones push');
-            return false;
-        }
-
-        try {
-            setStatus(prev => ({ ...prev, isLoading: true, error: null }));
-
-            // 1. Request notification permission
-            const permission = await Notification.requestPermission();
-            if (permission !== 'granted') {
-                toast.warning('Necesitamos permiso para enviarte alertas');
-                setStatus(prev => ({ ...prev, permission, isLoading: false }));
-                return false;
-            }
-
-            // OPTIMISTIC UPDATE: Permission granted, show as subscribed immediately while initializing in background
-            setStatus(prev => ({
-                ...prev,
-                isSubscribed: true,
-                permission: 'granted',
-                isLoading: false // Stop loading spinner so UI updates "instantly"
-            }));
-
-            // Continue with registration in background...
-            (async () => {
-                try {
-                    // 2. Request geolocation
-                    let location: { lat: number; lng: number } | null = null;
-                    try {
-                        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                                enableHighAccuracy: false,
-                                timeout: 10000,
-                                maximumAge: 300000 // 5 min cache
-                            });
-                        });
-                        location = {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                        };
-                    } catch (geoError) {
-                        // Continue without location if it fails, but better to have it
-                        console.warn('Location failed for push setup', geoError);
-                    }
-
-                    // 3. Wait for service worker (registered by VitePWA)
-                    const registration = await navigator.serviceWorker.ready;
-
-                    if (!registration.active) {
-                        throw new Error('Service Worker no activo. Recarga la página.');
-                    }
-
-                    // 4. Get VAPID public key
-                    const vapidResponse = await fetch(`${API_BASE}/api/push/vapid-key`);
-                    if (!vapidResponse.ok) {
-                        throw new Error('Push no configurado en el servidor');
-                    }
-                    const { publicKey } = await vapidResponse.json();
-
-                    if (!publicKey) throw new Error('VAPID Key is missing');
-
-                    // 5. Check for (and remove) existing subscription to avoid key mismatch
-                    const existingSub = await registration.pushManager.getSubscription();
-                    if (existingSub) {
-                        await existingSub.unsubscribe();
-                    }
-
-                    const subscribeOptions = {
-                        userVisibleOnly: true,
-                        applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource
-                    };
-
-                    // 6. Subscribe to push
-                    const subscription = await registration.pushManager.subscribe(subscribeOptions);
-
-                    // 7. Send subscription to backend
-                    const anonymousId = ensureAnonymousId();
-                    const response = await fetch(`${API_BASE}/api/push/subscribe`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Anonymous-Id': anonymousId
-                        },
-                        body: JSON.stringify({
-                            subscription: subscription.toJSON(),
-                            location,
-                            radius
-                        })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('Error guardando suscripción');
-                    }
-
-                    toast.success('¡Alertas activadas correctamente!');
-
-                    // Final state update (just to confirm data, though UI is already green)
-                    setStatus(prev => ({
-                        ...prev,
-                        hasLocation: !!location,
-                        // Update other fields if needed
-                    }));
-
-                } catch (backgroundError: any) {
-                    console.error('Background subscription failed:', backgroundError);
-
-                    // Handle Brave specific error
-                    const isBrave = (navigator as any).brave !== undefined;
-                    const isAbortError = backgroundError.name === 'AbortError';
-
-                    let errorMsg = 'Error de conexión. Intenta de nuevo.';
-
-                    if (isBrave && isAbortError) {
-                        errorMsg = 'Brave bloqueó las notificaciones. Activá "Servicios de Google para mensajería push" en settings/privacy.';
-                        toast.error(errorMsg);
-                    } else {
-                        toast.error('Hubo un problema activando las alertas. Por favor reintentá.');
-                    }
-
-                    // Revert optimistic update
-                    setStatus(prev => ({
-                        ...prev,
-                        isSubscribed: false,
-                        error: errorMsg
-                    }));
-                }
-            })();
-
-            return true;
-        } catch (error) {
-            console.error('Error starting subscription:', error);
-            const message = error instanceof Error ? error.message : 'Error activando alertas';
-            toast.error(message);
-            setStatus(prev => ({ ...prev, isLoading: false, error: message }));
-            return false;
-        }
-    }, [isSupported, toast]);
-
-    // ============================================
-    // UNSUBSCRIBE
-    // ============================================
-
-    const unsubscribe = useCallback(async () => {
-        try {
-            setStatus(prev => ({ ...prev, isLoading: true }));
-
-            const anonymousId = ensureAnonymousId();
-            await fetch(`${API_BASE}/api/push/subscribe`, {
-                method: 'DELETE',
-                headers: { 'X-Anonymous-Id': anonymousId }
-            });
-
-            toast.success('Alertas desactivadas');
-
-            setStatus(prev => ({
-                ...prev,
-                isSubscribed: false,
-                isLoading: false
-            }));
-
-            return true;
-        } catch (error) {
-            console.error('Error unsubscribing:', error);
-            toast.error('Error desactivando alertas');
-            setStatus(prev => ({ ...prev, isLoading: false }));
-            return false;
-        }
-    }, [toast]);
-
-    // ============================================
-    // UPDATE LOCATION
-    // ============================================
-
-    const updateLocation = useCallback(async () => {
-        if (!status.isSubscribed) return;
-
-        try {
-            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: false,
-                    timeout: 10000,
-                    maximumAge: 300000
-                });
-            });
-
-            const anonymousId = ensureAnonymousId();
-            await fetch(`${API_BASE}/api/push/location`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Anonymous-Id': anonymousId
-                },
-                body: JSON.stringify({
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                })
-            });
-
-            setStatus(prev => ({ ...prev, hasLocation: true }));
-        } catch (error) {
-            console.error('Error updating location:', error);
-        }
-    }, [status.isSubscribed]);
-
-    return {
-        ...status,
-        subscribe,
-        unsubscribe,
-        updateLocation,
-        checkStatus
-    };
-}
-
-// ============================================
-// UTILITIES
-// ============================================
-
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding)
-        .replace(/-/g, '+')
+        .replace(/\-/g, '+')
         .replace(/_/g, '/');
 
     const rawData = window.atob(base64);
@@ -344,4 +18,158 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
         outputArray[i] = rawData.charCodeAt(i);
     }
     return outputArray;
+}
+
+export function usePushNotifications() {
+    const [isSubscribed, setIsSubscribed] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [permission, setPermission] = useState<NotificationPermission>('default');
+
+    // Custom toast context
+    const { success, error } = useToast();
+
+    // Check supported browser
+    const isSupported = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+
+    // Check current status on mount
+    useEffect(() => {
+        if (!isSupported) {
+            setLoading(false);
+            return;
+        }
+
+        const checkSubscription = async () => {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                const subscription = await registration.pushManager.getSubscription();
+
+                setIsSubscribed(!!subscription);
+                setPermission(Notification.permission);
+            } catch (err) {
+                console.error('Error checking subscription:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        checkSubscription();
+    }, [isSupported]);
+
+    const subscribe = useCallback(async () => {
+        if (!isSupported) {
+            error('Tu navegador no soporta notificaciones push.');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // 1. Request Permission
+            const perm = await Notification.requestPermission();
+            setPermission(perm);
+
+            if (perm !== 'granted') {
+                error('Necesitas dar permiso para recibir notificaciones.');
+                setLoading(false);
+                return;
+            }
+
+            // 2. Get VAPID Key
+            const response = await apiRequest<{ publicKey: string }>(VAPID_PUBLIC_KEY_URL);
+            const publicKey = response.publicKey;
+
+            if (!publicKey) throw new Error('No VAPID key available');
+
+            // 3. Subscribe in Browser
+            const registration = await navigator.serviceWorker.ready;
+            const convertedVapidKey = urlBase64ToUint8Array(publicKey);
+
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: convertedVapidKey
+            });
+
+            // 4. Send to Backend
+            // Try to get location, but don't fail subscription if it's denied/unavailable
+            let location = null;
+            try {
+                const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: false,
+                        timeout: 5000
+                    });
+                });
+                location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            } catch (e) {
+                console.warn('Location access denied or error. Subscribing without location (Chat/Activity only).', e);
+                // Proceed with location = null
+            }
+
+            await apiRequest(SUBSCRIBE_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    subscription: subscription,
+                    location: location // Can be null now
+                })
+            });
+
+            setIsSubscribed(true);
+            success('Notificaciones activadas. Ahora recibirás alertas.');
+
+        } catch (err) {
+            console.error('Failed to subscribe:', err);
+            error('No se pudo activar las notificaciones. Intenta de nuevo.');
+        } finally {
+            setLoading(false);
+        }
+    }, [isSupported, success, error]);
+
+    const unsubscribe = useCallback(async () => {
+        setLoading(true);
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            const subscription = await registration.pushManager.getSubscription();
+
+            if (subscription) {
+                await subscription.unsubscribe();
+                // Optionally notify backend to delete/deactivate
+                try {
+                    await apiRequest(SUBSCRIBE_URL, {
+                        method: 'DELETE'
+                    });
+                } catch (e) {
+                    console.warn('Backend unsubscribe failed, but local is done', e);
+                }
+            }
+
+            setIsSubscribed(false);
+            success('Notificaciones desactivadas.');
+        } catch (err) {
+            console.error('Error unsubscribing', err);
+            error('Error al desactivar notificaciones.');
+        } finally {
+            setLoading(false);
+        }
+    }, [success, error]);
+
+    const updateServiceLocation = useCallback(async (lat: number, lng: number) => {
+        if (!isSubscribed) return;
+        try {
+            await apiRequest('/push/location', {
+                method: 'PATCH',
+                body: JSON.stringify({ lat, lng })
+            });
+        } catch (e) {
+            console.error('Failed to update push location', e);
+        }
+    }, [isSubscribed]);
+
+    return {
+        isSupported,
+        isSubscribed,
+        loading,
+        permission,
+        subscribe,
+        unsubscribe,
+        updateServiceLocation
+    };
 }

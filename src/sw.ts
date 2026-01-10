@@ -13,7 +13,7 @@ import { BackgroundSyncPlugin } from 'workbox-background-sync';
 declare let self: ServiceWorkerGlobalScope;
 
 // 1. Tomar el control de los clientes inmediatamente
-self.skipWaiting();
+// self.skipWaiting(); // COMENTADO: Controlado por el usuario via UI
 clientsClaim();
 
 // 2. Limpiar cachés antiguos
@@ -170,7 +170,33 @@ self.addEventListener('push', (event) => {
     };
 
     event.waitUntil(
-        self.registration.showNotification(data.title, options)
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+            .then((clientList) => {
+                // Enterprise Rule: Intelligent Suppression
+                // If the app is open and visible, DO NOT show native push.
+                // The UI (SSE) will handle it, or we send a message to trigger a Toast.
+                const hasVisibleClient = clientList.some(client =>
+                    client.visibilityState === 'visible' &&
+                    client.url.startsWith(self.location.origin) // Same origin safety
+                );
+
+                if (hasVisibleClient) {
+                    console.log('[SW] App is visible - Suppressing native notification');
+
+                    // Optional: Send signal to client in case SSE missed (redundancy)
+                    clientList.forEach(client => {
+                        client.postMessage({
+                            type: 'IN_APP_NOTIFICATION',
+                            payload: data
+                        });
+                    });
+
+                    return; // EXIT: No native notification
+                }
+
+                // App not visible -> Show Native Push
+                return self.registration.showNotification(data.title, options);
+            })
     );
 });
 
@@ -223,31 +249,35 @@ self.addEventListener('notificationclick', (event: any) => {
             .then((windowClients) => {
                 console.log('[SW] Found', windowClients.length, 'window clients');
 
-                // Check if there is already a window/tab open with the target URL
+                // 1. Try to find a client that is ALREADY at the correct URL (Exact Match)
                 for (const client of windowClients) {
                     if (client.url === fullUrl && 'focus' in client) {
                         console.log('[SW] Focusing existing window with exact URL');
-                        return client.focus();
+                        return client.focus().then(() => undefined); // Return void
                     }
                 }
 
-                // Check if there is any window open for this origin to focus and navigate
+                // 2. Try to find any client of our origin to Takeover
                 for (const client of windowClients) {
                     if (client.url.includes(self.location.origin) && 'focus' in client) {
-                        console.log('[SW] Focusing existing window and navigating');
-                        return client.focus().then((c: any) => {
-                            if ('navigate' in c) {
-                                console.log('[SW] Navigating client to:', fullUrl);
-                                return c.navigate(fullUrl);
-                            }
+                        console.log('[SW] Focusing client for Soft Navigation');
+                        return client.focus().then(() => {
+                            // ENTERPRISE FIX: RACE CONDITION
+                            // DO NOT call client.navigate(url). It fails on Android/Samsung often.
+                            // INSTEAD, send a message to the React App to handle routing.
+                            client.postMessage({
+                                type: 'NAVIGATE_TO',
+                                url: fullUrl
+                            });
+                            return undefined; // Return void
                         });
                     }
                 }
 
-                // Otherwise open new window
-                console.log('[SW] Opening new window');
+                // 3. Fallback: Open new window if no client is active
+                console.log('[SW] No active client found, opening new window');
                 if (self.clients.openWindow) {
-                    return self.clients.openWindow(fullUrl);
+                    return self.clients.openWindow(fullUrl).then(() => undefined);
                 }
             })
     );

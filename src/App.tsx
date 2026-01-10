@@ -37,6 +37,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { SEO } from '@/components/SEO'
+import { ServiceWorkerController } from '@/components/ServiceWorkerController'
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
       }}
     >
       <ThemeProvider>
+        <ServiceWorkerController />
         <FirstTimeOnboardingTheme />
         <UpdateNotification />
         <SEO />
@@ -106,7 +108,7 @@ function App() {
           </ChunkErrorBoundary>
         </Layout>
       </ThemeProvider>
-    </BrowserRouter>
+    </BrowserRouter >
   )
 }
 

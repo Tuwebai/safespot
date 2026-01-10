@@ -120,76 +120,78 @@ let cachedId: string | null = null;
  * Resolve identity using multi-layer consensus.
  * Called during app initialization.
  */
+/**
+ * Resolve identity using multi-layer consensus.
+ * Called during app initialization.
+ */
 export async function initializeIdentity(): Promise<string> {
   if (cachedId) return cachedId;
   if (typeof window === 'undefined') return '';
 
-  // 1. Read all layers (with timeout to prevent hang)
-  const timeoutPromise = new Promise<{ l1: string | null, l2: string | null, l3: string | null }>((resolve) => {
-    setTimeout(() => resolve({ l1: null, l2: null, l3: null }), 1000);
+  // 1. FAST PATH: Check Synchronous Layers (L1 & L2)
+  // If we have it in LocalStorage or Cookies, use it IMMEDIATELY.
+  // Do not wait for IndexedDB (which can be slow/blocked).
+  const l1 = localStorage.getItem(L1_KEY);
+  const l2 = getCookie(L2_KEY);
+
+  let winner: string | null = null;
+
+  // Prefer L1, then L2
+  if (l1 && isValidUUID(l1)) {
+    winner = l1.includes('|') ? l1.split('|')[1] : l1;
+  } else if (l2 && isValidUUID(l2)) {
+    winner = l2.includes('|') ? l2.split('|')[1] : l2;
+  }
+
+  // If found in sync layers, we are good to go.
+  // Trigger background sync to L3 (IDB) for redundancy, but don't block.
+  if (winner) {
+    cachedId = winner;
+    // console.log('[Identity] Found existing ID (Sync):', winner);
+
+    // Background sync
+    (async () => {
+      try {
+        const versionedId = `${ID_VERSION}|${winner}`;
+        if (l1 !== winner) localStorage.setItem(L1_KEY, winner);
+        if (l2 !== versionedId) setCookie(L2_KEY, versionedId);
+        await setIDB('current_id', versionedId);
+      } catch (e) { /* ignore */ }
+    })();
+
+    return winner;
+  }
+
+  // 2. SLOW PATH: If not in sync layers, check IndexedDB (L3)
+  console.log('[Identity] Not found in Sync layers, checking IDB...');
+
+  const timeoutPromise = new Promise<string | null>((resolve) => {
+    setTimeout(() => resolve(null), 500); // 500ms max for IDB
   });
 
-  const loadLayersPromise = async () => {
-    const l1 = localStorage.getItem(L1_KEY);
-    const l2 = getCookie(L2_KEY);
-    const l3 = await getIDB('current_id');
-    return { l1, l2, l3 };
-  };
+  const idbPromise = getIDB('current_id');
+  const l3 = await Promise.race([idbPromise, timeoutPromise]);
 
-  const { l1, l2, l3 } = await Promise.race([loadLayersPromise(), timeoutPromise]);
-
-  // 2. Identify candidates (removing version prefix if any)
-  const candidates = [l1, l2, l3]
-    .filter((id): id is string => id !== null && isValidUUID(id))
-    .map(id => id.includes('|') ? id.split('|')[1] : id);
-
-  let winner: string;
-
-  if (candidates.length > 0) {
-    // Consensus: Find the most frequent ID
-    const frequency: Record<string, number> = {};
-    let maxFreq = 0;
-    let fallbackWinner = candidates[0];
-
-    candidates.forEach(id => {
-      frequency[id] = (frequency[id] || 0) + 1;
-      if (frequency[id] > maxFreq) {
-        maxFreq = frequency[id];
-        fallbackWinner = id;
-      }
-    });
-
-    winner = fallbackWinner; // The most persistent ID wins
-    console.log('[Identity] Recovered ID:', winner);
+  if (l3 && isValidUUID(l3)) {
+    winner = l3.includes('|') ? l3.split('|')[1] : l3;
+    console.log('[Identity] Recovered from IDB:', winner);
   } else {
-    // Absolute loss: Generate new
+    // 3. GENERATION: Absolute loss, generate new
     winner = generateUUID();
     console.log('[Identity] Generated NEW ID:', winner);
   }
 
-  // 3. Normalize and Broadcast (Synchronization) - Force Restore to all layers
-  // This ensures if LocalStorage was cleared but Cookie remained, LocalStorage gets fixed.
+  // 4. Persist Winner to all layers
   cachedId = winner;
   const versionedId = `${ID_VERSION}|${winner}`;
 
   try {
-    // FORCE WRITE TO ALL LAYERS immediately
-    if (l1 !== winner) localStorage.setItem(L1_KEY, winner);
-    if (l2 !== versionedId) setCookie(L2_KEY, versionedId);
-    // Always try to write DB to be safe
-    setIDB('current_id', versionedId).catch(e => console.error('[Identity] IDB Write failed', e));
-
-    // Double check: If we just generated a new one, ensure it sticks
-    if (candidates.length === 0) {
-      localStorage.setItem(L1_KEY, winner);
-      setCookie(L2_KEY, versionedId);
-    }
-
+    localStorage.setItem(L1_KEY, winner);
+    setCookie(L2_KEY, versionedId);
+    setIDB('current_id', versionedId).catch(() => { });
   } catch (e) {
-    console.debug('[Identity] Failed to sync all layers', e);
+    console.error('[Identity] Write serialization failed', e);
   }
-
-
 
   return winner;
 }
