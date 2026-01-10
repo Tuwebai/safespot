@@ -109,23 +109,21 @@ self.addEventListener('message', (event) => {
 // Serve index.html for all navigation requests, EXCEPT API and static assets
 // This fixes "Router is responding to /api/..." issues
 const navigationRoute = new NavigationRoute(
-    async (params) => {
-        try {
-            // Simple Network Validation for navigation
-            // Try to fetch functionality or fallback to index.html if offline
-            // For standard SPA PWA:
-            return fetch(params.request).catch(() => {
-                return caches.match('/index.html').then(response => {
-                    return response || new Response('Offline', { status: 503 });
-                });
-            });
-        } catch (error) {
-            return fetch(params.request);
-        }
+    async ({ request }) => {
+        // ALWAYS try to serve from cache first for navigation (SPA)
+        // This avoids redirect loops from netlify/server when checking network
+        const cache = await caches.open('safespot-precached'); // standard workbox cache name
+        const cachedResponse = await cache.match('/index.html');
+        if (cachedResponse) return cachedResponse;
+
+        // Fallback to network only if not in cache (construction phase)
+        return fetch(request).catch(() => {
+            return new Response('Offline', { status: 503 });
+        });
     }, {
     denylist: [
         /^\/api\//,       // Exclude API
-        /\.[a-z]+$/i,     // Exclude files with extensions
+        /\.[a-z]+$/i,     // Exclude files with extensions (images, js, css)
     ],
 }
 );
@@ -206,7 +204,21 @@ self.addEventListener('notificationclick', (event: any) => {
 
     // 1. Handle "Dismiss" action (Entendido) - ONLY if explicitly clicked
     if (event.action === 'dismiss' || event.action === 'mark-read') {
-        console.log('[SW] Dismiss action - closing notification only');
+        console.log('[SW] Dismiss/Read action');
+
+        if (event.action === 'mark-read' && event.notification.data?.roomId) {
+            // FIRE AND FORGET: Mark as read via API
+            const roomId = event.notification.data.roomId;
+            const anonymousId = event.notification.data.anonymousId; // Should be in payload
+
+            if (anonymousId) {
+                fetch(`/api/chats/${roomId}/read`, {
+                    method: 'PATCH',
+                    headers: { 'x-anonymous-id': anonymousId }
+                }).catch(e => console.error('[SW] Mark read failed:', e));
+            }
+        }
+
         return;
     }
 
@@ -232,6 +244,12 @@ self.addEventListener('notificationclick', (event: any) => {
             url = event.notification.data.url;
         }
         console.log('[SW] Navigating to profile:', url);
+    } else if (event.action === 'open-chat' || (event.action === '' && event.notification.data?.roomId)) {
+        // Chat notification click
+        if (event.notification.data?.roomId) {
+            url = `/mensajes/${event.notification.data.roomId}`;
+        }
+        console.log('[SW] Navigating to chat room:', url);
     } else if (event.action === '') {
         // Body click - use data.url if present (default logic), or fallback based on data
         if (!event.notification.data?.url && event.notification.data?.reportId) {

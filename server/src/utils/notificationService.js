@@ -232,10 +232,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${report.anonymous_id}`, {
                     type: type,
-                    title,
-                    message,
-                    reportId,
-                    entityId
+                    notification // SSOT: Send the full object from DB (contains .id)
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
@@ -368,7 +365,7 @@ export const NotificationService = {
             if (parent.notifications_today >= parent.max_notifications_per_day) return;
 
             // 2. Create Notification
-            await this.createNotification({
+            const notification = await this.createNotification({
                 anonymous_id: parent.anonymous_id,
                 type: 'activity',
                 title: '↩️ Respondieron a tu comentario',
@@ -486,7 +483,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${targetAnonymousId}`, {
                     type: 'mention',
-                    notification
+                    notification // SSOT: Includes .id for deduplication
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);

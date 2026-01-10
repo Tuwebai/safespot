@@ -5,8 +5,45 @@ import supabase, { supabaseAdmin } from '../config/supabase.js';
 import { NotificationService } from './notificationService.js';
 
 /**
- * GAMIFICATION CORE - Single Source of Truth
+ * Helper: Smart Metric Selector
+ * Handles aliases, category-based fallbacks and cumulative logic.
  */
+function getMetricValue(badge, metrics) {
+    const metricAliases = {
+        'reports_created': metrics.reports_created,
+        'reports': metrics.reports_created,
+        'count': metrics.reports_created,
+        'comments_created': metrics.comments_created,
+        'comments': metrics.comments_created,
+        'total_comments': metrics.comments_created,
+        'likes_received': metrics.likes_received,
+        'likes': metrics.likes_received,
+        'total_likes': metrics.likes_received,
+        'activity_days': metrics.activity_days,
+        'days': metrics.activity_days,
+        'votes_cast': metrics.votes_cast,
+        'votes': metrics.votes_cast,
+        'total_votes': metrics.votes_cast
+    };
+
+    // 1. Try direct or alias
+    let val = metrics[badge.target_metric];
+    if (val === undefined) val = metricAliases[badge.target_metric];
+
+    // 2. Category Fallback
+    if (val === undefined) {
+        const fallbacks = {
+            'reports': metrics.reports_created,
+            'comments': metrics.comments_created,
+            'social': metrics.likes_received,
+            'days': metrics.activity_days,
+            'votes': metrics.votes_cast
+        };
+        val = fallbacks[badge.category];
+    }
+
+    return val || 0;
+}
 
 /**
  * Calculate all metrics for a user in real-time (Strict action-based)
@@ -125,7 +162,7 @@ export async function calculateUserGamification(anonymousId, readOnly = false) {
 
         if (!readOnly) {
             for (const badge of allBadges) {
-                const currentVal = metrics[badge.target_metric] || 0;
+                const currentVal = getMetricValue(badge, metrics);
                 const requiredVal = badge.threshold;
                 const meetsThreshold = requiredVal > 0 && currentVal >= requiredVal;
 
@@ -191,10 +228,9 @@ export async function calculateUserGamification(anonymousId, readOnly = false) {
         let maxPercent = -1;
 
         const badgesWithStatus = allBadges.map(badge => {
-            // Metrics Logic
-            const currentMetric = metrics[badge.target_metric] || 0;
-            const requiredMetric = badge.threshold;
             const isObtained = obtainedMap.has(badge.id);
+            const currentMetric = getMetricValue(badge, metrics);
+            const requiredMetric = badge.threshold;
 
             const progress = {
                 current: Math.min(requiredMetric, currentMetric),
@@ -214,7 +250,7 @@ export async function calculateUserGamification(anonymousId, readOnly = false) {
                         rarity: badge.rarity,
                         points: badge.points,
                         metric_label: badge.category_label,
-                        missing: requiredMetric - currentMetric,
+                        missing: Math.max(0, requiredMetric - currentMetric),
                         progress
                     };
                 }

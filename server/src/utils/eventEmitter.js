@@ -128,15 +128,50 @@ class RealtimeEvents extends EventEmitter {
     /**
      * Emit a global report deletion event
      * @param {string} reportId
+     * @param {string} category
+     * @param {string} status
      * @param {string} [originClientId]
      */
-    emitReportDelete(reportId, originClientId) {
+    emitReportDelete(reportId, category, status, originClientId) {
         this.broadcast('global-report-update', {
             type: 'delete',
             reportId,
+            category,
+            status,
             originClientId
         });
         console.log(`[Realtime] Broadcasted report delete ${reportId}`);
+    }
+
+    /**
+     * Emit a chat message
+     * @param {string} roomId
+     * @param {object} message
+     * @param {string} originClientId
+     */
+    emitChatMessage(roomId, message, originClientId) {
+        // Broad message for all participants
+        this.broadcast(`chat:${roomId}`, { message, originClientId });
+        console.log(`[Realtime] Broadcasted chat message for room ${roomId}`);
+    }
+
+    /**
+     * Emit a chat status update (read/delivered/typing)
+     * @param {string} type - 'read', 'delivered', 'typing'
+     * @param {string} roomId
+     * @param {object} payload
+     */
+    emitChatStatus(type, roomId, payload) {
+        this.broadcast(`chat-${type}:${roomId}`, payload);
+    }
+
+    /**
+     * Emit a targeted chat update for a specific user
+     * @param {string} userId
+     * @param {object} payload
+     */
+    emitUserChatUpdate(userId, payload) {
+        this.broadcast(`user-chat-update:${userId}`, payload);
     }
 
     /**

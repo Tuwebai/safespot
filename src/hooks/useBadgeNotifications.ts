@@ -67,7 +67,7 @@ function markBadgeAsNotified(badgeCode: string) {
 }
 
 // Play badge unlock sound
-function playBadgeSound() {
+export function playBadgeSound() {
   if (!isAudioEnabled()) {
     return // Audio not enabled yet, silent fail
   }

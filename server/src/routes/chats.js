@@ -347,9 +347,27 @@ router.post('/:roomId/messages', async (req, res) => {
             throw dbError;
         }
 
-        // 5. Native Push Notifications (Async)
+        // 5. NOTIFICAR INMEDIATAMENTE (Messenger-grade speed)
         (async () => {
             try {
+                const broadcastMessage = {
+                    ...newMessage,
+                    is_optimistic: false
+                };
+
+                // 1. Notify participants for sidebar / list updates
+                members.forEach(member => {
+                    realtimeEvents.emitUserChatUpdate(member.user_id, {
+                        roomId,
+                        message: broadcastMessage,
+                        originClientId: req.headers['x-client-id']
+                    });
+                });
+
+                // 2. Broadcast to room for active chat window
+                realtimeEvents.emitChatMessage(roomId, broadcastMessage, req.headers['x-client-id']);
+
+                // 3. Native Push Notifications
                 const otherMembers = members.filter(m => m.user_id !== anonymousId);
                 for (const member of otherMembers) {
                     const recipientId = member.user_id;
@@ -362,23 +380,15 @@ router.post('/:roomId/messages', async (req, res) => {
 
                     if (subs && subs.length > 0) {
                         const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
-                        const senderResult = await queryWithRLS(anonymousId, 'SELECT alias FROM anonymous_users WHERE anonymous_id = $1', [anonymousId]);
 
-                        // FIX: Fetch report title for notification context
-                        const roomResult = await queryWithRLS(anonymousId, `
-                            SELECT c.report_id, r.title as report_title 
-                            FROM conversations c
-                            LEFT JOIN reports r ON c.report_id = r.id 
-                            WHERE c.id = $1
-                        `, [roomId]);
-
+                        // FIX: Use 'content' instead of 'messageContent' to match createChatNotificationPayload
                         const payload = createChatNotificationPayload({
-                            senderAlias: senderResult.rows[0]?.alias || 'Alguien',
-                            messageContent: type === 'image' ? '📷 Foto enviada' : content,
-                            roomId,
-                            reportId: roomResult.rows[0]?.report_id,
-                            reportTitle: roomResult.rows[0]?.report_title
-                        });
+                            senderAlias: newMessage.sender_alias || 'Alguien',
+                            content: type === 'image' ? '📷 Foto enviada' : content,
+                            room_id: roomId,
+                            report_id: newMessage.report_id,
+                            reportTitle: newMessage.report_title
+                        }, { report_title: newMessage.report_title });
 
                         await sendBatchNotifications(
                             subs.map(s => ({ subscription: { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth }, subscriptionId: s.id })),
@@ -387,7 +397,9 @@ router.post('/:roomId/messages', async (req, res) => {
                         );
                     }
                 }
-            } catch (pErr) { console.error('[Push] Chat error:', pErr); }
+            } catch (err) {
+                console.error('[Realtime/Push] Chat emission failure:', err);
+            }
         })();
 
         res.status(201).json(newMessage);
@@ -428,14 +440,14 @@ router.delete('/:roomId/messages/:messageId', async (req, res) => {
         const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);
 
         memberResult.rows.forEach(member => {
-            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+            realtimeEvents.emitUserChatUpdate(member.user_id, {
                 roomId,
                 action: 'message-deleted',
                 messageId
             });
         });
 
-        realtimeEvents.emit(`chat:${roomId}`, {
+        realtimeEvents.emitChatStatus('update', roomId, {
             action: 'message-deleted',
             messageId
         });
@@ -471,7 +483,7 @@ router.patch('/:roomId/read', async (req, res) => {
             });
 
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
-            realtimeEvents.emit(`chat-read:${roomId}`, {
+            realtimeEvents.emitChatStatus('read', roomId, {
                 readerId: anonymousId
             });
         }
@@ -500,7 +512,7 @@ router.patch('/:roomId/delivered', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
-            realtimeEvents.emit(`chat-delivered:${roomId}`, {
+            realtimeEvents.emitChatStatus('delivered', roomId, {
                 receiverId: anonymousId
             });
         }
@@ -524,7 +536,7 @@ router.post('/:roomId/typing', async (req, res) => {
 
     try {
         // 1. Notificar vía SSE a la sala específica (ChatWindow)
-        realtimeEvents.emit(`chat-typing:${roomId}`, {
+        realtimeEvents.emitChatStatus('typing', roomId, {
             senderId: anonymousId,
             isTyping: !!isTyping
         });
@@ -534,7 +546,7 @@ router.post('/:roomId/typing', async (req, res) => {
         const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2', [roomId, anonymousId]);
 
         memberResult.rows.forEach(member => {
-            realtimeEvents.emit(`user-chat-update:${member.user_id}`, {
+            realtimeEvents.emitUserChatUpdate(member.user_id, {
                 roomId,
                 action: 'typing',
                 isTyping: !!isTyping

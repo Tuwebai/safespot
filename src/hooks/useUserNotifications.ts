@@ -40,9 +40,26 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                 // 1. Patch notifications list if full object is provided
                 if (data.notification) {
                     upsertInList(queryClient, NOTIFICATIONS_QUERY_KEY, data.notification);
+
+                    // 1.5 Play sound for new notification (if it's a new entry)
+                    // We check if it's new because SSE might resend on reconnect
+                    const notified = JSON.parse(localStorage.getItem('safespot_seen_sse_ids') || '[]');
+                    if (!notified.includes(data.notification.id)) {
+                        import('./useBadgeNotifications').then(({ playBadgeSound }) => playBadgeSound());
+                        notified.push(data.notification.id);
+                        if (notified.length > 50) notified.shift();
+                        localStorage.setItem('safespot_seen_sse_ids', JSON.stringify(notified));
+                    }
                 }
 
                 // 2. Handle specific types with atomic patches
+                if (data.type === 'achievement') {
+                    // Trigger immediate check to show the badge unlock UI
+                    import('./useBadgeNotifications').then(({ triggerBadgeCheck }) => {
+                        triggerBadgeCheck();
+                    });
+                }
+
                 if (data.type === 'follow') {
                     // Refresh profile to reflect new followers
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });

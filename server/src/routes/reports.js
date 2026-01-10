@@ -1389,13 +1389,12 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
 
 
     // REALTIME: Broadcast soft delete
-    realtimeEvents.emit('global-report-update', {
-      type: 'delete',
-      reportId: id,
-      category: checkResult.rows[0].category,
-      status: checkResult.rows[0].status,
-      originClientId: req.headers['x-client-id']
-    });
+    realtimeEvents.emitReportDelete(
+      id,
+      checkResult.rows[0].category,
+      checkResult.rows[0].status,
+      req.headers['x-client-id']
+    );
 
     res.json({
       success: true,
