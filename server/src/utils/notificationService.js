@@ -96,12 +96,16 @@ export const NotificationService = {
                         $5,
                         $5
                     FROM unique_recipients
-                    RETURNING anonymous_id
+                    FROM unique_recipients
+                    RETURNING *
+                ),
+                updated_settings AS (
+                    UPDATE notification_settings
+                    SET notifications_today = notifications_today + 1,
+                        last_notified_at = NOW()
+                    WHERE anonymous_id IN (SELECT anonymous_id FROM inserted_notifications)
                 )
-                UPDATE notification_settings
-                SET notifications_today = notifications_today + 1,
-                    last_notified_at = NOW()
-                WHERE anonymous_id IN (SELECT anonymous_id FROM inserted_notifications);
+                SELECT * FROM inserted_notifications;
             `, [
                 report.latitude,
                 report.longitude,
@@ -110,7 +114,22 @@ export const NotificationService = {
                 report.id
             ]);
 
-            console.log(`[Notify] Bulk notification process completed for report ${report.id}`);
+            const notifications = result.rows;
+            console.log(`[Notify] Bulk notification process completed for report ${report.id}. emitted=${notifications.length}`);
+
+            // 5. Emit Real-time Events (Fire-and-forget, Async)
+            if (notifications.length > 0) {
+                import('./eventEmitter.js').then(({ realtimeEvents }) => {
+                    notifications.forEach(notification => {
+                        realtimeEvents.emit(`user-notification:${notification.anonymous_id}`, {
+                            type: 'proximity',
+                            notification
+                        });
+                    });
+                    console.log(`[Notify] Emitted ${notifications.length} proximity events.`);
+                }).catch(err => console.error('[Notify] Failed to load eventEmitter', err));
+            }
+
         } catch (err) {
             logError(err, { context: 'notifyNearbyNewReport.bulk', reportId: report.id });
         }
@@ -172,7 +191,7 @@ export const NotificationService = {
                     break;
             }
 
-            await this.createNotification({
+            const notification = await this.createNotification({
                 anonymous_id: report.anonymous_id,
                 type: 'activity',
                 title,
@@ -259,21 +278,35 @@ export const NotificationService = {
                     $5,
                     $5
                 FROM eligible_recipients
-                RETURNING anonymous_id
+                FROM eligible_recipients
+                RETURNING *
             `, [report.category, report.anonymous_id, report.latitude, report.longitude, report.id]);
 
-            const notifiedCount = result.rows.length;
+            const notifications = result.rows;
+            const notifiedCount = notifications.length;
             console.log(`[Notify] Batch created ${notifiedCount} similar report notifications`);
 
             // Batch UPDATE: Increment notification counts for all recipients
             if (notifiedCount > 0) {
-                await db.query(`
+                db.query(`
                     UPDATE notification_settings
                     SET notifications_today = notifications_today + 1,
                     last_notified_at = NOW()
                     WHERE anonymous_id = ANY($1::uuid[])
-                `, [result.rows.map(r => r.anonymous_id)]);
+                `, [notifications.map(r => r.anonymous_id)]).catch(e => console.error('[Notify] Stats update failed', e));
+
+                // Emit Real-time Events
+                import('./eventEmitter.js').then(({ realtimeEvents }) => {
+                    notifications.forEach(notification => {
+                        realtimeEvents.emit(`user-notification:${notification.anonymous_id}`, {
+                            type: 'similar', // or 'proximity' depending on frontend usage, but 'similar' is specific
+                            notification
+                        });
+                    });
+                    console.log(`[Notify] Emitted ${notifiedCount} similar report events.`);
+                }).catch(err => console.error('[Notify] Failed to load eventEmitter', err));
             }
+
         } catch (err) {
             logError(err, { context: 'notifySimilarReports', reportId: report.id });
         }
@@ -288,21 +321,21 @@ export const NotificationService = {
         console.log(`[Notify] Badge Earned: ${badge.name} for ${anonymousId}`);
 
         try {
-            await this.createNotification({
+            // 1. Insert and get the full notification object (SSOT)
+            const notification = await this.createNotification({
                 anonymous_id: anonymousId,
                 type: 'achievement',
                 title: '🏆 ¡Nueva Insignia Desbloqueada!',
                 message: `Has ganado la insignia "${badge.name}". ¡Felicitaciones!`,
                 entity_type: 'badge',
-                entity_id: badge.id || null, // MUST be UUID or NULL. badge.code is string.
-                entity_id: badge.id || null, // MUST be UUID or NULL. badge.code is string.
+                entity_id: badge.id || null,
                 report_id: null
             });
 
-            // Emit Real-time Event (SSE)
+            // 2. Emit Real-time Event (SSE) with strict contract
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
-                realtimeEvents.emitBadgeEarned(anonymousId, badge);
+                realtimeEvents.emitBadgeEarned(anonymousId, notification);
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
             }
@@ -379,11 +412,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${parent.anonymous_id}`, {
                     type: 'reply',
-                    title: '↩️ Respondieron a tu comentario',
-                    message: 'Alguien respondió a tu comentario.',
-                    parentCommentId,
-                    replyId,
-                    reportId: parent.report_id
+                    notification
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
@@ -419,7 +448,7 @@ export const NotificationService = {
             }
 
             // 2. Create Notification
-            await this.createNotification({
+            const notification = await this.createNotification({
                 anonymous_id: targetAnonymousId,
                 type: 'mention', // New type
                 title: '⚡ Te han mencionado',
@@ -459,10 +488,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${targetAnonymousId}`, {
                     type: 'mention',
-                    title: '⚡ Te han mencionado',
-                    message: 'Alguien te mencionó en un comentario.',
-                    reportId,
-                    commentId
+                    notification
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
@@ -514,7 +540,7 @@ export const NotificationService = {
                 ? `Tu reporte recibe apoyo de la comunidad.`
                 : `Tu comentario está siendo útil.`;
 
-            await this.createNotification({
+            const notification = await this.createNotification({
                 anonymous_id: owner.anonymous_id,
                 type: 'like', // New type specific for likes
                 title,
@@ -526,6 +552,7 @@ export const NotificationService = {
 
             // 3. Send Push Notification
             if (isPushConfigured()) {
+                // ... (existing push logic)
                 const subscriptionsResult = await db.query(`
                     SELECT * FROM push_subscriptions 
                     WHERE anonymous_id = $1 AND is_active = true
@@ -556,8 +583,9 @@ export const NotificationService = {
                 // 4a. Private Notification (to owner)
                 realtimeEvents.emit(`user-notification:${owner.anonymous_id}`, {
                     type: 'like',
-                    title,
-                    message,
+                    notification,
+                    // Keep these for potential counter updates if valid, 
+                    // though frontend uses global-report-update mostly.
                     targetType,
                     targetId,
                     reportId: owner.report_id
@@ -598,21 +626,29 @@ export const NotificationService = {
     /**
      * Create the notification record and increment daily count
      */
+    /**
+     * Create the notification record and increment daily count
+     * @returns {Promise<object>} The full notification object from DB
+     */
     async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
         const db = DB.public();
-        // Insert notification
-        await db.query(`
+
+        // 1. Insert notification and return it
+        const result = await db.query(`
                 INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING *
             `, [anonymous_id, type, title, message, entity_type, entity_id, report_id]);
 
-        // Increment count in settings
-        await db.query(`
+        // 2. Increment count in settings (fire and forget / parallel)
+        db.query(`
                 UPDATE notification_settings 
                 SET notifications_today = notifications_today + 1,
                 last_notified_at = NOW()
                 WHERE anonymous_id = $1
-            `, [anonymous_id]);
+            `, [anonymous_id]).catch(err => console.error('[Notify] Failed to update stats:', err));
+
+        return result.rows[0];
     },
 
     /**
@@ -643,7 +679,7 @@ export const NotificationService = {
             }
 
             // 2. Create Notification
-            await this.createNotification({
+            const notification = await this.createNotification({
                 anonymous_id: followedId,
                 type: 'follow',
                 title: '👤 Tienes un nuevo seguidor',
@@ -684,8 +720,7 @@ export const NotificationService = {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emit(`user-notification:${followedId}`, {
                     type: 'follow',
-                    title: '👤 Tienes un nuevo seguidor',
-                    message: `"${followerAlias}" comenzó a seguirte.`,
+                    notification,
                     followerId,
                     followerAlias
                 });

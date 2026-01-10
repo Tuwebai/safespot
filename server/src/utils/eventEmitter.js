@@ -103,16 +103,14 @@ class RealtimeEvents extends EventEmitter {
     /**
      * Emit a badge earned event (Personal Notification)
      * @param {string} anonymousId - The recipient
-     * @param {object} badge - The badge object
+     * @param {object} notification - The FULL notification object from DB
      */
-    emitBadgeEarned(anonymousId, badge) {
+    emitBadgeEarned(anonymousId, notification) {
         this.emit(`user-notification:${anonymousId}`, {
             type: 'achievement',
-            title: '🏆 ¡Nueva Insignia Desbloqueada!',
-            message: `Has ganado la insignia "${badge.name}".`,
-            badge
+            notification
         });
-        console.log(`[Realtime] Emitted badge earned for ${anonymousId}`, badge.code);
+        console.log(`[Realtime] Emitted badge earned for ${anonymousId}`, notification.id);
     }
 
     /**

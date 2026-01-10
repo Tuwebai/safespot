@@ -101,7 +101,9 @@ export function useCreateCommentMutation() {
                 // Add required fields with defaults to satisfy type
                 is_highlighted: false,
                 is_pinned: false,
-                is_author: true,
+                is_author: previousReport?.anonymous_id && userProfile?.anonymous_id
+                    ? previousReport.anonymous_id === userProfile.anonymous_id
+                    : false,
                 is_local: false
             }
 
