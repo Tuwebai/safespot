@@ -8,7 +8,10 @@ import rateLimit from 'express-rate-limit';
 import { requestLogger } from './utils/logger.js';
 
 // Router imports
+import presenceRouter from './routes/presence.js';
 import reportsRouter from './routes/reports.js';
+
+// API Routes
 import commentsRouter from './routes/comments.js';
 import votesRouter from './routes/votes.js';
 import usersRouter from './routes/users.js';
@@ -186,6 +189,7 @@ app.use('/api/geocode', geocodeRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/contact', contactRouter); // Register Contact Route
+app.use('/api/presence', presenceRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
 app.use('/api/admin/auth', adminAuthRouter);
 app.use('/api/admin', adminStatsRouter); // Mount at /api/admin so it becomes /api/admin/stats

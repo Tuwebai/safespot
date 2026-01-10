@@ -1,74 +1,108 @@
+import redis from '../config/redis.js';
 import { realtimeEvents } from './eventEmitter.js';
 
 /**
- * Presence Tracker (In-Memory)
+ * Presence Tracker (Redis Distributed)
  * 
- * Tracks online users and manages connection counts for multi-tab support.
- * This is the Single Source of Truth for presence on the server.
+ * Tracks online users using Redis Keys with TTL (Time-To-Live).
+ * SINGLE SOURCE OF TRUTH: Redis `presence:user:{userId}`
  */
 class PresenceTracker {
     constructor() {
-        // userId -> connectionCount
-        this.onlineUsers = new Map();
+        this.TTL_SECONDS = 60;
+        this.PREFIX = 'presence:user:';
     }
 
     /**
-     * Mark a user as connected
+     * Mark a user as online (Refresh TTL)
      * @param {string} userId 
      */
-    addConnection(userId) {
-        const count = this.onlineUsers.get(userId) || 0;
-        this.onlineUsers.set(userId, count + 1);
+    async markOnline(userId) {
+        if (!redis || redis.status !== 'ready') return; // Fail-soft
 
-        if (count === 0) {
-            // First tab opened: Notify others
-            realtimeEvents.emit('presence-update', {
-                userId,
-                partial: { status: 'online', last_seen_at: null }
-            });
-            console.log(`[Presence] User ${userId} is now ONLINE`);
+        const key = `${this.PREFIX}${userId}`;
+        try {
+            // SET key value EX 60
+            // We store the timestamp as value, though existence is what matters.
+            await redis.set(key, Date.now(), 'EX', this.TTL_SECONDS);
+
+            // Optional: Publish event if needed (e.g., specific 'user-online' event)
+            // But usually we rely on "isOnline" checks or polling for lists.
+            // keeping it silent to reduce noise unless strictly required.
+            // console.log(`[Presence] Marked ${userId} online`);
+        } catch (err) {
+            console.error(`[Presence] Failed to mark online ${userId}:`, err);
         }
     }
 
     /**
-     * Mark a user as disconnected
+     * Mark a user as offline (Explicit Logout)
      * @param {string} userId 
-     * @returns {string|null} The last seen ISO string if the user just went offline
      */
-    removeConnection(userId) {
-        const count = this.onlineUsers.get(userId) || 0;
-        if (count <= 1) {
-            this.onlineUsers.delete(userId);
-            const lastSeen = new Date().toISOString();
+    async markOffline(userId) {
+        if (!redis || redis.status !== 'ready') return;
 
-            // Last tab closed: Notify others
-            realtimeEvents.emit('presence-update', {
+        const key = `${this.PREFIX}${userId}`;
+        try {
+            await redis.del(key);
+            console.log(`[Presence] Marked ${userId} offline`);
+
+            // Notify via Pub/Sub that user went offline explicitly
+            realtimeEvents.broadcast('presence-update', {
                 userId,
-                partial: { status: 'offline', last_seen_at: lastSeen }
+                status: 'offline',
+                lastSeen: new Date().toISOString()
             });
-            console.log(`[Presence] User ${userId} is now OFFLINE`);
-            return lastSeen;
-        } else {
-            this.onlineUsers.set(userId, count - 1);
-            return null;
+        } catch (err) {
+            console.error(`[Presence] Failed to mark offline ${userId}:`, err);
         }
     }
 
     /**
-     * Check if a user is currently online (has at least one connection)
+     * Check if a user is currently online
      * @param {string} userId 
-     * @returns {boolean}
+     * @returns {Promise<boolean>}
      */
-    isOnline(userId) {
-        return this.onlineUsers.has(userId);
+    async isOnline(userId) {
+        if (!redis || redis.status !== 'ready') return false;
+
+        const key = `${this.PREFIX}${userId}`;
+        try {
+            const exists = await redis.exists(key);
+            return exists === 1;
+        } catch (err) {
+            console.error(`[Presence] Failed to check isOnline ${userId}:`, err);
+            return false;
+        }
     }
 
     /**
-     * Get all currently online user IDs
-     * @returns {string[]}
+     * Get count of online users (Approximation)
+     * Warning: SCAN is slow on large datasets, use with caution.
+     * @returns {Promise<number>}
      */
-    getOnlineIds() {
-        return Array.from(this.onlineUsers.keys());
+    async getOnlineCount() {
+        if (!redis || redis.status !== 'ready') return 0;
+
+        // This is a naive implementation using KEYS/SCAN. 
+        // For high scale, maintain a separate HyperLogLog or Counter.
+        // For Phase 3 scope "strictly if necessary", we'll providing a best-effort SCAN.
+        let count = 0;
+        let cursor = '0';
+        const match = `${this.PREFIX}*`;
+
+        try {
+            do {
+                const [newCursor, keys] = await redis.scan(cursor, 'MATCH', match, 'COUNT', 100);
+                cursor = newCursor;
+                count += keys.length;
+            } while (cursor !== '0');
+
+            return count;
+        } catch (err) {
+            console.error('[Presence] Failed to count online users:', err);
+            return 0;
+        }
     }
 }
 

@@ -1,8 +1,9 @@
-import pool from '../config/database.js';
 import rateLimit from 'express-rate-limit';
+import redis from '../config/redis.js';
 
 /**
  * Traditional memory-based rate limiter for general API protection
+ * Used as a fallback or for global IP protection.
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -16,53 +17,73 @@ export const apiLimiter = rateLimit({
 });
 
 /**
- * Database-backed rate limiter (Option A)
- * Resilient to server restarts and tracks by anonymous_id + action.
- * Supports multiple time windows (minute, hour).
+ * Redis-backed rate limiter
+ * Replaces the PostgreSQL implementation for high-speed, low-latency limiting.
+ * Requires: redis client from ../config/redis.js
  */
 export const dbRateLimiter = ({ action, limitMinute, limitHour, message }) => {
   return async (req, res, next) => {
-    // Priority: Anonymous ID from header -> IP address
+    // If Redis is not connected, fallback to allow (or memory limit if critical)
+    // For now, we allowTraffic to avoid blocking users on infra failure.
+    if (!redis || redis.status !== 'ready') {
+      // console.warn('[RateLimit] Redis not ready, bypassing limit for', action);
+      return next();
+    }
+
     const anonymousId = req.headers['x-anonymous-id'] || req.ip;
-    const key = `${action}:${anonymousId}`;
-    const now = new Date();
+    const keyBase = `rate:${action}:${anonymousId}`;
+    const keyMin = `${keyBase}:min`;
+    const keyHour = `${keyBase}:hour`;
 
     try {
-      // 1. Atomic upsert logic to handle request tracking
-      // We use a single query for efficiency
-      const query = `
-        INSERT INTO rate_limits (key, hits_minute, hits_hour, reset_minute, reset_hour)
-        VALUES ($1, 1, 1, $2, $3)
-        ON CONFLICT (key) DO UPDATE SET
-          hits_minute = CASE WHEN rate_limits.reset_minute < $4 THEN 1 ELSE rate_limits.hits_minute + 1 END,
-          hits_hour = CASE WHEN rate_limits.reset_hour < $4 THEN 1 ELSE rate_limits.hits_hour + 1 END,
-          reset_minute = CASE WHEN rate_limits.reset_minute < $4 THEN $2 ELSE rate_limits.reset_minute END,
-          reset_hour = CASE WHEN rate_limits.reset_hour < $4 THEN $3 ELSE rate_limits.reset_hour END,
-          updated_at = NOW()
-        RETURNING hits_minute, hits_hour, reset_minute, reset_hour;
-      `;
+      // Pipeline for atomicity and speed (1 round trip)
+      const pipeline = redis.pipeline();
 
-      const resetMinute = new Date(now.getTime() + 60 * 1000);
-      const resetHour = new Date(now.getTime() + 60 * 60 * 1000);
+      // Minute Counter
+      pipeline.incr(keyMin);
+      pipeline.ttl(keyMin);
 
-      const { rows } = await pool.query(query, [key, resetMinute, resetHour, now]);
-      const state = rows[0];
+      // Hour Counter
+      pipeline.incr(keyHour);
+      pipeline.ttl(keyHour);
 
-      // 2. Enforce limits based on the updated state
-      // If the current request (already incremented) exceeds the limit, block it.
-      if (state.hits_minute > limitMinute || state.hits_hour > limitHour) {
+      const results = await pipeline.exec();
+
+      // Parse results: [[err, incrVal], [err, ttlVal], ...]
+      const hitsMinute = results[0][1];
+      const ttlMinute = results[1][1];
+      const hitsHour = results[2][1];
+      const ttlHour = results[3][1];
+
+      // Set TTL if new key (TTL == -1)
+      if (ttlMinute === -1) {
+        redis.expire(keyMin, 60); // 1 minute
+      }
+      if (ttlHour === -1) {
+        redis.expire(keyHour, 3600); // 1 hour
+      }
+
+      // Check Limits
+      if (hitsMinute > limitMinute) {
         return res.status(429).json({
           error: 'RATE_LIMIT_EXCEEDED',
-          message: message || 'Estás realizando esta acción demasiado rápido. Por favor, espera.',
-          code: 'RATE_LIMIT_EXCEEDED',
-          retryAfter: state.hits_minute > limitMinute ? state.reset_minute : state.reset_hour
+          message: message || 'Estás realizando esta acción demasiado rápido. Espere un momento.',
+          retryAfter: 60 // Simple retry suggestion
+        });
+      }
+
+      if (hitsHour > limitHour) {
+        return res.status(429).json({
+          error: 'RATE_LIMIT_EXCEEDED',
+          message: message || 'Límite por hora excedido. Intente más tarde.',
+          retryAfter: 3600
         });
       }
 
       next();
     } catch (error) {
-      console.error(`[RateLimit] Error checking ${key}:`, error);
-      // Fallback: If DB fails, allow the request so we don't break the app
+      console.error(`[RateLimit] Redis error for ${keyBase}:`, error);
+      // Fail open: Allow request if Redis errors
       next();
     }
   };
@@ -88,7 +109,7 @@ export const createCommentLimiter = dbRateLimiter({
   message: 'Estás enviando demasiados comentarios. Por favor, espera un momento.'
 });
 
-// Flags: 5 per minute (Legacy memory-based fallback or reuse DB)
+// Flags: 5 per minute
 export const flagRateLimiter = dbRateLimiter({
   action: 'flag',
   limitMinute: 5,
@@ -96,11 +117,7 @@ export const flagRateLimiter = dbRateLimiter({
   message: 'Has excedido el límite de denuncias permitidas.'
 });
 
-// ============================================
-// NEW RATE LIMITERS FOR COMPLETE COVERAGE
-// ============================================
-
-// Votes: 30 per minute, 200 per hour (high frequency action)
+// Votes: 30 per minute, 200 per hour
 export const voteLimiter = dbRateLimiter({
   action: 'vote',
   limitMinute: 30,
@@ -116,7 +133,7 @@ export const favoriteLimiter = dbRateLimiter({
   message: 'Has alcanzado el límite de favoritos. Intenta en unos minutos.'
 });
 
-// Image uploads: 5 per minute, 20 per hour (expensive operation - storage costs)
+// Image uploads: 5 per minute, 20 per hour
 export const imageUploadLimiter = dbRateLimiter({
   action: 'image_upload',
   limitMinute: 5,
@@ -132,11 +149,10 @@ export const likeLimiter = dbRateLimiter({
   message: 'Estás dando likes demasiado rápido. Espera un momento.'
 });
 
-// Admin Login: 5 attempts per 15 minutes
+// Admin Login: 5 attempts per 15 minutes (Strict)
 export const loginLimiter = dbRateLimiter({
   action: 'admin_login',
-  limitMinute: 5, // Actually, dbRateLimiter uses minutes, but for login we want strictly low.
+  limitMinute: 5,
   limitHour: 20,
   message: 'Demasiados intentos de inicio de sesión. Cuenta bloqueada temporalmente.'
 });
-

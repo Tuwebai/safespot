@@ -1,8 +1,12 @@
 import EventEmitter from 'events';
+import redis, { redisSubscriber } from '../config/redis.js';
+import crypto from 'crypto';
+
+const REALTIME_CHANNEL = 'SAFESPOT_REALTIME_BUS';
 
 /**
  * Global Event Emitter for Real-time Updates
- * Used to broadcast events across the application
+ * Enhanced with Redis Pub/Sub for Horizontal Scaling
  */
 class RealtimeEvents extends EventEmitter {
     constructor() {
@@ -10,54 +14,115 @@ class RealtimeEvents extends EventEmitter {
         this.setMaxListeners(100); // Allow many concurrent SSE connections
         this.instanceId = Math.random().toString(36).substring(7);
         console.log(`[RealtimeEvents] Instance created: ${this.instanceId}`);
+
+        // Initialize Redis Subscription
+        this.initRedisSubscription();
+    }
+
+    /**
+     * Subscribe to the global Redis channel to receive events from other instances
+     */
+    initRedisSubscription() {
+        if (redisSubscriber) {
+            redisSubscriber.subscribe(REALTIME_CHANNEL, (err, count) => {
+                if (err) {
+                    console.error('[Realtime] Failed to subscribe to Redis:', err);
+                } else {
+                    console.log(`[Realtime] Subscribed to ${REALTIME_CHANNEL}. Count: ${count}`);
+                }
+            });
+
+            redisSubscriber.on('message', (channel, message) => {
+                if (channel === REALTIME_CHANNEL) {
+                    try {
+                        const { eventId, origin, channel: eventName, payload, timestamp } = JSON.parse(message);
+
+                        // Enterprise Contract:
+                        // { eventId, origin, channel, payload, timestamp }
+
+                        // Filter loopback (Own events are already emitted locally in broadcast)
+                        if (origin !== this.instanceId) {
+                            super.emit(eventName, payload);
+                            // console.log(`[Realtime] Received remote event: ${eventName} (ID: ${eventId}) from ${origin}`);
+                        }
+                    } catch (err) {
+                        console.error('[Realtime] Error parsing Redis message:', err);
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Publish an event to the Cluster (Redis) and Emit Locally
+     * @param {string} event - Event name
+     * @param {object} payload - Event data
+     */
+    broadcast(event, payload) {
+        // 1. Emit locally immediately (Optimistic/Fast)
+        super.emit(event, payload);
+
+        // 2. Publish to Redis for other instances
+        if (redis && redis.status === 'ready') {
+            const message = JSON.stringify({
+                eventId: crypto.randomUUID(),
+                origin: this.instanceId,
+                channel: event,
+                payload: payload,
+                timestamp: Date.now()
+            });
+
+            redis.publish(REALTIME_CHANNEL, message).catch(err => {
+                console.error(`[Realtime] Failed to publish ${event} to Redis:`, err);
+            });
+        }
     }
 
     /**
      * Emit a new comment event
-     * @param {string} reportId - The report ID
-     * @param {object} comment - The comment data
-     * @param {string} [originClientId] - The Client ID that caused this event (to exclude from echo)
+     * @param {string} reportId
+     * @param {object} comment
+     * @param {string} [originClientId]
      */
     emitNewComment(reportId, comment, originClientId) {
-        this.emit(`comment:${reportId}`, { comment, originClientId });
-        console.log(`[Realtime] Emitted new comment for report ${reportId} (Client: ${originClientId || 'unknown'})`);
+        this.broadcast(`comment:${reportId}`, { comment, originClientId });
+        console.log(`[Realtime] Broadcasted new comment for report ${reportId}`);
     }
 
     /**
      * Emit a comment update event
-     * @param {string} reportId - The report ID
-     * @param {object} comment - The updated comment data
+     * @param {string} reportId
+     * @param {object} comment
      * @param {string} [originClientId]
      */
     emitCommentUpdate(reportId, comment, originClientId) {
-        this.emit(`comment-update:${reportId}`, { comment, originClientId });
-        console.log(`[Realtime] Emitted comment update for report ${reportId}`);
+        this.broadcast(`comment-update:${reportId}`, { comment, originClientId });
+        console.log(`[Realtime] Broadcasted comment update for report ${reportId}`);
     }
 
     /**
      * Emit a comment delete event
-     * @param {string} reportId - The report ID
-     * @param {string} commentId - The deleted comment ID
+     * @param {string} reportId
+     * @param {string} commentId
      * @param {string} [originClientId]
      */
     emitCommentDelete(reportId, commentId, originClientId) {
-        this.emit(`comment-delete:${reportId}`, { commentId, originClientId });
-        console.log(`[Realtime] Emitted comment delete for report ${reportId}`);
+        this.broadcast(`comment-delete:${reportId}`, { commentId, originClientId });
+        console.log(`[Realtime] Broadcasted comment delete for report ${reportId}`);
     }
 
     /**
      * Emit a new report event (Global Feed)
-     * @param {object} report - The full report object (or minimal summary)
+     * @param {object} report
      * @param {string} [originClientId]
      */
     emitNewReport(report, originClientId) {
-        // Broadcast to 'global-report-update' channel which /api/realtime/feed listens to
-        this.emit('global-report-update', {
+        this.broadcast('global-report-update', {
             type: 'new-report',
             report: report,
             originClientId
         });
-        console.log(`[Realtime] Emitted new report ${report.id} to global feed (Client: ${originClientId || 'unknown'})`);
+        console.log(`[Realtime] Broadcasted new report ${report.id} to global feed`);
     }
 
     /**
@@ -66,81 +131,77 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} [originClientId]
      */
     emitReportDelete(reportId, originClientId) {
-        this.emit('global-report-update', {
+        this.broadcast('global-report-update', {
             type: 'delete',
             reportId,
             originClientId
         });
-        console.log(`[Realtime] Emitted report delete ${reportId} (Client: ${originClientId || 'unknown'})`);
+        console.log(`[Realtime] Broadcasted report delete ${reportId}`);
     }
 
     /**
      * Emit a vote/like update
      * @param {string} type - 'report' or 'comment'
-     * @param {string} id - The Item ID
-     * @param {object} updates - Changed fields (e.g. { upvotes_count: 5 })
+     * @param {string} id
+     * @param {object} updates
      * @param {string} [originClientId]
      */
     emitVoteUpdate(type, id, updates, originClientId) {
         if (type === 'report') {
-            // Update detail view listeners
-            this.emit(`report-update:${id}`, { ...updates, originClientId });
-
-            // Update global feed listeners
-            this.emit('global-report-update', {
+            this.broadcast(`report-update:${id}`, { ...updates, originClientId });
+            this.broadcast('global-report-update', {
                 type: 'stats-update',
                 reportId: id,
                 updates,
                 originClientId
             });
         } else if (type === 'comment') {
-            // Update comment listeners (in report detail)
-            this.emit(`comment-update:${id}`, { ...updates, originClientId });
+            this.broadcast(`comment-update:${id}`, { ...updates, originClientId });
         }
-        console.log(`[Realtime] Emitted vote update for ${type} ${id}`, updates);
+        // console.log(`[Realtime] Broadcasted vote update for ${type} ${id}`);
     }
 
     /**
-     * Emit a badge earned event (Personal Notification)
-     * @param {string} anonymousId - The recipient
-     * @param {object} notification - The FULL notification object from DB
+     * Emit a badge earned event
+     * @param {string} anonymousId
+     * @param {object} notification
      */
     emitBadgeEarned(anonymousId, notification) {
-        this.emit(`user-notification:${anonymousId}`, {
+        this.broadcast(`user-notification:${anonymousId}`, {
             type: 'achievement',
             notification
         });
-        console.log(`[Realtime] Emitted badge earned for ${anonymousId}`, notification.id);
+        console.log(`[Realtime] Broadcasted badge earned for ${anonymousId}`);
     }
 
     /**
-     * Emit a new user creation event (Global Stats)
+     * Emit a new user creation event
      * @param {string} anonymousId
      */
     emitNewUser(anonymousId) {
-        this.emit('global-report-update', {
+        this.broadcast('global-report-update', {
             type: 'new-user',
             anonymousId
         });
-        console.log(`[Realtime] Emitted new user creation: ${anonymousId}`);
+        console.log(`[Realtime] Broadcasted new user creation: ${anonymousId}`);
     }
 
     /**
-     * Emit a report status change (Global Stats)
+     * Emit a report status change
      * @param {string} reportId
      * @param {string} prevStatus
      * @param {string} newStatus
      * @param {string} [originClientId]
      */
     emitStatusChange(reportId, prevStatus, newStatus, originClientId) {
-        this.emit('global-report-update', {
+        this.broadcast('global-report-update', {
             type: 'status-change',
             reportId,
             prevStatus,
             newStatus,
             originClientId
         });
-        console.log(`[Realtime] Emitted status change for ${reportId}: ${prevStatus} -> ${newStatus}`);
+        console.log(`[Realtime] Broadcasted status change for ${reportId}`);
     }
 }
 

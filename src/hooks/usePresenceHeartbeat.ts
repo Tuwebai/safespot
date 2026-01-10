@@ -1,0 +1,63 @@
+import { useEffect } from 'react';
+
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+
+/**
+ * usePresenceHeartbeat
+ * 
+ * Sends a heartbeat to the backend every 30 seconds to maintain "Online" status in Redis.
+ * This is the Client-Side half of the Distributed Presence System.
+ */
+export const usePresenceHeartbeat = () => {
+    useEffect(() => {
+        const sendHeartbeat = async () => {
+            // Reliable ID source: localStorage (set by identity.ts)
+            // We use this even if the user profile query hasn't finished loading.
+            const anonymousId = localStorage.getItem('anonymous_id');
+
+            if (!anonymousId) return;
+
+            try {
+                // We use fetch directly to avoid circular dependencies with api.ts or complex error handling
+                // This is a fire-and-forget background task.
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+                // Ensure no double slash if VITE_API_URL ends with /
+                const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+
+                await fetch(`${baseUrl}/presence/heartbeat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Anonymous-Id': anonymousId
+                    },
+                    keepalive: true // Ensure request survives page navigation
+                });
+            } catch (err) {
+                // Silently fail - presence is "soft state"
+                if (import.meta.env.DEV) {
+                    console.warn('[Presence] Heartbeat failed:', err);
+                }
+            }
+        };
+
+        // 1. Initial Ping on Mount
+        sendHeartbeat();
+
+        // 2. Interval Ping
+        const intervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+
+        // 3. Visibility Change (Immediate Ping on Tab Focus)
+        // This handles cases where the user comes back after >60s of background suspension
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                sendHeartbeat();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
+};

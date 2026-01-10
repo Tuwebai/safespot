@@ -10,6 +10,7 @@ import { useLocation } from 'react-router-dom'
 import { useProfileQuery, useInvalidateProfile } from '@/hooks/queries/useProfileQuery'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useGlobalFeed } from '@/hooks/useGlobalFeed'
+import { usePresenceHeartbeat } from '@/hooks/usePresenceHeartbeat'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +30,7 @@ export function Layout({ children }: LayoutProps) {
   // This ensures that wherever the user is, they receive updates for follows, etc.
   useUserNotifications()
   useGlobalFeed() // Listen for home feed updates (likes counters)
+  usePresenceHeartbeat() // Keep user "Online" in Redis
 
   // Routes where alias is not enforced
   const publicRoutes = ['/terminos', '/privacidad']

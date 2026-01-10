@@ -247,29 +247,15 @@ router.get('/user/:anonymousId', (req, res) => {
     realtimeEvents.on(`user-chat-rollback:${anonymousId}`, handleRollback);
     realtimeEvents.on('presence-update', handlePresenceUpdate);
 
-    // FASE 1: Registrar conexión en PresenceTracker
-    presenceTracker.addConnection(anonymousId);
+    // FASE 3: Registrar conexión en PresenceTracker (Initial Ping)
+    presenceTracker.markOnline(anonymousId);
 
     req.on('close', () => {
-        // FASE 1: Registrar desconexión
-        const lastSeen = presenceTracker.removeConnection(anonymousId);
-
-        if (lastSeen) {
-            // Update DB only on actual disconnect (last tab)
-            (async () => {
-                try {
-                    // Safety check for the pool (imported at top level)
-                    if (pool && typeof pool.query === 'function') {
-                        await pool.query('UPDATE anonymous_users SET last_seen_at = $1 WHERE anonymous_id = $2', [lastSeen, anonymousId]);
-                    }
-                } catch (err) {
-                    console.error('[Presence] Error updating last_seen_at:', err);
-                }
-            })();
-
-
-        }
-
+        // FASE 3: Presence Cleanup is handled by Redis TTL (Heartbeat)
+        // We do strictly NOT delete the key here to support multi-tab (stateless).
+        // If the client is truly gone, he won't send heartbeats, and Redis will expire the key.
+        // Also removed DB writes to 'anonymous_users' to comply with "No writes in Postgres" rule.
+        console.log(`[SSE] Client disconnected ${anonymousId}`);
 
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
