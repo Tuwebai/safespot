@@ -17,7 +17,7 @@ export function NotificationSettingsSection() {
     const [permissionStatus, setPermissionStatus] = useState<PermissionState>('prompt');
     const [locationName, setLocationName] = useState<string | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const { success, error, toast } = useToast();
+    const { success, error, info } = useToast();
     const { isSubscribed, subscribe, updateServiceLocation } = usePushNotifications();
 
     useEffect(() => {
@@ -168,11 +168,7 @@ export function NotificationSettingsSection() {
                 }
                 // USER REQUEST: Si tiene ubicación desactivada que no de error, 
                 // pero indique claramente que debe activar.
-                toast({
-                    title: "Ubicación desactivada",
-                    description: "Para recibir alertas cercanas, activá el GPS o permití la ubicación.",
-                    variant: "default"
-                });
+                info("Ubicación desactivada: Para recibir alertas cercanas, activá el GPS.");
                 setSaving(false);
             }
         );
