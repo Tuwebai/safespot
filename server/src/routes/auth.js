@@ -333,14 +333,33 @@ router.post('/google', authLimiter, async (req, res) => {
             anonymousIdToUse = user.anonymous_id;
         } else {
             // REGISTER: User doesn't exist, promote current anonymous identity
-            // First check if email is taken by standard auth (optional safety, or allow merge in future)
+
+            // 1. Check if email is taken by standard auth (optional safety, or allow merge in future)
             const emailCheck = await pool.query('SELECT id FROM user_auth WHERE email = $1 AND provider = $2', [googleUser.email, 'email']);
             if (emailCheck.rows.length > 0) {
                 console.warn('[DEBUG] Email already registered with password:', googleUser.email);
                 return res.status(400).json({ error: 'Este email ya está registrado con contraseña. Por favor inicia sesión manual.' });
             }
 
-            // Create User
+            // 2. CHECK FOR IDENTITY COLLISION
+            // If the current_anonymous_id is already linked to ANOTHER user account, we cannot steal it.
+            // We must generate a fresh identity for this new user.
+            const collisionCheck = await pool.query('SELECT id FROM user_auth WHERE anonymous_id = $1', [current_anonymous_id]);
+
+            if (collisionCheck.rows.length > 0) {
+                console.warn('[AUTH] Identity Collision detected. Preserving old user data. Generating fresh ID for new user.');
+
+                // Generate new ID
+                const crypto = await import('crypto');
+                anonymousIdToUse = crypto.randomUUID();
+
+                // Ensure it exists in anonymous_users table (Foreign Key Constraint)
+                await pool.query('INSERT INTO anonymous_users (anonymous_id) VALUES ($1)', [anonymousIdToUse]);
+            } else {
+                anonymousIdToUse = current_anonymous_id;
+            }
+
+            // 3. Create User
             const newUser = await pool.query(
                 `INSERT INTO user_auth (
                     email, 
@@ -349,7 +368,7 @@ router.post('/google', authLimiter, async (req, res) => {
                     anonymous_id, 
                     email_verified
                 ) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-                [googleUser.email, 'google', googleUser.sub, current_anonymous_id, googleUser.email_verified]
+                [googleUser.email, 'google', googleUser.sub, anonymousIdToUse, googleUser.email_verified]
             );
             user = newUser.rows[0];
         }
