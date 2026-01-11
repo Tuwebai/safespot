@@ -1,0 +1,15 @@
+# Strict Cache-Control for index.html to ensure fresh deployments
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+
+# Long-term caching for hashed assets (Vite defaults)
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service Worker should never be cached
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
