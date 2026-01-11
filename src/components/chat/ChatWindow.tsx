@@ -38,6 +38,8 @@ import {
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/Avatar';
+
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -306,38 +308,51 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
-                    <div className="flex-1 min-w-0">
-                        <h3 className="text-foreground font-bold text-sm truncate uppercase tracking-wider">
-                            @{otherParticipant.alias}
-                        </h3>
-                        <div className="flex items-center gap-1.5 h-4">
-                            {presence?.status === 'online' ? (
-                                <span className="text-[10px] text-primary font-bold animate-pulse flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                                    EN LÍNEA
-                                </span>
-                            ) : isOtherTyping ? (
-                                <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
-                            ) : (
-                                <span className="text-[10px] text-muted-foreground truncate">
-                                    {presence?.last_seen_at ? (() => {
-                                        const date = new Date(presence.last_seen_at);
-                                        const now = new Date();
-                                        const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-
-                                        let dayLabel = "";
-                                        if (diffInDays === 0 && now.getDate() === date.getDate()) {
-                                            dayLabel = "hoy";
-                                        } else if (diffInDays === 1 || (diffInDays === 0 && now.getDate() !== date.getDate())) {
-                                            dayLabel = "ayer";
-                                        } else {
-                                            dayLabel = format(date, "d 'de' MMM", { locale: es });
-                                        }
-
-                                        return `últ. vez ${dayLabel} a las ${format(date, "HH:mm")}`;
-                                    })() : (room.report_category ? `Chat vinculado a: ${room.report_title}` : null)}
-                                </span>
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
+                        <div className="relative shrink-0">
+                            <Avatar className="w-9 h-9 border border-border">
+                                <AvatarImage src={otherParticipant.avatar || getAvatarUrl(otherParticipant.alias)} />
+                                <AvatarFallback className="text-[10px] font-bold">
+                                    {otherParticipant.alias?.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                            </Avatar>
+                            {presence?.status === 'online' && (
+                                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary rounded-full border-2 border-card ring-1 ring-primary/20 animate-in fade-in zoom-in duration-300" />
                             )}
+                        </div>
+                        <div>
+                            <h3 className="text-foreground font-bold text-sm truncate uppercase tracking-wider">
+                                @{otherParticipant.alias}
+                            </h3>
+                            <div className="flex items-center gap-1.5 h-4">
+                                {presence?.status === 'online' ? (
+                                    <span className="text-[10px] text-primary font-bold animate-pulse flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                        EN LÍNEA
+                                    </span>
+                                ) : isOtherTyping ? (
+                                    <span className="text-[10px] text-primary/70 italic animate-pulse">escribiendo...</span>
+                                ) : (
+                                    <span className="text-[10px] text-muted-foreground truncate">
+                                        {presence?.last_seen_at ? (() => {
+                                            const date = new Date(presence.last_seen_at);
+                                            const now = new Date();
+                                            const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+                                            let dayLabel = "";
+                                            if (diffInDays === 0 && now.getDate() === date.getDate()) {
+                                                dayLabel = "hoy";
+                                            } else if (diffInDays === 1 || (diffInDays === 0 && now.getDate() !== date.getDate())) {
+                                                dayLabel = "ayer";
+                                            } else {
+                                                dayLabel = format(date, "d 'de' MMM", { locale: es });
+                                            }
+
+                                            return `últ. vez ${dayLabel} a las ${format(date, "HH:mm")}`;
+                                        })() : (room.report_category ? `Chat vinculado a: ${room.report_title}` : null)}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -397,9 +412,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                     onClick={() => navigate(`/usuario/${msg.sender_alias}`)}
                                                 >
                                                     <img
-                                                        src={getAvatarUrl(msg.sender_alias || 'Anon')}
+                                                        src={msg.sender_avatar || getAvatarUrl(msg.sender_alias || 'Anon')}
                                                         alt="Avatar"
-                                                        className="w-8 h-8 rounded-full border border-border mt-1"
+                                                        className="w-8 h-8 rounded-full border border-border mt-1 object-cover"
                                                     />
                                                 </div>
                                             )}

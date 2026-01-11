@@ -13,7 +13,7 @@ import { BackgroundSyncPlugin } from 'workbox-background-sync';
 declare let self: ServiceWorkerGlobalScope;
 
 // 1. Tomar el control de los clientes inmediatamente
-// self.skipWaiting(); // COMENTADO: Controlado por el usuario via UI
+self.skipWaiting(); // Auto-activate without user interaction
 clientsClaim();
 
 // 2. Limpiar cachés antiguos

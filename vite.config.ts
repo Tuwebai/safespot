@@ -2,16 +2,20 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
+import packageJson from './package.json'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
+  },
   plugins: [
     react(),
     VitePWA({
       strategies: 'injectManifest', // Use custom SW
       srcDir: 'src',
       filename: 'sw.ts', // Source file is now TS
-      registerType: 'prompt', // Manual update flow
+      registerType: 'autoUpdate', // Automatic update flow
       injectRegister: null, // We register manually in main.tsx
       includeAssets: ['favicon.ico', 'robots.txt'],
       devOptions: {

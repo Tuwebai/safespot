@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useNotificationsQuery } from '@/hooks/queries/useNotificationsQuery';
+import { useNotificationsQuery, NOTIFICATIONS_QUERY_KEY } from '@/hooks/queries/useNotificationsQuery';
 import { useToast } from '@/components/ui/toast/useToast';
 import { NotificationList } from '@/components/notifications/NotificationList';
 import { Trash2, CheckCircle2 } from 'lucide-react';
@@ -17,7 +17,7 @@ export default function NotificationsPage() {
     // Mark as read handler
     const handleRead = async (id: string) => {
         // Optimistic update
-        queryClient.setQueryData(['notifications'], (old: any[]) =>
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
             Array.isArray(old) ? old.map(n => n.id === id ? { ...n, is_read: true } : n) : []
         );
 
@@ -31,7 +31,7 @@ export default function NotificationsPage() {
 
     // Mark all read
     const handleMarkAllRead = async () => {
-        queryClient.setQueryData(['notifications'], (old: any[]) =>
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
             Array.isArray(old) ? old.map(n => ({ ...n, is_read: true })) : []
         );
         await api.notifications.markAllRead();
@@ -40,13 +40,13 @@ export default function NotificationsPage() {
 
     // Delete Logic with Undo
     const handleDelete = async (id: string) => {
-        const previousNotifications = queryClient.getQueryData<any[]>(['notifications']) || [];
+        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
         const notificationToDelete = previousNotifications.find(n => n.id === id);
 
         if (!notificationToDelete) return;
 
         // Optimistic Remove
-        queryClient.setQueryData(['notifications'], (old: any[]) =>
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
             Array.isArray(old) ? old.filter(n => n.id !== id) : []
         );
 
@@ -72,7 +72,7 @@ export default function NotificationsPage() {
         if (!undoState) return;
 
         // Restore to cache
-        queryClient.setQueryData(['notifications'], (old: any[]) => {
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) => {
             const list = Array.isArray(old) ? [...old] : [];
             list.push(undoState.notification);
             // Sort again? simplified: just push.

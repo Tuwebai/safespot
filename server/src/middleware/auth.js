@@ -33,7 +33,8 @@ export function validateAuth(req, res, next) {
                 req.user = {
                     auth_id: decoded.auth_id,
                     anonymous_id: decoded.anonymous_id,
-                    email: decoded.email
+                    email: decoded.email,
+                    avatar_url: decoded.avatar_url
                 };
             }
         } catch (err) {

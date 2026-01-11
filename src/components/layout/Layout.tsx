@@ -8,11 +8,16 @@ import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { useLocation } from 'react-router-dom'
 import { useProfileQuery, useInvalidateProfile } from '@/hooks/queries/useProfileQuery'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/queryKeys'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { usePresenceHeartbeat } from '@/hooks/usePresenceHeartbeat'
+import { AdModal } from '@/components/ads/AdModal'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { cn } from '@/lib/utils'
+
+import { NotificationFeedbackListener } from '@/components/notifications/NotificationFeedbackListener'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -25,6 +30,7 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const { data: profile, isLoading } = useProfileQuery()
   const { invalidateProfile } = useInvalidateProfile()
+  const queryClient = useQueryClient()
 
   // Global Real-time Notifications Listener
   // This ensures that wherever the user is, they receive updates for follows, etc.
@@ -44,6 +50,8 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <ToastProvider>
+      <NotificationFeedbackListener />
+      <AdModal />
       <BadgeNotificationManager />
       <NetworkStatusIndicator />
 
@@ -52,7 +60,13 @@ export function Layout({ children }: LayoutProps) {
         isOpen={!!showForceAlias}
         onClose={() => { }} // No-op, forced mode handles this
         currentAlias=""
-        onSuccess={() => {
+        onSuccess={(newAlias) => {
+          // Optimistic Update: Update cache immediately to close modal instantly
+          queryClient.setQueryData(queryKeys.user.profile, (old: any) => {
+            if (!old) return old;
+            return { ...old, alias: newAlias };
+          });
+          // Then invalidate to ensure full consistency (e.g. badges, next level info if changed)
           invalidateProfile()
         }}
         isForced={true}

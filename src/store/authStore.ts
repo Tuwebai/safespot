@@ -8,6 +8,7 @@ interface User {
     auth_id: string;
     anonymous_id: string; // The ID linked to this account
     provider?: string; // 'google' | 'email'
+    avatar_url?: string;
 }
 
 interface AuthState {

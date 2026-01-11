@@ -37,7 +37,7 @@ import { AdminGuard } from '@/components/admin/AdminGuard'
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
-import { UpdateNotification } from '@/components/UpdateNotification'
+
 import { SEO } from '@/components/SEO'
 import { ServiceWorkerController } from '@/components/ServiceWorkerController'
 import { AuthToastListener } from '@/components/auth/AuthToastListener'
@@ -59,7 +59,7 @@ function App() {
         <ThemeProvider>
           <ServiceWorkerController />
           <FirstTimeOnboardingTheme />
-          <UpdateNotification />
+
           <SEO />
           <Layout>
             <ChunkErrorBoundary>

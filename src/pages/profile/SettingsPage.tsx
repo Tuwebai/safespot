@@ -542,7 +542,7 @@ export function SettingsPage() {
                         <CardContent className="space-y-2 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Versión</span>
-                                <span className="font-mono">2.4.0-pro</span>
+                                <span className="font-mono">{import.meta.env.PACKAGE_VERSION}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Estado del Servidor</span>

@@ -31,7 +31,7 @@ export default function PrivacidadPage() {
 
                     {/* Last Updated */}
                     <p className="text-sm text-muted-foreground">
-                        Última actualización: 28 de diciembre de 2026
+                        Última actualización: 11 de enero de 2026
                     </p>
 
                     {/* Promise Banner */}

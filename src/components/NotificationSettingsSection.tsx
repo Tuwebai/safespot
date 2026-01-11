@@ -123,8 +123,11 @@ export function NotificationSettingsSection() {
                     try {
                         const geo = await geocodeApi.reverse(latitude, longitude);
                         if (geo && geo.address) {
-                            city = geo.address.city || geo.address.town || geo.address.village || geo.address.neighborhood;
-                            province = geo.address.state || geo.address.province;
+                            city = geo.address.city || geo.address.town || geo.address.village || geo.address.neighborhood || geo.address.suburb;
+                            province = geo.address.state || geo.address.province || geo.address.region;
+
+                            // Clean up province name (remove "Provincia de ", etc if needed, though Nominatim usually gives clean names)
+
                             formattedName = [city, province].filter(Boolean).join(', ');
                         }
                     } catch (e) {
@@ -152,7 +155,10 @@ export function NotificationSettingsSection() {
                         updated_at: new Date().toISOString()
                     } : null);
 
-                    setLocationName(formattedName || 'Ubicación actualizada');
+                    // User Request: Make sure it shows the City, Province. Fallback to coordinates if geocoding fails.
+                    const finalName = formattedName || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                    setLocationName(finalName);
+
                     success('Zona de alertas actualizada');
                 } catch (_) {
                     console.error('[Location UI] Error saving location');

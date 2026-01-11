@@ -922,6 +922,8 @@ export interface Notification {
 }
 
 export interface NotificationSettings {
+  id: string;
+  anonymous_id: string;
   proximity_alerts: boolean;
   report_activity: boolean;
   similar_reports: boolean;
@@ -929,9 +931,9 @@ export interface NotificationSettings {
   max_notifications_per_day: number;
   last_known_lat?: number;
   last_known_lng?: number;
-  updated_at?: string;
   last_known_city?: string;
   last_known_province?: string;
+  updated_at: string;
 }
 
 
@@ -1154,22 +1156,22 @@ export const notificationsApi = {
   /**
    * Get notification settings
    */
-  getSettings: async (): Promise<any> => {
-    const res = await apiRequest<{ success: boolean; data: any }>('/notifications/settings');
-    return res.data;
+  getSettings: async (): Promise<NotificationSettings> => {
+    return apiRequest<NotificationSettings>('/notifications/settings');
   },
 
   /**
    * Update notification settings
    */
-  updateSettings: async (settings: any): Promise<any> => {
-    const res = await apiRequest<{ success: boolean; data: any }>('/notifications/settings', {
+  updateSettings: async (settings: Partial<NotificationSettings>): Promise<NotificationSettings> => {
+    return apiRequest<NotificationSettings>('/notifications/settings', {
       method: 'PATCH',
       body: JSON.stringify(settings)
     });
-    return res.data;
   }
 };
+
+
 
 // ============================================
 // FAVORITES API
@@ -1197,7 +1199,9 @@ export interface GeocodeResponse {
     town?: string;
     village?: string;
     neighborhood?: string;
+    suburb?: string;
     state?: string;
+    region?: string;
     province?: string;
     country?: string;
   };

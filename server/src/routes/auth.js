@@ -331,46 +331,86 @@ router.post('/google', authLimiter, async (req, res) => {
         if (user) {
             // LOGIN: User exists, use their stored anonymous_id (Restore Identity)
             anonymousIdToUse = user.anonymous_id;
+
+            // SYNC AVATAR: Check if we need to update credential, but ALWAYS sync public profile
+            if (googleUser.picture) {
+                // 1. Update Credential (if changed)
+                if (googleUser.picture !== user.avatar_url) {
+                    await pool.query('UPDATE user_auth SET avatar_url = $1 WHERE id = $2', [googleUser.picture, user.id]);
+                    user.avatar_url = googleUser.picture;
+                }
+
+                // 2. Update Public Profile (Always force sync to fix any drift/bugs)
+                await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, anonymousIdToUse]);
+            }
         } else {
             // REGISTER: User doesn't exist, promote current anonymous identity
 
-            // 1. Check if email is taken by standard auth (optional safety, or allow merge in future)
-            const emailCheck = await pool.query('SELECT id FROM user_auth WHERE email = $1 AND provider = $2', [googleUser.email, 'email']);
+            // 1. Check if email exists (for any provider) to Link/Merge
+            const emailCheck = await pool.query('SELECT * FROM user_auth WHERE email = $1', [googleUser.email]);
+
             if (emailCheck.rows.length > 0) {
-                console.warn('[DEBUG] Email already registered with password:', googleUser.email);
-                return res.status(400).json({ error: 'Este email ya está registrado con contraseña. Por favor inicia sesión manual.' });
-            }
+                // ACCOUNT MERGING: User exists with this email. Link Google to it.
+                user = emailCheck.rows[0];
+                console.log('[AUTH] Merging existing account with Google for:', googleUser.email);
 
-            // 2. CHECK FOR IDENTITY COLLISION
-            // If the current_anonymous_id is already linked to ANOTHER user account, we cannot steal it.
-            // We must generate a fresh identity for this new user.
-            const collisionCheck = await pool.query('SELECT id FROM user_auth WHERE anonymous_id = $1', [current_anonymous_id]);
+                // Update the user to include Google ID. 
+                // We update 'provider' to google to enable fast lookup next time, 
+                // but we DO NOT clear the password verification hash, so they can still use password if they want.
+                await pool.query(
+                    'UPDATE user_auth SET provider = $1, provider_user_id = $2, avatar_url = $3 WHERE id = $4',
+                    ['google', googleUser.sub, googleUser.picture, user.id]
+                );
 
-            if (collisionCheck.rows.length > 0) {
-                console.warn('[AUTH] Identity Collision detected. Preserving old user data. Generating fresh ID for new user.');
+                // CRITICAL FIX: Also sync avatar to public profile (anonymous_users)
+                // user.anonymous_id might be null if legacy, but it should exist.
+                if (user.anonymous_id) {
+                    await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, user.anonymous_id]);
+                }
 
-                // Generate new ID
-                const crypto = await import('crypto');
-                anonymousIdToUse = crypto.randomUUID();
+                // Use the existing user's anonymous_id (Restore Identity)
+                anonymousIdToUse = user.anonymous_id;
 
-                // Ensure it exists in anonymous_users table (Foreign Key Constraint)
-                await pool.query('INSERT INTO anonymous_users (anonymous_id) VALUES ($1)', [anonymousIdToUse]);
+                // Update local user object for response
+                user.provider = 'google';
+                user.provider_user_id = googleUser.sub;
+                user.avatar_url = googleUser.picture;
             } else {
-                anonymousIdToUse = current_anonymous_id;
-            }
 
-            // 3. Create User
-            const newUser = await pool.query(
-                `INSERT INTO user_auth (
+                // 2. CHECK FOR IDENTITY COLLISION
+                // If the current_anonymous_id is already linked to ANOTHER user account, we cannot steal it.
+                // We must generate a fresh identity for this new user.
+                const collisionCheck = await pool.query('SELECT id FROM user_auth WHERE anonymous_id = $1', [current_anonymous_id]);
+
+                if (collisionCheck.rows.length > 0) {
+                    console.warn('[AUTH] Identity Collision detected. Preserving old user data. Generating fresh ID for new user.');
+
+                    // Generate new ID
+                    const crypto = await import('crypto');
+                    anonymousIdToUse = crypto.randomUUID();
+
+                    // Ensure it exists in anonymous_users table (Foreign Key Constraint)
+                    await pool.query('INSERT INTO anonymous_users (anonymous_id, avatar_url) VALUES ($1, $2)', [anonymousIdToUse, googleUser.picture]);
+                } else {
+                    anonymousIdToUse = current_anonymous_id;
+                    // Update existing anonymous user with avatar
+                    await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, anonymousIdToUse]);
+                }
+
+                // 3. Create User
+                const newUser = await pool.query(
+                    `INSERT INTO user_auth (
                     email, 
                     provider, 
                     provider_user_id, 
                     anonymous_id, 
-                    email_verified
-                ) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-                [googleUser.email, 'google', googleUser.sub, anonymousIdToUse, googleUser.email_verified]
-            );
-            user = newUser.rows[0];
+                    email_verified,
+                    avatar_url
+                ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+                    [googleUser.email, 'google', googleUser.sub, anonymousIdToUse, googleUser.email_verified, googleUser.picture]
+                );
+                user = newUser.rows[0];
+            }
         }
 
         // 3. Update Last Login
@@ -381,7 +421,8 @@ router.post('/google', authLimiter, async (req, res) => {
             id: user.id,
             email: user.email,
             anonymous_id: anonymousIdToUse, // IMPORTANT: The one from DB (if login) or Current (if register)
-            role: user.role || 'user'
+            role: user.role || 'user',
+            avatar_url: user.avatar_url
         };
 
         const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -394,7 +435,8 @@ router.post('/google', authLimiter, async (req, res) => {
                 id: user.id,
                 email: user.email,
                 alias: user.alias,
-                provider: 'google'
+                provider: 'google',
+                avatar_url: user.avatar_url
             }
         });
 
