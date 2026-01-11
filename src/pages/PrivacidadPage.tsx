@@ -5,7 +5,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Eye, Database, UserX, Lock, Shield } from 'lucide-react';
+import { ArrowLeft, Eye, Database, Lock, Shield } from 'lucide-react';
 
 export default function PrivacidadPage() {
     return (
@@ -31,7 +31,7 @@ export default function PrivacidadPage() {
 
                     {/* Last Updated */}
                     <p className="text-sm text-muted-foreground">
-                        Última actualización: 28 de diciembre de 2024
+                        Última actualización: 28 de diciembre de 2026
                     </p>
 
                     {/* Promise Banner */}
@@ -47,60 +47,61 @@ export default function PrivacidadPage() {
                         </p>
                     </div>
 
-                    {/* Section 1: Data Collection & Minimization */}
+                    {/* Section 1: Data Collection Types */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-blue-500/20 rounded-lg">
                                 <Database className="h-5 w-5 text-blue-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">1. Recolección Mínima de Datos</h2>
+                            <h2 className="text-xl font-semibold">1. Tipos de Datos que Recolectamos</h2>
                         </div>
                         <div className="space-y-4 text-foreground/80">
                             <p>
-                                De acuerdo con el principio de **minimización de datos**, SafeSpot solo solicita y almacena la información estrictamente necesaria para la prestación del servicio:
+                                SafeSpot opera bajo un modelo híbrido que prioriza tu privacidad. La cantidad de datos recolectados depende de cómo decidas usar la aplicación:
                             </p>
-                            <div>
-                                <h3 className="font-medium text-foreground mb-2 italic">Datos de Geolocalización:</h3>
-                                <p className="text-sm mb-2">
-                                    Al generar un reporte, procesamos las coordenadas exactas (latitud y longitud) para ubicar el incidente en el mapa. Estos datos se utilizan exclusivamente para informar a la comunidad sobre zonas de riesgo.
-                                </p>
-                            </div>
-                            <ul className="list-disc pl-5 space-y-1">
-                                <li>Contenido del reporte (categoría, descripción, fotos adjuntas).</li>
-                                <li>Marca temporal del incidente.</li>
-                                <li>Identificador Anónimo único del dispositivo.</li>
-                            </ul>
-                            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                                <p className="text-green-400 text-sm font-medium">
-                                    SafeSpot NO vincula estos datos a nombres, correos electrónicos, números de teléfono ni identidades civiles reales.
-                                </p>
+
+                            <div className="grid md:grid-cols-2 gap-4 mt-4">
+                                <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+                                    <h3 className="font-bold text-neon-green mb-2">A. Usuarios Anónimos (Por defecto)</h3>
+                                    <ul className="list-disc pl-5 space-y-1 text-sm">
+                                        <li><strong>ID Anónimo:</strong> Cadena aleatoria generada en tu dispositivo (`anonymous_id`).</li>
+                                        <li><strong>Geolocalización:</strong> Coordenadas (lat/long) únicamente al crear reportes.</li>
+                                        <li><strong>Uso:</strong> No vinculamos esto a tu identidad real.</li>
+                                    </ul>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+                                    <h3 className="font-bold text-indigo-400 mb-2">B. Usuarios Autenticados (Google)</h3>
+                                    <ul className="list-disc pl-5 space-y-1 text-sm">
+                                        <li><strong>Datos de Google:</strong> Obtenemos tu dirección de correo electrónico, nombre y foto de perfil.</li>
+                                        <li><strong>Identificador único:</strong> Tu ID de usuario de Google (`sub`) para recuperar tu cuenta.</li>
+                                        <li><strong>Uso:</strong> Exclusivamente para sincronizar tu historial entre dispositivos.</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </section>
 
-                    {/* Section 2: Anonymous ID Transparency */}
+                    {/* Section 2: Google User Data Disclosure (Specific for Compliance) */}
                     <section className="bg-dark-card rounded-xl p-6 border border-dark-border">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 bg-purple-500/20 rounded-lg">
-                                <UserX className="h-5 w-5 text-purple-400" />
+                            <div className="p-2 bg-indigo-500/20 rounded-lg">
+                                <Shield className="h-5 w-5 text-indigo-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">2. Uso del Identificador Anónimo</h2>
+                            <h2 className="text-xl font-semibold">2. Uso de Datos de Usuario de Google</h2>
                         </div>
                         <div className="space-y-3 text-foreground/80">
                             <p>
-                                El `anonymous_id` es una cadena de caracteres aleatoria generada localmente en tu dispositivo.
+                                Si eliges iniciar sesión con Google ("Google Sign-In"), SafeSpot accede a la siguiente información autorizada por ti:
                             </p>
-                            <div className="bg-dark-bg rounded-lg p-4 border border-dark-border space-y-2">
-                                <h4 className="font-medium text-foreground">¿Para qué lo usamos?</h4>
-                                <ul className="list-disc pl-5 space-y-1 text-sm">
-                                    <li><strong>Prevención de Fraude:</strong> Evitar la saturación de reportes falsos desde un mismo origen.</li>
-                                    <li><strong>Gestión de Usuario:</strong> Permitirte visualizar, editar o eliminar tus propios reportes sin necesidad de crear una cuenta con contraseña.</li>
-                                    <li><strong>Seguridad:</strong> Mitigar ataques de denegación de servicio (DDoS) o spam malicioso.</li>
-                                </ul>
+                            <ul className="list-disc pl-5 space-y-2">
+                                <li><strong>Dirección de Email:</strong> Usada únicamente como identificador único para que puedas recuperar tus reportes y logros si cambias de celular o reinstalas la app.</li>
+                                <li><strong>Foto de Perfil y Nombre:</strong> Se muestran en tu perfil privado para confirmar que has iniciado sesión correctamente.</li>
+                            </ul>
+                            <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-3 mt-4">
+                                <p className="text-indigo-300 text-sm font-medium">
+                                    <strong>Política de No-Comercialización:</strong> La información recibida de las APIs de Google se adhiere a la <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">Política de Datos de Usuario de los Servicios API de Google</a>, incluidos los requisitos de Uso Limitado. <strong>Nunca vendemos, compartimos ni utilizamos tus datos de Google para publicidad.</strong>
+                                </p>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                                Este identificador no nos permite conocer tu perfil personal ni rastrear tu actividad fuera de la aplicación.
-                            </p>
                         </div>
                     </section>
 
@@ -128,44 +129,34 @@ export default function PrivacidadPage() {
                             <div className="p-2 bg-cyan-500/20 rounded-lg">
                                 <Eye className="h-5 w-5 text-cyan-400" />
                             </div>
-                            <h2 className="text-xl font-semibold">4. Tus Derechos y Eliminación de Datos</h2>
+                            <h2 className="text-xl font-semibold">4. Tus Derechos</h2>
                         </div>
                         <div className="space-y-4 text-foreground/80">
                             <p>
-                                Bajo normativas como el GDPR (Europa) y leyes de protección de datos locales en LATAM, tienes derecho a controlar tu información:
+                                Tienes derecho a eliminar tu cuenta y tus datos en cualquier momento.
                             </p>
-                            <div className="space-y-2">
-                                <h4 className="font-medium text-foreground">Cómo ejercer tus derechos:</h4>
-                                <ul className="list-disc pl-5 space-y-2">
-                                    <li><strong>Eliminación Automática:</strong> Al borrar la caché y los datos del sitio en tu navegador, el identificador anónimo se destruye permanentemente en tu dispositivo.</li>
-                                    <li><strong>Solicitud Manual:</strong> Si deseas que eliminemos un reporte específico o datos vinculados a tu identificador anónimo de nuestros servidores, puedes hacerlo por correo electrónico.</li>
-                                </ul>
-                            </div>
                             <div className="bg-dark-bg p-4 rounded-lg border border-dark-border">
                                 <p className="text-sm">
                                     Para solicitudes de eliminación de datos, escribe a:
                                     <span className="text-neon-green ml-1 font-mono">privacidad@safespot.tuweb-ai.com</span>
-                                    <br />
-                                    <span className="text-[10px] text-muted-foreground italic">Incluye tu identificador anónimo (si lo posees) o el detalle del reporte a remover.</span>
                                 </p>
                             </div>
                         </div>
                     </section>
+                </div>{/* End space-y-8 */}
 
-                    {/* Contact */}
-                    <section className="text-center py-8 border-t border-dark-border">
-                        <p className="text-muted-foreground">
-                            ¿Tenés preguntas sobre tu privacidad?
-                        </p>
-                        <a
-                            href="mailto:privacidad@safespot.tuweb-ai.com"
-                            className="text-neon-green hover:underline"
-                        >
-                            Contactanos
-                        </a>
-                    </section>
-
-                </div>
+                {/* Contact */}
+                <section className="text-center py-8 border-t border-dark-border mt-8">
+                    <p className="text-muted-foreground">
+                        ¿Tenés preguntas sobre tu privacidad?
+                    </p>
+                    <a
+                        href="mailto:privacidad@safespot.tuweb-ai.com"
+                        className="text-neon-green hover:underline"
+                    >
+                        Contactanos
+                    </a>
+                </section>
             </main>
         </div>
     );
