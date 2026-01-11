@@ -801,5 +801,116 @@ router.get('/recommendations', requireAnonymousId, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/users/nearby
+ * Get users in the same locality/city
+ */
+router.get('/nearby', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+
+    // 1. Determine User's Top Locality (same logic as recommendations)
+    const localityResult = await queryWithRLS(
+      anonymousId,
+      `SELECT locality
+       FROM reports
+       WHERE anonymous_id = $1 AND locality IS NOT NULL AND locality != ''
+       GROUP BY locality
+       ORDER BY COUNT(*) DESC
+       LIMIT 1`,
+      [anonymousId]
+    );
+
+    let locality = null;
+    if (localityResult.rows.length > 0) {
+      locality = localityResult.rows[0].locality;
+    }
+
+    if (!locality) {
+      // If no locality found for user, return empty list (client handles empty state)
+      return res.json({
+        success: true,
+        data: [],
+        meta: { locality: null }
+      });
+    }
+
+    // 2. Fetch users in that locality
+    // Exclude current user and already followed users (optional, but requested "Personas Cerca" usually implies discovery)
+    // Prompt says "Excluir al usuario logueado", doesn't explicitly say exclude followed, but it's good practice for discovery.
+    // However, "Community" might imply seeing your neighbors regardless. Let's stick to just excluding self for now as per prompt "Excluir al usuario logueado".
+    const usersResult = await queryWithRLS(
+      anonymousId,
+      `SELECT DISTINCT ON (u.anonymous_id) 
+         u.anonymous_id, 
+         u.alias, 
+         u.avatar_url, 
+         u.level,
+         u.points,
+         $2 as common_locality,
+         EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+       FROM anonymous_users u
+       JOIN reports r ON u.anonymous_id = r.anonymous_id
+       WHERE r.locality = $2
+         AND u.anonymous_id != $1
+         AND u.alias IS NOT NULL AND u.alias != ''
+       ORDER BY u.anonymous_id, u.last_active_at DESC
+       LIMIT 50`,
+      [anonymousId, locality]
+    );
+
+    res.json({
+      success: true,
+      data: usersResult.rows,
+      meta: { locality }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch nearby users' });
+  }
+});
+
+/**
+ * GET /api/users/global
+ * Get all users (Discovery)
+ */
+router.get('/global', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const offset = (page - 1) * limit;
+
+    const result = await queryWithRLS(
+      anonymousId,
+      `SELECT 
+         u.anonymous_id, 
+         u.alias, 
+         u.avatar_url, 
+         u.level,
+         u.points,
+         EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+       FROM anonymous_users u
+       WHERE u.anonymous_id != $1
+         AND u.alias IS NOT NULL AND u.alias != ''
+       ORDER BY u.last_active_at DESC
+       LIMIT $2 OFFSET $3`,
+      [anonymousId, limit, offset]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows,
+      meta: { page, has_more: result.rows.length === limit }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch global community' });
+  }
+});
+
 export default router;
+
 

@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
     { icon: User, label: 'Perfil', path: '/perfil' },
 ]
 
+
 export function BottomNav() {
     const location = useLocation()
 

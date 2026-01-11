@@ -119,30 +119,50 @@ export function NotificationSettingsSection() {
                     let province: string | undefined = undefined;
                     let formattedName = null;
 
-                    // 1. Resolve address (ONLY when updating)
+                    // 1. Resolve address (User Request: Robust Reverse Geocoding)
                     try {
+                        // The backend now tries Georef first, then Nominatim, and returns normalized city/province
                         const geo = await geocodeApi.reverse(latitude, longitude);
+
                         if (geo && geo.address) {
-                            city = geo.address.city || geo.address.town || geo.address.village || geo.address.neighborhood || geo.address.suburb;
-                            province = geo.address.state || geo.address.province || geo.address.region;
+                            // Backend already normalizes these fields
+                            city = geo.address.city || geo.address.municipality || geo.address.town || geo.address.neighborhood;
+                            province = geo.address.province || geo.address.state;
 
-                            // Clean up province name (remove "Provincia de ", etc if needed, though Nominatim usually gives clean names)
-
-                            formattedName = [city, province].filter(Boolean).join(', ');
+                            // Create a nice human-readable string
+                            // Hierarchy: City, Province > Province > Fallback
+                            if (city && province) {
+                                formattedName = `${city}, ${province}`;
+                            } else if (province) {
+                                formattedName = province;
+                            } else if (city) {
+                                formattedName = city;
+                            } else {
+                                // Last resort fallback if geo succeeds but lacks names (rare)
+                                formattedName = "Zona cercana a tu ubicación";
+                            }
                         }
                     } catch (e) {
                         console.warn('Reverse geocoding failed', e);
+                        // Network error or 500
+                        formattedName = null;
+                        city = undefined;
+                        province = undefined;
                     }
+
+                    // Fallback UX logic (Crucial)
+                    // If formattedName is still null here (API error), do NOT show raw coordinates.
+                    const finalDisplayName = formattedName || "Zona sin nombre detectado";
 
                     // 2. Save everything to backend settings
                     await notificationsApi.updateSettings({
                         lat: latitude,
                         lng: longitude,
-                        city,
-                        province
+                        city: city || null,
+                        province: province || null
                     } as any);
 
-                    // 3. Sync with Push Service (so proximity push works)
+                    // 3. Sync with Push Service
                     updateServiceLocation(latitude, longitude);
 
                     // 4. Update local state
@@ -155,9 +175,7 @@ export function NotificationSettingsSection() {
                         updated_at: new Date().toISOString()
                     } : null);
 
-                    // User Request: Make sure it shows the City, Province. Fallback to coordinates if geocoding fails.
-                    const finalName = formattedName || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-                    setLocationName(finalName);
+                    setLocationName(finalDisplayName);
 
                     success('Zona de alertas actualizada');
                 } catch (_) {

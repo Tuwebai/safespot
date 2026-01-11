@@ -755,6 +755,14 @@ export const usersApi = {
    */
   getSuggestions: async (): Promise<any[]> => {
     return apiRequest<any[]>(`/users/recommendations`);
+  },
+
+  getNearbyUsers: async (): Promise<UserProfile[]> => {
+    return apiRequest<UserProfile[]>(`/users/nearby`);
+  },
+
+  getGlobalUsers: async (page = 1): Promise<UserProfile[]> => {
+    return apiRequest<UserProfile[]>(`/users/global?page=${page}`);
   }
 
 };
@@ -1198,9 +1206,14 @@ export interface GeocodeResponse {
     city?: string;
     town?: string;
     village?: string;
+    hamlet?: string;
     neighborhood?: string;
     suburb?: string;
+    city_district?: string;
+    municipality?: string;
+    county?: string;
     state?: string;
+    state_district?: string;
     region?: string;
     province?: string;
     country?: string;

@@ -24,10 +24,12 @@ const PublicProfile = lazyRetry(() => import('@/pages/PublicProfile').then(m => 
 const FollowsPage = lazyRetry(() => import('@/pages/FollowsPage').then(m => ({ default: m.default })), 'FollowsPage')
 const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ default: m.ThreadPage })), 'ThreadPage')
 const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
+const Comunidad = lazyRetry(() => import('@/pages/Comunidad').then(m => ({ default: m.Comunidad })), 'Comunidad')
 const ResetPassword = lazyRetry(() => import('@/pages/ResetPassword'), 'ResetPassword')
 
 // Admin Imports (Lazy Loaded)
 const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
+
 const AdminDashboard = lazyRetry(() => import('@/pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })), 'AdminDashboard')
 const UsersPage = lazyRetry(() => import('@/pages/admin/UsersPage').then(m => ({ default: m.UsersPage })), 'UsersPage')
 const AdminReportsPage = lazyRetry(() => import('./pages/admin/ReportsPage').then(module => ({ default: module.ReportsPage })), 'AdminReportsPage')
@@ -83,6 +85,7 @@ function App() {
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/perfil/configuracion" element={<SettingsPage />} />
                   <Route path="/favoritos" element={<MisFavoritos />} />
+                  <Route path="/comunidad" element={<Comunidad />} />
                   <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
                   <Route path="/notificaciones" element={<NotificationsPage />} />
                   <Route path="/terminos" element={<TerminosPage />} />

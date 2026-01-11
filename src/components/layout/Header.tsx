@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -281,7 +281,25 @@ export function Header() {
             )
           })}
 
+          <Link
+            to="/comunidad"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center px-4 py-3 rounded-lg transition-all duration-200',
+              'active:scale-95',
+              isActive('/comunidad')
+                ? 'text-neon-green bg-neon-green/10'
+                : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+            )}
+          >
+            <div className="mr-3 w-5 h-5 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+            <span className="font-medium">Comunidad</span>
+          </Link>
+
           <div className="pt-4 mt-4 border-t border-dark-border">
+
             <Link
               to="/perfil"
               onClick={() => setMobileMenuOpen(false)}

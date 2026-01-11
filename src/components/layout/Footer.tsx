@@ -82,6 +82,14 @@ export function Footer() {
                 </li>
                 <li>
                   <Link
+                    to="/comunidad"
+                    className="text-foreground/70 hover:text-neon-green transition-colors"
+                  >
+                    Comunidad
+                  </Link>
+                </li>
+                <li>
+                  <Link
                     to="/crear-reporte"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
