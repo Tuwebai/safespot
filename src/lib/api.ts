@@ -942,6 +942,11 @@ export interface NotificationSettings {
   last_known_city?: string;
   last_known_province?: string;
   updated_at: string;
+  // Aliases for update requests
+  lat?: number;
+  lng?: number;
+  city?: string | null;
+  province?: string | null;
 }
 
 

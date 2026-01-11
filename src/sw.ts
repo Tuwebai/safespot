@@ -136,7 +136,11 @@ registerRoute(navigationRoute);
 // ============================================
 
 self.addEventListener('push', (event) => {
-    console.log('[SW] Push received:', event);
+    console.log('[SW] Push received. Event:', event);
+    if (!event.data) {
+        console.log('[SW] Push received but no data');
+        return;
+    }
 
     let data = {
         title: '⚠️ Nuevo reporte cerca tuyo',
@@ -151,6 +155,7 @@ self.addEventListener('push', (event) => {
     if (event.data) {
         try {
             data = event.data.json();
+            console.log('[SW] Parsed push data:', data);
         } catch (e) {
             console.error('[SW] Error parsing push data:', e);
         }
@@ -178,8 +183,10 @@ self.addEventListener('push', (event) => {
                     client.url.startsWith(self.location.origin) // Same origin safety
                 );
 
+                console.log('[SW] Client Visibility Check:', { hasVisibleClient, clientCount: clientList.length });
+
                 if (hasVisibleClient) {
-                    console.log('[SW] App is visible - Suppressing native notification');
+                    console.log('[SW] App is visible - Suppressing native notification and sending IN_APP_NOTIFICATION');
 
                     // Optional: Send signal to client in case SSE missed (redundancy)
                     clientList.forEach(client => {
@@ -193,6 +200,7 @@ self.addEventListener('push', (event) => {
                 }
 
                 // App not visible -> Show Native Push
+                console.log('[SW] App not visible - Showing Native Notification', data.title);
                 return self.registration.showNotification(data.title, options);
             })
     );

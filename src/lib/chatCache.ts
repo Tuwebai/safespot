@@ -19,6 +19,9 @@ const KEYS = {
     messages: (convId: string) => ['chats', 'messages', convId] as const,
 };
 
+// Enterprise Grade: In-Memory Deduplication Cache
+const processedMessageIds = new Set<string>();
+
 export const chatCache = {
     /**
      * INBOX AUTHORITY: Handles a new message for the Global Room List.
@@ -29,6 +32,19 @@ export const chatCache = {
      */
     applyInboxUpdate: (queryClient: QueryClient, message: ChatMessage, currentUserId: string, isActiveRoom: boolean = false) => {
         const roomId = message.conversation_id;
+
+        // DEDUPLICATION GATE
+        // If we have seen this message ID recently (last 10 seconds), ignore it.
+        // This handles race conditions between Optimistic Updates and SSE events.
+        if (processedMessageIds.has(message.id)) {
+            console.log(`[chatCache] Ignored duplicate update for message ${message.id}`);
+            return;
+        }
+
+        // Mark as processed
+        processedMessageIds.add(message.id);
+        // Cleanup memory after 10 seconds to prevent leak
+        setTimeout(() => processedMessageIds.delete(message.id), 10000);
 
         queryClient.setQueryData(KEYS.rooms, (oldData: ChatRoom[] | undefined) => {
             if (!oldData) return oldData;
@@ -45,7 +61,7 @@ export const chatCache = {
             // Calculate new unread count
             // If I sent it, 0. If I received it AND I'm not in the room, +1. Else same.
             const isMyMessage = message.sender_id === currentUserId;
-            let newUnreadCount = room.unread_count || 0;
+            let newUnreadCount = Number(room.unread_count) || 0;
 
             if (!isMyMessage && !isActiveRoom) {
                 newUnreadCount += 1;
@@ -73,7 +89,7 @@ export const chatCache = {
         queryClient.setQueryData(KEYS.conversation(roomId), (old: ChatRoom | undefined) => {
             if (!old) return old;
             const isMyMessage = message.sender_id === currentUserId;
-            let newUnreadCount = old.unread_count || 0;
+            let newUnreadCount = Number(old.unread_count) || 0;
             if (!isMyMessage && !isActiveRoom) newUnreadCount += 1;
 
             return {

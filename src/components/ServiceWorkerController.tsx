@@ -1,6 +1,7 @@
 
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/toast/useToast';
 
 /**
  * ServiceWorkerController
@@ -12,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
  */
 export function ServiceWorkerController() {
     const navigate = useNavigate();
+    const { info } = useToast();
 
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return;
@@ -35,8 +37,13 @@ export function ServiceWorkerController() {
             }
 
             if (type === 'IN_APP_NOTIFICATION') {
-                // Here we could trigger a toast if needed, though
-                // usually standard SSE handles this. This is a fallback.
+                const payload = event.data.payload;
+                console.log('[ServiceWorkerController] In-App Notification:', payload);
+
+                // Show simple toast as current implementation doesn't support actions/descriptions
+                // We combine title and body for context
+                const message = `${payload.title}: ${payload.body}`;
+                info(message, 5000); // 5 seconds duration
             }
         };
 
@@ -45,7 +52,7 @@ export function ServiceWorkerController() {
         return () => {
             navigator.serviceWorker.removeEventListener('message', handleMessage);
         };
-    }, [navigate]);
+    }, [navigate, info]);
 
     return null;
 }

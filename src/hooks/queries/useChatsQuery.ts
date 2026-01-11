@@ -33,12 +33,17 @@ const CHATS_KEYS = {
  */
 export function useChatRooms() {
     const queryClient = useQueryClient();
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
     const query = useQuery({
         queryKey: CHATS_KEYS.rooms,
         queryFn: async () => {
             const rooms = await chatsApi.getAllRooms();
+
+            // SANITIZATION: Force unread_count to be a number (Backend might send BigInt string)
+            rooms.forEach(r => {
+                r.unread_count = Number(r.unread_count) || 0;
+            });
+
             // Store each room in detail cache for individual reactivity
             rooms.forEach(room => {
                 queryClient.setQueryData(CHATS_KEYS.conversation(room.id), room);
@@ -57,65 +62,7 @@ export function useChatRooms() {
         refetchInterval: 60000,
     });
 
-    useEffect(() => {
-        if (!anonymousId) return;
 
-        const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/user/${anonymousId}`;
-
-        const unsubscribeUpdate = ssePool.subscribe(sseUrl, 'chat-update', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const convId = data.roomId;
-                if (!convId) return;
-                if (data.originClientId === getClientId()) return;
-
-                if (data.message) {
-                    const message = data.message;
-                    const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
-                    chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
-                } else if (data.action === 'read') {
-                    chatCache.markRoomAsRead(queryClient, convId);
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
-                        if (!old) return old;
-                        return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
-                    });
-                } else if (data.action === 'typing') {
-                    queryClient.setQueryData(CHATS_KEYS.rooms, (old: any) => {
-                        if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
-                    });
-                }
-            } catch (err) { }
-        });
-
-        const unsubscribeRollback = ssePool.subscribe(sseUrl, 'chat-rollback', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.roomId && data.messageId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId), (old) => {
-                        if (!old) return old;
-                        return old.filter(m => m.id !== data.messageId);
-                    });
-                }
-            } catch (e) { }
-        });
-
-        const unsubscribePresence = ssePool.subscribe(sseUrl, 'presence-update', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.userId) {
-                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(data.userId), data.partial);
-                }
-            } catch (e) { }
-        });
-
-        return () => {
-            unsubscribeUpdate();
-            unsubscribeRollback();
-            unsubscribePresence();
-        };
-
-    }, [anonymousId, queryClient]);
 
     return query;
 }

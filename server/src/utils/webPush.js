@@ -61,6 +61,7 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
  */
 export async function sendPushNotification(subscription, payload) {
     if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+        logError('VAPID not configured', { context: 'webPush.sendPushNotification' });
         return { success: false, error: 'VAPID not configured' };
     }
 
@@ -178,8 +179,8 @@ export function createReportNotificationPayload(report, distanceMeters) {
     return {
         title: '⚠️ Nuevo reporte cerca tuyo',
         body: `${report.category || 'Incidente'} · ${distanceText}\n${report.title || ''}`,
-        icon: icon,
-        badge: '/favicon.svg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge.png',
         tag: `report-${report.id}`, // Groups updates for this specific report
         renotify: true,
         data: {
@@ -231,8 +232,8 @@ export function createActivityNotificationPayload({ type, title, message, report
     return {
         title: title,
         body: message,
-        icon: icon,
-        badge: '/favicon.svg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge.png',
         tag: `${type}-${entityId}`,
         renotify: true,
         data: {
@@ -259,8 +260,8 @@ export function createChatNotificationPayload(message, room) {
     return {
         title: `💬 Nuevo mensaje de @${senderAlias}`,
         body: `${reportTitle}: ${message.content}`,
-        icon: '/favicon.svg',
-        badge: '/favicon.svg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge.png',
         tag: `chat-${message.room_id}`, // Tagging by room id groups notifications from the same chat
         renotify: true,
         data: {
