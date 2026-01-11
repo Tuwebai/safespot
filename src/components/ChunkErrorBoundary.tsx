@@ -49,12 +49,37 @@ export class ChunkErrorBoundary extends Component<Props, State> {
 
     private handleRetry = () => {
         if (this.state.errorType === 'chunk') {
-            // For chunk errors, often a simple reload fixes it as it gets the latest manifest
+            // Prevent infinite loops: check if we just reloaded
+            const lastReload = sessionStorage.getItem('chunk_reload_ts');
+            const now = Date.now();
+
+            if (lastReload && (now - parseInt(lastReload)) < 10000) {
+                // If we reloaded less than 10 seconds ago, don't do it again automatically
+                // Just clear the flag so the button works next time
+                sessionStorage.removeItem('chunk_reload_ts');
+                // Force a hard reload ignoring cache
+                window.location.href = window.location.href;
+                return;
+            }
+
+            sessionStorage.setItem('chunk_reload_ts', String(now));
             window.location.reload();
         } else {
             this.setState({ hasError: false, errorType: null });
         }
     };
+
+    public componentDidUpdate(_prevProps: Props, prevState: State) {
+        if (this.state.hasError && this.state.errorType === 'chunk' && !prevState.hasError) {
+            // Auto-retry logic directly on error detection (optional, but effectively handled by the button or render logic)
+            // We'll leave the auto-reload to the user interaction or specific lifecycle if needed.
+            // For now, let's auto-trigger the retry if it's the first time
+            const lastReload = sessionStorage.getItem('chunk_reload_ts');
+            if (!lastReload) {
+                this.handleRetry();
+            }
+        }
+    }
 
     public render() {
         if (this.state.hasError) {

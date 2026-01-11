@@ -157,15 +157,15 @@ export function Perfil() {
             </Button>
           ) : (
             <div className="flex items-center gap-2">
-              <div className="hidden sm:block text-right mr-2">
-                <p className="text-xs text-muted-foreground">
+              <div className="text-right mr-2 flex flex-col items-end justify-center">
+                <p className="text-xs text-muted-foreground hidden sm:block">
                   {user?.provider === 'google' ? 'Sesión iniciada con Google' : 'Sesión iniciada como'}
                 </p>
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex items-center justify-end gap-1.5 bg-white/5 sm:bg-transparent px-3 py-1.5 sm:p-0 rounded-full sm:rounded-none border border-white/10 sm:border-none">
                   {user?.provider === 'google' && (
-                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-3.5 h-3.5" alt="Google" />
+                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-4 h-4" alt="Google" />
                   )}
-                  <p className="text-sm font-medium">{user?.email}</p>
+                  <p className="text-xs sm:text-sm font-medium max-w-[140px] sm:max-w-none truncate">{user?.email}</p>
                 </div>
               </div>
 
