@@ -139,6 +139,20 @@ async function testConnection() {
       -- 10. Presence & Profile
       ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
       ALTER TABLE anonymous_users ADD COLUMN IF NOT EXISTS interest_radius_meters INTEGER DEFAULT 1000;
+
+      -- 11. Google Auth Support
+      ALTER TABLE user_auth ADD COLUMN IF NOT EXISTS provider VARCHAR(20) DEFAULT 'email';
+      ALTER TABLE user_auth ADD COLUMN IF NOT EXISTS provider_user_id VARCHAR(255);
+      ALTER TABLE user_auth ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+      
+      -- Add Unique Constraint for Providers (One Google Account per User-ish)
+      -- We do this in a DO block to avoid error if it already exists
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_auth_provider_unique') THEN
+            ALTER TABLE user_auth ADD CONSTRAINT user_auth_provider_unique UNIQUE (provider, provider_user_id);
+        END IF;
+      END $$;
     `;
 
 

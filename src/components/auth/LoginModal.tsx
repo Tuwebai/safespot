@@ -13,6 +13,8 @@ interface LoginModalProps {
 
 type AuthMode = 'login' | 'register' | 'forgot-password';
 
+import { useGoogleLogin } from '@react-oauth/google';
+
 export function LoginModal({ isOpen, onClose, initialMode = 'login' }: LoginModalProps) {
     const [mode, setMode] = useState<AuthMode>(initialMode);
     const [email, setEmail] = useState('');
@@ -22,6 +24,38 @@ export function LoginModal({ isOpen, onClose, initialMode = 'login' }: LoginModa
     const [success, setSuccess] = useState<string | null>(null);
 
     const { loginSuccess } = useAuthStore();
+
+    const handleGoogleLogin = useGoogleLogin({
+        onSuccess: async (response) => {
+            setIsLoading(true);
+            try {
+                // Call our backend
+                const backendRes = await fetch(`${API_BASE_URL}/auth/google`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        google_access_token: response.access_token,
+                        current_anonymous_id: getAnonymousId()
+                    })
+                });
+
+                const data = await backendRes.json();
+                if (!backendRes.ok) throw new Error(data.error || 'Error con Google');
+
+                // Success
+                localStorage.setItem('safespot_auth_swapped', 'true');
+                setSuccess('Sesión iniciada con Google.');
+                setTimeout(() => performLogin(data), 800);
+            } catch (err: any) {
+                setError('No se pudo iniciar sesión con Google.');
+                setIsLoading(false);
+            }
+        },
+        onError: () => {
+            setError('Ventana cerrada o error de conexión.');
+            setIsLoading(false);
+        }
+    });
 
     if (!isOpen) return null;
 
@@ -97,9 +131,10 @@ export function LoginModal({ isOpen, onClose, initialMode = 'login' }: LoginModa
 
     async function performLogin(data: any) {
         const user = {
-            email: email,
-            auth_id: 'unknown',
-            anonymous_id: data.anonymous_id
+            email: data.user?.email || email,
+            auth_id: data.user?.id || 'unknown',
+            anonymous_id: data.anonymous_id,
+            provider: data.user?.provider || (mode === 'register' || mode === 'login' ? 'email' : undefined)
         };
         await loginSuccess(data.token, data.anonymous_id, user);
         onClose();
@@ -165,6 +200,23 @@ export function LoginModal({ isOpen, onClose, initialMode = 'login' }: LoginModa
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-4">
+
+                        {/* Google Button */}
+                        <button
+                            type="button"
+                            onClick={() => handleGoogleLogin()}
+                            disabled={isLoading}
+                            className="w-full py-2.5 px-4 bg-white dark:bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 transition-all flex justify-center items-center gap-2 mb-2 shadow-sm"
+                        >
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
+                            Continuar con Google
+                        </button>
+
+                        <div className="relative flex items-center justify-center my-4">
+                            <hr className="w-full border-gray-200 dark:border-gray-700 absolute" />
+                            <span className="bg-white dark:bg-gray-900 px-2 text-xs text-gray-400 font-medium relative z-10 uppercase">O con email</span>
+                        </div>
+
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
                             <div className="relative">

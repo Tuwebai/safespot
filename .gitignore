@@ -40,3 +40,4 @@ SAFESPOT_2_0_ROADMAP.md
 n8n.json
 Chat_Global_Messenger_Grade.md
 REDIS_INTEGRATION_AUDIT.md
+server/scripts/migrate_google_oauth.js

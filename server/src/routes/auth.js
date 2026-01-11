@@ -6,6 +6,8 @@ import { validateAuth, signToken } from '../middleware/auth.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { validateAnonymousId } from '../utils/validation.js';
 import { authLimiter } from '../utils/rateLimiter.js';
+import { verifyGoogleToken } from '../services/googleAuth.js';
+import jwt from 'jsonwebtoken';
 
 const router = express.Router();
 
@@ -292,6 +294,94 @@ router.get('/me', validateAuth, (req, res) => {
             anonymous_id: req.headers['x-anonymous-id'] || null,
             message: 'Anonymous session'
         });
+    }
+});
+
+/**
+ * POST /api/auth/google
+ * Handles Google OAuth Login/Register with Identity Promotion.
+ */
+router.post('/google', authLimiter, async (req, res) => {
+    try {
+        const { google_id_token, google_access_token, current_anonymous_id } = req.body;
+
+        console.log('[DEBUG] Google Auth Request:', {
+            hasIdToken: !!google_id_token,
+            hasAccessToken: !!google_access_token,
+            anonId: current_anonymous_id
+        });
+
+        if ((!google_id_token && !google_access_token) || !current_anonymous_id) {
+            console.error('[DEBUG] Missing required fields for Google Auth');
+            return res.status(400).json({ error: 'Token y ID anónimo requeridos' });
+        }
+
+        // 1. Verify Token (supports both now)
+        const googleUser = await verifyGoogleToken({ google_id_token, google_access_token });
+
+        // 2. Check if user exists (Provider-based)
+        const userResult = await pool.query(
+            'SELECT * FROM user_auth WHERE provider = $1 AND provider_user_id = $2',
+            ['google', googleUser.sub]
+        );
+
+        let user = userResult.rows[0];
+        let anonymousIdToUse = current_anonymous_id;
+
+        if (user) {
+            // LOGIN: User exists, use their stored anonymous_id (Restore Identity)
+            anonymousIdToUse = user.anonymous_id;
+        } else {
+            // REGISTER: User doesn't exist, promote current anonymous identity
+            // First check if email is taken by standard auth (optional safety, or allow merge in future)
+            const emailCheck = await pool.query('SELECT id FROM user_auth WHERE email = $1 AND provider = $2', [googleUser.email, 'email']);
+            if (emailCheck.rows.length > 0) {
+                console.warn('[DEBUG] Email already registered with password:', googleUser.email);
+                return res.status(400).json({ error: 'Este email ya está registrado con contraseña. Por favor inicia sesión manual.' });
+            }
+
+            // Create User
+            const newUser = await pool.query(
+                `INSERT INTO user_auth (
+                    email, 
+                    provider, 
+                    provider_user_id, 
+                    anonymous_id, 
+                    email_verified
+                ) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+                [googleUser.email, 'google', googleUser.sub, current_anonymous_id, googleUser.email_verified]
+            );
+            user = newUser.rows[0];
+        }
+
+        // 3. Update Last Login
+        await pool.query('UPDATE user_auth SET last_login_at = NOW() WHERE id = $1', [user.id]);
+
+        // 4. Generate Session Token
+        const tokenPayload = {
+            id: user.id,
+            email: user.email,
+            anonymous_id: anonymousIdToUse, // IMPORTANT: The one from DB (if login) or Current (if register)
+            role: user.role || 'user'
+        };
+
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+        res.json({
+            message: 'Autenticación con Google exitosa',
+            token,
+            anonymous_id: anonymousIdToUse,
+            user: {
+                id: user.id,
+                email: user.email,
+                alias: user.alias,
+                provider: 'google'
+            }
+        });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(401).json({ error: 'Falló la autenticación con Google' });
     }
 });
 

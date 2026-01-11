@@ -28,6 +28,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { LoginModal } from '@/components/auth/LoginModal'
 import { useAuthStore } from '@/store/authStore'
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 
 export function Perfil() {
   const toast = useToast()
@@ -51,11 +52,16 @@ export function Perfil() {
 
   const { isAuthenticated, logout, user } = useAuthStore()
 
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
+
   const handleLogout = () => {
-    if (confirm('¿Estás seguro de cerrar sesión?')) {
-      localStorage.setItem('safespot_auth_logout', 'true');
-      logout();
-    }
+    // Trigger modal instead of window.confirm
+    setIsLogoutModalOpen(true);
+  }
+
+  const confirmLogout = () => {
+    localStorage.setItem('safespot_auth_logout', 'true');
+    logout();
   }
 
   const loadProfile = useCallback(async () => {
@@ -152,17 +158,27 @@ export function Perfil() {
           ) : (
             <div className="flex items-center gap-2">
               <div className="hidden sm:block text-right mr-2">
-                <p className="text-xs text-muted-foreground">Sesión iniciada como</p>
-                <p className="text-sm font-medium">{user?.email}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.provider === 'google' ? 'Sesión iniciada con Google' : 'Sesión iniciada como'}
+                </p>
+                <div className="flex items-center justify-end gap-1.5">
+                  {user?.provider === 'google' && (
+                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-3.5 h-3.5" alt="Google" />
+                  )}
+                  <p className="text-sm font-medium">{user?.email}</p>
+                </div>
               </div>
-              <Button
-                variant="outline"
-                onClick={() => setIsChangePasswordModalOpen(true)}
-                className="border-gray-500/20 hover:bg-gray-500/10"
-              >
-                <Lock className="w-4 h-4 mr-2" />
-                Contraseña
-              </Button>
+
+              {user?.provider !== 'google' && (
+                <Button
+                  variant="outline"
+                  onClick={() => setIsChangePasswordModalOpen(true)}
+                  className="border-gray-500/20 hover:bg-gray-500/10"
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  Contraseña
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleLogout}
@@ -531,6 +547,18 @@ export function Perfil() {
       <ChangePasswordModal
         isOpen={isChangePasswordModalOpen}
         onClose={() => setIsChangePasswordModalOpen(false)}
+      />
+
+      {/* NEW: Confirmation Modal for Logout */}
+      <ConfirmationModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={confirmLogout}
+        title="¿Cerrar Sesión?"
+        description="Si cierras sesión, volverás a usar el modo anónimo. Al iniciar sesión de nuevo, recuperarás tu progreso."
+        confirmText="Sí, cerrar sesión"
+        cancelText="Cancelar"
+        variant="danger"
       />
     </PullToRefresh>
   )
