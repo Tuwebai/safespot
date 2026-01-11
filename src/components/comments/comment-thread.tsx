@@ -86,14 +86,22 @@ export const CommentThread = memo(function CommentThread({
     // State for handling accordion expansion - Hidden by default (Twitter style)
     const [isExpanded, setIsExpanded] = useState(initialExpanded)
 
-    // Show replies if user expanded explicitly via the counter
-    const shouldShowReplies = replies.length > 0 && isExpanded
+    // Check if we should auto-expand because a child is highlighted
+    // We can read from URL here or pass a prop. Reading URL is cheaper than prop drilling deep trees.
+    const searchParams = new URLSearchParams(window.location.search)
+    const highlightId = searchParams.get('highlight_comment')
+    const hasHighlightedChild = highlightId ? replies.some(r => r.id === highlightId) : false
+
+    // Show replies if user expanded explicitly via the counter OR if a child is highlighted
+    const shouldShowReplies = replies.length > 0 && (isExpanded || hasHighlightedChild)
 
     return (
-        <div className={cn(
-            "group/thread relative",
-            depth > 0 && "mt-3"
-        )}>
+        <div
+            id={`comment-${comment.id}`}
+            className={cn(
+                "group/thread relative",
+                depth > 0 && "mt-3"
+            )}>
             {/* 
                 THREAD RAIL (Vertical Line)
                 This line connects all descendants to the parent

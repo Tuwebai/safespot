@@ -157,6 +157,45 @@ export async function calculateUserGamification(anonymousId, readOnly = false) {
 
         const obtainedMap = new Map((obtainedBadges || []).map(ub => [ub.badge_id, ub.awarded_at]));
 
+        // 3.5. HIGH WATER MARK LOGIC (User Feedback Fix)
+        // If a user has a badge (e.g. "Debatiente", 15 comments), but deletes their comments (count 0),
+        // the progress should NOT define them as 0/40. It should be at least 15/40.
+        // We ensure metrics reflect the highest threshold of earned badges.
+
+        const metricFloors = {};
+
+        allBadges.forEach(badge => {
+            if (obtainedMap.has(badge.id)) {
+                const metricKey = badge.target_metric;
+                const threshold = badge.threshold || 0;
+
+                if (metricKey) {
+                    metricFloors[metricKey] = Math.max(metricFloors[metricKey] || 0, threshold);
+                }
+            }
+        });
+
+        // Apply floors to metrics
+        Object.keys(metricFloors).forEach(key => {
+            if (metrics[key] !== undefined) {
+                // If raw count (e.g. 0) is less than badge requirement (e.g. 15), use 15.
+                metrics[key] = Math.max(metrics[key], metricFloors[key]);
+            } else {
+                // Case where metric alias handling is needed, but usually metrics has matching keys.
+                // We'll rely on getMetricValue doing the lookup, so we should update the base map if possible.
+                // But getMetricValue reads from metrics object.
+                // Let's try to match aliases if key is missing.
+                // Simpler: Just set it if it's missing (though unlikely given calculateUserMetrics structure).
+                metrics[key] = metricFloors[key];
+            }
+        });
+
+        // Re-apply aliases because we just modified the base values
+        metrics.total_reports = metrics.reports_created;
+        metrics.total_comments = metrics.comments_created;
+        metrics.total_votes = metrics.votes_cast;
+        metrics.count = metrics.reports_created;
+
         // 4. SYNC LOGIC: Award (Write Operation) - SKIPPED IN READ-ONLY
         let newlyAwarded = [];
 

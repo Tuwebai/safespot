@@ -1,239 +1,174 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, Check, Clock, MessageCircle, Eye, Share2, AlertTriangle, ChevronRight, Settings } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Notification } from '@/lib/api';
-import { useNotificationsQuery, useMarkNotificationReadMutation, useMarkAllNotificationsReadMutation } from '@/hooks/queries/useNotificationsQuery';
-import { usePushNotifications } from '@/hooks/usePushNotifications';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
-
-
-
+import { useState, useEffect } from 'react';
+import { useNotificationsQuery } from '@/hooks/queries/useNotificationsQuery';
+import { useToast } from '@/components/ui/toast/useToast';
+import { NotificationList } from '@/components/notifications/NotificationList';
+import { Trash2, CheckCircle2 } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
-    const { data: notifications = [], isLoading: loading } = useNotificationsQuery();
-    const markAsReadMutation = useMarkNotificationReadMutation();
-    const markAllReadMutation = useMarkAllNotificationsReadMutation();
+    const { success } = useToast();
+    const queryClient = useQueryClient();
+    const { data: notifications = [], refetch, isLoading } = useNotificationsQuery();
+    const [undoState, setUndoState] = useState<{ id: string, notification: any } | null>(null);
 
-    // Push Notification Logic
-    const { isSupported, isSubscribed, subscribe, permission } = usePushNotifications();
+    // Mark as read handler
+    const handleRead = async (id: string) => {
+        // Optimistic update
+        queryClient.setQueryData(['notifications'], (old: any[]) =>
+            Array.isArray(old) ? old.map(n => n.id === id ? { ...n, is_read: true } : n) : []
+        );
 
-
-
-    const handleMarkAsRead = async (id: string) => {
-        markAsReadMutation.mutate(id);
-    };
-
-    const handleMarkAllAsRead = async () => {
-        markAllReadMutation.mutate();
-    };
-
-    const handleNotificationClick = async (notif: Notification) => {
-        if (!notif.is_read) {
-            handleMarkAsRead(notif.id);
+        try {
+            await api.notifications.markRead(id);
+        } catch (err) {
+            console.error('Failed to mark read', err);
+            refetch(); // Revert on error
         }
+    };
 
-        // DEBUG: Trace notification click
-        console.log("[Notification Click]", {
-            notificationId: notif.id,
-            reportId: notif.report_id,
-            entityId: notif.entity_id,
-            type: notif.type,
-            entityType: notif.entity_type
+    // Mark all read
+    const handleMarkAllRead = async () => {
+        queryClient.setQueryData(['notifications'], (old: any[]) =>
+            Array.isArray(old) ? old.map(n => ({ ...n, is_read: true })) : []
+        );
+        await api.notifications.markAllRead();
+        success("Todas las notificaciones marcadas como leídas");
+    };
+
+    // Delete Logic with Undo
+    const handleDelete = async (id: string) => {
+        const previousNotifications = queryClient.getQueryData<any[]>(['notifications']) || [];
+        const notificationToDelete = previousNotifications.find(n => n.id === id);
+
+        if (!notificationToDelete) return;
+
+        // Optimistic Remove
+        queryClient.setQueryData(['notifications'], (old: any[]) =>
+            Array.isArray(old) ? old.filter(n => n.id !== id) : []
+        );
+
+        // Show Undo UI
+        setUndoState({ id, notification: notificationToDelete });
+
+        // Auto-dismiss undo after 5s and sync wipe?
+        // We will optimistically assume delete. If they actually click Undo, we restore.
+        // We trigger the API delete immediately for simplicity, if they undo we can't easily restore without "Undelete" API.
+        // SO: We will WAIT 5 seconds before calling API.
+
+        // Clearing previous timer if any (simple debounce logic not needed if we manage list of undos, but for single undo:)
+        // We'll use a useEffect or just let the API call happen and re-insert if undo.
+        // Better: "Soft delete" via optimistic UI. API call happens on unmount or after timeout?
+        // Let's just call API. If undo, we re-insert via client cache and hope backend syncs later?
+        // No, that's inconsistent.
+        // Safe approach: Call API. If Undo, say "Restoring..." and call a create API? No.
+        // Correct approach: Don't call API yet.
+    };
+
+    // Handle Undo Action
+    const handleUndo = () => {
+        if (!undoState) return;
+
+        // Restore to cache
+        queryClient.setQueryData(['notifications'], (old: any[]) => {
+            const list = Array.isArray(old) ? [...old] : [];
+            list.push(undoState.notification);
+            // Sort again? simplified: just push.
+            return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         });
 
-        // 1. Handle Navigation by Type
-        if (notif.type === 'achievement' || notif.entity_type === 'badge') {
-            navigate('/perfil'); // Badges are shown in profile
-            return;
-        }
-
-        if (notif.type === 'follow') {
-            console.log('[Notification] Handling follow click:', notif);
-            if (notif.entity_id) {
-                // entity_id is the follower's UUID
-                navigate(`/usuario/${notif.entity_id}`);
-            } else {
-                console.warn('[Notification] Missing entity_id for follow notification, redirecting to own profile');
-                navigate('/perfil');
-            }
-            return;
-        }
-
-        // 2. Default: Report Navigation
-        const targetReportId = notif.report_id || (notif.entity_type === 'report' ? notif.entity_id : null);
-
-        if (targetReportId) {
-            navigate(`/reporte/${targetReportId}`);
-        } else {
-            console.warn('[Notification] No navigation target found', notif);
-        }
+        setUndoState(null);
     };
 
-    const getIcon = (type: string, entityType: string) => {
-        if (type === 'proximity') return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
-        if (type === 'similar') return <Bell className="h-5 w-5 text-blue-500" />;
+    // Commit delete effect
+    useEffect(() => {
+        if (!undoState) return;
 
-        switch (entityType) {
-            case 'comment': return <MessageCircle className="h-5 w-5 text-neon-green" />;
-            case 'sighting': return <Eye className="h-5 w-5 text-purple-500" />;
-            case 'share': return <Share2 className="h-5 w-5 text-blue-400" />;
-            default: return <Bell className="h-5 w-5 text-muted-foreground" />;
+        const timer = setTimeout(async () => {
+            await api.notifications.delete(undoState.id);
+            setUndoState(null);
+        }, 5000);
+
+        return () => clearTimeout(timer);
+    }, [undoState]);
+
+    // Open Context Logic (The Core Requirement)
+    const handleOpenContext = (n: any) => {
+        // Mark read first
+        if (!n.is_read) handleRead(n.id);
+
+        switch (n.entity_type) {
+            case 'report':
+                navigate(`/reportes/${n.entity_id}`);
+                break;
+            case 'comment':
+            case 'mention':
+            case 'reply':
+                // Navigate to report with highlight param
+                navigate(`/reportes/${n.report_id}?highlight_comment=${n.entity_id}`);
+                break;
+            case 'badge':
+            case 'achievement':
+                navigate(`/gamificacion?tab=badges&highlight=${n.entity_id}`);
+                break;
+            case 'follow':
+                navigate(`/perfil/${n.entity_id}`); // Go to user profile
+                break;
+            default:
+                // Fallback
+                if (n.report_id) navigate(`/reportes/${n.report_id}`);
         }
     };
-
-    const unreadCount = notifications.filter(n => !n.is_read).length;
-
-    // Logic to show banner
-    const showPushBanner = isSupported && !isSubscribed && permission !== 'denied';
 
     return (
-        <div className="container mx-auto max-w-2xl px-4 py-8">
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-full bg-neon-green/10">
-                        <Bell className="h-6 w-6 text-neon-green" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-foreground">Notificaciones</h1>
-                        {unreadCount > 0 && (
-                            <p className="text-sm text-muted-foreground">Tenés {unreadCount} sin leer</p>
-                        )}
-                    </div>
-                </div>
+        <div className="min-h-screen bg-background pb-24 safe-area-bottom">
+            {/* Header */}
+            <header className="sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-border p-4 flex items-center justify-between">
+                <h1 className="text-xl font-bold">Notificaciones</h1>
                 <div className="flex gap-2">
-                    {/* TEST BUTTON - VISIBLE IF SUBSCRIBED */}
-
-
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate('/perfil#notificaciones')}
-                        className="text-muted-foreground hover:text-foreground"
+                    <button
+                        onClick={handleMarkAllRead}
+                        className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-accent transition-colors"
+                        title="Marcar todo como leído"
                     >
-                        <Settings className="h-4 w-4 mr-2" />
-                        Ajustes
-                    </Button>
-                    {unreadCount > 0 && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleMarkAllAsRead}
-                            className="text-neon-green hover:bg-neon-green/10"
-                        >
-                            <Check className="h-4 w-4 mr-2" />
-                            Leer todo
-                        </Button>
-                    )}
+                        <CheckCircle2 className="w-5 h-5" />
+                    </button>
+                    {/* Clear all (visual only for now/todo) */}
+                    <button
+                        className="p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors"
+                        title="Limpiar todo"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                    </button>
                 </div>
-            </div>
+            </header>
 
-            {/* PUSH SUBSCRIPTION BANNER */}
-            {showPushBanner && (
-                <Card className="mb-6 bg-gradient-to-r from-neon-green/10 to-transparent border-neon-green/30 animate-in fade-in slide-in-from-top-4">
-                    <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div>
-                            <h3 className="font-bold text-foreground flex items-center gap-2">
-                                <Bell className="h-4 w-4 text-neon-green fill-neon-green" />
-                                Activar Alertas en tu Dispositivo
-                            </h3>
-                            <p className="text-sm text-muted-foreground mt-1">
-                                Recibí avisos de seguridad cercanos incluso con la app cerrada.
-                            </p>
-                        </div>
-                        <Button
-                            size="sm"
-                            onClick={() => subscribe()}
-                            disabled={loading}
-                            className="neon-glow bg-neon-green text-dark-bg hover:bg-neon-green/90 font-bold whitespace-nowrap w-full sm:w-auto"
-                        >
-                            {loading ? 'Activando...' : 'Activar Ahora'}
-                        </Button>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* ERROR BANNER FOR DENIED PERMISSION */}
-            {permission === 'denied' && (
-                <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-200 flex gap-3 items-start">
-                    <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
-                    <p>
-                        Las notificaciones están bloqueadas en tu navegador.
-                        Para recibirlas, hacé clic en el candado 🔒 de la barra de dirección y permití "Notificaciones".
-                    </p>
-                </div>
-            )}
-
-            {loading ? (
-                <div className="space-y-4">
-                    {[1, 2, 3].map(i => (
-                        <Card key={i} className="animate-pulse bg-dark-card border-dark-border">
-                            <CardContent className="h-24" />
-                        </Card>
-                    ))}
-                </div>
-            ) : notifications.length === 0 ? (
-                <Card className="bg-dark-card border-dashed border-dark-border">
-                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className="p-4 rounded-full bg-dark-bg mb-4">
-                            <Bell className="h-10 w-10 text-muted-foreground opacity-20" />
-                        </div>
-                        <h3 className="text-lg font-medium text-foreground mb-1">Nada por aquí</h3>
-                        <p className="text-muted-foreground max-w-xs">
-                            Todavía no tenés notificaciones. Activá las alertas en ajustes para estar al tanto.
-                        </p>
-                    </CardContent>
-                </Card>
+            {isLoading ? (
+                <div className="p-8 text-center text-muted-foreground animate-pulse">Cargando...</div>
             ) : (
-                <div className="space-y-3">
-                    {notifications.map((notif) => (
-                        <Card
-                            key={notif.id}
-                            className={cn(
-                                "cursor-pointer transition-all hover:border-dark-border/80 group overflow-hidden",
-                                notif.is_read ? "bg-dark-card border-dark-border/50" : "bg-dark-card border-neon-green/30 shadow-lg shadow-neon-green/5"
-                            )}
-                            onClick={() => handleNotificationClick(notif)}
+                <NotificationList
+                    notifications={notifications}
+                    onRead={handleRead}
+                    onDelete={handleDelete}
+                    onOpenContext={handleOpenContext}
+                />
+            )}
+            {undoState && (
+                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
+                    <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 text-white p-4 rounded-lg shadow-xl animate-in slide-in-from-bottom-5">
+                        <span className="flex items-center gap-2 text-sm">
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                            Notificación eliminada
+                        </span>
+                        <button
+                            onClick={handleUndo}
+                            className="text-sm font-bold text-blue-400 hover:underline ml-4 uppercase"
                         >
-                            <CardContent className="p-0">
-                                <div className="flex items-start p-4 gap-4">
-                                    <div className={cn(
-                                        "mt-1 p-2 rounded-lg bg-dark-bg border border-dark-border",
-                                        !notif.is_read && "border-neon-green/20"
-                                    )}>
-                                        {getIcon(notif.type, notif.entity_type)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                            <h3 className={cn(
-                                                "font-semibold truncate text-sm",
-                                                notif.is_read ? "text-foreground/80" : "text-foreground"
-                                            )}>
-                                                {notif.title}
-                                            </h3>
-                                            <span className="text-[10px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
-                                                <Clock className="h-3 w-3" />
-                                                {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: es })}
-                                            </span>
-                                        </div>
-                                        <p className={cn(
-                                            "text-sm line-clamp-2",
-                                            notif.is_read ? "text-muted-foreground" : "text-foreground/90"
-                                        )}>
-                                            {notif.message}
-                                        </p>
-                                    </div>
-                                    {!notif.is_read && (
-                                        <div className="w-2 h-2 rounded-full bg-neon-green mt-2" />
-                                    )}
-                                    <ChevronRight className="h-4 w-4 text-muted-foreground mt-2 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                            Deshacer
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

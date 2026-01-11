@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useMemo, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { getPointsToNextLevel, MAX_LEVEL } from '@/lib/levelCalculation'
 import { FeedbackState } from '@/components/ui/feedback-state'
 import { LegendaryBadgeReveal } from '@/components/gamification/LegendaryBadgeReveal'
 import { useGamificationSummaryQuery } from '@/hooks/queries'
+import { useHighlightContext } from '@/hooks/useHighlightContext'
 
 export function Gamificacion() {
   // React Query - cached, deduplicated
@@ -109,6 +110,15 @@ export function Gamificacion() {
       }, 250)
     }
   }, [levelUp])
+
+  // Handle URL highlighting
+  useHighlightContext({
+    paramName: 'highlight',
+    selectorPrefix: 'badge-',
+    delay: 500
+  });
+
+  // Confetti al subir de nivel
 
   // Error message from query
   const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null
@@ -500,14 +510,16 @@ export function Gamificacion() {
                         return (
                           <motion.div
                             key={badge.id}
+                            id={`badge-${badge.id}`} // ID for scroll target matched with notification entity_id (UUID)
                             initial={isNewlyUnlocked ? { scale: 0.8, opacity: 0 } : {}}
                             animate={isNewlyUnlocked ? { scale: 1, opacity: 1 } : {}}
                             whileHover={{ scale: 1.05, y: -5 }}
                             className={`
                               p-4 rounded-lg border transition-all relative group h-full
                               ${rarityStyle}
+                              /* Highlight class handled by useHighlightContext matches style below */
                               hover:border-opacity-100
-                              ${isNewlyUnlocked ? 'ring-2 ring-neon-green ring-offset-2 ring-offset-dark-bg' : ''}
+                              ${isNewlyUnlocked ? 'ring-2 ring-neon-green ring-offset-2 ring-offset-dark-bg' : ''} 
                             `}
                           >
                             <div className="absolute top-2 right-2 flex flex-col items-end gap-1">

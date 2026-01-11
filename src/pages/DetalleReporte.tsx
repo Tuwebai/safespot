@@ -17,6 +17,7 @@ import { useReportEditor } from '@/hooks/useReportEditor'
 import { useFlagManager } from '@/hooks/useFlagManager'
 import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { useReportDeletionListener } from '@/hooks/useReportDeletionListener'
+import { useHighlightContext } from '@/hooks/useHighlightContext'
 
 // Components
 import {
@@ -100,6 +101,13 @@ export function DetalleReporte() {
 
   // REALTIME: Listen for report deletion to redirect
   useReportDeletionListener(id)
+
+  // HIGHLIGHT: Auto-scroll to comment if param exists
+  useHighlightContext({
+    paramName: 'highlight_comment',
+    selectorPrefix: 'comment-',
+    delay: 1000 // Wait a bit for comments to load
+  })
 
   const createChatMutation = useCreateChatMutation();
 

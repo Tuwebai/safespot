@@ -42,6 +42,9 @@ router.get('/', async (req, res) => {
         c.*,
         r.title as report_title,
         r.category as report_category,
+        cm.is_pinned,
+        cm.is_archived,
+        cm.is_manually_unread,
         -- Obtener el alias/avatar del OTRO participante (para DMs)
         u_other.alias as other_participant_alias,
         u_other.avatar_url as other_participant_avatar,
@@ -71,15 +74,16 @@ router.get('/', async (req, res) => {
         LIMIT 1
       ) m ON true
       WHERE cm.user_id = $1
-      ORDER BY c.last_message_at DESC
+      ORDER BY cm.is_pinned DESC, c.last_message_at DESC
     `;
+
 
         const result = await queryWithRLS(anonymousId, chatQuery, [anonymousId]);
 
-        const roomsWithPresence = result.rows.map(row => ({
+        const roomsWithPresence = await Promise.all(result.rows.map(async row => ({
             ...row,
-            is_online: presenceTracker.isOnline(row.other_participant_id)
-        }));
+            is_online: await presenceTracker.isOnline(row.other_participant_id)
+        })));
 
         res.json(roomsWithPresence);
 
@@ -631,6 +635,122 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
         res.status(500).json({
             error: err.message || 'Internal server error'
         });
+    }
+});
+
+
+/**
+ * POST /api/chats/:roomId/pin
+ * Toggle pinned status
+ */
+router.post('/:roomId/pin', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+    const { isPinned } = req.body;
+
+    try {
+        await queryWithRLS(anonymousId,
+            'UPDATE conversation_members SET is_pinned = $1 WHERE conversation_id = $2 AND user_id = $3',
+            [isPinned, roomId, anonymousId]
+        );
+
+        // Notify user's other devices
+        realtimeEvents.emitUserChatUpdate(anonymousId, {
+            roomId,
+            action: 'pin',
+            isPinned
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /api/chats/:roomId/archive
+ * Toggle archived status
+ */
+router.post('/:roomId/archive', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+    const { isArchived } = req.body;
+
+    try {
+        await queryWithRLS(anonymousId,
+            'UPDATE conversation_members SET is_archived = $1 WHERE conversation_id = $2 AND user_id = $3',
+            [isArchived, roomId, anonymousId]
+        );
+
+        realtimeEvents.emitUserChatUpdate(anonymousId, {
+            roomId,
+            action: 'archive',
+            isArchived
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /api/chats/:roomId/unread
+ * Toggle manually unread status
+ */
+router.post('/:roomId/unread', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+    const { isUnread } = req.body;
+
+    try {
+        await queryWithRLS(anonymousId,
+            'UPDATE conversation_members SET is_manually_unread = $1 WHERE conversation_id = $2 AND user_id = $3',
+            [isUnread, roomId, anonymousId]
+        );
+
+        realtimeEvents.emitUserChatUpdate(anonymousId, {
+            roomId,
+            action: 'unread',
+            isUnread
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * DELETE /api/chats/:roomId
+ * "Delete" chat (Clear history / Hide for user)
+ * Implemented as removing the member from the conversation.
+ * If they chat again, they re-join.
+ */
+router.delete('/:roomId', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+
+    try {
+        // Option A: Hard delete member (History lost if they rejoin? Yes, somewhat, unless we keep messages linked to user ID but not membership. RLS prevents seeing messages if not member)
+        // User Requirement: "Elimina solo para el usuario actual".
+        await queryWithRLS(anonymousId,
+            'DELETE FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+            [roomId, anonymousId]
+        );
+
+        realtimeEvents.emitUserChatUpdate(anonymousId, {
+            roomId,
+            action: 'delete'
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

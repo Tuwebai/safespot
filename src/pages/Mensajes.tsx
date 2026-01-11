@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Search, MessageSquare, ArrowLeft, Camera, Plus, X, User } from 'lucide-react';
+import { Search, MessageSquare, ArrowLeft, Camera, Plus, X, User, Archive } from 'lucide-react';
 
 import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
 import { ChatRoom, UserProfile, chatsApi, usersApi } from '../lib/api';
@@ -16,6 +16,9 @@ import { useToast } from '../components/ui/toast';
 import { useDebounce } from '../hooks/useDebounce';
 import { SEO } from '../components/SEO';
 import { ChatWindow } from '../components/chat/ChatWindow';
+import { ChatContextMenu } from '../components/chat/ChatContextMenu';
+import useLongPress from '../hooks/useLongPress';
+import { ChevronDown, Pin } from 'lucide-react';
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -26,14 +29,23 @@ interface ChatRoomItemProps {
 const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) => {
     const { data: presence } = useUserPresence(room.other_participant_id);
     const isOnline = presence?.status === 'online';
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+    // Long press for mobile context menu
+    const longPressHandlers = useLongPress(
+        () => setIsMenuOpen(true),
+        onClick,
+        { delay: 400, shouldPreventDefault: true }
+    );
 
     return (
         <div
+            {...longPressHandlers}
             onClick={onClick}
-            className={`p-4 cursor-pointer transition-colors border-l-4 ${isActive
+            className={`group relative p-4 cursor-pointer transition-colors border-l-4 ${isActive
                 ? 'bg-primary/10 border-primary'
                 : 'border-transparent hover:bg-muted/50'
-                }`}
+                } ${room.is_pinned ? 'bg-muted/10' : ''}`}
         >
             <div className="flex gap-3">
                 <div className="relative shrink-0">
@@ -54,13 +66,20 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                             {room.unread_count}
                         </span>
                     )}
+                    {/* Manual Unread Indicator (if no unread count but marked manually) */}
+                    {!room.unread_count && room.is_manually_unread && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full ring-2 ring-background animate-in zoom-in duration-300" />
+                    )}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 pr-6"> {/* Added padding right for chevron/pin */}
                     <div className="flex justify-between items-start">
                         <h4 className="text-foreground font-semibold text-xs truncate">@{room.other_participant_alias}</h4>
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                            {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
-                        </span>
+                        <div className="flex items-center gap-1">
+                            {room.is_pinned && <Pin className="w-3 h-3 text-muted-foreground rotate-45" />}
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
+                            </span>
+                        </div>
                     </div>
                     {room.report_id && (
                         <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
@@ -69,7 +88,7 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                         </p>
                     )}
 
-                    <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${(room as any).is_typing ? 'text-primary font-bold animate-pulse' : room.unread_count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                    <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${(room as any).is_typing ? 'text-primary font-bold animate-pulse' : (room.unread_count > 0 || room.is_manually_unread) ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                         {(room as any).is_typing ? (
                             'Escribiendo...'
                         ) : room.last_message_type === 'image' ? (
@@ -81,7 +100,20 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                             room.last_message_content || 'Iniciá la conversación...'
                         )}
                     </p>
+                </div>
 
+                {/* Context Menu Trigger Area */}
+                <div className="absolute right-2 top-8" onClick={(e) => e.stopPropagation()}>
+                    <ChatContextMenu
+                        chat={room}
+                        isOpen={isMenuOpen}
+                        onOpenChange={setIsMenuOpen}
+                        trigger={
+                            <button className="p-1.5 hover:bg-zinc-700/20 rounded-full text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 pointer-events-none md:pointer-events-auto">
+                                <ChevronDown className="w-4 h-4" />
+                            </button>
+                        }
+                    />
                 </div>
             </div>
         </div>
@@ -107,22 +139,44 @@ const Mensajes: React.FC = () => {
     const debouncedUserSearch = useDebounce(userSearchTerm, 300);
     const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+    const [viewMode, setViewMode] = useState<'inbox' | 'archived'>('inbox');
 
 
-    // Modificar filtro para incluir búsqueda por ID también (para deep linking)
+    // Modificar filtro para incluir búsqueda, archivados y ordenamiento
     const filteredRooms = useMemo(() => {
         if (!rooms) return [];
-        if (!searchTerm.trim()) return rooms;
+        let result = rooms;
 
-        const term = searchTerm.toLowerCase();
-        return rooms.filter(room => {
-            return (
-                room.other_participant_alias?.toLowerCase().includes(term) ||
-                room.report_title?.toLowerCase().includes(term) ||
-                room.id === searchTerm // Allow searching/filtering by exact ID
-            );
+        // 1. Filtrar por vista (Archivados vs Inbox)
+        if (viewMode === 'archived') {
+            result = result.filter(r => r.is_archived);
+        } else {
+            result = result.filter(r => !r.is_archived);
+        }
+
+        // 2. Filtro de búsqueda
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            result = result.filter(room => {
+                return (
+                    room.other_participant_alias?.toLowerCase().includes(term) ||
+                    room.report_title?.toLowerCase().includes(term) ||
+                    room.id === searchTerm
+                );
+            });
+        }
+
+        // 3. Ordenamiento (Pinned > Date)
+        return result.sort((a, b) => {
+            if (viewMode === 'inbox' && a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+            return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
         });
-    }, [rooms, searchTerm]);
+
+    }, [rooms, searchTerm, viewMode]);
+
+    const archivedCount = useMemo(() => {
+        return rooms?.filter(r => r.is_archived).length || 0;
+    }, [rooms]);
 
     const { data: selectedRoom } = useConversation(urlRoomId);
 
@@ -210,14 +264,25 @@ const Mensajes: React.FC = () => {
                     >
                         <div className="p-4 border-b border-border space-y-4 bg-card/50">
                             <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => navigate('/')}
-                                    className="p-2 -ml-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors"
-                                    title="Volver al inicio"
-                                >
-                                    <ArrowLeft className="w-5 h-5" />
-                                </button>
-                                <h1 className="text-xl font-bold text-foreground tracking-tight">Mensajes</h1>
+                                {viewMode === 'archived' ? (
+                                    <button
+                                        onClick={() => setViewMode('inbox')}
+                                        className="p-2 -ml-2 hover:bg-muted rounded-full text-foreground transition-colors"
+                                    >
+                                        <ArrowLeft className="w-5 h-5" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => navigate('/')}
+                                        className="p-2 -ml-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                                        title="Volver al inicio"
+                                    >
+                                        <ArrowLeft className="w-5 h-5" />
+                                    </button>
+                                )}
+                                <h1 className="text-xl font-bold text-foreground tracking-tight">
+                                    {viewMode === 'archived' ? 'Archivados' : 'Mensajes'}
+                                </h1>
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -230,15 +295,17 @@ const Mensajes: React.FC = () => {
                                         className="pl-10 pr-4 bg-muted/50 border-input text-foreground placeholder:text-muted-foreground text-xs h-9 focus-visible:ring-primary rounded-xl w-full"
                                     />
                                 </div>
-                                <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => setIsNewChatOpen(true)}
-                                    className="rounded-xl bg-primary/10 hover:bg-primary/20 text-primary w-9 h-9 shrink-0"
-                                    title="Nuevo chat"
-                                >
-                                    <Plus className="w-5 h-5" />
-                                </Button>
+                                {viewMode === 'inbox' && (
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={() => setIsNewChatOpen(true)}
+                                        className="rounded-xl bg-primary/10 hover:bg-primary/20 text-primary w-9 h-9 shrink-0"
+                                        title="Nuevo chat"
+                                    >
+                                        <Plus className="w-5 h-5" />
+                                    </Button>
+                                )}
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar relative">
@@ -312,6 +379,20 @@ const Mensajes: React.FC = () => {
                                 )}
                             </AnimatePresence>
 
+                            {/* Archived Chats Access Row */}
+                            {viewMode === 'inbox' && archivedCount > 0 && !searchTerm && (
+                                <div
+                                    onClick={() => setViewMode('archived')}
+                                    className="px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-muted/50 border-b border-border/50 text-muted-foreground transition-colors group"
+                                >
+                                    <div className="w-10 h-10 flex items-center justify-center">
+                                        <Archive className="w-5 h-5 group-hover:text-primary transition-colors" />
+                                    </div>
+                                    <div className="flex-1 font-medium text-sm">Archivados</div>
+                                    <div className="text-xs font-bold text-primary">{archivedCount}</div>
+                                </div>
+                            )}
+
                             {isLoading ? (
                                 <div className="p-4 space-y-3">
                                     {Array.from({ length: 5 }).map((_, i) => (
@@ -321,17 +402,19 @@ const Mensajes: React.FC = () => {
                             ) : filteredRooms.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center p-8 text-center h-full">
                                     <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mb-4">
-                                        <MessageSquare className="text-muted-foreground/30 w-8 h-8" />
+                                        {viewMode === 'archived' ? <Archive className="text-muted-foreground/30 w-8 h-8" /> : <MessageSquare className="text-muted-foreground/30 w-8 h-8" />}
                                     </div>
                                     <h3 className="text-foreground font-bold text-base">
-                                        {searchTerm ? 'Sin resultados' : 'Bandeja Vacía'}
+                                        {searchTerm ? 'Sin resultados' : viewMode === 'archived' ? 'No hay chats archivados' : 'Bandeja Vacía'}
                                     </h3>
                                     <p className="text-muted-foreground text-[12px] mt-2 max-w-[200px] leading-relaxed">
                                         {searchTerm
                                             ? `No encontramos conversaciones para "${searchTerm}"`
-                                            : 'Inicia una conversación con alguien o colabora en un reporte.'}
+                                            : viewMode === 'archived'
+                                                ? 'Tus conversaciones archivadas aparecerán aquí.'
+                                                : 'Inicia una conversación con alguien o colabora en un reporte.'}
                                     </p>
-                                    {!searchTerm && (
+                                    {!searchTerm && viewMode === 'inbox' && (
                                         <Button
                                             variant="neon"
                                             size="sm"

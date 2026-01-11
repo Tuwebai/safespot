@@ -57,7 +57,8 @@ router.get('/summary', requireAnonymousId, async (req, res) => {
           ...b,
           obtained_at: b.awarded_at // Duplicate for frontend compatibility
         })),
-        newBadges: data.profile.newlyAwarded
+        newBadges: data.profile.newlyAwarded,
+        nextAchievement: data.nextAchievement
       }
     });
 

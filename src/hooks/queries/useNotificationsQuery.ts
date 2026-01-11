@@ -20,7 +20,7 @@ export function useMarkNotificationReadMutation() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (id: string) => notificationsApi.markAsRead(id),
+        mutationFn: (id: string) => notificationsApi.markRead(id),
         onMutate: async (id) => {
             await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
             const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);
@@ -46,7 +46,7 @@ export function useMarkAllNotificationsReadMutation() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: () => notificationsApi.markAllAsRead(),
+        mutationFn: () => notificationsApi.markAllRead(),
         onMutate: async () => {
             await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
             const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);

@@ -24,6 +24,8 @@ export function useScrollRestoration() {
     const navigationType = useNavigationType()
     const isRestoringRef = useRef(false)
 
+    const prevPathnameRef = useRef(location.pathname)
+
     useEffect(() => {
         const scrollKey = `scroll_${location.key}`
 
@@ -55,10 +57,17 @@ export function useScrollRestoration() {
                     }
                 }
             } else {
-                // PUSH or REPLACE: scroll to top
-                window.scrollTo(0, 0)
+                // PUSH or REPLACE: scroll to top ONLY if pathname changed
+                // This prevents scroll jumping when updating query params (e.g. filters, highlighting)
+                if (location.pathname !== prevPathnameRef.current) {
+                    window.scrollTo(0, 0)
+                }
             }
+
+            // Update ref for next render
+            prevPathnameRef.current = location.pathname
         }
+
 
         // Execute scroll restoration
         handleScrollRestoration()

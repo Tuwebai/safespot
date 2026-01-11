@@ -180,4 +180,26 @@ router.patch('/settings', requireAnonymousId, async (req, res) => {
     }
 });
 
+/**
+ * DELETE /api/notifications/:id
+ * Delete a notification
+ */
+router.delete('/:id', requireAnonymousId, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const anonymousId = req.anonymousId;
+        const db = DB.withContext(anonymousId);
+
+        await db.query(`
+            DELETE FROM notifications 
+            WHERE id = $1 AND anonymous_id = $2
+        `, [id, anonymousId]);
+
+        res.json({ success: true });
+    } catch (error) {
+        logError(error, req);
+        res.status(500).json({ error: 'Failed to delete notification' });
+    }
+});
+
 export default router;

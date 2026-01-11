@@ -870,7 +870,8 @@ export const gamificationApi = {
     return {
       profile: response.profile,
       badges: response.badges || [],
-      newBadges: response.newBadges || []
+      newBadges: response.newBadges || [],
+      nextAchievement: response.nextAchievement
     };
   },
 
@@ -915,50 +916,7 @@ export interface NotificationSettings {
   last_known_province?: string;
 }
 
-export const notificationsApi = {
-  /**
-   * Fetch user's notifications
-   */
-  getAll: async (): Promise<Notification[]> => {
-    const res = await apiRequest<Notification[]>('/notifications');
-    // apiRequest already unwraps data.data
-    return res || [];
-  },
 
-  /**
-   * Mark a notification as read
-   */
-  markAsRead: async (id: string): Promise<void> => {
-    await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
-  },
-
-  /**
-   * Mark all as read
-   */
-  markAllAsRead: async (): Promise<void> => {
-    await apiRequest('/notifications/read-all', { method: 'PATCH' });
-  },
-
-  /**
-   * Get user settings
-   */
-  getSettings: async (): Promise<NotificationSettings> => {
-    const res = await apiRequest<NotificationSettings>('/notifications/settings');
-    // apiRequest already unwraps data.data
-    return res;
-  },
-
-  /**
-   * Update user settings
-   */
-  updateSettings: async (settings: Partial<NotificationSettings>): Promise<NotificationSettings> => {
-    const res = await apiRequest<{ success: boolean; data: NotificationSettings }>('/notifications/settings', {
-      method: 'PATCH',
-      body: JSON.stringify(settings),
-    });
-    return res as any;
-  },
-};
 
 // ============================================
 // CHATS API (Contextual Messaging)
@@ -983,6 +941,9 @@ export interface ChatRoom {
   other_participant_id?: string;
   other_participant_last_seen?: string;
   is_online?: boolean;
+  is_pinned?: boolean;
+  is_archived?: boolean;
+  is_manually_unread?: boolean;
 }
 
 
@@ -1094,6 +1055,101 @@ export const chatsApi = {
       // Note: apiRequest should NOT set Content-Type for FormData
       // so the browser can set the boundary automatically.
     }).then(res => ({ url: res.url }));
+  },
+
+  /**
+   * Toggle pinned status
+   */
+  pinChat: async (roomId: string, isPinned: boolean): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/pin`, {
+      method: 'POST',
+      body: JSON.stringify({ isPinned })
+    });
+  },
+
+  /**
+   * Toggle archived status
+   */
+  archiveChat: async (roomId: string, isArchived: boolean): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ isArchived })
+    });
+  },
+
+  /**
+   * Toggle manually unread status
+   */
+  markChatUnread: async (roomId: string, isUnread: boolean): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}/unread`, {
+      method: 'POST',
+      body: JSON.stringify({ isUnread })
+    });
+  },
+
+  /**
+   * Delete chat (Hide/Clear for me)
+   */
+  deleteChat: async (roomId: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/chats/${roomId}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
+// ============================================
+// NOTIFICATIONS API
+// ============================================
+
+export const notificationsApi = {
+  /**
+   * Get all notifications
+   */
+  getAll: async (): Promise<any[]> => {
+    return apiRequest<any[]>('/notifications');
+  },
+
+  /**
+   * Mark a notification as read
+   */
+  markRead: async (id: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/notifications/${id}/read`, {
+      method: 'PATCH'
+    });
+  },
+
+  /**
+   * Mark all notifications as read
+   */
+  markAllRead: async (): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>('/notifications/read-all', {
+      method: 'PATCH'
+    });
+  },
+
+  delete: async (id: string): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>(`/notifications/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  /**
+   * Get notification settings
+   */
+  getSettings: async (): Promise<any> => {
+    const res = await apiRequest<{ success: boolean; data: any }>('/notifications/settings');
+    return res.data;
+  },
+
+  /**
+   * Update notification settings
+   */
+  updateSettings: async (settings: any): Promise<any> => {
+    const res = await apiRequest<{ success: boolean; data: any }>('/notifications/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings)
+    });
+    return res.data;
   }
 };
 
@@ -1166,4 +1222,15 @@ export const seoApi = {
   getZones: async (): Promise<ZoneSEO[]> => {
     return apiRequest<ZoneSEO[]>('/seo/zones');
   }
+};
+export const api = {
+  users: usersApi,
+  reports: reportsApi,
+  comments: commentsApi,
+  chats: chatsApi,
+  notifications: notificationsApi,
+  favorites: favoritesApi,
+  geocode: geocodeApi,
+  seo: seoApi,
+  badges: badgesApi
 };

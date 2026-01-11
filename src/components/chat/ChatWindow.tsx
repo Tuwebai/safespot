@@ -44,7 +44,7 @@ import { Input } from '../ui/input';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChatReportContext } from './ChatReportContext';
 
 
@@ -90,6 +90,7 @@ interface ChatWindowProps {
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
     const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
@@ -169,6 +170,29 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             }
         }
     }, [messages, room.id, anonymousId, rowVirtualizer]);
+
+    // Highlight & Scroll to Message Logic
+    const highlightId = searchParams.get('highlight_message');
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(highlightId);
+
+    useEffect(() => {
+        if (highlightId && messages) {
+            const index = messages.findIndex(m => m.id === highlightId);
+            if (index !== -1) {
+                rowVirtualizer.scrollToIndex(index, { align: 'center' });
+                setHighlightedMessageId(highlightId);
+
+                // Remove params to clean URL
+                setSearchParams(params => {
+                    params.delete('highlight_message');
+                    return params;
+                }, { replace: true });
+
+                // Clear highlight visual after 3s
+                setTimeout(() => setHighlightedMessageId(null), 3000);
+            }
+        }
+    }, [highlightId, messages, rowVirtualizer, setSearchParams]);
 
     useEffect(() => {
         if (!room.id || hasMarkedRead.current) return;
@@ -364,7 +388,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                             width: '100%',
                                             transform: `translateY(${virtualRow.start}px)`,
                                         }}
-                                        className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4`}
+                                        className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4 ${msg.id === highlightedMessageId ? 'context-highlight' : ''}`}
                                     >
                                         <div className={`flex gap-2 max-w-[85%] ${isMe(msg) ? 'flex-row-reverse' : 'flex-row'}`}>
                                             {!isMe(msg) && (
