@@ -24,6 +24,7 @@ const PublicProfile = lazyRetry(() => import('@/pages/PublicProfile').then(m => 
 const FollowsPage = lazyRetry(() => import('@/pages/FollowsPage').then(m => ({ default: m.default })), 'FollowsPage')
 const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ default: m.ThreadPage })), 'ThreadPage')
 const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
+const ResetPassword = lazyRetry(() => import('@/pages/ResetPassword'), 'ResetPassword')
 
 // Admin Imports (Lazy Loaded)
 const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
@@ -39,6 +40,7 @@ import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboa
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { SEO } from '@/components/SEO'
 import { ServiceWorkerController } from '@/components/ServiceWorkerController'
+import { AuthToastListener } from '@/components/auth/AuthToastListener'
 
 function App() {
   return (
@@ -56,6 +58,7 @@ function App() {
         <Layout>
           <ChunkErrorBoundary>
             <Suspense fallback={<RouteLoadingFallback />}>
+              <AuthToastListener />
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/reportes" element={<Reportes />} />
@@ -71,6 +74,7 @@ function App() {
                 <Route path="/explorar" element={<Explorar />} />
                 <Route path="/gamificacion" element={<Gamificacion />} />
                 <Route path="/perfil" element={<Perfil />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/perfil/configuracion" element={<SettingsPage />} />
                 <Route path="/favoritos" element={<MisFavoritos />} />
                 <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />

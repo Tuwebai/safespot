@@ -17,12 +17,30 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
  * Get headers with anonymous_id and client_id
  */
 function getHeaders(): HeadersInit {
-  const anonymousId = ensureAnonymousId();
-  const clientId = getClientId();
-  return {
-    'X-Anonymous-Id': anonymousId,
-    'X-Client-ID': clientId,
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Client-ID': getClientId(),
+    'X-Anonymous-Id': ensureAnonymousId(),
   };
+
+  // INJECT AUTH TOKEN (Phase 2)
+  // We read directly from localStorage to avoid circular deps with Zustand store outside components
+  // The key 'auth-storage' is where Zustand persists data by default logic above.
+  // Zustand persists as JSON: { state: { token: "...", ... }, version: 0 }
+
+  try {
+    const storedAuth = localStorage.getItem('auth-storage');
+    if (storedAuth) {
+      const parsed = JSON.parse(storedAuth);
+      if (parsed.state && parsed.state.token) {
+        headers['Authorization'] = `Bearer ${parsed.state.token}`;
+      }
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+
+  return headers;
 }
 
 /**

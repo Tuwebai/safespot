@@ -25,6 +25,9 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { PencilIcon } from 'lucide-react'
 import { queryKeys } from '@/lib/queryKeys'
+import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
+import { LoginModal } from '@/components/auth/LoginModal'
+import { useAuthStore } from '@/store/authStore'
 
 export function Perfil() {
   const toast = useToast()
@@ -43,6 +46,17 @@ export function Perfil() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAliasModalOpen, setIsAliasModalOpen] = useState(false)
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false)
+
+  const { isAuthenticated, logout, user } = useAuthStore()
+
+  const handleLogout = () => {
+    if (confirm('¿Estás seguro de cerrar sesión?')) {
+      localStorage.setItem('safespot_auth_logout', 'true');
+      logout();
+    }
+  }
 
   const loadProfile = useCallback(async () => {
     try {
@@ -115,13 +129,49 @@ export function Perfil() {
     >
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-2">
-            <span className="gradient-text">Perfil Anónimo</span>
-          </h1>
-          <p className="text-sm sm:text-base text-muted-foreground">
-            Tu actividad y logros en SafeSpot
-          </p>
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold mb-2">
+              <span className="gradient-text">
+                {isAuthenticated ? 'Mi Perfil' : 'Perfil Anónimo'}
+              </span>
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Tu actividad y logros en SafeSpot
+            </p>
+          </div>
+
+          {!isAuthenticated ? (
+            <Button
+              onClick={() => setIsLoginModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 animate-pulse"
+            >
+              <Lock className="w-4 h-4 mr-2" />
+              Guardar Progreso
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:block text-right mr-2">
+                <p className="text-xs text-muted-foreground">Sesión iniciada como</p>
+                <p className="text-sm font-medium">{user?.email}</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setIsChangePasswordModalOpen(true)}
+                className="border-gray-500/20 hover:bg-gray-500/10"
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Contraseña
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleLogout}
+                className="border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-600"
+              >
+                Cerrar Sesión
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -471,7 +521,17 @@ export function Perfil() {
           queryClient.invalidateQueries({ queryKey: queryKeys.user.profile })
         }}
       />
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        initialMode="register"
+      />
+
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+      />
     </PullToRefresh>
   )
 }
-

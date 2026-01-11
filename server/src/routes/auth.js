@@ -1,0 +1,298 @@
+
+import express from 'express';
+import bcrypt from 'bcrypt';
+import pool from '../config/database.js';
+import { validateAuth, signToken } from '../middleware/auth.js';
+import { logError, logSuccess } from '../utils/logger.js';
+import { validateAnonymousId } from '../utils/validation.js';
+import { authLimiter } from '../utils/rateLimiter.js';
+
+const router = express.Router();
+
+/**
+ * POST /api/auth/register
+ * Links an existing anonymous_id to a new email/password account.
+ */
+router.post('/register', authLimiter, async (req, res) => {
+    try {
+        const { email, password, current_anonymous_id } = req.body;
+
+        // 1. Validation
+        if (!email || !password || !current_anonymous_id) {
+            return res.status(400).json({ error: 'Faltan datos requeridos (email, password, current_anonymous_id)' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+        }
+
+        // Validate UUID format
+        try {
+            validateAnonymousId(current_anonymous_id);
+        } catch (e) {
+            return res.status(400).json({ error: 'ID Anónimo inválido' });
+        }
+
+        // 2. Check overlap
+        const existing = await pool.query('SELECT id FROM user_auth WHERE email = $1', [email]);
+        if (existing.rows.length > 0) {
+            return res.status(409).json({ error: 'El email ya está registrado' });
+        }
+
+        // 3. Hash Password
+        const saltRounds = 10;
+        const passwordHash = await bcrypt.hash(password, saltRounds);
+
+        // 4. Create Link (Identity Promotion)
+        const result = await pool.query(
+            `INSERT INTO user_auth (email, password_hash, anonymous_id, provider)
+       VALUES ($1, $2, $3, 'email')
+       RETURNING id, created_at`,
+            [email, passwordHash, current_anonymous_id]
+        );
+
+        const newUser = result.rows[0];
+
+        // 5. Generate Token
+        const token = signToken({
+            auth_id: newUser.id,
+            anonymous_id: current_anonymous_id,
+            email: email
+        });
+
+        // 6. Send Welcome Email (Async - Fire & Forget)
+        import('../utils/emailService.js').then(({ emailService }) => {
+            emailService.sendAuthEmail({
+                type: 'welcome',
+                email: email
+            }).catch(err => console.error('Welcome email failed:', err));
+        });
+
+        logSuccess('User Registered', { auth_id: newUser.id, anonymous_id: current_anonymous_id });
+
+        res.status(201).json({
+            success: true,
+            token,
+            anonymous_id: current_anonymous_id,
+            user: {
+                email,
+                auth_id: newUser.id
+            }
+        });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Error del servidor al registrar user' });
+    }
+});
+
+/**
+ * POST /api/auth/login
+ * Recovers the anonymous_id linked to the email.
+ */
+router.post('/login', authLimiter, async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email y contraseña requeridos' });
+        }
+
+        // 1. Find User
+        const result = await pool.query(
+            'SELECT id, password_hash, anonymous_id FROM user_auth WHERE email = $1',
+            [email]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Credenciales inválidas' });
+        }
+
+        const user = result.rows[0];
+
+        // 2. Verify Password
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Credenciales inválidas' });
+        }
+
+        // 3. Update Last Login
+        await pool.query('UPDATE user_auth SET last_login_at = NOW() WHERE id = $1', [user.id]);
+
+        // 4. Generate Token (With the recovered anonymous_id)
+        const token = signToken({
+            auth_id: user.id,
+            anonymous_id: user.anonymous_id,
+            email: email
+        });
+
+        logSuccess('User Logged In', { auth_id: user.id });
+
+        res.json({
+            success: true,
+            token,
+            anonymous_id: user.anonymous_id, // Client MUST use this to replace local ID
+            message: 'Login exitoso'
+        });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Initiates password reset flow.
+ */
+router.post('/forgot-password', authLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email requerido' });
+
+        // 1. Find user (Silent fail check later)
+        const result = await pool.query('SELECT id FROM user_auth WHERE email = $1', [email]);
+        const user = result.rows[0];
+
+        if (user) {
+            // 2. Generate Reset Token (Random Bytes, NOT JWT)
+            const crypto = await import('crypto');
+            const resetToken = crypto.randomBytes(32).toString('hex');
+            const tokenHash = await bcrypt.hash(resetToken, 10);
+            const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+            // 3. Save Hash in DB
+            await pool.query(
+                'UPDATE user_auth SET reset_token = $1, reset_token_expires = $2 WHERE id = $3',
+                [tokenHash, expires, user.id]
+            );
+
+            // 4. Send Email via n8n
+            console.log('Sending email via n8n...');
+            const { emailService } = await import('../utils/emailService.js');
+            const resetLink = `${process.env.CLIENT_URL || 'http://localhost:5174'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+
+            await emailService.sendAuthEmail({
+                type: 'password_reset',
+                email: email,
+                resetLink: resetLink
+            });
+        }
+
+        // 5. Generic Response (Timing attack mitigation - though awaiting email might leak timing, simple for MVP)
+        res.json({ message: 'Si el email existe, recibirás instrucciones.' });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Completes password reset flow.
+ */
+router.post('/reset-password', authLimiter, async (req, res) => {
+    try {
+        const { email, token, newPassword } = req.body;
+        if (!email || !token || !newPassword) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+        }
+
+        // 1. Find User by Email
+        const result = await pool.query(
+            'SELECT id, reset_token, reset_token_expires FROM user_auth WHERE email = $1',
+            [email]
+        );
+        const user = result.rows[0];
+
+        if (!user || !user.reset_token) {
+            return res.status(400).json({ error: 'Token inválido o expirado' });
+        }
+
+        // 2. Check Expiration
+        if (new Date() > new Date(user.reset_token_expires)) {
+            return res.status(400).json({ error: 'Token expirado' });
+        }
+
+        // 3. Verify Token Hash
+        const isValid = await bcrypt.compare(token, user.reset_token);
+        if (!isValid) {
+            return res.status(400).json({ error: 'Token inválido' });
+        }
+
+        // 4. Update Password & Clear Token
+        const saltRounds = 10;
+        const newHash = await bcrypt.hash(newPassword, saltRounds);
+
+        await pool.query(
+            'UPDATE user_auth SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
+            [newHash, user.id]
+        );
+
+        res.json({ success: true, message: 'Contraseña actualizada con éxito' });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+/**
+ * POST /api/auth/change-password
+ * Authenticated user password change.
+ */
+router.post('/change-password', validateAuth, authLimiter, async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Faltan datos' });
+
+        // 1. Get User Password Hash
+        const result = await pool.query('SELECT password_hash FROM user_auth WHERE id = $1', [req.user.auth_id]);
+        const user = result.rows[0];
+
+        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        // 2. Verify Current
+        const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+        if (!isValid) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+
+        // 3. Update
+        const newHash = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE user_auth SET password_hash = $1 WHERE id = $2', [newHash, req.user.auth_id]);
+
+        res.json({ success: true, message: 'Contraseña actualizada' });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+/**
+ * GET /api/auth/me
+ * Returns current session state
+ */
+router.get('/me', validateAuth, (req, res) => {
+    if (req.user) {
+        res.json({
+            authenticated: true,
+            user: req.user,
+            anonymous_id: req.headers['x-anonymous-id']
+        });
+    } else {
+        res.json({
+            authenticated: false,
+            anonymous_id: req.headers['x-anonymous-id'] || null,
+            message: 'Anonymous session'
+        });
+    }
+});
+
+export default router;

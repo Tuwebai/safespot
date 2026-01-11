@@ -63,6 +63,12 @@ export const dbRateLimiter = ({ action, limitMinute, limitHour, message }) => {
         redis.expire(keyHour, 3600); // 1 hour
       }
 
+      // Add Headers for Observability
+      res.setHeader('X-RateLimit-Limit-Minute', limitMinute);
+      res.setHeader('X-RateLimit-Remaining-Minute', Math.max(0, limitMinute - hitsMinute));
+      res.setHeader('X-RateLimit-Limit-Hour', limitHour);
+      res.setHeader('X-RateLimit-Remaining-Hour', Math.max(0, limitHour - hitsHour));
+
       // Check Limits
       if (hitsMinute > limitMinute) {
         return res.status(429).json({
@@ -155,4 +161,12 @@ export const loginLimiter = dbRateLimiter({
   limitMinute: 5,
   limitHour: 20,
   message: 'Demasiados intentos de inicio de sesión. Cuenta bloqueada temporalmente.'
+});
+
+// User Auth (Login/Register): 10 per minute, 50 per hour
+export const authLimiter = dbRateLimiter({
+  action: 'user_auth',
+  limitMinute: 10,
+  limitHour: 50,
+  message: 'Demasiados intentos de autenticación. Por favor, espera un momento.'
 });

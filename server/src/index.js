@@ -15,6 +15,8 @@ import reportsRouter from './routes/reports.js';
 import commentsRouter from './routes/comments.js';
 import votesRouter from './routes/votes.js';
 import usersRouter from './routes/users.js';
+import authRouter from './routes/auth.js';
+import { validateAuth } from './middleware/auth.js';
 import favoritesRouter from './routes/favorites.js';
 import badgesRouter from './routes/badges.js';
 import gamificationRouter from './routes/gamification.js';
@@ -108,6 +110,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
 // ============================================
+// AUTH MIDDLEWARE (Global)
+// ============================================
+// Must be before Rate Limiting (to potentially allow higher limits for auth users)
+app.use(validateAuth);
+
+// ============================================
 // RATE LIMITING
 // ============================================
 
@@ -177,6 +185,7 @@ app.get('/health', (req, res) => {
 app.use('/seo', seoRouter);
 
 // API Routes
+app.use('/api/auth', authRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/votes', votesRouter);
