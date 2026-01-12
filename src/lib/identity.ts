@@ -67,47 +67,141 @@ function setCookie(name: string, value: string, days = 3650) { // 10 years defau
 // --------------------------------------------
 
 async function getIDB(key: string): Promise<string | null> {
-  return new Promise((resolve) => {
+  // ENTERPRISE FIX: Dual timeout to prevent infinite hangs
+  // Outer timeout: 1000ms hard limit for entire operation
+  const globalTimeout = new Promise<null>((resolve) => {
+    setTimeout(() => {
+      console.warn('[Identity] IndexedDB get timeout (1000ms)');
+      resolve(null);
+    }, 1000);
+  });
+
+  const operation = new Promise<string | null>((resolve) => {
     try {
       const request = indexedDB.open(L3_DB, 1);
+
+      // Inner timeout: 800ms for the request itself
+      const requestTimeout = setTimeout(() => {
+        console.warn('[Identity] IndexedDB request timeout (800ms)');
+        resolve(null);
+      }, 800);
+
       request.onupgradeneeded = () => {
-        request.result.createObjectStore('identity');
+        try {
+          request.result.createObjectStore('identity');
+        } catch (e) {
+          // Store might already exist
+        }
       };
+
       request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction('identity', 'readonly');
-        const store = transaction.objectStore('identity');
-        const getReq = store.get(key);
-        getReq.onsuccess = () => resolve(getReq.result as string || null);
-        getReq.onerror = () => resolve(null);
+        clearTimeout(requestTimeout);
+        try {
+          const db = request.result;
+          const transaction = db.transaction('identity', 'readonly');
+          const store = transaction.objectStore('identity');
+          const getReq = store.get(key);
+
+          getReq.onsuccess = () => resolve(getReq.result as string || null);
+          getReq.onerror = () => {
+            console.warn('[Identity] IndexedDB get error');
+            resolve(null);
+          };
+
+          // Timeout for transaction
+          transaction.onerror = () => {
+            console.warn('[Identity] IndexedDB transaction error');
+            resolve(null);
+          };
+        } catch (e) {
+          console.warn('[Identity] IndexedDB read error:', e);
+          resolve(null);
+        }
       };
-      request.onerror = () => resolve(null);
+
+      request.onerror = () => {
+        clearTimeout(requestTimeout);
+        console.warn('[Identity] IndexedDB open error');
+        resolve(null);
+      };
+
+      request.onblocked = () => {
+        clearTimeout(requestTimeout);
+        console.warn('[Identity] IndexedDB blocked');
+        resolve(null);
+      };
     } catch (e) {
+      console.warn('[Identity] IndexedDB exception:', e);
       resolve(null);
     }
   });
+
+  return Promise.race([operation, globalTimeout]);
 }
 
 async function setIDB(key: string, value: string): Promise<void> {
-  return new Promise((resolve) => {
+  // ENTERPRISE FIX: Dual timeout matching getIDB pattern
+  const globalTimeout = new Promise<void>((resolve) => {
+    setTimeout(() => {
+      console.warn('[Identity] IndexedDB set timeout (1000ms)');
+      resolve();
+    }, 1000);
+  });
+
+  const operation = new Promise<void>((resolve) => {
     try {
       const request = indexedDB.open(L3_DB, 1);
+
+      const requestTimeout = setTimeout(() => {
+        console.warn('[Identity] IndexedDB set request timeout (800ms)');
+        resolve();
+      }, 800);
+
       request.onupgradeneeded = () => {
-        request.result.createObjectStore('identity');
+        try {
+          request.result.createObjectStore('identity');
+        } catch (e) {
+          // Store might already exist
+        }
       };
+
       request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction('identity', 'readwrite');
-        const store = transaction.objectStore('identity');
-        store.put(value, key);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => resolve();
+        clearTimeout(requestTimeout);
+        try {
+          const db = request.result;
+          const transaction = db.transaction('identity', 'readwrite');
+          const store = transaction.objectStore('identity');
+          store.put(value, key);
+
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => {
+            console.warn('[Identity] IndexedDB set transaction error');
+            resolve();
+          };
+        } catch (e) {
+          console.warn('[Identity] IndexedDB write error:', e);
+          resolve();
+        }
       };
-      request.onerror = () => resolve();
+
+      request.onerror = () => {
+        clearTimeout(requestTimeout);
+        console.warn('[Identity] IndexedDB set open error');
+        resolve();
+      };
+
+      request.onblocked = () => {
+        clearTimeout(requestTimeout);
+        console.warn('[Identity] IndexedDB set blocked');
+        resolve();
+      };
     } catch (e) {
+      console.warn('[Identity] IndexedDB set exception:', e);
       resolve();
     }
   });
+
+  return Promise.race([operation, globalTimeout]);
 }
 
 // ============================================
@@ -147,7 +241,7 @@ export async function initializeIdentity(): Promise<string> {
   // Trigger background sync to L3 (IDB) for redundancy, but don't block.
   if (winner) {
     cachedId = winner;
-    // console.log('[Identity] Found existing ID (Sync):', winner);
+    console.log('[Identity] Found existing ID (Sync):', winner);
 
     // Background sync
     (async () => {
@@ -165,8 +259,12 @@ export async function initializeIdentity(): Promise<string> {
   // 2. SLOW PATH: If not in sync layers, check IndexedDB (L3)
   console.log('[Identity] Not found in Sync layers, checking IDB...');
 
+  // ENTERPRISE FIX: Reduced timeout from 500ms to 300ms for aggressive fail-fast
   const timeoutPromise = new Promise<string | null>((resolve) => {
-    setTimeout(() => resolve(null), 500); // 500ms max for IDB
+    setTimeout(() => {
+      console.warn('[Identity] IDB check timeout (300ms) - generating new ID');
+      resolve(null);
+    }, 300);
   });
 
   const idbPromise = getIDB('current_id');
@@ -174,11 +272,11 @@ export async function initializeIdentity(): Promise<string> {
 
   if (l3 && isValidUUID(l3)) {
     winner = l3.includes('|') ? l3.split('|')[1] : l3;
-    console.log('[Identity] Recovered from IDB:', winner);
+    console.log('[Identity] ✅ Recovered from IDB:', winner);
   } else {
     // 3. GENERATION: Absolute loss, generate new
     winner = generateUUID();
-    console.log('[Identity] Generated NEW ID:', winner);
+    console.log('[Identity] ✨ Generated NEW ID:', winner);
   }
 
   // 4. Persist Winner to all layers

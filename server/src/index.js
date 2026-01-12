@@ -36,6 +36,7 @@ import adminUsersRouter from './routes/adminUsers.js';
 import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
 import contactRouter from './routes/contact.js';
+import diagnosticsRouter from './routes/diagnostics.js';
 import { logCriticalError } from './utils/adminTasks.js';
 import { notifyError } from './utils/whatsapp.js';
 
@@ -183,6 +184,9 @@ app.get('/health', (req, res) => {
 
 // SEO Routes (Shadow SSR for bots)
 app.use('/seo', seoRouter);
+
+// Diagnostics (should be early to avoid rate limiting)
+app.use('/api/diagnostics', diagnosticsRouter);
 
 // API Routes
 app.use('/api/auth', authRouter);

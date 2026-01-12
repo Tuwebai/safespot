@@ -110,16 +110,31 @@ self.addEventListener('message', (event) => {
 // This fixes "Router is responding to /api/..." issues
 const navigationRoute = new NavigationRoute(
     async ({ request }) => {
-        // ALWAYS try to serve from cache first for navigation (SPA)
-        // This avoids redirect loops from netlify/server when checking network
-        const cache = await caches.open('safespot-precached'); // standard workbox cache name
-        const cachedResponse = await cache.match('/index.html');
-        if (cachedResponse) return cachedResponse;
+        // PHASE 2: NETWORK-FIRST for HTML
+        const CACHE_NAME = 'safespot-html-v1';
+        const NETWORK_TIMEOUT = 2000;
 
-        // Fallback to network only if not in cache (construction phase)
-        return fetch(request).catch(() => {
-            return new Response('Offline', { status: 503 });
+        const networkPromise = fetch(request, { cache: 'no-cache' });
+        const timeoutPromise = new Promise<Response>((_, reject) => {
+            setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT);
         });
+
+        try {
+            const response = await Promise.race([networkPromise, timeoutPromise]);
+            if (response.ok) {
+                const cache = await caches.open(CACHE_NAME);
+                cache.put(request, response.clone());
+                return response;
+            }
+            throw new Error(`Response not ok: ${response.status}`);
+        } catch (error) {
+            console.warn('[SW] Network failed, using cache');
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(request);
+            if (cached) return cached;
+
+            return new Response('Offline', { status: 503 });
+        }
     }, {
     denylist: [
         /^\/api\//,       // Exclude API

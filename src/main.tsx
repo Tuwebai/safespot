@@ -4,39 +4,61 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 import App from './App.tsx'
 import './index.css'
-import { initializeIdentity } from './lib/identity'
+import { BootstrapErrorBoundary } from './components/BootstrapErrorBoundary'
+import { IdentityInitializer } from './components/IdentityInitializer'
 
 import { HelmetProvider } from 'react-helmet-async'
 
-const init = async () => {
-  try {
-    // BLOCKING identity initialization: 
-    // This ensures FIRST requests use the CANONICAL ID from persistence
-    await initializeIdentity();
+// ============================================
+// SERVICE WORKER REGISTRATION (NON-BLOCKING)
+// ============================================
 
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(registration => {
-          console.log('SW registered: ', registration);
-        }).catch(registrationError => {
-          console.log('SW registration failed: ', registrationError);
-        });
+// Register Service Worker OUTSIDE of async block to avoid timing issues
+// This runs independently of React rendering
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('[SW] Registered:', registration);
+      })
+      .catch(error => {
+        console.warn('[SW] Registration failed:', error);
+        // Non-critical - app works without SW
       });
-    }
+  });
+}
 
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
+// ============================================
+// REACT MOUNT (SYNCHRONOUS - PHASE 2)
+// ============================================
+
+/**
+ * ENTERPRISE FIX: Synchronous Bootstrap
+ * 
+ * React mounts IMMEDIATELY without waiting for any async operations.
+ * Identity initialization happens in parallel via IdentityInitializer component.
+ * 
+ * This ensures the app ALWAYS renders, even if:
+ * - IndexedDB is corrupted
+ * - Storage is disabled
+ * - Network is offline
+ * - Any subsystem fails
+ * 
+ * Fail-open architecture: App mounts → Shows UI → Initializes in background
+ */
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <BootstrapErrorBoundary>
+      <IdentityInitializer>
         <HelmetProvider>
           <QueryClientProvider client={queryClient}>
             <App />
           </QueryClientProvider>
         </HelmetProvider>
-      </React.StrictMode>
-    );
-  } catch (error) {
-    console.error('Failed to initialize application:', error);
-  }
-};
+      </IdentityInitializer>
+    </BootstrapErrorBoundary>
+  </React.StrictMode>
+);
 
-init();
+console.log('[Bootstrap] ✅ React mounted synchronously');
 
