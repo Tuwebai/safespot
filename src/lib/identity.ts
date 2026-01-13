@@ -268,24 +268,49 @@ export async function initializeIdentity(): Promise<string> {
   // 2. SLOW PATH: If not in sync layers, check IndexedDB (L3)
   console.log('[Identity] Not found in Sync layers, checking IDB...');
 
-  // ENTERPRISE FIX: Relaxed timeout to 800ms (was 300ms) to reduce false positives
-  const timeoutPromise = new Promise<string | null>((resolve) => {
-    setTimeout(() => {
-      console.warn('[Identity] IDB check timeout (800ms) - generating new ID');
-      resolve(null);
-    }, 800);
-  });
+  // ============================================
+  // ENTERPRISE FIX: Retry + Increased Timeout
+  // ============================================
+  // Problem: 800ms timeout caused false ID regeneration on slow devices
+  // Solution: 2000ms timeout + 1 retry = max 4s, but never false positive
 
-  const idbPromise = getIDB('current_id');
-  const l3 = await Promise.race([idbPromise, timeoutPromise]);
+  const IDB_TIMEOUT_MS = 2000;  // Increased from 800ms
+  const MAX_IDB_RETRIES = 1;    // 1 retry = 2 total attempts
+
+  let l3: string | null = null;
+
+  for (let attempt = 0; attempt <= MAX_IDB_RETRIES; attempt++) {
+    const attemptNum = attempt + 1;
+
+    const timeoutPromise = new Promise<string | null>((resolve) => {
+      setTimeout(() => {
+        console.warn(`[Identity] IDB attempt ${attemptNum}/${MAX_IDB_RETRIES + 1} timeout (${IDB_TIMEOUT_MS}ms)`);
+        resolve(null);
+      }, IDB_TIMEOUT_MS);
+    });
+
+    const idbPromise = getIDB('current_id');
+    const result = await Promise.race([idbPromise, timeoutPromise]);
+
+    if (result && isValidUUID(result)) {
+      l3 = result;
+      console.log(`[Identity] ✅ IDB success on attempt ${attemptNum}`);
+      break;
+    }
+
+    // If timeout but not last attempt, retry
+    if (attempt < MAX_IDB_RETRIES) {
+      console.log(`[Identity] IDB attempt ${attemptNum} failed, retrying...`);
+    }
+  }
 
   if (l3 && isValidUUID(l3)) {
     winner = l3.includes('|') ? l3.split('|')[1] : l3;
     console.log('[Identity] ✅ Recovered from IDB:', winner);
   } else {
-    // 3. GENERATION: Absolute loss, generate new
+    // 3. GENERATION: Only after exhausting ALL layers + retries
     winner = generateUUID();
-    console.log('[Identity] ✨ Generated NEW ID:', winner);
+    console.log('[Identity] ✨ Generated NEW ID (all layers exhausted):', winner);
   }
 
   // 4. Persist Winner to all layers using v2 format

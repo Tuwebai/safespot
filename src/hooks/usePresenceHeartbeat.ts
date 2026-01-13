@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { getAnonymousId } from '@/lib/identity';
 
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
@@ -15,9 +16,13 @@ export const usePresenceHeartbeat = () => {
             const isGhost = localStorage.getItem('safespot_ghost_mode') === 'true';
             if (isGhost) return;
 
-            // Reliable ID source: localStorage (set by identity.ts)
-            const anonymousId = localStorage.getItem('anonymous_id');
-            if (!anonymousId) return;
+            // ✅ P0 FIX: Use identity system instead of direct localStorage
+            // getAnonymousId() uses cache + fallbacks, guaranteed correct key
+            const anonymousId = getAnonymousId();
+            if (!anonymousId) {
+                console.warn('[Presence] Heartbeat skipped: identity not ready');
+                return;
+            }
 
             try {
                 // We use fetch directly to avoid circular dependencies with api.ts or complex error handling
