@@ -30,7 +30,8 @@ import {
     Trash2,
     SmilePlus,
     Pin,
-    Star
+    Star,
+    Clock // ✅ UX: Needed for pending state
 } from 'lucide-react';
 
 import {
@@ -256,7 +257,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                 setReplyingTo(null);
 
+                // ✅ Enterprise: Client-Side ID Generation
+                const optimisticId = window.crypto.randomUUID();
+
                 await sendMessageMutation.mutateAsync({
+                    id: optimisticId, // Pass generated ID
                     roomId: room.id,
                     content: contentToSend,
                     type: fileToSend ? 'image' : 'text',
@@ -500,7 +505,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                 </span>
                                                                 {isMe(msg) && (
                                                                     <div className="flex items-center">
-                                                                        {msg.is_read ? (
+                                                                        {msg.localStatus === 'pending' ? (
+                                                                            <Clock className="w-3 h-3 text-muted-foreground mr-1" />
+                                                                        ) : msg.is_read ? (
                                                                             <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                                                                         ) : msg.is_delivered ? (
                                                                             <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
@@ -584,7 +591,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                                                             {isMe(msg) && (
                                                                 <div className="flex items-center">
-                                                                    {msg.is_read ? (
+                                                                    {msg.localStatus === 'pending' ? (
+                                                                        <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
+                                                                    ) : msg.is_read ? (
                                                                         <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                                                                     ) : msg.is_delivered ? (
                                                                         <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />

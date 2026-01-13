@@ -996,6 +996,7 @@ export interface ChatMessage {
   sender_avatar?: string;
   caption?: string;
   localUrl?: string; // Para actualizaciones optimistas fluidas
+  localStatus?: 'pending' | 'failed'; // ✅ Validated by Enterprise Audit
 }
 
 export const chatsApi = {
@@ -1030,10 +1031,10 @@ export const chatsApi = {
   /**
    * Send a message to a room
    */
-  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string, replyToId?: string): Promise<ChatMessage> => {
+  sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string, replyToId?: string, id?: string): Promise<ChatMessage> => {
     return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId })
+      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, id })
     });
   },
 

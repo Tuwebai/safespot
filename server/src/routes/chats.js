@@ -231,9 +231,7 @@ router.post('/:roomId/messages', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
     const clientId = req.headers['x-client-id'];
-    const { content, type = 'text', caption, reply_to_id } = req.body;
-
-
+    const { content, type = 'text', caption, reply_to_id, id: providedId } = req.body;
 
     if (!content) return res.status(400).json({ error: 'Content is required' });
 
@@ -241,7 +239,15 @@ router.post('/:roomId/messages', async (req, res) => {
         const sanitizedArr = sanitizeContent(content, 'chat.message', { anonymousId });
 
         const sanitized = Array.isArray(sanitizedArr) ? sanitizedArr[0] : sanitizedArr;
-        const newMessageId = crypto.randomUUID();
+
+        // ✅ ENTERPRISE ARCHITECTURE: Client-Generated IDs
+        // Enables true idempotency and optimistic UI without flickering
+        let newMessageId = providedId;
+
+        // Validate or generate
+        if (!newMessageId || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newMessageId)) {
+            newMessageId = crypto.randomUUID();
+        }
 
         // 1. OBTENER MIEMBROS PARA EMISIÓN TEMPRANA (Optimismo de Servidor)
         const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);

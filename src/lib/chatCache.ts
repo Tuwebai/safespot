@@ -14,9 +14,9 @@ import { ChatMessage, ChatRoom } from './api';
  */
 
 const KEYS = {
-    rooms: ['chats', 'rooms'] as const,
+    rooms: (anonymousId: string) => ['chats', 'rooms', anonymousId] as const,
     conversation: (id: string) => ['chats', 'conversation', id] as const,
-    messages: (convId: string) => ['chats', 'messages', convId] as const,
+    messages: (convId: string, anonymousId: string) => ['chats', 'messages', anonymousId, convId] as const,
 };
 
 export const chatCache = {
@@ -30,13 +30,13 @@ export const chatCache = {
     applyInboxUpdate: (queryClient: QueryClient, message: ChatMessage, currentUserId: string, isActiveRoom: boolean = false) => {
         const roomId = message.conversation_id;
 
-        queryClient.setQueryData(KEYS.rooms, (oldData: ChatRoom[] | undefined) => {
+        queryClient.setQueryData(KEYS.rooms(currentUserId), (oldData: ChatRoom[] | undefined) => {
             if (!oldData) return oldData;
 
             const index = oldData.findIndex(r => r.id === roomId);
             if (index === -1) {
                 // Option: Refetch if room not found (new room created remotely)
-                // queryClient.invalidateQueries({ queryKey: KEYS.rooms });
+                // queryClient.invalidateQueries({ queryKey: KEYS.rooms(currentUserId) });
                 return oldData;
             }
 
@@ -87,30 +87,40 @@ export const chatCache = {
     },
 
     /**
-     * ROOM AUTHORITY: Appends a message to the active message list.
+     * ROOM AUTHORITY: Upserts a message ensuring Correct Ordering (WhatsApp-Grade).
      * Actions:
-     * 1. Appends message to end of list.
-     * 2. Deduplicates by ID.
+     * 1. Idempotency: If ID exists, update fields (merge).
+     * 2. Insertion: If new, insert.
+     * 3. Sort: ALWAYS re-sort by created_at to handle network jitter.
      */
-    appendMessage: (queryClient: QueryClient, message: ChatMessage) => {
+    upsertMessage: (queryClient: QueryClient, message: ChatMessage, anonymousId: string) => {
         const roomId = message.conversation_id;
 
-        queryClient.setQueryData(KEYS.messages(roomId), (oldMessages: ChatMessage[] | undefined) => {
-            if (!oldMessages) return [message]; // Initialize if empty
+        queryClient.setQueryData(KEYS.messages(roomId, anonymousId), (oldMessages: ChatMessage[] | undefined) => {
+            let nextState = oldMessages ? [...oldMessages] : [];
 
-            // Idempotency Check
-            if (oldMessages.some(m => m.id === message.id)) return oldMessages;
+            // 1. Idempotent Upsert
+            const index = nextState.findIndex(m => m.id === message.id);
+            if (index !== -1) {
+                // Merge new data into existing (e.g. status updates)
+                nextState[index] = { ...nextState[index], ...message };
+            } else {
+                nextState.push(message);
+            }
 
-            return [...oldMessages, message];
+            // 2. Critical Sort (Fixes P0 Jitter)
+            nextState.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            return nextState;
         });
     },
 
     /**
      * Updates unread count to 0 for a specific room (when opened/read).
      */
-    markRoomAsRead: (queryClient: QueryClient, roomId: string) => {
+    markRoomAsRead: (queryClient: QueryClient, roomId: string, anonymousId: string) => {
         // Patch Inbox
-        queryClient.setQueryData(KEYS.rooms, (oldData: ChatRoom[] | undefined) => {
+        queryClient.setQueryData(KEYS.rooms(anonymousId), (oldData: ChatRoom[] | undefined) => {
             if (!oldData) return oldData;
             return oldData.map(r => r.id === roomId ? { ...r, unread_count: 0 } : r);
         });

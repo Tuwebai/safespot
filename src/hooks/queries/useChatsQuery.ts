@@ -17,9 +17,9 @@ export interface UserPresence {
 
 const CHATS_KEYS = {
     all: ['chats'] as const,
-    rooms: ['chats', 'rooms'] as const,
+    rooms: (anonymousId: string) => ['chats', 'rooms', anonymousId] as const,
     conversation: (id: string) => ['chats', 'conversation', id] as const,
-    messages: (convId: string) => ['chats', 'messages', convId] as const,
+    messages: (convId: string, anonymousId: string) => ['chats', 'messages', anonymousId, convId] as const,
     message: (id: string) => ['chats', 'message', id] as const,
     presence: (userId: string) => ['users', 'presence', userId] as const,
 };
@@ -76,13 +76,13 @@ export function useChatRooms() {
                     const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
                 } else if (data.action === 'read') {
-                    chatCache.markRoomAsRead(queryClient, convId);
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                    chatCache.markRoomAsRead(queryClient, convId, anonymousId);
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
                 } else if (data.action === 'typing') {
-                    queryClient.setQueryData(CHATS_KEYS.rooms, (old: any) => {
+                    queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
                         if (!old || !Array.isArray(old)) return old;
                         return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
                     });
@@ -94,7 +94,7 @@ export function useChatRooms() {
             try {
                 const data = JSON.parse(event.data);
                 if (data.roomId && data.messageId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId), (old) => {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.filter(m => m.id !== data.messageId);
                     });
@@ -166,7 +166,7 @@ export function useChatMessages(convId: string | undefined) {
             try {
                 const { message, originClientId } = JSON.parse(event.data);
                 if (originClientId === getClientId()) return;
-                chatCache.appendMessage(queryClient, message);
+                chatCache.upsertMessage(queryClient, message, anonymousId);
             } catch (e) { }
         });
 
@@ -181,7 +181,7 @@ export function useChatMessages(convId: string | undefined) {
             try {
                 const data = JSON.parse(event.data);
                 if (data.readerId !== anonymousId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id === anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
@@ -193,7 +193,7 @@ export function useChatMessages(convId: string | undefined) {
             try {
                 const data = JSON.parse(event.data);
                 if (data.receiverId !== anonymousId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
                     });
@@ -217,7 +217,7 @@ export function useChatMessages(convId: string | undefined) {
             try {
                 const data = JSON.parse(event.data);
                 if (data.action === 'message-deleted') {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId), (old) => {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         return old?.filter(m => m.id !== data.messageId) || [];
                     });
                 }
@@ -242,10 +242,11 @@ export function useChatMessages(convId: string | undefined) {
  * Hook to get just the list of IDs for virtualization
  */
 export function useChatMessageIds(roomId: string | undefined) {
+    const anonymousId = useAnonymousId();
     return useQuery({
-        queryKey: CHATS_KEYS.messages(roomId || ''),
+        queryKey: CHATS_KEYS.messages(roomId || '', anonymousId || ''),
         queryFn: () => roomId ? chatsApi.getMessages(roomId) : Promise.resolve([]),
-        enabled: !!roomId,
+        enabled: !!roomId && !!anonymousId,
         select: (data) => data.map(m => m.id),
     });
 }
@@ -254,8 +255,9 @@ export function useChatMessageIds(roomId: string | undefined) {
  * Hook to get a single message by ID from the cache
  */
 export function useChatMessage(roomId: string, messageId: string) {
+    const anonymousId = useAnonymousId();
     return useQuery({
-        queryKey: CHATS_KEYS.messages(roomId),
+        queryKey: CHATS_KEYS.messages(roomId, anonymousId || ''),
         enabled: false, // Purely for cache reading usually, but here we want reactivity
 
         select: (data: ChatMessage[]) => data.find((m) => m.id === messageId),
@@ -294,7 +296,7 @@ export function useSendMessageMutation() {
 
 
     return useMutation({
-        mutationFn: async ({ roomId, content, type, caption, file, replyToId }: {
+        mutationFn: async ({ roomId, content, type, caption, file, replyToId, id }: {
             roomId: string;
             content: string;
             type?: 'text' | 'image' | 'sighting' | 'location',
@@ -305,36 +307,42 @@ export function useSendMessageMutation() {
             replyToType?: string;
             replyToSenderAlias?: string;
             replyToSenderId?: string;
+            id?: string; // ✅ Enterprise: Client-Gen ID
         }) => {
             if (type === 'image' && file) {
                 // 1. Subir la imagen primero si es un archivo
                 const { url } = await chatsApi.uploadChatImage(roomId, file);
                 // 2. Enviar el mensaje con la URL final
-                return chatsApi.sendMessage(roomId, url, type, caption, replyToId);
+                return chatsApi.sendMessage(roomId, url, type, caption, replyToId, id);
             }
-            return chatsApi.sendMessage(roomId, content, type, caption, replyToId);
+            return chatsApi.sendMessage(roomId, content, type, caption, replyToId, id);
         },
 
 
         onMutate: async (variables) => {
             // Cancelar refetches salientes
-            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
+            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(variables.roomId, anonymousId || '') });
 
             // Snapshot del valor previo
-            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId));
+            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId, anonymousId || ''));
 
-            // Optimistic update: Si hay un archivo, usamos un blob URL temporal
+            // Optimistic update logic
             let optimisticContent = variables.content;
             if (variables.type === 'image' && variables.file) {
                 optimisticContent = URL.createObjectURL(variables.file);
             }
 
+            // Generate stable temp ID for tracking
+            // Prefiero usar el ID del cliente si viene, o fallback.
+            const tempId = variables.id || `temp-${Date.now()}`;
+
             const optimisticMessage: ChatMessage = {
-                id: `temp-${Date.now()}`,
+                id: tempId,
                 conversation_id: variables.roomId,
                 sender_id: anonymousId || 'me',
                 content: variables.type === 'image' && variables.file ? '' : variables.content,
                 localUrl: optimisticContent.startsWith('blob:') ? optimisticContent : undefined,
+                localStatus: 'pending', // ✅ UX: Clock Icon
                 type: variables.type || 'text',
                 caption: variables.caption,
                 is_read: false,
@@ -349,11 +357,8 @@ export function useSendMessageMutation() {
                 sender_alias: 'Tú',
             };
 
-
-
-            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId), (old) => {
-                return [...(old || []), optimisticMessage];
-            });
+            // ✅ Enterprise: Idempotent Upsert + Sort
+            chatCache.upsertMessage(queryClient, optimisticMessage, anonymousId || '');
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY (Atomic Reordering)
             chatCache.applyInboxUpdate(queryClient, optimisticMessage, anonymousId || '', true);
@@ -366,12 +371,13 @@ export function useSendMessageMutation() {
                 last_message_sender_id: optimisticMessage.sender_id
             }));
 
+            // Pass context
             return { previousMessages, blobUrl: optimisticContent.startsWith('blob:') ? optimisticContent : null };
         },
 
         onError: (_err, variables, context) => {
             if (context?.previousMessages) {
-                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId), context.previousMessages);
+                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, anonymousId || ''), context.previousMessages);
             }
             // Revocamos solo en error para limpiar
             if (context?.blobUrl) URL.revokeObjectURL(context.blobUrl);
@@ -381,24 +387,20 @@ export function useSendMessageMutation() {
         },
 
 
-        onSuccess: (newMessage, variables, context) => {
+        onSuccess: (newMessage, _, context) => {
             // Reemplazar el mensaje optimista manteniendo el localUrl para la transición
             const confirmedMessage = {
                 ...newMessage,
-                localUrl: context?.blobUrl || undefined
+                localUrl: context?.blobUrl || undefined,
+                // Server confirmed (implicit status: sent)
             };
 
-            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId), (old) => {
-                if (!old) return [confirmedMessage];
-                return old.filter(m => !m.id.startsWith('temp-')).concat(confirmedMessage);
-            });
+            // ✅ Enterprise: Idempotent Upsert (Merges pending -> sent)
+            chatCache.upsertMessage(queryClient, confirmedMessage, anonymousId || '');
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY on success (reconcile)
             chatCache.applyInboxUpdate(queryClient, confirmedMessage, anonymousId || '', true);
-        },
-
-        // ✅ ENTERPRISE FIX: onSettled REMOVED to achieve 0ms WhatsApp-level lag
-        // SSE handles synchronization, invalidateQueries causes visual refetch flicker
+        }
     });
 }
 
@@ -407,11 +409,14 @@ export function useSendMessageMutation() {
  */
 export function useCreateChatMutation() {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
 
     return useMutation({
         mutationFn: (params: { reportId?: string; recipientId?: string }) => chatsApi.createRoom(params),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms });
+            if (anonymousId) {
+                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms(anonymousId) });
+            }
         },
     });
 }
@@ -425,14 +430,15 @@ export function useMarkAsReadMutation() {
     return useMutation({
         mutationFn: (roomId: string) => chatsApi.markAsRead(roomId),
         onSuccess: (_, roomId) => {
+            if (!anonymousId) return;
             // 1. Patch Global Inbox List (Sidebar)
-            chatCache.markRoomAsRead(queryClient, roomId);
+            chatCache.markRoomAsRead(queryClient, roomId, anonymousId);
 
             // 2. Patch Detail Conversation (Handled inside markRoomAsRead but explicit check here if needed or redundant)
             // chatCache.markRoomAsRead already handles detail cache.
 
             // 3. Patch Messages list
-            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId), (old) => {
                 if (!old) return old;
                 return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
             });
@@ -450,9 +456,10 @@ export function useMarkAsDeliveredMutation() {
     return useMutation({
         mutationFn: (roomId: string) => chatsApi.markAsDelivered(roomId),
         onSuccess: (_, roomId) => {
-            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+            if (!anonymousId) return;
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId), (old) => {
                 if (!old) return old;
-                return old.map(m => m.sender_id !== anonymousId ? { ...m, is_delivered: true } : m);
+                return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
             });
         },
     });
@@ -462,24 +469,26 @@ export function useMarkAsDeliveredMutation() {
 
 export const useDeleteMessageMutation = () => {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
 
     return useMutation({
         mutationFn: async ({ roomId, messageId }: { roomId: string; messageId: string }) => {
             return chatsApi.deleteMessage(roomId, messageId);
         },
         onMutate: async ({ roomId, messageId }) => {
-            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(roomId) });
-            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId));
+            if (!anonymousId) return { previousMessages: [] };
+            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(roomId, anonymousId) });
+            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId));
 
-            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId), (old) => {
                 return old?.filter(m => m.id !== messageId) || [];
             });
 
             return { previousMessages };
         },
         onError: (_err, variables, context) => {
-            if (context?.previousMessages) {
-                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId), context.previousMessages);
+            if (context?.previousMessages && anonymousId) {
+                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, anonymousId), context.previousMessages);
             }
         }
         // ✅ ENTERPRISE FIX: onSettled REMOVED for 0ms lag
