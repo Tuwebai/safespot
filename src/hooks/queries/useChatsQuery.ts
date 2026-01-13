@@ -200,7 +200,7 @@ export function useChatMessages(convId: string | undefined) {
                     console.log(`[GapRecovery] ✅ Recovered ${missedMessages.length} missed messages`);
 
                     // Batch upsert for efficient merge
-                    chatCache.upsertMessageBatch(queryClient, missedMessages, convId, anonymousId);
+                    chatCache.upsertMessageBatch(queryClient, missedMessages, convId, anonymousId || '');
                 } else {
                     console.log('[GapRecovery] No missed messages');
                 }
@@ -222,11 +222,19 @@ export function useChatMessages(convId: string | undefined) {
             try {
                 const { message } = JSON.parse(event.data);
 
-                // ✅ ENTERPRISE FIX: Don't skip own messages!
-                // SSE confirmation is needed to transition pending → sent
-                // The upsertMessage will merge server data (clearing localStatus)
-                chatCache.upsertMessage(queryClient, message, anonymousId);
-            } catch (e) { }
+                // ✅ DIAGNOSTIC: Log SSE message arrival
+                console.log('[SSE] new-message received:', {
+                    id: message.id,
+                    hasLocalStatus: !!message.localStatus,
+                    sender: message.sender_id?.substring(0, 8)
+                });
+
+                // ✅ CRITICAL FIX: Use consistent query key (anonymousId || '')
+                // Must match the key used in optimistic update to find and merge
+                chatCache.upsertMessage(queryClient, message, anonymousId || '');
+            } catch (e) {
+                console.error('[SSE] Error parsing new-message:', e);
+            }
         });
 
         const unsubTyping = ssePool.subscribe(sseUrl, 'typing', (event) => {
@@ -305,10 +313,10 @@ export function useChatMessages(convId: string | undefined) {
         const unsubBroadcast = chatBroadcast.subscribe((event) => {
             if (event.type === 'new-message' && event.roomId === convId) {
                 // Upsert message from other tab (same logic as SSE)
-                chatCache.upsertMessage(queryClient, event.message, anonymousId);
+                chatCache.upsertMessage(queryClient, event.message, anonymousId || '');
                 console.log('[MultiTab] ✅ Received message from another tab');
             } else if (event.type === 'message-deleted' && event.roomId === convId) {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId || ''), (old) => {
                     return old?.filter(m => m.id !== event.messageId) || [];
                 });
             }
