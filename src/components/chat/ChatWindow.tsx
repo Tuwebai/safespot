@@ -15,6 +15,8 @@ import {
 
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
+import { useAnonymousId } from '../../hooks/useAnonymousId';
+import { isOwnMessage } from '../../lib/chatHelpers';
 import {
     Send,
     Image as ImageIcon,
@@ -94,9 +96,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
 
-
+    // ✅ ENTERPRISE FIX: Use useAnonymousId hook instead of localStorage
+    // Guarantees clean UUID without v1|/v2| prefixes
+    const anonymousId = useAnonymousId();
 
     const [message, setMessage] = useState('');
     const {
@@ -144,14 +147,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         }
     }, [replyingTo]);
 
-
-
     // Auto-scroll logic
     const lastMessageCount = useRef(0);
     const lastRoomId = useRef<string | null>(null);
     const hasMarkedRead = useRef(false);
 
-    const isMe = (msg: ChatMessage) => msg.sender_id === anonymousId;
+    // ✅ ENTERPRISE FIX: Use centralized isOwnMessage helper
+    // Handles all edge cases: null safety, format normalization
+    const isMe = (msg: ChatMessage) => isOwnMessage(msg, anonymousId);
 
     useLayoutEffect(() => {
         if (!messages) return;

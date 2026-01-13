@@ -268,12 +268,12 @@ export async function initializeIdentity(): Promise<string> {
   // 2. SLOW PATH: If not in sync layers, check IndexedDB (L3)
   console.log('[Identity] Not found in Sync layers, checking IDB...');
 
-  // ENTERPRISE FIX: Reduced timeout from 500ms to 300ms for aggressive fail-fast
+  // ENTERPRISE FIX: Relaxed timeout to 800ms (was 300ms) to reduce false positives
   const timeoutPromise = new Promise<string | null>((resolve) => {
     setTimeout(() => {
-      console.warn('[Identity] IDB check timeout (300ms) - generating new ID');
+      console.warn('[Identity] IDB check timeout (800ms) - generating new ID');
       resolve(null);
-    }, 300);
+    }, 800);
   });
 
   const idbPromise = getIDB('current_id');
@@ -355,6 +355,25 @@ export function ensureAnonymousId(): string {
   // If we get here and it was never initialized, this is an emergency
   const emergencyId = generateUUID();
   cachedId = emergencyId;
+
+  // ✅ P0 FIX: PERSIST IMMEDIATELY (Stop Ghost IDs)
+  // Force sync write to L1 so reload works
+  if (typeof window !== 'undefined') {
+    try {
+      // 1. Sync / Fast persistence
+      versionedStorage.putVersioned(L1_KEY, emergencyId, 365);
+
+      // 2. Async persistence (L2/L3)
+      const versionedId = `${ID_VERSION}|${emergencyId}`;
+      setCookie(L2_KEY, versionedId);
+      setIDB('current_id', versionedId).catch(console.warn);
+
+      console.warn('[Identity] 🚨 Emergency ID generated & persisted:', emergencyId);
+    } catch (e) {
+      console.error('[Identity] Critical persistence failure:', e);
+    }
+  }
+
   return emergencyId;
 }
 

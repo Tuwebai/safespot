@@ -58,8 +58,10 @@ export class VersionedStorageManager {
             try {
                 entry = JSON.parse(raw) as StorageEntry<T>;
             } catch (parseError) {
-                console.error(`[Storage] Parse error: ${key}`, parseError);
-                this.remove(key);
+                // ✅ P0 FIX: Do NOT delete key on parse error.
+                // It might be valid V1 legacy data (plain string) that needs migration.
+                // Let the consumer (identity.ts) handle the fallback.
+                console.warn(`[Storage] Parse error on ${key} - preserving for legacy check`);
                 return null;
             }
 

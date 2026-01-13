@@ -128,7 +128,12 @@ export function useChatRooms() {
 export function useConversation(id: string | undefined) {
     return useQuery({
         queryKey: CHATS_KEYS.conversation(id || ''),
-        queryFn: () => id ? chatsApi.getAllRooms().then(rooms => rooms.find(r => r.id === id)) : Promise.resolve(null),
+        queryFn: async () => {
+            if (!id) return null;
+            const rooms = await chatsApi.getAllRooms();
+            const room = rooms.find(r => r.id === id);
+            return room || null; // ✅ Fix: React Query hates undefined
+        },
         enabled: !!id,
         staleTime: Infinity, // Passive patching via SSE
     });
@@ -284,7 +289,7 @@ export function useUserPresence(userId: string | undefined) {
  */
 export function useSendMessageMutation() {
     const queryClient = useQueryClient();
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
+    const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID
     const toast = useToast();
 
 
@@ -392,9 +397,8 @@ export function useSendMessageMutation() {
             chatCache.applyInboxUpdate(queryClient, confirmedMessage, anonymousId || '', true);
         },
 
-        onSettled: (_data, _error, variables) => {
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
-        }
+        // ✅ ENTERPRISE FIX: onSettled REMOVED to achieve 0ms WhatsApp-level lag
+        // SSE handles synchronization, invalidateQueries causes visual refetch flicker
     });
 }
 
@@ -416,12 +420,11 @@ export function useCreateChatMutation() {
  */
 export function useMarkAsReadMutation() {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID at top level
 
     return useMutation({
         mutationFn: (roomId: string) => chatsApi.markAsRead(roomId),
         onSuccess: (_, roomId) => {
-            const anonymousId = localStorage.getItem('safespot_anonymous_id');
-
             // 1. Patch Global Inbox List (Sidebar)
             chatCache.markRoomAsRead(queryClient, roomId);
 
@@ -442,13 +445,13 @@ export function useMarkAsReadMutation() {
  */
 export function useMarkAsDeliveredMutation() {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID at top level
 
     return useMutation({
         mutationFn: (roomId: string) => chatsApi.markAsDelivered(roomId),
         onSuccess: (_, roomId) => {
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId), (old) => {
                 if (!old) return old;
-                const anonymousId = localStorage.getItem('safespot_anonymous_id');
                 return old.map(m => m.sender_id !== anonymousId ? { ...m, is_delivered: true } : m);
             });
         },
@@ -478,10 +481,8 @@ export const useDeleteMessageMutation = () => {
             if (context?.previousMessages) {
                 queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId), context.previousMessages);
             }
-        },
-        onSettled: (_data, _err, variables) => {
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(variables.roomId) });
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.all });
         }
+        // ✅ ENTERPRISE FIX: onSettled REMOVED for 0ms lag
+        // SSE handles deletion sync across clients
     });
 };
