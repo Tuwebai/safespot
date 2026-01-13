@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi, ChatMessage } from '../../lib/api';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
@@ -141,13 +141,31 @@ export function useConversation(id: string | undefined) {
 
 /**
  * Hook para obtener y gestionar mensajes de una sala específica (con tiempo real)
+ * 
+ * ✅ WhatsApp-Grade Features:
+ * - Real-time SSE updates
+ * - Gap recovery on reconnection
+ * - Optimistic UI support
  */
 export function useChatMessages(convId: string | undefined) {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();  // ✅ SSOT (reactive)
 
-    // Real-time state for typing
+    // Real-time state for typing with anti-stale protection
     const [isTyping, setIsTyping] = useState(false);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // ✅ Anti-Stale: Clear typing after 5s of no new events
+    const TYPING_TIMEOUT_MS = 5000;
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+        };
+    }, []);
 
 
     const query = useQuery({
@@ -156,11 +174,48 @@ export function useChatMessages(convId: string | undefined) {
         enabled: !!convId && !!anonymousId,  // ✅ Both required
     });
 
-    // Integración SSE para tiempo real
+    // Integración SSE para tiempo real + Gap Recovery
     useEffect(() => {
         if (!convId || !anonymousId) return;
 
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${convId}?anonymousId=${anonymousId}`;
+
+        // ============================================
+        // GAP RECOVERY: On SSE Reconnection
+        // ============================================
+        const unsubReconnect = ssePool.onReconnect(sseUrl, async (lastEventId) => {
+            if (!lastEventId) {
+                console.log('[GapRecovery] No lastEventId, skipping gap recovery');
+                return;
+            }
+
+            try {
+                console.log(`[GapRecovery] SSE reconnected, fetching gaps since: ${lastEventId}`);
+
+                // Fetch missed messages from backend
+                const missedMessages = await chatsApi.getMessages(convId, lastEventId);
+
+                if (missedMessages && missedMessages.length > 0) {
+                    console.log(`[GapRecovery] ✅ Recovered ${missedMessages.length} missed messages`);
+
+                    // Batch upsert for efficient merge
+                    chatCache.upsertMessageBatch(queryClient, missedMessages, convId, anonymousId);
+                } else {
+                    console.log('[GapRecovery] No missed messages');
+                }
+            } catch (err) {
+                console.error('[GapRecovery] Failed to recover gaps:', err);
+                // Fallback: Full refetch if gap recovery fails
+                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
+            }
+
+            // ✅ Clear any stale typing on reconnect
+            setIsTyping(false);
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+            }
+        });
 
         const unsubNewMessage = ssePool.subscribe(sseUrl, 'new-message', (event) => {
             try {
@@ -176,7 +231,23 @@ export function useChatMessages(convId: string | undefined) {
         const unsubTyping = ssePool.subscribe(sseUrl, 'typing', (event) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.senderId !== anonymousId) setIsTyping(data.isTyping);
+                if (data.senderId !== anonymousId) {
+                    // Clear any existing timeout
+                    if (typingTimeoutRef.current) {
+                        clearTimeout(typingTimeoutRef.current);
+                        typingTimeoutRef.current = null;
+                    }
+
+                    setIsTyping(data.isTyping);
+
+                    // ✅ Anti-Stale: Auto-clear after 5s if typing started
+                    if (data.isTyping) {
+                        typingTimeoutRef.current = setTimeout(() => {
+                            setIsTyping(false);
+                            console.log('[Typing] Auto-cleared stale indicator');
+                        }, TYPING_TIMEOUT_MS);
+                    }
+                }
             } catch (e) { }
         });
 
@@ -228,6 +299,7 @@ export function useChatMessages(convId: string | undefined) {
         });
 
         return () => {
+            unsubReconnect();
             unsubNewMessage();
             unsubTyping();
             unsubRead();

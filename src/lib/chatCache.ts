@@ -122,6 +122,52 @@ export const chatCache = {
     },
 
     /**
+     * GAP RECOVERY: Batch upsert for merging missed messages efficiently.
+     * 
+     * Optimizations:
+     * 1. Uses Map for O(1) ID lookup during merge
+     * 2. Single sort at the end
+     * 3. Preserves optimistic messages (localStatus)
+     */
+    upsertMessageBatch: (queryClient: QueryClient, messages: ChatMessage[], roomId: string, anonymousId: string) => {
+        if (!messages || messages.length === 0) return;
+
+        queryClient.setQueryData(KEYS.messages(roomId, anonymousId), (oldMessages: ChatMessage[] | undefined) => {
+            // Use Map for efficient O(1) lookups
+            const messageMap = new Map<string, ChatMessage>();
+
+            // 1. Add existing messages to map
+            (oldMessages || []).forEach(m => {
+                messageMap.set(m.id, m);
+            });
+
+            // 2. Merge incoming messages (update existing or add new)
+            messages.forEach(incoming => {
+                const existing = messageMap.get(incoming.id);
+                if (existing) {
+                    // Merge: preserve localStatus if existing has it and incoming doesn't
+                    const merged = { ...existing, ...incoming };
+                    if (!incoming.localStatus && existing.localStatus) {
+                        // Server confirmed an optimistic message
+                        delete merged.localStatus;
+                    }
+                    messageMap.set(incoming.id, merged);
+                } else {
+                    messageMap.set(incoming.id, incoming);
+                }
+            });
+
+            // 3. Convert back to array and sort
+            const nextState = Array.from(messageMap.values());
+            nextState.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            console.log(`[GapRecovery] Merged ${messages.length} messages, total: ${nextState.length}`);
+
+            return nextState;
+        });
+    },
+
+    /**
      * Updates unread count to 0 for a specific room (when opened/read).
      */
     markRoomAsRead: (queryClient: QueryClient, roomId: string, anonymousId: string) => {

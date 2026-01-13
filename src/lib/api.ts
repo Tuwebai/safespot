@@ -1023,9 +1023,13 @@ export const chatsApi = {
 
   /**
    * Get message history for a room
+   * 
+   * @param roomId - Room ID
+   * @param since - Optional message ID to fetch messages AFTER (for gap recovery)
    */
-  getMessages: async (roomId: string): Promise<ChatMessage[]> => {
-    return apiRequest<ChatMessage[]>(`/chats/${roomId}/messages`);
+  getMessages: async (roomId: string, since?: string): Promise<ChatMessage[]> => {
+    const query = since ? `?since=${encodeURIComponent(since)}` : '';
+    return apiRequest<ChatMessage[]>(`/chats/${roomId}/messages${query}`);
   },
 
   /**

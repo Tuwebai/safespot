@@ -189,33 +189,74 @@ router.post('/', async (req, res) => {
 /**
  * GET /api/chats/:roomId/messages
  * Obtiene el historial de mensajes de una sala
+ * 
+ * Query Params:
+ * - since: (optional) Message ID to fetch messages AFTER (for gap recovery)
+ * 
+ * ✅ WhatsApp-Grade Gap Recovery Support
  */
 router.get('/:roomId/messages', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
+    const { since } = req.query; // Gap recovery: last known message ID
 
     try {
-        const messagesQuery = `
-      SELECT 
-        cm.*, 
-        u.alias as sender_alias, 
-        u.avatar_url as sender_avatar,
-        -- Datos del mensaje respondido
-        rm.content as reply_to_content,
-        rm.type as reply_to_type,
-        ru.alias as reply_to_sender_alias,
-        rm.sender_id as reply_to_sender_id
-      FROM chat_messages cm
-      JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
-      LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
-      LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
+        let messagesQuery;
+        let params;
 
-      WHERE cm.conversation_id = $1
-      ORDER BY cm.created_at ASC
-    `;
+        if (since) {
+            // GAP RECOVERY MODE: Fetch only messages AFTER the given ID
+            // 1. Get the timestamp of the 'since' message
+            // 2. Fetch all messages with created_at > that timestamp
+            messagesQuery = `
+                SELECT 
+                    cm.*, 
+                    u.alias as sender_alias, 
+                    u.avatar_url as sender_avatar,
+                    rm.content as reply_to_content,
+                    rm.type as reply_to_type,
+                    ru.alias as reply_to_sender_alias,
+                    rm.sender_id as reply_to_sender_id
+                FROM chat_messages cm
+                JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+                LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
+                LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
+                WHERE cm.conversation_id = $1 
+                  AND cm.created_at > (
+                      SELECT created_at FROM chat_messages WHERE id = $2
+                  )
+                ORDER BY cm.created_at ASC
+            `;
+            params = [roomId, since];
 
+            console.log(`[GapRecovery] Fetching messages for room ${roomId} since ${since}`);
+        } else {
+            // NORMAL MODE: Fetch all messages
+            messagesQuery = `
+                SELECT 
+                    cm.*, 
+                    u.alias as sender_alias, 
+                    u.avatar_url as sender_avatar,
+                    rm.content as reply_to_content,
+                    rm.type as reply_to_type,
+                    ru.alias as reply_to_sender_alias,
+                    rm.sender_id as reply_to_sender_id
+                FROM chat_messages cm
+                JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+                LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
+                LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
+                WHERE cm.conversation_id = $1
+                ORDER BY cm.created_at ASC
+            `;
+            params = [roomId];
+        }
 
-        const result = await queryWithRLS(anonymousId, messagesQuery, [roomId]);
+        const result = await queryWithRLS(anonymousId, messagesQuery, params);
+
+        if (since) {
+            console.log(`[GapRecovery] Found ${result.rows.length} missed messages`);
+        }
+
         res.json(result.rows);
     } catch (err) {
         logError(err, req);
@@ -488,38 +529,55 @@ router.patch('/:roomId/delivered', async (req, res) => {
 /**
  * POST /api/chats/:roomId/typing
  * Notifica que el usuario está escribiendo o dejó de escribir
+ * 
+ * ✅ WhatsApp-Grade: 0ms latency
+ * - SSE room broadcast is immediate
+ * - Member lookup for inbox is deferred (non-blocking)
  */
 router.post('/:roomId/typing', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { roomId } = req.params;
     const { isTyping } = req.body;
 
-    try {
-        // 1. Notificar vía SSE a la sala específica (ChatWindow)
-        realtimeEvents.emitChatStatus('typing', roomId, {
-            senderId: anonymousId,
-            isTyping: !!isTyping
-        });
+    // ============================================
+    // CRITICAL PATH: 0ms - Immediate SSE Broadcast
+    // ============================================
 
-        // 2. Notificar vía Canal Global (Inbox/Sidebar)
-        // Buscamos a los otros miembros de la conversación
-        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2', [roomId, anonymousId]);
+    // 1. Notificar vía SSE a la sala específica (ChatWindow)
+    // This is the PRIMARY delivery mechanism - instant for users in the chat
+    realtimeEvents.emitChatStatus('typing', roomId, {
+        senderId: anonymousId,
+        isTyping: !!isTyping
+    });
 
-        memberResult.rows.forEach(member => {
-            realtimeEvents.emitUserChatUpdate(member.user_id, {
-                roomId,
-                action: 'typing',
-                isTyping: !!isTyping
+    // ✅ RESPOND IMMEDIATELY - 0ms perceived latency
+    res.json({ success: true });
+
+    // ============================================
+    // DEFERRED: Inbox/Sidebar Notifications (Fire-and-Forget)
+    // ============================================
+    // This runs in background - doesn't block the response
+    (async () => {
+        try {
+            // 2. Notificar vía Canal Global (Inbox/Sidebar)
+            // Buscamos a los otros miembros de la conversación
+            const memberResult = await queryWithRLS(anonymousId,
+                'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2',
+                [roomId, anonymousId]
+            );
+
+            memberResult.rows.forEach(member => {
+                realtimeEvents.emitUserChatUpdate(member.user_id, {
+                    roomId,
+                    action: 'typing',
+                    isTyping: !!isTyping
+                });
             });
-        });
-
-
-        res.json({ success: true });
-
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+        } catch (err) {
+            // Silent fail - typing indicators are ephemeral
+            console.warn('[Typing] Background notification failed:', err.message);
+        }
+    })();
 });
 
 /**
