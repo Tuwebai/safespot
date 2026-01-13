@@ -7,6 +7,7 @@ import { useToast } from '../../components/ui/toast';
 import { ssePool } from '@/lib/ssePool';
 import { chatCache } from '../../lib/chatCache';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
+import { chatBroadcast } from '@/lib/chatBroadcast';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -298,6 +299,21 @@ export function useChatMessages(convId: string | undefined) {
             } catch (e) { }
         });
 
+        // ============================================
+        // MULTI-TAB SYNC: BroadcastChannel (L0 - Fastest)
+        // ============================================
+        const unsubBroadcast = chatBroadcast.subscribe((event) => {
+            if (event.type === 'new-message' && event.roomId === convId) {
+                // Upsert message from other tab (same logic as SSE)
+                chatCache.upsertMessage(queryClient, event.message, anonymousId);
+                console.log('[MultiTab] ✅ Received message from another tab');
+            } else if (event.type === 'message-deleted' && event.roomId === convId) {
+                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                    return old?.filter(m => m.id !== event.messageId) || [];
+                });
+            }
+        });
+
         return () => {
             unsubReconnect();
             unsubNewMessage();
@@ -306,6 +322,7 @@ export function useChatMessages(convId: string | undefined) {
             unsubDelivered();
             unsubPresence();
             unsubMessage();
+            unsubBroadcast();
         };
     }, [convId, anonymousId, queryClient]);
 
@@ -434,6 +451,13 @@ export function useSendMessageMutation() {
 
             // ✅ Enterprise: Idempotent Upsert + Sort
             chatCache.upsertMessage(queryClient, optimisticMessage, anonymousId || '');
+
+            // ✅ Multi-Tab Sync: Broadcast to other tabs (0ms)
+            chatBroadcast.emit({
+                type: 'new-message',
+                roomId: variables.roomId,
+                message: optimisticMessage
+            });
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY (Atomic Reordering)
             chatCache.applyInboxUpdate(queryClient, optimisticMessage, anonymousId || '', true);

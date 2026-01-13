@@ -190,18 +190,19 @@ router.get('/chats/:roomId', (req, res) => {
     // Initial Presence Snapshot: Tell the connecting user if the other participant is online
     (async () => {
         try {
-            // Find the other participant in this room
-            const roomResult = await pool.query(
-                'SELECT participant_a, participant_b FROM chat_rooms WHERE id = $1',
-                [roomId]
+            // Find the other participant in this conversation
+            const memberResult = await pool.query(
+                `SELECT user_id FROM conversation_members 
+                 WHERE conversation_id = $1 AND user_id != $2 
+                 LIMIT 1`,
+                [roomId, anonymousId]
             );
 
-            if (roomResult.rows.length > 0) {
-                const room = roomResult.rows[0];
-                const otherId = room.participant_a === anonymousId ? room.participant_b : room.participant_a;
+            if (memberResult.rows.length > 0) {
+                const otherId = memberResult.rows[0].user_id;
 
                 if (otherId) {
-                    const isOtherOnline = presenceTracker.isOnline(otherId);
+                    const isOtherOnline = await presenceTracker.isOnline(otherId);
                     // Send initial state directly to this specific stream
                     stream.send('presence', {
                         userId: otherId,

@@ -32,6 +32,9 @@ interface SSEEntry {
 class SSEPool {
     private connections = new Map<string, SSEEntry>();
 
+    // Pending callbacks for connections not yet created
+    private pendingReconnectCallbacks = new Map<string, Set<ReconnectCallback>>();
+
     // Reconnection config
     private readonly INITIAL_RECONNECT_DELAY = 1000;  // 1s
     private readonly MAX_RECONNECT_DELAY = 30000;     // 30s
@@ -46,6 +49,13 @@ class SSEPool {
 
         if (!entry) {
             entry = this.createConnection(url);
+
+            // Apply any pending reconnect callbacks
+            const pendingCallbacks = this.pendingReconnectCallbacks.get(url);
+            if (pendingCallbacks) {
+                pendingCallbacks.forEach(cb => entry!.reconnectCallbacks.add(cb));
+                this.pendingReconnectCallbacks.delete(url);
+            }
         }
 
         entry.refCount++;
@@ -65,13 +75,28 @@ class SSEPool {
     /**
      * Register a callback to be called on SSE reconnection.
      * Used by consumers to trigger gap recovery.
+     * 
+     * ✅ Safe to call before or after subscribe()
      */
     onReconnect(url: string, callback: ReconnectCallback): () => void {
         const entry = this.connections.get(url);
+
         if (!entry) {
-            // If no connection yet, store for when it's created
-            console.warn('[SSEPool] onReconnect called before connection exists');
-            return () => { };
+            // Store for later when connection is created
+            if (!this.pendingReconnectCallbacks.has(url)) {
+                this.pendingReconnectCallbacks.set(url, new Set());
+            }
+            this.pendingReconnectCallbacks.get(url)!.add(callback);
+
+            return () => {
+                const pending = this.pendingReconnectCallbacks.get(url);
+                if (pending) {
+                    pending.delete(callback);
+                    if (pending.size === 0) {
+                        this.pendingReconnectCallbacks.delete(url);
+                    }
+                }
+            };
         }
 
         entry.reconnectCallbacks.add(callback);
