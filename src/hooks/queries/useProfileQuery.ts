@@ -5,14 +5,18 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { usersApi, favoritesApi } from '@/lib/api'
+import { useAnonymousId } from '@/hooks/useAnonymousId'
 
 /**
  * Fetch current user's profile
  */
 export function useProfileQuery() {
+    const anonymousId = useAnonymousId();  // ✅ SSOT
+
     return useQuery({
-        queryKey: queryKeys.user.profile,
+        queryKey: ['user', 'profile', anonymousId],  // ✅ Include ID
         queryFn: () => usersApi.getProfile(),
+        enabled: !!anonymousId,  // ✅ CRITICAL
         staleTime: 60 * 1000, // 1 minute
         refetchOnWindowFocus: false,
         retry: false,
@@ -23,9 +27,12 @@ export function useProfileQuery() {
  * Fetch user's favorite reports
  */
 export function useFavoritesQuery() {
+    const anonymousId = useAnonymousId();  // ✅ SSOT
+
     return useQuery({
-        queryKey: queryKeys.user.favorites,
+        queryKey: ['user', 'favorites', anonymousId],  // ✅ Include ID
         queryFn: () => favoritesApi.getAll(),
+        enabled: !!anonymousId,  // ✅ CRITICAL
         staleTime: 60 * 1000,
         refetchOnWindowFocus: false,
         retry: false,

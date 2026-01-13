@@ -1,6 +1,7 @@
 
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * ServiceWorkerController
@@ -12,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
  */
 export function ServiceWorkerController() {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();  // ✅ For SW update handling
 
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return;
@@ -35,8 +37,18 @@ export function ServiceWorkerController() {
             }
 
             if (type === 'IN_APP_NOTIFICATION') {
-                // Here we could trigger a toast if needed, though
-                // usually standard SSE handles this. This is a fallback.
+                // Fallback toast for push notifications when app is visible
+            }
+
+            // ✅ ENTERPRISE: SW Update Events
+            if (type === 'SW_UPDATE_PENDING') {
+                console.warn('[ServiceWorkerController] SW update pending, cancelling queries');
+                queryClient.cancelQueries();  // Cancel all in-flight queries
+            }
+
+            if (type === 'SW_UPDATED') {
+                console.log('[ServiceWorkerController] SW updated, invalidating queries');
+                queryClient.invalidateQueries();  // Refetch all with new SW
             }
         };
 

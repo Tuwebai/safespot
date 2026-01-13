@@ -3,6 +3,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { commentsApi, type CreateCommentData, type Comment } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { commentsCache } from '@/lib/cache-helpers'
+import { useAnonymousId } from '@/hooks/useAnonymousId'
 
 /**
  * Fetch a single comment from the canonical cache
@@ -22,8 +23,10 @@ export function useComment(commentId: string | undefined) {
  */
 export function useCommentsQuery(reportId: string | undefined, limit = 20, cursor?: string) {
     const queryClient = useQueryClient()
+    const anonymousId = useAnonymousId()  // ✅ SSOT
+
     return useQuery({
-        queryKey: queryKeys.comments.byReportPaginated(reportId ?? '', cursor),
+        queryKey: ['comments', 'byReport', anonymousId, reportId ?? '', cursor],  // ✅ Include ID
         queryFn: async () => {
             const data = await commentsApi.getByReportId(reportId!, limit, cursor)
 
@@ -39,7 +42,7 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
                 }
             }
         },
-        enabled: !!reportId,
+        enabled: !!reportId && !!anonymousId,  // ✅ Both required
         staleTime: 30 * 1000, // Consider data stale after 30s
         refetchOnWindowFocus: true, // Refetch when user returns to the tab
         // SAFETY: Firewall against cache corruption (Object[] -> string[])

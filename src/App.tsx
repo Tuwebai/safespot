@@ -1,9 +1,11 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteLoadingFallback'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { lazyRetry } from '@/lib/lazyRetry'
+import { useQueryClient } from '@tanstack/react-query'
+import { useServiceWorkerSync } from '@/hooks/useServiceWorkerSync'
 
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
 const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home })), 'Home')
@@ -49,6 +51,23 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 function App() {
   // SafeSpot Google Client ID (Must be in .env, fallback for dev safety)
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PENDING_CLIENT_ID';
+  const queryClient = useQueryClient();
+
+  // ✅ ENTERPRISE FIX: Reconnection Handler
+  // Auto-refetch active queries when network returns from offline
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[App] ✅ Network restored → refetching active queries');
+      queryClient.refetchQueries({ type: 'active', stale: true });
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [queryClient]);
+
+  // ✅ ENTERPRISE FIX: Service Worker Sync
+  // Synchronize SW cache updates with React Query
+  useServiceWorkerSync();
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>

@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// @ts-ignore - Silence Workbox logs in development
+// @ts-ignore - Silence Workbox logs
 self.__WB_DISABLE_DEV_LOGS = true;
 
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
@@ -12,30 +12,318 @@ import { BackgroundSyncPlugin } from 'workbox-background-sync';
 
 declare let self: ServiceWorkerGlobalScope;
 
-// 1. Tomar el control de los clientes inmediatamente
-self.skipWaiting(); // Auto-activate without user interaction
+// ============================================
+// ENTERPRISE SERVICE WORKER - v2.0
+// Google/Meta-Level Resilience
+// ============================================
+
+const SW_VERSION = '2.0.0';
+const MAX_CACHE_AGE = 24 * 60 * 60 * 1000; // 24h
+const NETWORK_TIMEOUT = 3000; // 3s default
+
+// BroadcastChannel for SW ↔ UI communication
+const swChannel = new BroadcastChannel('safespot-sw-updates');
+
+// ===========================================
+// CACHE MANAGER (Staleness + Integrity)
+// ===========================================
+
+interface CachedEntry {
+    response: Response;
+    timestamp: number;
+    url: string;
+}
+
+class CacheManager {
+    private cacheName: string;
+
+    constructor(cacheName: string) {
+        this.cacheName = cacheName;
+    }
+
+    async get(request: Request): Promise<CachedEntry | null> {
+        const cache = await caches.open(this.cacheName);
+        const response = await cache.match(request);
+
+        if (!response) return null;
+
+        // Try to get timestamp from custom header
+        const timestampStr = response.headers.get('x-sw-cached-at');
+        const timestamp = timestampStr ? parseInt(timestampStr) : Date.now();
+
+        return { response, timestamp, url: request.url };
+    }
+
+    async put(request: Request, response: Response): Promise<void> {
+        const cache = await caches.open(this.cacheName);
+
+        // Clone and add timestamp header
+        const headers = new Headers(response.headers);
+        headers.set('x-sw-cached-at', String(Date.now()));
+        headers.set('x-sw-version', SW_VERSION);
+
+        const cachedResponse = new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+        });
+
+        await cache.put(request, cachedResponse);
+    }
+
+    isCacheFresh(cached: CachedEntry): boolean {
+        const age = Date.now() - cached.timestamp;
+
+        if (age > MAX_CACHE_AGE) {
+            console.warn(`[SW] Cache stale (${Math.floor(age / 1000)}s > 24h)`);
+            return false;
+        }
+
+        return true;
+    }
+
+    getCacheAge(cached: CachedEntry): number {
+        return Date.now() - cached.timestamp;
+    }
+}
+
+// ===========================================
+// NETWORK FIRST WITH SEMANTIC FALLBACK
+// ===========================================
+
+interface NetworkFirstOptions {
+    cacheName: string;
+    networkTimeout?: number;
+    maxCacheAge?: number;
+}
+
+/**
+ * createNetworkFirstHandler
+ * 
+ * Factory function that creates a Workbox-compatible RouteHandler
+ * with enterprise-grade NetworkFirst + Semantic Fallback strategy
+ * 
+ * @param options - Configuration options
+ * @returns RouteHandler compatible with registerRoute()
+ */
+function createNetworkFirstHandler(options: NetworkFirstOptions) {
+    const cacheManager = new CacheManager(options.cacheName);
+    const networkTimeout = options.networkTimeout || NETWORK_TIMEOUT;
+
+    // Helper: Add semantic headers
+    function addSemanticHeaders(response: Response, meta: any): Response {
+        const headers = new Headers(response.headers);
+
+        // CRITICAL HEADERS for React Query
+        headers.set('x-from-cache', String(meta.fromCache));
+        headers.set('x-cache-age', String(meta.cacheAge));
+        headers.set('x-sw-strategy', meta.strategy);
+        headers.set('x-fetch-duration', String(meta.duration));
+        headers.set('x-sw-version', SW_VERSION);
+
+        if (meta.fallbackReason) {
+            headers.set('x-fallback-reason', meta.fallbackReason);
+            headers.set('x-retryable', String(meta.retryable));
+        }
+
+        if (meta.cacheFresh !== undefined) {
+            headers.set('x-cache-fresh', String(meta.cacheFresh));
+        }
+
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+        });
+    }
+
+    // Helper: Create error response
+    function createErrorResponse(opts: any): Response {
+        const body = JSON.stringify({
+            error: opts.message,
+            retryable: opts.retryable,
+            cachedDataAvailable: opts.cachedDataAvailable,
+            swVersion: SW_VERSION,
+        });
+
+        const headers = new Headers({
+            'Content-Type': 'application/json',
+            'x-retryable': String(opts.retryable),
+            'x-sw-version': SW_VERSION,
+        });
+
+        return new Response(body, {
+            status: opts.status,
+            statusText: opts.message,
+            headers,
+        });
+    }
+
+    // Helper: Broadcast cache update
+    function broadcastCacheUpdate(url: string): void {
+        try {
+            swChannel.postMessage({
+                type: 'CACHE_UPDATED',
+                url,
+                timestamp: Date.now(),
+                action: 'invalidate',
+            });
+        } catch (error) {
+            console.error('[SW] BroadcastChannel failed:', error);
+        }
+    }
+
+    // Return Workbox-compatible RouteHandler
+    return async ({ request }: { request: Request }): Promise<Response> => {
+        const startTime = Date.now();
+
+        // 1. Get from cache (instant)
+        const cached = await cacheManager.get(request);
+
+        // 2. Network race with timeout
+        const networkPromise = fetch(request, { cache: 'no-store' });
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('timeout')), networkTimeout);
+        });
+
+        try {
+            const networkResponse = await Promise.race([networkPromise, timeoutPromise]);
+
+            // Network SUCCESS
+            if (networkResponse.ok) {
+                // Update cache in background
+                cacheManager.put(request, networkResponse.clone()).catch(console.error);
+
+                // Broadcast cache update
+                broadcastCacheUpdate(request.url);
+
+                return addSemanticHeaders(networkResponse, {
+                    strategy: 'network',
+                    duration: Date.now() - startTime,
+                    fromCache: false,
+                    cacheAge: 0,
+                });
+            }
+
+            // Network ERROR (4xx/5xx)
+            throw new Error(`HTTP ${networkResponse.status}`);
+        } catch (error: any) {
+            // Network TIMEOUT or ERROR
+
+            const isTimeout = error.message === 'timeout';
+            const reason = isTimeout ? 'timeout' : 'network-error';
+
+            console.warn(`[SW] Network failed (${reason}) for ${request.url}`);
+
+            // FALLBACK: Serve cached if available and fresh
+            if (cached) {
+                const isFresh = cacheManager.isCacheFresh(cached);
+                const cacheAge = cacheManager.getCacheAge(cached);
+
+                return addSemanticHeaders(cached.response, {
+                    strategy: 'cache-fallback',
+                    duration: Date.now() - startTime,
+                    fromCache: true,
+                    cacheAge,
+                    fallbackReason: reason,
+                    retryable: isTimeout, // Timeout → retryable
+                    cacheFresh: isFresh,
+                });
+            }
+
+            // NO CACHE: Return error with retry hints
+            return createErrorResponse({
+                status: 503,
+                message: `Network ${reason}`,
+                retryable: isTimeout,
+                cachedDataAvailable: false,
+            });
+        }
+    };
+}
+
+// ============================================
+// SW INSTALLATION & ACTIVATION
+// ============================================
+
+// IMMEDIATE activation
+self.skipWaiting();
 clientsClaim();
 
-// 2. Limpiar cachés antiguos
+// Cleanup old caches
 cleanupOutdatedCaches();
 
-// 3. Pre-caché de assets de construcción (HTML, JS, CSS)
+// Precache build assets
 precacheAndRoute(self.__WB_MANIFEST);
 
-// ---------------------------------------------------------
-// ESTRATEGIAS DE CACHÉ AVANZADAS
-// ---------------------------------------------------------
+// ============================================
+// SW UPDATE HANDLING (Race Mitigation)
+// ============================================
 
-// A. Imágenes de Reportes (Stale-while-revalidate)
-// Las imágenes se muestran instantáneamente desde caché y se actualizan en segundo plano.
+self.addEventListener('install', (event) => {
+    console.log('[SW] v' + SW_VERSION + ' installing...');
+
+    event.waitUntil(
+        (async () => {
+            const clients = await self.clients.matchAll({ includeUncontrolled: true });
+
+            if (clients.length > 0) {
+                // Notify clients that update is pending
+                clients.forEach((client) => {
+                    client.postMessage({
+                        type: 'SW_UPDATE_PENDING',
+                        version: SW_VERSION,
+                    });
+                });
+
+                // Wait 2s for active requests to complete
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+
+            await self.skipWaiting();
+        })()
+    );
+});
+
+self.addEventListener('activate', (event) => {
+    console.log('[SW] v' + SW_VERSION + ' activated');
+
+    event.waitUntil(
+        (async () => {
+            await self.clients.claim();
+
+            // Notify all clients that SW updated
+            const clients = await self.clients.matchAll({ includeUncontrolled: true });
+            clients.forEach((client) => {
+                client.postMessage({
+                    type: 'SW_UPDATED',
+                    version: SW_VERSION,
+                });
+            });
+        })()
+    );
+});
+
+// Listen for SKIP_WAITING message
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
+// ============================================
+// CACHE STRATEGIES
+// ============================================
+
+// A. Images: StaleWhileRev alidate
 registerRoute(
     ({ request }) => request.destination === 'image',
     new StaleWhileRevalidate({
         cacheName: 'safespot-images',
         plugins: [
             new ExpirationPlugin({
-                maxEntries: 100, // Máximo 100 imágenes en caché
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 días de vida
+                maxEntries: 100,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
             }),
             new CacheableResponsePlugin({
                 statuses: [0, 200],
@@ -44,8 +332,7 @@ registerRoute(
     })
 );
 
-// B. Fuentes de Google y Assets Estáticos (Cache-first)
-// Las fuentes cambian muy poco, mejor servirlas al instante desde caché.
+// B. Fonts: CacheFirst
 registerRoute(
     ({ request }) =>
         request.destination === 'font' ||
@@ -56,7 +343,7 @@ registerRoute(
         plugins: [
             new ExpirationPlugin({
                 maxEntries: 20,
-                maxAgeSeconds: 365 * 24 * 60 * 60, // 1 año
+                maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year
             }),
             new CacheableResponsePlugin({
                 statuses: [0, 200],
@@ -65,28 +352,26 @@ registerRoute(
     })
 );
 
-// C. Llamadas a la API (Network-first con Timeout y Reload)
-// Intentar cargar datos frescos siempre.
-// Si la red tarda más de 10s, o falla, usar caché.
-// FetchOptions 'reload' fuerza a ignorar la caché HTTP del navegador para ir directo al servidor.
-// C. Llamadas a la API (STRICT NETWORK-ONLY - Phase 1 Stabilization)
-// El Service Worker ya no maneja timeouts ni errores de API para evitar conflictos de estado.
-// React Query es ahora la única fuente de verdad y el encargado de los reintentos.
+// C. API Calls: ENTERPRISE NetworkFirst with Semantic Fallback
+const apiStrategy = createNetworkFirstHandler({
+    cacheName: 'safespot-api-v2',
+    networkTimeout: NETWORK_TIMEOUT,
+    maxCacheAge: MAX_CACHE_AGE,
+});
 
-// GET Requests: Network Only simple
 registerRoute(
-    ({ url }) => url.pathname.startsWith('/api/'),
-    new NetworkOnly(),
-    'GET'
+    ({ url, request }) => url.pathname.startsWith('/api/') && request.method === 'GET',
+    apiStrategy
 );
 
+// D. Mutations: NetworkOnly with BackgroundSync
 const bgSyncPlugin = new BackgroundSyncPlugin('safespot-mutations-queue', {
     maxRetentionTime: 24 * 60, // 24 hours
 });
 
 type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
-(['POST', 'PUT', 'DELETE', 'PATCH'] as HTTPMethod[]).forEach(method => {
+(['POST', 'PUT', 'DELETE', 'PATCH'] as HTTPMethod[]).forEach((method) => {
     registerRoute(
         ({ url }) => url.pathname.startsWith('/api/'),
         new NetworkOnly({
@@ -96,27 +381,15 @@ type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
     );
 });
 
-// ---------------------------------------------------------
-
-// 3.5. Escuchar mensaje SKIP_WAITING
-self.addEventListener('message', (event) => {
-    if (event.data?.type === 'SKIP_WAITING') {
-        self.skipWaiting();
-    }
-});
-
-// 4. SPA Navigation Routing
-// Serve index.html for all navigation requests, EXCEPT API and static assets
-// This fixes "Router is responding to /api/..." issues
+// E. HTML Navigation: NetworkFirst with timeout
 const navigationRoute = new NavigationRoute(
     async ({ request }) => {
-        // PHASE 2: NETWORK-FIRST for HTML
-        const CACHE_NAME = 'safespot-html-v1';
-        const NETWORK_TIMEOUT = 2000;
+        const CACHE_NAME = 'safespot-html-v2';
+        const TIMEOUT = 2000;
 
         const networkPromise = fetch(request, { cache: 'no-cache' });
         const timeoutPromise = new Promise<Response>((_, reject) => {
-            setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT);
+            setTimeout(() => reject(new Error('timeout')), TIMEOUT);
         });
 
         try {
@@ -128,26 +401,23 @@ const navigationRoute = new NavigationRoute(
             }
             throw new Error(`Response not ok: ${response.status}`);
         } catch (error) {
-            console.warn('[SW] Network failed, using cache');
+            console.warn('[SW] HTML navigation failed, using cache');
             const cache = await caches.open(CACHE_NAME);
             const cached = await cache.match(request);
             if (cached) return cached;
 
             return new Response('Offline', { status: 503 });
         }
-    }, {
-    denylist: [
-        /^\/api\//,       // Exclude API
-        /\.[a-z]+$/i,     // Exclude files with extensions (images, js, css)
-    ],
-}
+    },
+    {
+        denylist: [/^\/api\//, /\.[a-z]+$/i],
+    }
 );
 
-// REGISTER THE ROUTE to avoid "unused variable" error
 registerRoute(navigationRoute);
 
 // ============================================
-// PUSH NOTIFICATIONS
+// PUSH NOTIFICATIONS (unchanged)
 // ============================================
 
 self.addEventListener('push', (event) => {
@@ -160,7 +430,7 @@ self.addEventListener('push', (event) => {
         badge: '/icons/icon-192.png',
         tag: 'safespot-notification',
         data: { url: '/mapa' },
-        actions: []
+        actions: [],
     };
 
     if (event.data) {
@@ -179,136 +449,92 @@ self.addEventListener('push', (event) => {
         vibrate: [100, 50, 100],
         data: data.data,
         actions: data.actions || [],
-        requireInteraction: false
+        requireInteraction: false,
     };
 
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        self.clients
+            .matchAll({ type: 'window', includeUncontrolled: true })
             .then((clientList) => {
-                // Enterprise Rule: Intelligent Suppression
-                // If the app is open and visible, DO NOT show native push.
-                // The UI (SSE) will handle it, or we send a message to trigger a Toast.
-                const hasVisibleClient = clientList.some(client =>
-                    client.visibilityState === 'visible' &&
-                    client.url.startsWith(self.location.origin) // Same origin safety
+                const hasVisibleClient = clientList.some(
+                    (client) =>
+                        client.visibilityState === 'visible' &&
+                        client.url.startsWith(self.location.origin)
                 );
 
                 if (hasVisibleClient) {
-                    console.log('[SW] App is visible - Suppressing native notification');
-
-                    // Optional: Send signal to client in case SSE missed (redundancy)
-                    clientList.forEach(client => {
+                    console.log('[SW] App visible - Suppressing native notification');
+                    clientList.forEach((client) => {
                         client.postMessage({
                             type: 'IN_APP_NOTIFICATION',
-                            payload: data
+                            payload: data,
                         });
                     });
-
-                    return; // EXIT: No native notification
+                    return;
                 }
 
-                // App not visible -> Show Native Push
                 return self.registration.showNotification(data.title, options);
             })
     );
 });
 
 self.addEventListener('notificationclick', (event: any) => {
-    console.log('[SW] Notification click - action:', event.action, 'data:', event.notification.data);
+    console.log('[SW] Notification click');
     event.notification.close();
 
-    // 1. Handle "Dismiss" action (Entendido) - ONLY if explicitly clicked
     if (event.action === 'dismiss' || event.action === 'mark-read') {
-        console.log('[SW] Dismiss/Read action');
-
         if (event.action === 'mark-read' && event.notification.data?.roomId) {
-            // FIRE AND FORGET: Mark as read via API
             const roomId = event.notification.data.roomId;
-            const anonymousId = event.notification.data.anonymousId; // Should be in payload
+            const anonymousId = event.notification.data.anonymousId;
 
             if (anonymousId) {
                 fetch(`/api/chats/${roomId}/read`, {
                     method: 'PATCH',
-                    headers: { 'x-anonymous-id': anonymousId }
-                }).catch(e => console.error('[SW] Mark read failed:', e));
+                    headers: { 'x-anonymous-id': anonymousId },
+                }).catch((e) => console.error('[SW] Mark read failed:', e));
             }
         }
-
         return;
     }
 
-    // 2. Determine URL based on action or default
     let url = event.notification.data?.url || '/explorar';
 
-    // Handle specific actions
     if (event.action === 'map') {
-        // Explicit map button click
-        if (event.notification.data?.reportId) {
-            url = `/explorar?reportId=${event.notification.data.reportId}`;
-        } else {
-            url = '/explorar';
-        }
-        console.log('[SW] Navigating to map:', url);
-    } else if (event.action === 'view_report') {
-        if (event.notification.data?.reportId) {
-            url = `/reporte/${event.notification.data.reportId}`;
-        }
-        console.log('[SW] Navigating to report:', url);
-    } else if (event.action === 'view_profile') {
-        if (event.notification.data?.url) {
-            url = event.notification.data.url;
-        }
-        console.log('[SW] Navigating to profile:', url);
-    } else if (event.action === 'open-chat' || (event.action === '' && event.notification.data?.roomId)) {
-        // Chat notification click
-        if (event.notification.data?.roomId) {
-            url = `/mensajes/${event.notification.data.roomId}`;
-        }
-        console.log('[SW] Navigating to chat room:', url);
-    } else if (event.action === '') {
-        // Body click - use data.url if present (default logic), or fallback based on data
-        if (!event.notification.data?.url && event.notification.data?.reportId) {
-            // Fallback for old payloads if any
-            url = `/explorar?reportId=${event.notification.data.reportId}`;
-        }
-        console.log('[SW] Notification body click, url:', url);
+        url = event.notification.data?.reportId
+            ? `/explorar?reportId=${event.notification.data.reportId}`
+            : '/explorar';
+    } else if (event.action === 'view_report' && event.notification.data?.reportId) {
+        url = `/reporte/${event.notification.data.reportId}`;
+    } else if (event.action === 'view_profile' && event.notification.data?.url) {
+        url = event.notification.data.url;
+    } else if ((event.action === 'open-chat' || event.action === '') && event.notification.data?.roomId) {
+        url = `/mensajes/${event.notification.data.roomId}`;
     }
 
     const fullUrl = new URL(url, self.location.origin).href;
-    console.log('[SW] Full URL:', fullUrl);
 
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        self.clients
+            .matchAll({ type: 'window', includeUncontrolled: true })
             .then((windowClients) => {
-                console.log('[SW] Found', windowClients.length, 'window clients');
-
-                // 1. Try to find a client that is ALREADY at the correct URL (Exact Match)
                 for (const client of windowClients) {
                     if (client.url === fullUrl && 'focus' in client) {
-                        console.log('[SW] Focusing existing window with exact URL');
-                        return client.focus().then(() => undefined); // Return void
+                        return client.focus().then(() => undefined);
                     }
                 }
 
-                // 2. Try to find any client of our origin to Takeover
                 for (const client of windowClients) {
                     if (client.url.includes(self.location.origin) && 'focus' in client) {
-                        console.log('[SW] Focusing client for Soft Navigation');
                         return client.focus().then(() => {
-                            // ENTERPRISE FIX: RACE CONDITION
-                            // DO NOT call client.navigate(url). It fails on Android/Samsung often.
-                            // INSTEAD, send a message to the React App to handle routing.
                             client.postMessage({
                                 type: 'NAVIGATE_TO',
-                                url: fullUrl
+                                url: fullUrl,
                             });
-                            return undefined; // Return void
+                            return undefined;
                         });
                     }
                 }
 
-                // 3. Fallback: Open new window if no client is active
-                console.log('[SW] No active client found, opening new window');
                 if (self.clients.openWindow) {
                     return self.clients.openWindow(fullUrl).then(() => undefined);
                 }

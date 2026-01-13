@@ -1,12 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsApi, Notification } from '@/lib/api';
+import { useAnonymousId } from '@/hooks/useAnonymousId';
 
 export const NOTIFICATIONS_QUERY_KEY = ['notifications', 'list'];
 
 export function useNotificationsQuery() {
+    const anonymousId = useAnonymousId();  // ✅ SSOT
+
     return useQuery({
-        queryKey: NOTIFICATIONS_QUERY_KEY,
+        queryKey: ['notifications', 'list', anonymousId],  // ✅ Include ID
         queryFn: () => notificationsApi.getAll(),
+        enabled: !!anonymousId,  // ✅ CRITICAL: Never execute with null ID
         staleTime: 60 * 1000, // 1 minute
         gcTime: 5 * 60 * 1000, // 5 minutes
         retry: false, // Fail fast on 429s/errors

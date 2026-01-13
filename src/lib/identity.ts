@@ -7,7 +7,12 @@
  * 3. IndexedDB (Robust backup)
  * 
  * Includes a consensus algorithm to recover identity if one or two layers fall.
+ * 
+ * V2 UPDATE: Uses VersionedStorageManager for TTL, checksums, and migration.
  */
+
+import { versionedStorage } from './storage/VersionedStorageManager';
+import { notifyStorageChange } from './storage/StorageSyncManager';
 
 // ============================================
 // CONSTANTS & CONFIG
@@ -16,7 +21,7 @@
 const L1_KEY = 'safespot_anonymous_id'; // Legacy & primary
 const L2_KEY = 'ss_anon_id';           // Cookie key
 const L3_DB = 'SafespotIdentity';      // IndexedDB Name
-const ID_VERSION = 'v1';               // Format versioning
+const ID_VERSION = 'v2';               // Format versioning (UPDATED from v1)
 
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -223,9 +228,8 @@ export async function initializeIdentity(): Promise<string> {
   if (typeof window === 'undefined') return '';
 
   // 1. FAST PATH: Check Synchronous Layers (L1 & L2)
-  // If we have it in LocalStorage or Cookies, use it IMMEDIATELY.
-  // Do not wait for IndexedDB (which can be slow/blocked).
-  const l1 = localStorage.getItem(L1_KEY);
+  // V2 UPDATE: Use VersionedStorageManager for L1 (enables auto-migration)
+  const l1 = versionedStorage.getVersioned<string>(L1_KEY);
   const l2 = getCookie(L2_KEY);
 
   let winner: string | null = null;
@@ -238,18 +242,23 @@ export async function initializeIdentity(): Promise<string> {
   }
 
   // If found in sync layers, we are good to go.
-  // Trigger background sync to L3 (IDB) for redundancy, but don't block.
+  // Also update to v2 format using VersionedStorageManager
   if (winner) {
     cachedId = winner;
     console.log('[Identity] Found existing ID (Sync):', winner);
 
-    // Background sync
+    // Background sync with v2 storage format
     (async () => {
       try {
+        // Store in v2 format with versioning + TTL
+        versionedStorage.putVersioned(L1_KEY, winner, 365);  // 365 days TTL for identity
+
         const versionedId = `${ID_VERSION}|${winner}`;
-        if (l1 !== winner) localStorage.setItem(L1_KEY, winner);
         if (l2 !== versionedId) setCookie(L2_KEY, versionedId);
         await setIDB('current_id', versionedId);
+
+        // Notify other tabs
+        notifyStorageChange(L1_KEY, 'set');
       } catch (e) { /* ignore */ }
     })();
 
@@ -279,14 +288,18 @@ export async function initializeIdentity(): Promise<string> {
     console.log('[Identity] ✨ Generated NEW ID:', winner);
   }
 
-  // 4. Persist Winner to all layers
+  // 4. Persist Winner to all layers using v2 format
   cachedId = winner;
   const versionedId = `${ID_VERSION}|${winner}`;
 
   try {
-    localStorage.setItem(L1_KEY, winner);
+    // Use VersionedStorageManager for L1
+    versionedStorage.putVersioned(L1_KEY, winner, 365);  // 365 days TTL
     setCookie(L2_KEY, versionedId);
     setIDB('current_id', versionedId).catch(() => { });
+
+    // Notify other tabs
+    notifyStorageChange(L1_KEY, 'set');
   } catch (e) {
     console.error('[Identity] Write serialization failed', e);
   }
@@ -302,13 +315,26 @@ export async function initializeIdentity(): Promise<string> {
 export function getAnonymousId(): string {
   if (cachedId) return cachedId;
 
-  // Last resort sync read from LocalStorage
+  // Try v2 versioned storage first
   if (typeof window !== 'undefined') {
+    const storedV2 = versionedStorage.getVersioned<string>(L1_KEY);
+    if (storedV2 && isValidUUID(storedV2)) {
+      cachedId = storedV2;
+      return storedV2;
+    }
+
+    // Fallback to raw localStorage (v1 migration path)
     const stored = localStorage.getItem(L1_KEY);
     if (isValidUUID(stored)) {
-      // Clean prefix if it somehow leaked into storage (paranoid check)
       const cleanId = stored.includes('|') ? stored.split('|')[1] : stored;
       cachedId = cleanId;
+
+      // Migrate to v2 in background
+      setTimeout(() => {
+        versionedStorage.putVersioned(L1_KEY, cleanId, 365);
+        notifyStorageChange(L1_KEY, 'set');
+      }, 0);
+
       return cleanId;
     }
   }
@@ -352,9 +378,13 @@ export async function updateIdentity(newId: string): Promise<void> {
   cachedId = cleanId;
   const versionedId = `${ID_VERSION}|${cleanId}`;
 
-  localStorage.setItem(L1_KEY, cleanId);
+  // Use v2 versioned storage
+  versionedStorage.putVersioned(L1_KEY, cleanId, 365);
   setCookie(L2_KEY, versionedId);
   await setIDB('current_id', versionedId);
+
+  // Notify other tabs of identity change
+  notifyStorageChange(L1_KEY, 'set');
 }
 
 /** Export identity as a JSON file download */

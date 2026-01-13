@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type Report, type ReportFilters, type CreateReportData } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
+import { useAnonymousId } from '@/hooks/useAnonymousId'
 
 // ============================================
 // QUERIES (READ)
@@ -31,10 +32,12 @@ import { reportsCache } from '@/lib/cache-helpers'
  * @returns The report object (live from cache)
  */
 export function useReport(id: string) {
+    const anonymousId = useAnonymousId()  // ✅ SSOT
+
     return useQuery({
-        queryKey: queryKeys.reports.detail(id),
+        queryKey: ['reports', 'detail', anonymousId, id],  // ✅ Include ID
         queryFn: () => reportsApi.getById(id),
-        enabled: !!id,
+        enabled: !!id && !!anonymousId,  // ✅ Both required
         staleTime: Infinity, // Rely on SSE/Mutation patches
         refetchOnWindowFocus: false, // Don't refetch automatically
     })
@@ -47,10 +50,11 @@ export function useReport(id: string) {
  */
 export function useReportsQuery(filters?: ReportFilters) {
     const queryClient = useQueryClient()
+    const anonymousId = useAnonymousId()  // ✅ SSOT for identity
     const isDefaultQuery = !filters || Object.keys(filters).length === 0
 
     return useQuery({
-        queryKey: queryKeys.reports.list(filters),
+        queryKey: ['reports', 'list', anonymousId, filters],  // ✅ Include ID for dependency tracking
         queryFn: async () => {
             const data = await reportsApi.getAll(filters)
 
@@ -64,6 +68,7 @@ export function useReportsQuery(filters?: ReportFilters) {
 
             return ids
         },
+        enabled: !!anonymousId,  // ✅ CRITICAL: Never execute with null ID
         initialData: () => {
             // ... logic for initial data (needs to hydrate detail cache too)
             if (isDefaultQuery) {
@@ -102,10 +107,12 @@ export function useReportsQuery(filters?: ReportFilters) {
  * Otherwise prefer useReport(id).
  */
 export function useReportDetailQuery(reportId: string | undefined, enabled = true) {
+    const anonymousId = useAnonymousId()  // ✅ SSOT
+
     return useQuery({
-        queryKey: queryKeys.reports.detail(reportId ?? ''),
+        queryKey: ['reports', 'detail', anonymousId, reportId ?? ''],  // ✅ Include ID
         queryFn: () => reportsApi.getById(reportId!),
-        enabled: !!reportId && enabled,
+        enabled: !!reportId && enabled && !!anonymousId,  // ✅ All conditions required
         staleTime: Infinity, // Start trusting the normalized cache
         refetchOnWindowFocus: false,
         retry: 1,

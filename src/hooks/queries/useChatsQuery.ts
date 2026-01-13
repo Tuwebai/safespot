@@ -6,6 +6,7 @@ import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
 import { ssePool } from '@/lib/ssePool';
 import { chatCache } from '../../lib/chatCache';
+import { useAnonymousId } from '@/hooks/useAnonymousId';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -33,10 +34,10 @@ const CHATS_KEYS = {
  */
 export function useChatRooms() {
     const queryClient = useQueryClient();
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
+    const anonymousId = useAnonymousId();  // ✅ SSOT (reactive)
 
     const query = useQuery({
-        queryKey: CHATS_KEYS.rooms,
+        queryKey: ['chats', 'rooms', anonymousId],  // ✅ Include ID
         queryFn: async () => {
             const rooms = await chatsApi.getAllRooms();
             // Store each room in detail cache for individual reactivity
@@ -54,6 +55,7 @@ export function useChatRooms() {
             });
             return rooms;
         },
+        enabled: !!anonymousId,  // ✅ CRITICAL
         refetchInterval: 60000,
     });
 
@@ -137,16 +139,16 @@ export function useConversation(id: string | undefined) {
  */
 export function useChatMessages(convId: string | undefined) {
     const queryClient = useQueryClient();
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
+    const anonymousId = useAnonymousId();  // ✅ SSOT (reactive)
 
     // Real-time state for typing
     const [isTyping, setIsTyping] = useState(false);
 
 
     const query = useQuery({
-        queryKey: CHATS_KEYS.messages(convId || ''),
+        queryKey: ['chats', 'messages', anonymousId, convId || ''],  // ✅ Include ID
         queryFn: () => convId ? chatsApi.getMessages(convId) : Promise.resolve([]),
-        enabled: !!convId,
+        enabled: !!convId && !!anonymousId,  // ✅ Both required
     });
 
     // Integración SSE para tiempo real
