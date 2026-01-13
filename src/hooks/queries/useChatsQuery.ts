@@ -164,8 +164,11 @@ export function useChatMessages(convId: string | undefined) {
 
         const unsubNewMessage = ssePool.subscribe(sseUrl, 'new-message', (event) => {
             try {
-                const { message, originClientId } = JSON.parse(event.data);
-                if (originClientId === getClientId()) return;
+                const { message } = JSON.parse(event.data);
+
+                // ✅ ENTERPRISE FIX: Don't skip own messages!
+                // SSE confirmation is needed to transition pending → sent
+                // The upsertMessage will merge server data (clearing localStatus)
                 chatCache.upsertMessage(queryClient, message, anonymousId);
             } catch (e) { }
         });

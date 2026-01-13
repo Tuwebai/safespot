@@ -102,8 +102,14 @@ export const chatCache = {
             // 1. Idempotent Upsert
             const index = nextState.findIndex(m => m.id === message.id);
             if (index !== -1) {
-                // Merge new data into existing (e.g. status updates)
-                nextState[index] = { ...nextState[index], ...message };
+                // ✅ ENTERPRISE FIX: Merge + Clear localStatus
+                // Server confirmation doesn't have localStatus, so we must delete it
+                // This enables the visual transition: Clock → Check
+                const merged = { ...nextState[index], ...message };
+                if (!message.localStatus) {
+                    delete merged.localStatus; // Server confirmed = no more pending
+                }
+                nextState[index] = merged;
             } else {
                 nextState.push(message);
             }
