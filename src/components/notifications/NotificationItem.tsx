@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import { motion, PanInfo, useAnimation } from 'framer-motion';
 import {
     Trash2,
@@ -43,6 +44,8 @@ export function NotificationItem({
     onCloseMenu
 }: NotificationItemProps) {
     const controls = useAnimation();
+    const [isSwiping, setIsSwiping] = useState(false);
+    const wasSwipingRef = useRef(false);
 
     // Icon & Color Logic
     const getIcon = () => {
@@ -60,53 +63,71 @@ export function NotificationItem({
         }
     };
 
-    // Swipe Handler (Mobile)
-    const handleDragEnd = async (_: any, info: PanInfo) => {
-        if (info.offset.x < -100) {
-            // Swiped Left far enough -> Show actions or trigger delete?
-            // For WhatsApp style, usually it reveals buttons. 
-            // We'll stick to a reveal animation state or spring back if not implemented fully as separate layer.
-            // For v1 simplicity: Snap back but vibrating could hint actions. 
-            // Actually, let's just use ContextMenu for primary interaction on PC 
-            // and Short Tap for Read, Long Press for Context on Mobile.
-            // But requirement said "Swipe showing actions".
+    // BUG 2 FIX: Conditional label based on notification type
+    const getOpenLabel = () => {
+        if (notification.entity_type === 'follow') return 'Abrir perfil';
+        return 'Abrir';
+    };
 
-            // Re-centering for now as custom swipe action-sheets are complex to compose inline 
-            // without a dedicated wrapping container. adapting to just visual "bounce" 
-            // and relying on Long Press / Menu button for reliability if native swipe is tricky.
-            // HOWEVER, user asked specifically for Swipe actions.
-            // Let's implement a simple "Swipe to Reveal" logic.
+    // BUG 1,5,6 FIX: Only activate swipe on intentional horizontal drag
+    const handleDragStart = (_: unknown, info: PanInfo) => {
+        const isHorizontalSwipe = Math.abs(info.offset.x) > 10 &&
+            Math.abs(info.offset.x) > Math.abs(info.offset.y);
+        if (isHorizontalSwipe) {
+            setIsSwiping(true); // BUG 1/5/6 FIX: Activar estado swipe
+            wasSwipingRef.current = true;
+        }
+    };
+
+    // Swipe Handler (Mobile)
+    const handleDragEnd = async (_: unknown, info: PanInfo) => {
+        if (isSwiping && info.offset.x < -100) {
             await controls.start({ x: -140 }); // Reveal width
         } else {
             await controls.start({ x: 0 });
+            setIsSwiping(false); // BUG 1/5/6 FIX: Ocultar si no hay swipe suficiente
         }
     };
 
     const resetSwipe = () => {
         controls.start({ x: 0 });
+        setIsSwiping(false); // BUG 1/5/6 FIX: Resetear estado
+    };
+
+    // BUG 6 FIX: Guard click if we were swiping
+    const handleClick = () => {
+        if (wasSwipingRef.current) {
+            wasSwipingRef.current = false;
+            return;
+        }
+        onOpenContext(notification);
     };
 
     return (
         <div className="relative overflow-hidden border-b border-border/50 group">
             {/* Background Actions (Revealed on Swipe) - Mobile Only */}
-            <div className="absolute inset-y-0 right-0 w-[140px] flex md:hidden">
-                <button
-                    onClick={() => { onOpenContext(notification); resetSwipe(); }}
-                    className="flex-1 bg-blue-600 flex items-center justify-center text-white"
-                >
-                    <ExternalLink className="w-5 h-5" />
-                </button>
-                <button
-                    onClick={() => { onDelete(notification.id); resetSwipe(); }}
-                    className="flex-1 bg-red-600 flex items-center justify-center text-white"
-                >
-                    <Trash2 className="w-5 h-5" />
-                </button>
-            </div>
+            {/* BUG 1/5/6 FIX: Solo visible cuando isSwiping=true */}
+            {isSwiping && (
+                <div className="absolute inset-y-0 right-0 w-[140px] flex md:hidden">
+                    <button
+                        onClick={() => { onOpenContext(notification); resetSwipe(); }}
+                        className="flex-1 bg-blue-600 flex items-center justify-center text-white"
+                    >
+                        <ExternalLink className="w-5 h-5" />
+                    </button>
+                    <button
+                        onClick={() => { onDelete(notification.id); resetSwipe(); }}
+                        className="flex-1 bg-red-600 flex items-center justify-center text-white"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                    </button>
+                </div>
+            )}
 
             <motion.div
                 drag="x"
                 dragConstraints={{ left: -140, right: 0 }}
+                onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 animate={controls}
                 className={cn(
@@ -115,7 +136,7 @@ export function NotificationItem({
                     notification.is_read && "hover:bg-accent/5",
                     "cursor-pointer"
                 )}
-                onClick={() => onOpenContext(notification)}
+                onClick={handleClick}
                 onContextMenu={onContextMenu}
             >
                 {/* Icon */}
@@ -151,10 +172,10 @@ export function NotificationItem({
                                 <MoreHorizontal className="w-4 h-4" />
                             </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="bg-card border border-border shadow-xl">
                             <DropdownMenuItem onClick={() => onOpenContext(notification)}>
                                 <ExternalLink className="w-4 h-4 mr-2" />
-                                Abrir contexto
+                                Abrir
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onRead(notification.id)}>
                                 <CheckCheck className="w-4 h-4 mr-2" />
@@ -200,10 +221,11 @@ export function NotificationItem({
                     >
                         .
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
+                    {/* BUG 7 FIX: Fondo opaco */}
+                    <DropdownMenuContent align="start" className="bg-popover border border-border shadow-xl z-[100]">
                         <DropdownMenuItem onClick={() => onOpenContext(notification)}>
                             <ExternalLink className="w-4 h-4 mr-2" />
-                            Abrir contexto
+                            Abrir
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => onRead(notification.id)}>
                             {notification.is_read ? (

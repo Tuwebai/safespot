@@ -122,22 +122,29 @@ export default function NotificationsPage() {
         }
     };
 
+    // BUG 3 & 4 FIX: Computed states for button disabled logic
+    const hasUnread = notifications.some(n => !n.is_read);
+    const hasNotifications = notifications.length > 0;
+
     return (
         <div className="min-h-screen bg-background pb-24 safe-area-bottom">
             {/* Header */}
             <header className="sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-border p-4 flex items-center justify-between">
                 <h1 className="text-xl font-bold">Notificaciones</h1>
                 <div className="flex gap-2">
+                    {/* BUG 3 FIX: Disabled when all notifications are read */}
                     <button
                         onClick={handleMarkAllRead}
-                        className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-accent transition-colors"
+                        disabled={!hasUnread}
+                        className={`p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-accent transition-colors ${!hasUnread ? 'opacity-40 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground' : ''}`}
                         title="Marcar todo como leído"
                     >
                         <CheckCircle2 className="w-5 h-5" />
                     </button>
-                    {/* Clear all (visual only for now/todo) */}
+                    {/* BUG 4 FIX: Disabled when no notifications exist */}
                     <button
-                        className="p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors"
+                        disabled={!hasNotifications}
+                        className={`p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors ${!hasNotifications ? 'opacity-40 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground' : ''}`}
                         title="Limpiar todo"
                     >
                         <Trash2 className="w-5 h-5" />
