@@ -63,39 +63,33 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       throw error;
     }
 
-    // FIX FOR SUPABASE TRANSACTION MODE (Port 6543)
-    // We MUST wrap SET LOCAL and the query in a single transaction block (BEGIN...COMMIT)
-    // otherwise the pooler might reset the connection state between statements.
+    // PERFORMANCE FIX: Reduced from 5 roundtrips to 2
+    // Original: BEGIN → SET timeout → SET RLS → query → COMMIT = 5 roundtrips
+    // Now: SET config → query = 2 roundtrips
+    // Note: PostgreSQL doesn't allow multiple statements with parameters
 
-    await client.query('BEGIN');
-
-    // Safety: Set statement timeout for this specific session to avoid pool starvation
-    await client.query('SET statement_timeout = 15000'); // 15s timeout
-
+    // Prepare RLS context value
+    let rlsValue = '';
     if (anonymousId && anonymousId.trim() !== '') {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(anonymousId)) {
         throw new Error(`Invalid UUID format for anonymousId: ${anonymousId}`);
       }
-      const escapedId = anonymousId.replace(/'/g, "''");
-      await client.query(`SET LOCAL app.anonymous_id = '${escapedId}'`);
-    } else {
-      await client.query("SET LOCAL app.anonymous_id = ''");
+      rlsValue = anonymousId.replace(/'/g, "''");
     }
 
-    // Execute the actual query with its own parameters
-    const result = await client.query(queryText, cleanParams);
+    // Query 1: Set config (no parameters, so can use multi-statement)
+    await client.query(`
+      SELECT set_config('statement_timeout', '15000', true),
+             set_config('app.anonymous_id', '${rlsValue}', true)
+    `);
 
-    await client.query('COMMIT');
+    // Query 2: Execute actual query with parameters
+    const result = await client.query(queryText, cleanParams);
 
     return result;
   } catch (error) {
-    // Rollback on error
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('[RLS] Rollback failed:', rollbackError.message);
-    }
+    // No ROLLBACK needed - we no longer use explicit transactions
 
     // Enhanced error logging for SQL syntax errors
     if (process.env.NODE_ENV === 'development') {

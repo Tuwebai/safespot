@@ -4,6 +4,7 @@ import { commentsApi, type CreateCommentData, type Comment } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { commentsCache } from '@/lib/cache-helpers'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
+import { getAnonymousIdSafe } from '@/lib/identity'
 
 /**
  * Fetch a single comment from the canonical cache
@@ -26,7 +27,7 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
     const anonymousId = useAnonymousId()  // ✅ SSOT
 
     return useQuery({
-        queryKey: ['comments', 'byReport', anonymousId, reportId ?? '', cursor],  // ✅ Include ID
+        queryKey: queryKeys.comments.byReport(reportId ?? ''),  // Standard key for SSOT cache matching
         queryFn: async () => {
             const data = await commentsApi.getByReportId(reportId!, limit, cursor)
 
@@ -90,7 +91,7 @@ export function useCreateCommentMutation() {
                 id: `temp-${Date.now()}`,
                 report_id: newCommentData.report_id,
                 content: newCommentData.content,
-                anonymous_id: userProfile?.anonymous_id || 'Tú',
+                anonymous_id: userProfile?.anonymous_id || getAnonymousIdSafe() || '',
                 upvotes_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -99,8 +100,8 @@ export function useCreateCommentMutation() {
                 is_optimistic: true,
                 parent_id: newCommentData.parent_id,
                 is_thread: newCommentData.is_thread,
-                alias: userProfile?.alias,
-                avatar_url: userProfile?.avatar_url,
+                alias: userProfile?.alias || getAnonymousIdSafe()?.slice(0, 8) || 'Tú',  // Robust fallback: alias > partial ID > 'Tú'
+                avatar_url: userProfile?.avatar_url || null,
                 // Add required fields with defaults to satisfy type
                 is_highlighted: false,
                 is_pinned: false,

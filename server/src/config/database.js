@@ -16,7 +16,7 @@ const pool = new Pool({
     : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 20000, // Increased timeout for Supabase
+  connectionTimeoutMillis: 5000, // Reduced from 20s - fast fail on connection issues
 });
 
 // Test connection
@@ -68,6 +68,15 @@ async function testConnection() {
       CREATE INDEX IF NOT EXISTS idx_votes_anonymous_id ON votes(anonymous_id);
       CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC);
+      
+      -- PERFORMANCE CRITICAL: Spatial index for geographic queries
+      CREATE INDEX IF NOT EXISTS idx_reports_location_gist ON reports USING GIST (location);
+      
+      -- PERFORMANCE CRITICAL: Cursor pagination composite index
+      CREATE INDEX IF NOT EXISTS idx_reports_cursor ON reports (created_at DESC, id DESC) WHERE deleted_at IS NULL;
+      
+      -- PERFORMANCE CRITICAL: Trust score filter index
+      CREATE INDEX IF NOT EXISTS idx_trust_scores_filter ON anonymous_trust_scores (anonymous_id) WHERE trust_score >= 30 AND moderation_status NOT IN ('shadow_banned', 'banned');
 
       -- 2. Follow System Table
       CREATE TABLE IF NOT EXISTS followers (

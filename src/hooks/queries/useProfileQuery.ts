@@ -14,7 +14,7 @@ export function useProfileQuery() {
     const anonymousId = useAnonymousId();  // ✅ SSOT
 
     return useQuery({
-        queryKey: ['user', 'profile', anonymousId],  // ✅ Include ID
+        queryKey: queryKeys.user.profile,  // ✅ Use standard key for cache consistency
         queryFn: () => usersApi.getProfile(),
         enabled: !!anonymousId,  // ✅ CRITICAL
         staleTime: 60 * 1000, // 1 minute

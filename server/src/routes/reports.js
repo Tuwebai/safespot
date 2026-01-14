@@ -208,6 +208,7 @@ router.get('/', async (req, res) => {
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+          LEFT JOIN anonymous_trust_scores ts ON r.anonymous_id = ts.anonymous_id
           LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8
           LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8
           LEFT JOIN LATERAL (
@@ -226,6 +227,8 @@ router.get('/', async (req, res) => {
             r.deleted_at IS NULL
             AND ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8), 1000))
             AND r.location IS NOT NULL
+            AND (ts.trust_score IS NULL OR ts.trust_score >= 30)
+            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned'))
             ${additionalWhere}
             AND (
               $4::DECIMAL IS NULL OR
@@ -274,10 +277,13 @@ router.get('/', async (req, res) => {
           FROM reports r
           CROSS JOIN user_location ul
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+          LEFT JOIN anonymous_trust_scores ts ON r.anonymous_id = ts.anonymous_id
           WHERE 
             r.deleted_at IS NULL
             AND ST_DWithin(r.location, ul.point, COALESCE($3, 1000))
             AND r.location IS NOT NULL
+            AND (ts.trust_score IS NULL OR ts.trust_score >= 30)
+            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned'))
             ${additionalWhere}
             AND (
               $4::DECIMAL IS NULL OR
@@ -320,14 +326,9 @@ router.get('/', async (req, res) => {
         });
       }
 
-      // Filter by Trust Score visibility
-      const visibleReports = [];
-      for (const report of reports) {
-        const isVisible = await checkContentVisibility(report.anonymous_id, 'report');
-        if (isVisible) {
-          visibleReports.push(report);
-        }
-      }
+      // Trust Score filter now applied at SQL level (see JOIN + WHERE above)
+      // No N+1 loop needed - all reports returned are already visible
+      const visibleReports = reports;
 
       logSuccess('GET /api/reports (geographic)', anonymousId);
 
@@ -634,13 +635,19 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Report not found (Optimistic state)' });
     }
 
-    // threads_count is now a denormalized column (no subquery needed)
+    // PERFORMANCE FIX: Single query with LEFT JOINs for favorites/flags (was 3 queries)
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT r.*, u.avatar_url, u.alias
+      SELECT r.*, 
+        u.avatar_url, 
+        u.alias,
+        CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
+        CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged
       FROM reports r 
       LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+      LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $2
+      LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $2
       WHERE r.id = $1
-    `, [id]);
+    `, [id, anonymousId || '']);
 
     if (reportResult.rows.length === 0) {
       return res.status(404).json({
@@ -650,48 +657,7 @@ router.get('/:id', async (req, res) => {
 
     const report = reportResult.rows[0];
 
-    // If anonymous_id is provided, check favorite and flag status
-    if (anonymousId) {
-      const [favoriteResult, flagResult] = await Promise.all([
-        queryWithRLS(anonymousId, `
-          SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2 LIMIT 1
-        `, [anonymousId, id]),
-        queryWithRLS(anonymousId, `
-          SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2 LIMIT 1
-        `, [anonymousId, id])
-      ]);
-
-      // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
-      let normalizedImageUrls = [];
-      if (report.image_urls) {
-        if (Array.isArray(report.image_urls)) {
-          normalizedImageUrls = report.image_urls;
-        } else if (typeof report.image_urls === 'string') {
-          try {
-            normalizedImageUrls = JSON.parse(report.image_urls);
-            if (!Array.isArray(normalizedImageUrls)) {
-              normalizedImageUrls = [];
-            }
-          } catch (e) {
-            normalizedImageUrls = [];
-          }
-        }
-      }
-
-      const enrichedReport = {
-        ...report,
-        image_urls: normalizedImageUrls,
-        is_favorite: favoriteResult.rows.length > 0,
-        is_flagged: flagResult.rows.length > 0
-      };
-
-      return res.json({
-        success: true,
-        data: enrichedReport
-      });
-    }
-
-    // Normalize image_urls for non-authenticated requests too
+    // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
     let normalizedImageUrls = [];
     if (report.image_urls) {
       if (Array.isArray(report.image_urls)) {
@@ -708,14 +674,14 @@ router.get('/:id', async (req, res) => {
       }
     }
 
-    const normalizedReport = {
+    const enrichedReport = {
       ...report,
       image_urls: normalizedImageUrls
     };
 
-    res.json({
+    return res.json({
       success: true,
-      data: normalizedReport
+      data: enrichedReport
     });
   } catch (err) {
     res.status(500).json({
