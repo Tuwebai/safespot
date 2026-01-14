@@ -1,14 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi, ChatRoom } from '../lib/api';
 import { useToast } from '../components/ui/toast/useToast';
+import { useAnonymousId } from './useAnonymousId';
 
 export function useChatActions() {
     const queryClient = useQueryClient();
     const toast = useToast();
+    const anonymousId = useAnonymousId();
 
     // Helper to optimistically update chat list
     const updateChatList = (roomId: string, updater: (chat: ChatRoom) => ChatRoom | null) => {
-        queryClient.setQueryData<ChatRoom[]>(['chats', 'rooms'], (old) => {
+        if (!anonymousId) return;
+        queryClient.setQueryData<ChatRoom[]>(['chats', 'rooms', anonymousId], (old) => {
             if (!old) return old;
             return old.map(chat => {
                 if (chat.id === roomId) {
@@ -23,8 +26,10 @@ export function useChatActions() {
         mutationFn: ({ roomId, isPinned }: { roomId: string; isPinned: boolean }) =>
             chatsApi.pinChat(roomId, isPinned),
         onMutate: async ({ roomId, isPinned }) => {
-            await queryClient.cancelQueries({ queryKey: ['chats', 'rooms'] });
-            const previousChats = queryClient.getQueryData<ChatRoom[]>(['chats', 'rooms']);
+            if (!anonymousId) return;
+            const queryKey = ['chats', 'rooms', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousChats = queryClient.getQueryData<ChatRoom[]>(queryKey);
 
             updateChatList(roomId, (chat) => ({ ...chat, is_pinned: isPinned }));
 
@@ -32,14 +37,16 @@ export function useChatActions() {
         },
         onError: (_err, _newTodo, context) => {
             // Rollback
-            if (context?.previousChats) {
-                queryClient.setQueryData(['chats', 'rooms'], context.previousChats);
+            if (context?.previousChats && anonymousId) {
+                queryClient.setQueryData(['chats', 'rooms', anonymousId], context.previousChats);
             }
             toast.error('Error al actualizar chat');
         },
         onSettled: () => {
-            // Invalidate to ensure sorting is correct (backend does sorting)
-            queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+            if (anonymousId) {
+                // Invalidate to ensure sorting is correct (backend does sorting)
+                queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
+            }
         }
     });
 
@@ -47,31 +54,29 @@ export function useChatActions() {
         mutationFn: ({ roomId, isArchived }: { roomId: string; isArchived: boolean }) =>
             chatsApi.archiveChat(roomId, isArchived),
         onMutate: async ({ roomId, isArchived }) => {
-            await queryClient.cancelQueries({ queryKey: ['chats', 'rooms'] });
-            const previousChats = queryClient.getQueryData<ChatRoom[]>(['chats', 'rooms']);
+            if (!anonymousId) return;
+            const queryKey = ['chats', 'rooms', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousChats = queryClient.getQueryData<ChatRoom[]>(queryKey);
 
             if (isArchived) {
                 // Optimistically remove from main list
                 updateChatList(roomId, (_chat) => null);
-                // Also invalidate counts or specific queries if needed, but list update is key
                 toast.success('Chat archivado');
-            } else {
-                // If unarchiving, we can't easily add it back without refetch, 
-                // but usually this action happens in "Archived" view which we haven't built yet.
-                // For now, we assume this action puts it back into view.
-                // We'll trust invalidation for unarchiving visibility.
             }
 
             return { previousChats };
         },
         onError: (_err, _vars, context) => {
-            if (context?.previousChats) {
-                queryClient.setQueryData(['chats', 'rooms'], context.previousChats);
+            if (context?.previousChats && anonymousId) {
+                queryClient.setQueryData(['chats', 'rooms', anonymousId], context.previousChats);
             }
             toast.error('Error al archivar chat');
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+            if (anonymousId) {
+                queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
+            }
         }
     });
 
@@ -79,8 +84,10 @@ export function useChatActions() {
         mutationFn: ({ roomId, isUnread }: { roomId: string; isUnread: boolean }) =>
             chatsApi.markChatUnread(roomId, isUnread),
         onMutate: async ({ roomId, isUnread }) => {
-            await queryClient.cancelQueries({ queryKey: ['chats', 'rooms'] });
-            const previousChats = queryClient.getQueryData<ChatRoom[]>(['chats', 'rooms']);
+            if (!anonymousId) return;
+            const queryKey = ['chats', 'rooms', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousChats = queryClient.getQueryData<ChatRoom[]>(queryKey);
 
             updateChatList(roomId, (chat) => ({
                 ...chat,
@@ -91,34 +98,40 @@ export function useChatActions() {
             return { previousChats };
         },
         onError: (_err, _vars, context) => {
-            if (context?.previousChats) {
-                queryClient.setQueryData(['chats', 'rooms'], context.previousChats);
+            if (context?.previousChats && anonymousId) {
+                queryClient.setQueryData(['chats', 'rooms', anonymousId], context.previousChats);
             }
             toast.error('Error al marcar como no leído');
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+            if (anonymousId) {
+                queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
+            }
         }
     });
 
     const deleteMutation = useMutation({
         mutationFn: (roomId: string) => chatsApi.deleteChat(roomId),
         onMutate: async (roomId) => {
-            await queryClient.cancelQueries({ queryKey: ['chats', 'rooms'] });
-            const previousChats = queryClient.getQueryData<ChatRoom[]>(['chats', 'rooms']);
+            if (!anonymousId) return;
+            const queryKey = ['chats', 'rooms', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousChats = queryClient.getQueryData<ChatRoom[]>(queryKey);
 
             updateChatList(roomId, (_chat) => null); // Remove from list
 
             return { previousChats };
         },
         onError: (_err, _vars, context) => {
-            if (context?.previousChats) {
-                queryClient.setQueryData(['chats', 'rooms'], context.previousChats);
+            if (context?.previousChats && anonymousId) {
+                queryClient.setQueryData(['chats', 'rooms', anonymousId], context.previousChats);
             }
             toast.error('Error al eliminar chat');
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+            if (anonymousId) {
+                queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
+            }
         },
         onSuccess: () => {
             toast.success('Chat eliminado');

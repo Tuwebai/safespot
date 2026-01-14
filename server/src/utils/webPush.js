@@ -265,7 +265,10 @@ export function createChatNotificationPayload(message, room) {
         renotify: true,
         data: {
             roomId: message.room_id,
-            url: `/mensajes?roomId=${message.room_id}`, // Link to messaging center
+            messageId: message.id || null, // ✅ P1 FIX: Incluir messageId
+            anonymousId: message.recipientAnonymousId || null, // ✅ P1 FIX: Incluir la identidad del destinatario
+            type: 'chat-message', // ✅ Contrato SW
+            url: `/mensajes/${message.room_id}`, // Link to messaging center
             timestamp: Date.now()
         },
         actions: [

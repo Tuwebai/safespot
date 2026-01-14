@@ -19,7 +19,7 @@ export interface UserPresence {
 const CHATS_KEYS = {
     all: ['chats'] as const,
     rooms: (anonymousId: string) => ['chats', 'rooms', anonymousId] as const,
-    conversation: (id: string) => ['chats', 'conversation', id] as const,
+    conversation: (id: string, anonymousId: string) => ['chats', 'conversation', anonymousId, id] as const,
     messages: (convId: string, anonymousId: string) => ['chats', 'messages', anonymousId, convId] as const,
     message: (id: string) => ['chats', 'message', id] as const,
     presence: (userId: string) => ['users', 'presence', userId] as const,
@@ -43,7 +43,7 @@ export function useChatRooms() {
             const rooms = await chatsApi.getAllRooms();
             // Store each room in detail cache for individual reactivity
             rooms.forEach(room => {
-                queryClient.setQueryData(CHATS_KEYS.conversation(room.id), room);
+                queryClient.setQueryData(CHATS_KEYS.conversation(room.id, anonymousId || ''), room);
 
                 // Seed Presence Cache if available
                 if (room.other_participant_id) {
@@ -127,15 +127,16 @@ export function useChatRooms() {
  * Individual Conversation Hook (Normalized)
  */
 export function useConversation(id: string | undefined) {
+    const anonymousId = useAnonymousId();
     return useQuery({
-        queryKey: CHATS_KEYS.conversation(id || ''),
+        queryKey: CHATS_KEYS.conversation(id || '', anonymousId || ''),
         queryFn: async () => {
             if (!id) return null;
             const rooms = await chatsApi.getAllRooms();
             const room = rooms.find(r => r.id === id);
             return room || null; // ✅ Fix: React Query hates undefined
         },
-        enabled: !!id,
+        enabled: !!id && !!anonymousId,
         staleTime: Infinity, // Passive patching via SSE
     });
 }
@@ -334,7 +335,7 @@ export function useChatMessages(convId: string | undefined) {
                     return old.map(r => r.id === convId ? { ...r, pinned_message_id: data.pinnedMessageId } : r);
                 });
                 // 2. Update individual conversation detail (active window)
-                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId), (old) => {
+                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId || ''), (old) => {
                     if (!old) return old;
                     return { ...old, pinned_message_id: data.pinnedMessageId };
                 });
@@ -360,7 +361,7 @@ export function useChatMessages(convId: string | undefined) {
                     if (!old) return old;
                     return old.map(r => r.id === convId ? { ...r, pinned_message_id: pinnedMessageId } : r);
                 });
-                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId), (old) => {
+                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId || ''), (old) => {
                     if (!old) return old;
                     return { ...old, pinned_message_id: pinnedMessageId };
                 });
@@ -518,7 +519,7 @@ export function useSendMessageMutation() {
             chatCache.applyInboxUpdate(queryClient, optimisticMessage, anonymousId || '', true);
 
             // 2. Update Conversation detail cache (last message)
-            queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId), (old: any) => ({
+            queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId, anonymousId || ''), (old: any) => ({
                 ...old,
                 last_message_content: optimisticMessage.content,
                 last_message_at: optimisticMessage.created_at,

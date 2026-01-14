@@ -568,7 +568,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         const previousRoomDetail = queryClient.getQueryData<ChatRoom>(['chats', 'conversation', room.id]);
 
         // 1. Patch individual conversation cache
-        queryClient.setQueryData<ChatRoom>(['chats', 'conversation', room.id], (old: ChatRoom | undefined) => {
+        queryClient.setQueryData<ChatRoom>(['chats', 'conversation', anonymousId || '', room.id], (old: ChatRoom | undefined) => {
             if (!old) return old;
             return { ...old, pinned_message_id: messageId };
         });
@@ -591,7 +591,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             console.error('[Chat] Pin failed:', err);
             // Rollback on error
             if (previousRoomDetail) {
-                queryClient.setQueryData(['chats', 'conversation', room.id], previousRoomDetail);
+                queryClient.setQueryData(['chats', 'conversation', anonymousId || '', room.id], previousRoomDetail);
                 queryClient.setQueryData<ChatRoom[]>(['chats', 'rooms', anonymousId || ''], (old: ChatRoom[] | undefined) => {
                     if (!old) return old;
                     return old.map((r: ChatRoom) => r.id === room.id ? { ...r, pinned_message_id: previousRoomDetail.pinned_message_id } : r);

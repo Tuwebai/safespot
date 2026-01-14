@@ -381,11 +381,13 @@ router.post('/:roomId/messages', async (req, res) => {
                         if (subs && subs.length > 0) {
                             const { createChatNotificationPayload, sendBatchNotifications } = await import('../utils/webPush.js');
                             const payload = createChatNotificationPayload({
+                                id: newMessage.id, // ✅ P1 FIX: messageId
                                 senderAlias: newMessage.sender_alias || 'Alguien',
                                 content: type === 'image' ? '📷 Foto enviada' : content,
                                 room_id: roomId,
                                 report_id: newMessage.report_id,
-                                reportTitle: newMessage.report_title
+                                reportTitle: newMessage.report_title,
+                                recipientAnonymousId: recipientId // ✅ P1 FIX: identidad del destinatario
                             }, { report_title: newMessage.report_title });
 
                             await sendBatchNotifications(

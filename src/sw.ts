@@ -489,16 +489,24 @@ self.addEventListener('notificationclick', (event: any) => {
     event.notification.close();
 
     if (event.action === 'dismiss' || event.action === 'mark-read') {
-        if (event.action === 'mark-read' && event.notification.data?.roomId) {
-            const roomId = event.notification.data.roomId;
-            const anonymousId = event.notification.data.anonymousId;
+        if (event.action === 'mark-read') {
+            const roomId = event.notification.data?.roomId;
+            const anonymousId = event.notification.data?.anonymousId;
 
-            if (anonymousId) {
-                fetch(`/api/chats/${roomId}/read`, {
-                    method: 'PATCH',
-                    headers: { 'x-anonymous-id': anonymousId },
-                }).catch((e) => console.error('[SW] Mark read failed:', e));
+            // ✅ P1 FIX: Validación defensiva
+            if (!roomId || !anonymousId) {
+                console.warn('[SW] mark-read aborted: missing roomId or anonymousId in payload', {
+                    roomId,
+                    anonymousId,
+                    data: event.notification.data
+                });
+                return; // Fail-safe: no romper la notificación
             }
+
+            fetch(`/api/chats/${roomId}/read`, {
+                method: 'PATCH',
+                headers: { 'x-anonymous-id': anonymousId },
+            }).catch((e) => console.error('[SW] Mark read failed:', e));
         }
         return;
     }

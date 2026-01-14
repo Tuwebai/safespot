@@ -80,8 +80,14 @@ class SSEPool {
 
         source.onmessage = (e) => this.forwardEvent(url, 'message', e);
 
-        // Standard events
+        // Standard events for comments/reports
         ['new-comment', 'comment-update', 'comment-delete', 'report-update', 'notification', 'presence-update'].forEach(name => {
+            source.addEventListener(name, (e) => this.forwardEvent(url, name, e as MessageEvent));
+        });
+
+        // ✅ FIX: Chat-specific events (were missing!)
+        // Includes: room events + user inbox events (chat-update, chat-rollback)
+        ['new-message', 'typing', 'messages-read', 'messages-delivered', 'presence', 'connected', 'inbox-update', 'pin-update', 'chat-update', 'chat-rollback'].forEach(name => {
             source.addEventListener(name, (e) => this.forwardEvent(url, name, e as MessageEvent));
         });
 

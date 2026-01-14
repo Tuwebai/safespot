@@ -15,7 +15,7 @@ import { ChatMessage, ChatRoom } from './api';
 
 const KEYS = {
     rooms: (anonymousId: string) => ['chats', 'rooms', anonymousId] as const,
-    conversation: (id: string) => ['chats', 'conversation', id] as const,
+    conversation: (id: string, anonymousId: string) => ['chats', 'conversation', anonymousId, id] as const,
     messages: (convId: string, anonymousId: string) => ['chats', 'messages', anonymousId, convId] as const,
 };
 
@@ -70,7 +70,7 @@ export const chatCache = {
         });
 
         // Also patch the detailed conversation cache if it exists (for reliability)
-        queryClient.setQueryData(KEYS.conversation(roomId), (old: ChatRoom | undefined) => {
+        queryClient.setQueryData(KEYS.conversation(roomId, currentUserId), (old: ChatRoom | undefined) => {
             if (!old) return old;
             const isMyMessage = message.sender_id === currentUserId;
             let newUnreadCount = old.unread_count || 0;
@@ -178,7 +178,7 @@ export const chatCache = {
         });
 
         // Patch Detail
-        queryClient.setQueryData(KEYS.conversation(roomId), (old: ChatRoom | undefined) => {
+        queryClient.setQueryData(KEYS.conversation(roomId, anonymousId), (old: ChatRoom | undefined) => {
             if (!old) return old;
             return { ...old, unread_count: 0 };
         });

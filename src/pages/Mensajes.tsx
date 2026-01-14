@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale';
 import { Search, MessageSquare, ArrowLeft, Camera, Plus, X, User, Archive } from 'lucide-react';
 
 import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
+import { useAnonymousId } from '../hooks/useAnonymousId';
 import { ChatRoom, UserProfile, chatsApi, usersApi } from '../lib/api';
 import { getAvatarUrl } from '../lib/avatar';
 import { Input } from '../components/ui/input';
@@ -130,6 +131,7 @@ const Mensajes: React.FC = () => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const { data: rooms, isLoading } = useChatRooms();
+    const anonymousId = useAnonymousId();
     const [searchTerm, setSearchTerm] = useState('');
 
 
@@ -208,7 +210,9 @@ const Mensajes: React.FC = () => {
     const createChatMutation = useMutation({
         mutationFn: (recipientId: string) => chatsApi.createRoom({ recipientId }),
         onSuccess: (newRoom) => {
-            queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+            if (anonymousId) {
+                queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
+            }
             handleSelectRoom(newRoom.id);
             setIsNewChatOpen(false);
             setUserSearchTerm('');

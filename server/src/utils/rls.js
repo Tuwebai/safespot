@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { realtimeEvents } from './eventEmitter.js';
 
 /**
  * Execute query with RLS context
@@ -104,10 +105,74 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
 }
 
 /**
- * Execute transaction with RLS context
+ * SSE Event Queue for transactional emission
+ * Events are accumulated during transaction and only emitted after COMMIT
+ */
+class TransactionalSSE {
+  constructor() {
+    this.queue = [];
+  }
+
+  /**
+   * Queue an SSE event to be emitted after commit
+   * @param {string} method - realtimeEvents method name (e.g., 'emitNewComment')
+   * @param  {...any} args - Arguments to pass to the method
+   */
+  emit(method, ...args) {
+    if (typeof realtimeEvents[method] !== 'function') {
+      console.error(`[TransactionalSSE] Invalid method: ${method}`);
+      return;
+    }
+    this.queue.push({ method, args });
+  }
+
+  /**
+   * Flush all queued events (call after COMMIT)
+   */
+  flush() {
+    for (const event of this.queue) {
+      try {
+        realtimeEvents[event.method](...event.args);
+      } catch (err) {
+        console.error(`[TransactionalSSE] Failed to emit ${event.method}:`, err);
+      }
+    }
+    this.queue = [];
+  }
+
+  /**
+   * Discard all queued events (call on ROLLBACK)
+   */
+  discard() {
+    const count = this.queue.length;
+    this.queue = [];
+    if (count > 0) {
+      console.log(`[TransactionalSSE] Discarded ${count} events due to rollback`);
+    }
+  }
+}
+
+/**
+ * Execute transaction with RLS context and transactional SSE support
+ * 
+ * @param {string} anonymousId - User identity for RLS
+ * @param {function} callback - Async function receiving (client, sse)
+ *   - client: PostgreSQL client for queries
+ *   - sse: TransactionalSSE instance for queueing events
+ * @returns {Promise<any>} Result from callback
+ * 
+ * @example
+ * await transactionWithRLS(anonymousId, async (client, sse) => {
+ *   const result = await client.query('INSERT INTO comments ...');
+ *   sse.emit('emitNewComment', reportId, result.rows[0], clientId);
+ *   return result.rows[0];
+ * });
+ * // SSE only emitted if transaction commits successfully
  */
 export async function transactionWithRLS(anonymousId, callback) {
   const client = await pool.connect();
+  const sse = new TransactionalSSE();
+
   try {
     await client.query('BEGIN');
     await client.query('SET statement_timeout = 30000'); // 30s for complex transactions
@@ -127,16 +192,27 @@ export async function transactionWithRLS(anonymousId, callback) {
       await client.query("SET LOCAL app.anonymous_id = ''");
     }
 
-    // Execute callback
-    const result = await callback(client);
+    // Execute callback with client AND sse queue
+    const result = await callback(client, sse);
 
     await client.query('COMMIT');
+
+    // ✅ P3 FIX: Only emit SSE events AFTER successful COMMIT
+    sse.flush();
+
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
+
+    // ✅ P3 FIX: Discard all queued events on ROLLBACK
+    sse.discard();
+
     throw error;
   } finally {
     client.release();
   }
 }
+
+// Export TransactionalSSE class for testing/advanced use cases
+export { TransactionalSSE };
 
