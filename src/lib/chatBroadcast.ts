@@ -20,6 +20,7 @@ const CHANNEL_NAME = 'safespot-chat-sync';
 export type ChatBroadcastEvent =
     | { type: 'new-message'; roomId: string; message: ChatMessage }
     | { type: 'message-deleted'; roomId: string; messageId: string }
+    | { type: 'message-pinned'; roomId: string; pinnedMessageId: string | null }
     | { type: 'typing'; roomId: string; senderId: string; isTyping: boolean };
 
 type ChatBroadcastListener = (event: ChatBroadcastEvent) => void;

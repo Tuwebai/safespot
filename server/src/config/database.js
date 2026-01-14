@@ -153,9 +153,31 @@ async function testConnection() {
             ALTER TABLE user_auth ADD CONSTRAINT user_auth_provider_unique UNIQUE (provider, provider_user_id);
         END IF;
       END $$;
+
+      -- ============================================
+      -- 12. CHAT MENU ACTIONS (WhatsApp-Grade)
+      -- ============================================
+      
+      -- 12a. Reactions: JSONB on messages for emoji reactions
+      -- Format: { "👍": ["user1", "user2"], "❤️": ["user3"] }
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}';
+      
+      -- 12b. Pin: One pinned message per conversation
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS pinned_message_id UUID;
+      
+      -- 12c. Starred Messages: Per-user starred messages (separate table)
+      CREATE TABLE IF NOT EXISTS starred_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        message_id UUID NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, message_id)
+      );
+      
+      -- Index for fast starred message lookups
+      CREATE INDEX IF NOT EXISTS idx_starred_messages_user ON starred_messages(user_id);
+      CREATE INDEX IF NOT EXISTS idx_starred_messages_message ON starred_messages(message_id);
     `;
-
-
 
     // Only run the long script if we successfully connected
     await pool.query(initSql);
@@ -166,9 +188,9 @@ async function testConnection() {
     /*
     await pool.query(`
       UPDATE anonymous_users u
-      SET 
-        followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
-        following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
+    SET
+    followers_count = (SELECT COUNT(*) FROM followers WHERE following_id = u.anonymous_id),
+    following_count = (SELECT COUNT(*) FROM followers WHERE follower_id = u.anonymous_id);
     `);
     */
 

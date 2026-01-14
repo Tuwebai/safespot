@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -9,17 +10,21 @@ import {
     useMarkAsReadMutation,
     useMarkAsDeliveredMutation,
     useUserPresence,
-    useDeleteMessageMutation
+    useDeleteMessageMutation,
+    useReactionMutation
 } from '../../hooks/queries/useChatsQuery';
+import useLongPress from '../../hooks/useLongPress';
 
 
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
 import { getAvatarUrl } from '../../lib/avatar';
 import { useAnonymousId } from '../../hooks/useAnonymousId';
 import { isOwnMessage } from '../../lib/chatHelpers';
+import { chatBroadcast } from '../../lib/chatBroadcast';
 import {
     Send,
     Image as ImageIcon,
+    Plus,
     X,
     ArrowLeft,
     Check,
@@ -28,10 +33,12 @@ import {
     ChevronDown,
     Reply,
     Trash2,
-    SmilePlus,
     Pin,
     Star,
-    Clock // ✅ UX: Needed for pending state
+    SmilePlus, // ✅ UX: WhatsApp-style hover trigger
+    Clock, // ✅ UX: Needed for pending state
+    Pencil,
+    Copy
 } from 'lucide-react';
 
 import {
@@ -88,15 +95,262 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
     );
 };
 
+/**
+ * ✅ WhatsApp-Grade floating reaction selector
+ */
+interface ReactionPickerProps {
+    onSelect: (emoji: string) => void;
+    onClose: () => void;
+    currentReactions?: Record<string, string[]>;
+    anonymousId: string;
+}
+
+const ReactionPicker: React.FC<ReactionPickerProps & { isMe: boolean }> = ({ onSelect, onClose, currentReactions, anonymousId, isMe }) => {
+    // WhatsApp default order
+    const emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+    const pickerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+                onClose();
+            }
+        };
+        const handleScroll = () => {
+            onClose();
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        window.addEventListener('scroll', handleScroll, true); // Capture scroll on any element
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('scroll', handleScroll, true);
+        };
+    }, [onClose]);
+
+    return (
+        <motion.div
+            ref={pickerRef}
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+            className={`absolute -top-14 z-[150] flex gap-1 bg-white border border-border/10 shadow-2xl rounded-full p-1.5 backdrop-blur-md whitespace-nowrap
+            ${isMe ? 'right-0' : 'left-0'}`}
+        >
+            {emojis.map((emoji) => {
+                const isSelected = currentReactions?.[emoji]?.includes(anonymousId);
+                return (
+                    <motion.button
+                        key={emoji}
+                        whileHover={{ scale: 1.3, y: -4 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect(emoji);
+                            onClose();
+                        }}
+                        className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors hover:bg-muted/50 ${isSelected ? 'bg-primary/20' : ''}`}
+                    >
+                        <span className="text-2xl leading-none select-none">{emoji}</span>
+                    </motion.button>
+                );
+            })}
+            <motion.button
+                whileHover={{ scale: 1.1 }}
+                className="w-9 h-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted/50"
+            >
+                <Plus className="w-5 h-5" />
+            </motion.button>
+        </motion.div>
+    );
+};
+
+// ✅ Mobile Top Action Bar (WhatsApp-Grade)
+interface MobileMessageActionBarProps {
+    selectedMessage: ChatMessage;
+    onClose: () => void;
+    onReply: (msg: ChatMessage) => void;
+    onDelete: (msg: ChatMessage) => void;
+    onPin: (msgId: string) => void;
+    onStar: (msg: ChatMessage) => void;
+    onEdit: (msg: ChatMessage) => void;
+    onCopy: (msg: ChatMessage) => void;
+    isMe: boolean;
+    pinnedId: string | undefined;
+}
+
+const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
+    selectedMessage, onClose, onReply, onDelete, onPin, onStar, onEdit, onCopy, isMe, pinnedId
+}) => {
+    return (
+        <AnimatePresence>
+            <motion.div
+                initial={{ y: -50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -50, opacity: 0 }}
+                className="absolute top-0 left-0 right-0 h-14 bg-background/95 backdrop-blur-md border-b border-border/10 z-[200] flex items-center justify-between px-3 shadow-md"
+            >
+                <div className="flex items-center gap-3">
+                    <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
+                        <ArrowLeft className="w-5 h-5" />
+                    </Button>
+                    <span className="font-semibold text-lg">1</span>
+                </div>
+
+                <div className="flex items-center gap-0.5">
+                    {/* Responder */}
+                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onReply(selectedMessage); onClose(); }}>
+                        <Reply className="w-5 h-5" />
+                    </Button>
+
+                    {/* Copiar */}
+                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onCopy(selectedMessage); onClose(); }}>
+                        <Copy className="w-5 h-5" />
+                    </Button>
+
+                    {/* Fijar */}
+                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onPin(selectedMessage.id); onClose(); }}>
+                        <Pin className={`w-5 h-5 ${pinnedId === selectedMessage.id ? 'fill-current text-primary' : ''}`} />
+                    </Button>
+
+                    {/* Favorito (para todos) */}
+                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onStar(selectedMessage); onClose(); }}>
+                        <Star className={`w-5 h-5 ${selectedMessage.is_starred ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                    </Button>
+
+                    {/* Editar (solo mensaje propio) */}
+                    {isMe && (
+                        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onEdit(selectedMessage); onClose(); }}>
+                            <Pencil className="w-5 h-5" />
+                        </Button>
+                    )}
+
+                    {/* Eliminar (solo mensaje propio) */}
+                    {isMe && (
+                        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onDelete(selectedMessage); onClose(); }}>
+                            <Trash2 className="w-5 h-5 text-destructive" />
+                        </Button>
+                    )}
+                </div>
+            </motion.div>
+        </AnimatePresence>
+    );
+};
+
+/**
+ * ✅ Message Bubble Wrapper to handle WhatsApp-grade interactions
+ */
+interface MessageBubbleWrapperProps {
+    msg: ChatMessage;
+    isMe: boolean;
+    anonymousId: string;
+    onReaction: (emoji: string) => void;
+    pickerActive: boolean;
+    setPickerActive: (active: boolean) => void;
+    onSelectionChange: (selected: boolean) => void;
+    children: React.ReactNode;
+}
+
+const MessageBubbleWrapper: React.FC<MessageBubbleWrapperProps> = ({
+    msg,
+    isMe,
+    anonymousId,
+    onReaction,
+    pickerActive,
+    setPickerActive,
+    onSelectionChange,
+    children
+}) => {
+    // Mobile Long Press Logic
+    const longPress = useLongPress(() => {
+        // Trigger both reaction picker AND selection mode
+        setPickerActive(true);
+        onSelectionChange(true);
+
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+            navigator.vibrate(50);
+        }
+    }, undefined, { delay: 400 });
+
+    return (
+        <div
+            className="relative group/bubble flex flex-col"
+            onMouseEnter={() => { }} // Could be used for desktop hover state if needed
+        >
+            <div className="relative">
+                <AnimatePresence>
+                    {pickerActive && (
+                        <ReactionPicker
+                            anonymousId={anonymousId}
+                            currentReactions={msg.reactions}
+                            onSelect={onReaction}
+                            onClose={() => {
+                                setPickerActive(false);
+                                onSelectionChange(false);
+                            }}
+                            isMe={isMe}
+                        />
+                    )}
+                </AnimatePresence>
+
+                {/* The actual bubble with LongPress support */}
+                {/* Overlay to prevent text selection during long press activity */}
+                <div {...longPress} className={pickerActive ? 'select-none' : ''}>
+                    {pickerActive && <div className="absolute inset-0 z-10 bg-black/5 rounded-lg pointer-events-none" />}
+                    {children}
+                </div>
+
+                {/* Desktop Smile Trigger - HIDDEN on Mobile */}
+                {!pickerActive && (
+                    <button
+                        onClick={() => setPickerActive(true)}
+                        className={`hidden md:block absolute top-1/2 -translate-y-1/2 p-2 rounded-full bg-popover/80 backdrop-blur-md shadow-md border border-border/10 opacity-0 group-hover/bubble:opacity-100 transition-opacity z-40 hover:scale-110 active:scale-95
+                        ${isMe ? '-left-12' : '-right-12'}`}
+                    >
+                        <SmilePlus className="w-4.5 h-4.5 text-muted-foreground hover:text-primary transition-colors" />
+                    </button>
+                )}
+            </div>
+
+            {/* ✅ WhatsApp-Grade: Reaction Chips (Outside & Below Bubble) */}
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                <div className={`flex flex-wrap gap-1 mt-1 z-10 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    {Object.entries(msg.reactions).map(([emoji, users]) => (
+                        <div
+                            key={emoji}
+                            onClick={() => onReaction(emoji)}
+                            className={`text-[11px] px-1.5 py-0.5 rounded-full border shadow-sm flex items-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95 bg-background
+                                            ${Array.isArray(users) && users.includes(anonymousId || '')
+                                    ? 'border-primary/40 text-primary-foreground font-bold bg-primary/10'
+                                    : 'border-border/60 text-muted-foreground'}`}
+                        >
+                            <span>{emoji}</span>
+                            {/* <span className="font-bold text-[10px]">{Array.isArray(users) ? users.length : 0}</span> */}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 interface ChatWindowProps {
     room: ChatRoom;
     onBack?: () => void;
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+
+    const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
+    const [selectedMessageForActions, setSelectedMessageForActions] = useState<ChatMessage | null>(null);
+
+    // ✅ WhatsApp-Grade Quick Emoji Reactions
+
 
     // ✅ ENTERPRISE FIX: Use useAnonymousId hook instead of localStorage
     // Guarantees clean UUID without v1|/v2| prefixes
@@ -114,6 +368,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const deleteMessageMutation = useDeleteMessageMutation();
     const markAsReadMutation = useMarkAsReadMutation();
     const markAsDeliveredMutation = useMarkAsDeliveredMutation();
+    const reactionMutation = useReactionMutation();
 
     // Virtualization Refs
     const parentRef = useRef<HTMLDivElement>(null);
@@ -233,6 +488,73 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             }
         };
     }, [room.id]);
+
+    // ============================================
+    // WHATSAPP-GRADE MESSAGE ACTIONS HANDLERS
+    // ============================================
+
+    const handleReaction = (messageId: string, emoji: string) => {
+        reactionMutation.mutate({ roomId: room.id, messageId, emoji });
+    };
+
+    const handlePinMessage = async (messageId: string | null) => {
+        // Optimistic Update
+        const previousRoomDetail = queryClient.getQueryData<ChatRoom>(['chats', 'conversation', room.id]);
+
+        // 1. Patch individual conversation cache
+        queryClient.setQueryData<ChatRoom>(['chats', 'conversation', room.id], (old: ChatRoom | undefined) => {
+            if (!old) return old;
+            return { ...old, pinned_message_id: messageId };
+        });
+
+        // 2. Patch global rooms list
+        queryClient.setQueryData<ChatRoom[]>(['chats', 'rooms', anonymousId || ''], (old: ChatRoom[] | undefined) => {
+            if (!old) return old;
+            return old.map((r: ChatRoom) => r.id === room.id ? { ...r, pinned_message_id: messageId } : r);
+        });
+
+        try {
+            await chatsApi.pinMessage(room.id, messageId);
+            // 3. Broadcast to other tabs
+            chatBroadcast.emit({
+                type: 'message-pinned',
+                roomId: room.id,
+                pinnedMessageId: messageId
+            });
+        } catch (err) {
+            console.error('[Chat] Pin failed:', err);
+            // Rollback on error
+            if (previousRoomDetail) {
+                queryClient.setQueryData(['chats', 'conversation', room.id], previousRoomDetail);
+                queryClient.setQueryData<ChatRoom[]>(['chats', 'rooms', anonymousId || ''], (old: ChatRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.map((r: ChatRoom) => r.id === room.id ? { ...r, pinned_message_id: previousRoomDetail.pinned_message_id } : r);
+                });
+            }
+        }
+    };
+
+    const handleStarMessage = async (msg: ChatMessage) => {
+        try {
+            if (msg.is_starred) {
+                await chatsApi.unstarMessage(msg.id);
+            } else {
+                await chatsApi.starMessage(msg.id);
+            }
+        } catch (err) {
+            console.error('[Chat] Star toggle failed:', err);
+        }
+    };
+
+    const handleJumpToMessage = (messageId: string) => {
+        if (!messages) return;
+        const index = messages.findIndex(m => m.id === messageId);
+        if (index !== -1) {
+            rowVirtualizer.scrollToIndex(index, { align: 'center' });
+            setHighlightedMessageId(messageId);
+            setTimeout(() => setHighlightedMessageId(null), 3000);
+        }
+    };
 
     const handleSend = async () => {
         if (!message.trim() && !selectedFile) return;
@@ -367,6 +689,60 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                 <ChatReportContext reportId={room.report_id} />
 
+                {/* Mobile Action Bar */}
+                {selectedMessageForActions && (
+                    <MobileMessageActionBar
+                        selectedMessage={selectedMessageForActions}
+                        onClose={() => {
+                            setSelectedMessageForActions(null);
+                            setReactionPickerMessageId(null);
+                        }}
+                        onReply={(msg) => setReplyingTo(msg)}
+                        onDelete={(msg) => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                        onPin={(msgId) => handlePinMessage(msgId)}
+                        onStar={(msg) => handleStarMessage(msg)}
+                        onEdit={(msg) => {
+                            // TODO: Implementar edición inline de mensaje
+                            console.log('Editar mensaje:', msg.id);
+                        }}
+                        onCopy={async (msg) => {
+                            try {
+                                await navigator.clipboard.writeText(msg.content || '');
+                                if (navigator.vibrate) navigator.vibrate(50);
+                            } catch (err) {
+                                console.error('Error copiando:', err);
+                            }
+                        }}
+                        isMe={isOwnMessage(selectedMessageForActions, anonymousId)}
+                        pinnedId={room.pinned_message_id ?? undefined}
+                    />
+                )}
+
+                {/* ✅ WhatsApp-Grade: Pinned Message Banner */}
+                {room.pinned_message_id && (
+                    <div
+                        onClick={() => handleJumpToMessage(room.pinned_message_id!)}
+                        className="bg-card/90 backdrop-blur-md px-4 py-2.5 border-b border-border/50 flex items-center gap-3 cursor-pointer hover:bg-muted/50 transition-colors z-20"
+                    >
+                        <div className="bg-primary/10 p-1.5 rounded-lg">
+                            <Pin className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">Mensaje Fijado</p>
+                            <p className="text-xs text-muted-foreground truncate italic">
+                                {messages?.find(m => m.id === room.pinned_message_id)?.content || 'Ver mensaje'}
+                            </p>
+                        </div>
+                        <X
+                            className="w-4 h-4 text-muted-foreground hover:text-foreground p-0.5"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handlePinMessage(null as any); // Unpin
+                            }}
+                        />
+                    </div>
+                )}
+
                 <div
                     className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50 flex flex-col"
                     ref={parentRef}
@@ -428,85 +804,194 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                             )}
                                             <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-full sm:max-w-[100%]`}>
                                                 {msg.type === 'image' ? (
-                                                    <div className={`p-1.5 rounded-lg overflow-hidden relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
-                                                        {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                        <DropdownMenu modal={false}>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <button
-                                                                    type="button"
-                                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                                    className={`absolute top-0 right-0 h-8 w-10 flex items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
+                                                    <MessageBubbleWrapper
+                                                        msg={msg}
+                                                        isMe={isMe(msg)}
+                                                        anonymousId={anonymousId || ''}
+                                                        onReaction={(emoji) => handleReaction(msg.id, emoji)}
+                                                        pickerActive={reactionPickerMessageId === msg.id}
+                                                        setPickerActive={(active) => setReactionPickerMessageId(active ? msg.id : null)}
+                                                        onSelectionChange={(selected) => setSelectedMessageForActions(selected ? msg : null)}
+                                                    >
+                                                        <div className={`p-1.5 rounded-lg overflow-hidden relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
+                                                            {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
+                                                            <DropdownMenu modal={false} onOpenChange={(isOpen) => setReactionPickerMessageId(isOpen ? msg.id : null)}>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <button
+                                                                        type="button"
+                                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                                        className={`hidden md:flex absolute top-0 right-0 h-8 w-10 items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
                                                                         ${isMe(msg)
-                                                                            ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
-                                                                            : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
-                                                                >
-                                                                    <ChevronDown className="w-4 h-4 mt-1" />
-                                                                </button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent
-                                                                align={isMe(msg) ? 'end' : 'start'}
-                                                                sideOffset={5}
-                                                                className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
-                                                            >
-                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                    <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <SmilePlus className="w-4 h-4 mr-3 opacity-50" /> Reaccionar
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <Pin className="w-4 h-4 mr-3 opacity-50" /> Fijar
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <Star className="w-4 h-4 mr-3 opacity-50" /> Destacar
-                                                                </DropdownMenuItem>
-                                                                {isMe(msg) && (
-                                                                    <DropdownMenuItem
-                                                                        className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
-                                                                        onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                                                                ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
+                                                                                : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
                                                                     >
-                                                                        <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
+                                                                        <ChevronDown className="w-4 h-4 mt-1" />
+                                                                    </button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent
+                                                                    align={isMe(msg) ? 'end' : 'start'}
+                                                                    sideOffset={5}
+                                                                    className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                                                                >
+                                                                    <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
                                                                     </DropdownMenuItem>
-                                                                )}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
 
-                                                        {msg.reply_to_id && (
-                                                            <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[200px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
-                                                                <div className="font-bold text-[11px]">
-                                                                    {msg.reply_to_sender_id === anonymousId ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+
+
+                                                                    <DropdownMenuItem onClick={() => handlePinMessage(msg.id)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Pin className="w-4 h-4 mr-3 opacity-70" /> {room.pinned_message_id === msg.id ? 'Desfijar' : 'Fijar mensaje'}
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem onClick={() => handleStarMessage(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Star className={`w-4 h-4 mr-3 ${msg.is_starred ? 'fill-yellow-400 text-yellow-400' : 'opacity-70'}`} /> {msg.is_starred ? 'Anular destaque' : 'Destacar'}
+                                                                    </DropdownMenuItem>
+                                                                    {isMe(msg) && (
+                                                                        <DropdownMenuItem
+                                                                            className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
+                                                                            onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+
+                                                            {msg.reply_to_id && (
+                                                                <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[200px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
+                                                                    <div className="font-bold text-[11px]">
+                                                                        {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                                                                    </div>
+                                                                    <div className="line-clamp-2 text-foreground/80 leading-normal">
+                                                                        {msg.reply_to_type === 'image' ? (
+                                                                            <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                                                                        ) : msg.reply_to_content}
+                                                                    </div>
                                                                 </div>
-                                                                <div className="line-clamp-2 text-foreground/80 leading-normal">
-                                                                    {msg.reply_to_type === 'image' ? (
-                                                                        <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
-                                                                    ) : msg.reply_to_content}
+                                                            )}
+
+                                                            <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
+                                                                <ChatImage
+                                                                    src={msg.content}
+                                                                    localUrl={msg.localUrl}
+                                                                    alt="Mensaje de imagen"
+                                                                    className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                                                                    onClick={() => window.open(msg.content, '_blank')}
+                                                                />
+                                                            </div>
+
+                                                            <div className="flex justify-between items-end gap-2 pl-1">
+                                                                <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
+                                                                    {msg.caption}
+                                                                </div>
+
+                                                                <div className="flex items-center gap-1 shrink-0 pb-0.5">
+                                                                    {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
+                                                                    <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                                                                        {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
+                                                                    </span>
+                                                                    {isMe(msg) && (
+                                                                        <div className="flex items-center">
+                                                                            {msg.localStatus === 'pending' ? (
+                                                                                <Clock className="w-3 h-3 text-muted-foreground mr-1" />
+                                                                            ) : msg.is_read ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                                                                            ) : msg.is_delivered ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                            ) : (
+                                                                                <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                                                                            )}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
-                                                        )}
 
-                                                        <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
-                                                            <ChatImage
-                                                                src={msg.content}
-                                                                localUrl={msg.localUrl}
-                                                                alt="Mensaje de imagen"
-                                                                className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                                onClick={() => window.open(msg.content, '_blank')}
-                                                            />
+
                                                         </div>
+                                                    </MessageBubbleWrapper>
+                                                ) : (
+                                                    <MessageBubbleWrapper
+                                                        msg={msg}
+                                                        isMe={isMe(msg)}
+                                                        anonymousId={anonymousId || ''}
+                                                        onReaction={(emoji) => handleReaction(msg.id, emoji)}
+                                                        pickerActive={reactionPickerMessageId === msg.id}
+                                                        setPickerActive={(active) => setReactionPickerMessageId(active ? msg.id : null)}
+                                                        onSelectionChange={(selected) => setSelectedMessageForActions(selected ? msg : null)}
+                                                    >
+                                                        <div className={`px-3 py-2 rounded-lg relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
+                                                            {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
+                                                            <DropdownMenu modal={false} onOpenChange={(isOpen) => setReactionPickerMessageId(isOpen ? msg.id : null)}>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <button
+                                                                        type="button"
+                                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                                        className={`hidden md:flex absolute top-0 right-0 h-8 w-10 items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
+                                                                            ${isMe(msg)
+                                                                                ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
+                                                                                : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
+                                                                    >
+                                                                        <ChevronDown className="w-4 h-4 mt-1" />
+                                                                    </button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent
+                                                                    align={isMe(msg) ? 'end' : 'start'}
+                                                                    sideOffset={5}
+                                                                    className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                                                                >
+                                                                    <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
+                                                                    </DropdownMenuItem>
 
-                                                        <div className="flex justify-between items-end gap-2 pl-1">
-                                                            <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
-                                                                {msg.caption}
-                                                            </div>
 
-                                                            <div className="flex items-center gap-1 shrink-0 pb-0.5">
+
+                                                                    <DropdownMenuItem onClick={() => handlePinMessage(msg.id)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Pin className="w-4 h-4 mr-3 opacity-70" /> {room.pinned_message_id === msg.id ? 'Desfijar' : 'Fijar mensaje'}
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem onClick={() => handleStarMessage(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
+                                                                        <Star className={`w-4 h-4 mr-3 ${msg.is_starred ? 'fill-yellow-400 text-yellow-400' : 'opacity-70'}`} /> {msg.is_starred ? 'Anular destaque' : 'Destacar'}
+                                                                    </DropdownMenuItem>
+                                                                    {isMe(msg) && (
+                                                                        <DropdownMenuItem
+                                                                            className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
+                                                                            onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+
+                                                            {msg.reply_to_id && (
+                                                                <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[180px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
+                                                                    <div className="font-bold text-[11px]">
+                                                                        {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                                                                    </div>
+                                                                    <div className="line-clamp-2 text-foreground/80 leading-normal">
+                                                                        {msg.reply_to_type === 'image' ? (
+                                                                            <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                                                                        ) : msg.reply_to_content}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block pb-1">
+                                                                {msg.content}
+                                                                <span className="inline-block w-14 h-3" aria-hidden="true"></span>
+                                                            </span>
+
+                                                            <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
+                                                                {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
                                                                 <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                    {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
+                                                                    {msg.created_at ? (() => {
+                                                                        const d = new Date(msg.created_at);
+                                                                        return isNaN(d.getTime()) ? '...' : format(d, 'HH:mm', { locale: es });
+                                                                    })() : '...'}
                                                                 </span>
+
                                                                 {isMe(msg) && (
                                                                     <div className="flex items-center">
                                                                         {msg.localStatus === 'pending' ? (
-                                                                            <Clock className="w-3 h-3 text-muted-foreground mr-1" />
+                                                                            <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
                                                                         ) : msg.is_read ? (
                                                                             <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                                                                         ) : msg.is_delivered ? (
@@ -516,94 +1001,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                         )}
                                                                     </div>
                                                                 )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className={`px-3 py-2 rounded-lg relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
-                                                        {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                        <DropdownMenu modal={false}>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <button
-                                                                    type="button"
-                                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                                    className={`absolute top-0 right-0 h-8 w-10 flex items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
-                                                                        ${isMe(msg)
-                                                                            ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
-                                                                            : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
-                                                                >
-                                                                    <ChevronDown className="w-4 h-4 mt-1" />
-                                                                </button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent
-                                                                align={isMe(msg) ? 'end' : 'start'}
-                                                                sideOffset={5}
-                                                                className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
-                                                            >
-                                                                <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                    <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <SmilePlus className="w-4 h-4 mr-3 opacity-50" /> Reaccionar
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <Pin className="w-4 h-4 mr-3 opacity-50" /> Fijar
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem disabled className="cursor-not-allowed py-2 px-3 text-[14.5px] font-normal text-popover-foreground/50 hover:bg-transparent rounded-lg">
-                                                                    <Star className="w-4 h-4 mr-3 opacity-50" /> Destacar
-                                                                </DropdownMenuItem>
-                                                                {isMe(msg) && (
-                                                                    <DropdownMenuItem
-                                                                        className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
-                                                                        onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
-                                                                    >
-                                                                        <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
-                                                                    </DropdownMenuItem>
-                                                                )}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-
-                                                        {msg.reply_to_id && (
-                                                            <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[180px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
-                                                                <div className="font-bold text-[11px]">
-                                                                    {msg.reply_to_sender_id === anonymousId ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
-                                                                </div>
-                                                                <div className="line-clamp-2 text-foreground/80 leading-normal">
-                                                                    {msg.reply_to_type === 'image' ? (
-                                                                        <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
-                                                                    ) : msg.reply_to_content}
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block pb-1">
-                                                            {msg.content}
-                                                            <span className="inline-block w-14 h-3" aria-hidden="true"></span>
-                                                        </span>
-
-                                                        <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
-                                                            <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                {msg.created_at ? (() => {
-                                                                    const d = new Date(msg.created_at);
-                                                                    return isNaN(d.getTime()) ? '...' : format(d, 'HH:mm', { locale: es });
-                                                                })() : '...'}
                                                             </span>
 
-                                                            {isMe(msg) && (
-                                                                <div className="flex items-center">
-                                                                    {msg.localStatus === 'pending' ? (
-                                                                        <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
-                                                                    ) : msg.is_read ? (
-                                                                        <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                    ) : msg.is_delivered ? (
-                                                                        <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                    ) : (
-                                                                        <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </span>
-                                                    </div>
+
+                                                        </div>
+                                                    </MessageBubbleWrapper>
                                                 )}
                                             </div>
 

@@ -40,9 +40,8 @@ export function useMarkNotificationReadMutation() {
                 queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
             }
         },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-        }
+        // ✅ ENTERPRISE FIX: No onSettled invalidation
+        // Optimistic update is already correct, server confirmation reconciles silently
     });
 }
 
@@ -66,8 +65,7 @@ export function useMarkAllNotificationsReadMutation() {
                 queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
             }
         },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-        }
+        // ✅ ENTERPRISE FIX: No onSettled invalidation
+        // Optimistic update is already correct, server confirmation reconciles silently
     });
 }

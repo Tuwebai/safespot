@@ -27,9 +27,11 @@ export const usePresenceHeartbeat = () => {
             try {
                 // We use fetch directly to avoid circular dependencies with api.ts or complex error handling
                 // This is a fire-and-forget background task.
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-                // Ensure no double slash if VITE_API_URL ends with /
-                const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+                const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+                // Normalize: Ensure baseUrl ends with /api but WITHOUT a trailing slash
+                const baseUrl = rawApiUrl.replace(/\/$/, '').endsWith('/api')
+                    ? rawApiUrl.replace(/\/$/, '')
+                    : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
                 await fetch(`${baseUrl}/presence/heartbeat`, {
                     method: 'POST',

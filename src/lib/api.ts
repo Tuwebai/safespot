@@ -972,6 +972,7 @@ export interface ChatRoom {
   is_pinned?: boolean;
   is_archived?: boolean;
   is_manually_unread?: boolean;
+  pinned_message_id?: string | null;
 }
 
 
@@ -997,6 +998,10 @@ export interface ChatMessage {
   caption?: string;
   localUrl?: string; // Para actualizaciones optimistas fluidas
   localStatus?: 'pending' | 'failed'; // ✅ Validated by Enterprise Audit
+
+  // ✅ WhatsApp-Grade Message Actions
+  reactions?: { [emoji: string]: string[] }; // emoji → array of user IDs
+  is_starred?: boolean; // Per-user, local state
 }
 
 export const chatsApi = {
@@ -1127,6 +1132,55 @@ export const chatsApi = {
     return apiRequest<{ success: boolean }>(`/chats/${roomId}`, {
       method: 'DELETE',
     });
+  },
+
+  // ============================================
+  // WHATSAPP-GRADE MESSAGE ACTIONS
+  // ============================================
+
+  /**
+   * Toggle emoji reaction on a message
+   */
+  reactToMessage: async (roomId: string, messageId: string, emoji: string): Promise<{ success: boolean; reactions: { [emoji: string]: string[] }; action: 'add' | 'remove' }> => {
+    return apiRequest(`/chats/${roomId}/messages/${messageId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
+  },
+
+  /**
+   * Pin or unpin a message in a conversation
+   */
+  pinMessage: async (roomId: string, messageId: string | null): Promise<{ success: boolean; pinnedMessageId: string | null }> => {
+    return apiRequest(`/chats/${roomId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ messageId })
+    });
+  },
+
+  /**
+   * Star a message (per-user)
+   */
+  starMessage: async (messageId: string): Promise<{ success: boolean; starred: boolean }> => {
+    return apiRequest(`/chats/messages/${messageId}/star`, {
+      method: 'POST'
+    });
+  },
+
+  /**
+   * Unstar a message
+   */
+  unstarMessage: async (messageId: string): Promise<{ success: boolean; starred: boolean }> => {
+    return apiRequest(`/chats/messages/${messageId}/star`, {
+      method: 'DELETE'
+    });
+  },
+
+  /**
+   * Get all starred messages
+   */
+  getStarredMessages: async (): Promise<ChatMessage[]> => {
+    return apiRequest<ChatMessage[]>('/chats/starred');
   }
 };
 

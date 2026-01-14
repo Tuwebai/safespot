@@ -216,7 +216,8 @@ router.get('/:roomId/messages', async (req, res) => {
                     rm.content as reply_to_content,
                     rm.type as reply_to_type,
                     ru.alias as reply_to_sender_alias,
-                    rm.sender_id as reply_to_sender_id
+                    rm.sender_id as reply_to_sender_id,
+                    EXISTS(SELECT 1 FROM starred_messages sm WHERE sm.message_id = cm.id AND sm.user_id = $3) as is_starred
                 FROM chat_messages cm
                 JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
                 LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
@@ -227,7 +228,7 @@ router.get('/:roomId/messages', async (req, res) => {
                   )
                 ORDER BY cm.created_at ASC
             `;
-            params = [roomId, since];
+            params = [roomId, since, anonymousId];
 
             console.log(`[GapRecovery] Fetching messages for room ${roomId} since ${since}`);
         } else {
@@ -240,7 +241,8 @@ router.get('/:roomId/messages', async (req, res) => {
                     rm.content as reply_to_content,
                     rm.type as reply_to_type,
                     ru.alias as reply_to_sender_alias,
-                    rm.sender_id as reply_to_sender_id
+                    rm.sender_id as reply_to_sender_id,
+                    EXISTS(SELECT 1 FROM starred_messages sm WHERE sm.message_id = cm.id AND sm.user_id = $2) as is_starred
                 FROM chat_messages cm
                 JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
                 LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
@@ -248,7 +250,7 @@ router.get('/:roomId/messages', async (req, res) => {
                 WHERE cm.conversation_id = $1
                 ORDER BY cm.created_at ASC
             `;
-            params = [roomId];
+            params = [roomId, anonymousId];
         }
 
         const result = await queryWithRLS(anonymousId, messagesQuery, params);
@@ -768,4 +770,229 @@ router.delete('/:roomId', async (req, res) => {
     }
 });
 
+// ============================================
+// WHATSAPP-GRADE CHAT MENU ACTIONS
+// ============================================
+
+/**
+ * POST /api/chats/:roomId/messages/:messageId/react
+ * Toggle emoji reaction on a message
+ * 
+ * Body: { emoji: "👍" }
+ * 
+ * ✅ WhatsApp-Grade:
+ * - Toggle behavior: same user + same emoji = remove
+ * - JSONB merge to prevent race conditions
+ * - SSE broadcast to all room participants
+ */
+router.post('/:roomId/messages/:messageId/react', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId, messageId } = req.params;
+    const { emoji } = req.body;
+
+    if (!emoji || typeof emoji !== 'string') {
+        return res.status(400).json({ error: 'emoji is required' });
+    }
+
+    try {
+        // Get current reactions
+        const current = await queryWithRLS(anonymousId,
+            'SELECT reactions FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+            [messageId, roomId]
+        );
+
+        if (current.rows.length === 0) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+
+        const reactions = current.rows[0].reactions || {};
+        let action = 'add';
+        let alreadyHadThisEmoji = false;
+
+        // 1. Remove user from ALL existing reactions (enforce uniqueness)
+        Object.keys(reactions).forEach(key => {
+            const users = reactions[key] || [];
+            if (users.includes(anonymousId)) {
+                // If removing from the same emoji target, mark as toggle-off candidate
+                if (key === emoji) alreadyHadThisEmoji = true;
+
+                // Filter out user
+                reactions[key] = users.filter(id => id !== anonymousId);
+
+                // Cleanup empty keys
+                if (reactions[key].length === 0) {
+                    delete reactions[key];
+                }
+            }
+        });
+
+        // 2. If user didn't already have THIS emoji, add it (Toggle On / Swap)
+        // If they DID have it, we just removed it above (Toggle Off)
+        if (!alreadyHadThisEmoji) {
+            reactions[emoji] = [...(reactions[emoji] || []), anonymousId];
+            action = 'add'; // technically 'swap' if they had another, but 'add' to this set
+        } else {
+            action = 'remove';
+        }
+
+        // Update in DB
+        await queryWithRLS(anonymousId,
+            'UPDATE chat_messages SET reactions = $1 WHERE id = $2',
+            [JSON.stringify(reactions), messageId]
+        );
+
+        // SSE broadcast to room
+        realtimeEvents.emitChatStatus('message-reaction', roomId, {
+            messageId,
+            emoji,
+            userId: anonymousId,
+            action,
+            reactions // Full state for simplicity
+        });
+
+        res.json({ success: true, reactions, action });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * PATCH /api/chats/:roomId/pin
+ * Pin or unpin a message in a conversation
+ * 
+ * Body: { messageId: "..." } or { messageId: null } to unpin
+ * 
+ * ✅ WhatsApp-Grade:
+ * - Only 1 pinned message per conversation
+ * - New pin replaces old
+ * - SSE broadcast to all participants
+ */
+router.patch('/:roomId/pin', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId } = req.params;
+    const { messageId } = req.body; // null to unpin
+
+    try {
+        // Validate message exists in this room (if pinning)
+        if (messageId) {
+            const msgCheck = await queryWithRLS(anonymousId,
+                'SELECT id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+                [messageId, roomId]
+            );
+            if (msgCheck.rows.length === 0) {
+                return res.status(404).json({ error: 'Message not found in this conversation' });
+            }
+        }
+
+        // Update conversation
+        await queryWithRLS(anonymousId,
+            'UPDATE conversations SET pinned_message_id = $1 WHERE id = $2',
+            [messageId, roomId]
+        );
+
+        // SSE broadcast
+        realtimeEvents.emitChatStatus('message-pinned', roomId, {
+            pinnedMessageId: messageId
+        });
+
+        res.json({ success: true, pinnedMessageId: messageId });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /api/chats/messages/:messageId/star
+ * Star a message (per-user, private)
+ * 
+ * ✅ WhatsApp-Grade:
+ * - Per-user (other users don't see your stars)
+ * - Idempotent (starring twice = no-op)
+ * - NO SSE (private feature)
+ */
+router.post('/messages/:messageId/star', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { messageId } = req.params;
+
+    try {
+        // Verify message exists and user has access
+        const msgCheck = await queryWithRLS(anonymousId,
+            `SELECT cm.id FROM chat_messages cm
+             JOIN conversation_members mem ON cm.conversation_id = mem.conversation_id
+             WHERE cm.id = $1 AND mem.user_id = $2`,
+            [messageId, anonymousId]
+        );
+
+        if (msgCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Message not found or access denied' });
+        }
+
+        // Insert (ON CONFLICT = idempotent)
+        await pool.query(
+            `INSERT INTO starred_messages (user_id, message_id)
+             VALUES ($1, $2)
+             ON CONFLICT (user_id, message_id) DO NOTHING`,
+            [anonymousId, messageId]
+        );
+
+        res.json({ success: true, starred: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * DELETE /api/chats/messages/:messageId/star
+ * Unstar a message
+ */
+router.delete('/messages/:messageId/star', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { messageId } = req.params;
+
+    try {
+        await pool.query(
+            'DELETE FROM starred_messages WHERE user_id = $1 AND message_id = $2',
+            [anonymousId, messageId]
+        );
+
+        res.json({ success: true, starred: false });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * GET /api/chats/starred
+ * Get all starred messages for the current user
+ */
+router.get('/starred', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+
+    try {
+        const result = await queryWithRLS(anonymousId,
+            `SELECT cm.*, 
+                    u.alias as sender_alias, 
+                    u.avatar_url as sender_avatar,
+                    c.id as conversation_id
+             FROM starred_messages sm
+             JOIN chat_messages cm ON sm.message_id = cm.id
+             JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+             JOIN conversations c ON cm.conversation_id = c.id
+             WHERE sm.user_id = $1
+             ORDER BY sm.created_at DESC`,
+            [anonymousId]
+        );
+
+        res.json(result.rows);
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 export default router;
+

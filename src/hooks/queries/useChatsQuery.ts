@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { chatsApi, ChatMessage } from '../../lib/api';
+import { chatsApi, ChatMessage, ChatRoom } from '../../lib/api';
 import { useEffect, useState, useRef } from 'react';
 import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
@@ -307,6 +307,36 @@ export function useChatMessages(convId: string | undefined) {
             } catch (e) { }
         });
 
+        // ✅ WhatsApp-Grade: Realtime Reaction Updates
+        const unsubReaction = ssePool.subscribe(sseUrl, 'message-reaction', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.messageId && data.reactions) {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                        if (!old) return old;
+                        return old.map(m => m.id === data.messageId ? { ...m, reactions: data.reactions } : m);
+                    });
+                }
+            } catch (e) { }
+        });
+
+        // ✅ WhatsApp-Grade: Realtime Pin Updates
+        const unsubPinned = ssePool.subscribe(sseUrl, 'message-pinned', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // 1. Update global rooms list (sidebar)
+                queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
+                    if (!old) return old;
+                    return old.map(r => r.id === convId ? { ...r, pinned_message_id: data.pinnedMessageId } : r);
+                });
+                // 2. Update individual conversation detail (active window)
+                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId), (old) => {
+                    if (!old) return old;
+                    return { ...old, pinned_message_id: data.pinnedMessageId };
+                });
+            } catch (e) { }
+        });
+
         // ============================================
         // MULTI-TAB SYNC: BroadcastChannel (L0 - Fastest)
         // ============================================
@@ -319,6 +349,17 @@ export function useChatMessages(convId: string | undefined) {
                 queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId || ''), (old) => {
                     return old?.filter(m => m.id !== event.messageId) || [];
                 });
+            } else if (event.type === 'message-pinned' && event.roomId === convId) {
+                // Cross-tab sync for pinning
+                const { pinnedMessageId } = event;
+                queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId || ''), (old) => {
+                    if (!old) return old;
+                    return old.map(r => r.id === convId ? { ...r, pinned_message_id: pinnedMessageId } : r);
+                });
+                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId), (old) => {
+                    if (!old) return old;
+                    return { ...old, pinned_message_id: pinnedMessageId };
+                });
             }
         });
 
@@ -330,6 +371,8 @@ export function useChatMessages(convId: string | undefined) {
             unsubDelivered();
             unsubPresence();
             unsubMessage();
+            unsubReaction();
+            unsubPinned();
             unsubBroadcast();
         };
     }, [convId, anonymousId, queryClient]);
@@ -569,6 +612,74 @@ export function useMarkAsDeliveredMutation() {
                 return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
             });
         },
+    });
+}
+
+/**
+ * Mutation para reaccionar a un mensaje
+ */
+export function useReactionMutation() {
+    const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
+
+    return useMutation({
+        mutationFn: async ({ roomId, messageId, emoji }: { roomId: string; messageId: string; emoji: string }) => {
+            return chatsApi.reactToMessage(roomId, messageId, emoji);
+        },
+        onMutate: async ({ roomId, messageId, emoji }) => {
+            if (!anonymousId) return;
+
+            // 1. Cancel outgoing refetches
+            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(roomId, anonymousId) });
+
+            // 2. Snapshot previous state
+            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId));
+
+            // 3. Optimistic Update
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId), (old) => {
+                if (!old) return old;
+
+                return old.map(msg => {
+                    if (msg.id !== messageId) return msg;
+
+                    // Logic: Single reaction per user (WhatsApp Style)
+                    const reactions = { ...(msg.reactions || {}) };
+                    let alreadyHasThisEmoji = false;
+
+                    // A. Remove 'Me' from ALL existing reactions
+                    Object.keys(reactions).forEach(key => {
+                        if (reactions[key].includes(anonymousId)) {
+                            // If this was the SAME emoji we are clicking, mark flag
+                            if (key === emoji) alreadyHasThisEmoji = true;
+
+                            // Filter me out
+                            reactions[key] = reactions[key].filter(id => id !== anonymousId);
+
+                            // Cleanup empty arrays
+                            if (reactions[key].length === 0) {
+                                delete reactions[key];
+                            }
+                        }
+                    });
+
+                    // B. If I did NOT already have this emoji, ADD me to it.
+                    // (If I did have it, we just removed it above -> Toggle Off)
+                    if (!alreadyHasThisEmoji) {
+                        if (!reactions[emoji]) reactions[emoji] = [];
+                        reactions[emoji].push(anonymousId);
+                    }
+
+                    return { ...msg, reactions };
+                });
+            });
+
+            return { previousMessages };
+        },
+        onError: (_err, variables, context) => {
+            if (context?.previousMessages && anonymousId) {
+                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, anonymousId), context.previousMessages);
+            }
+        }
     });
 }
 
