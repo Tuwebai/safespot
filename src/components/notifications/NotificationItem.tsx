@@ -63,12 +63,6 @@ export function NotificationItem({
         }
     };
 
-    // BUG 2 FIX: Conditional label based on notification type
-    const getOpenLabel = () => {
-        if (notification.entity_type === 'follow') return 'Abrir perfil';
-        return 'Abrir';
-    };
-
     // BUG 1,5,6 FIX: Only activate swipe on intentional horizontal drag
     const handleDragStart = (_: unknown, info: PanInfo) => {
         const isHorizontalSwipe = Math.abs(info.offset.x) > 10 &&
