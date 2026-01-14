@@ -173,6 +173,10 @@ export function useChatMessages(convId: string | undefined) {
         queryKey: ['chats', 'messages', anonymousId, convId || ''],  // ✅ Include ID
         queryFn: () => convId ? chatsApi.getMessages(convId) : Promise.resolve([]),
         enabled: !!convId && !!anonymousId,  // ✅ Both required
+        staleTime: Infinity, // ✅ ENTERPRISE: No refetch automático - SSE es la fuente de actualizaciones
+        gcTime: 1000 * 60 * 30, // 30 min garbage collection
+        refetchOnWindowFocus: false, // ✅ SSE maneja sincronización
+        refetchOnReconnect: false, // ✅ Gap Recovery maneja reconexión
     });
 
     // Integración SSE para tiempo real + Gap Recovery

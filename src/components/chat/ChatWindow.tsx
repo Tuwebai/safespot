@@ -995,6 +995,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                                                                 <div className="flex items-center gap-1 shrink-0 pb-0.5">
                                                                     {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
+                                                                    {/* ✅ WhatsApp-style: Indicador de editado */}
+                                                                    {msg.is_edited && (
+                                                                        <span className="text-[10px] text-muted-foreground italic mr-1">Editado</span>
+                                                                    )}
                                                                     <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                         {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
                                                                     </span>
@@ -1090,6 +1094,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
                                                             <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
                                                                 {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
+                                                                {/* ✅ WhatsApp-style: Indicador de editado */}
+                                                                {msg.is_edited && (
+                                                                    <span className="text-[10px] text-muted-foreground italic mr-1">Editado</span>
+                                                                )}
                                                                 <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                                                     {msg.created_at ? (() => {
                                                                         const d = new Date(msg.created_at);

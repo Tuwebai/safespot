@@ -1002,6 +1002,8 @@ export interface ChatMessage {
   // ✅ WhatsApp-Grade Message Actions
   reactions?: { [emoji: string]: string[] }; // emoji → array of user IDs
   is_starred?: boolean; // Per-user, local state
+  is_edited?: boolean; // Message was edited
+  edited_at?: string; // Timestamp of edit
 }
 
 export const chatsApi = {
