@@ -31,7 +31,6 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh'
 
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
-import { AdBanner } from '@/components/AdBanner'
 import { ReportCard } from '@/components/ReportCard'
 import { reportsCache } from '@/lib/cache-helpers'
 
@@ -732,14 +731,8 @@ export function Reportes() {
                 </div>
               </div>
 
-              {/* Publicidad y Espaciador Final */}
-              <div className="mt-12 space-y-8">
-                {reports.length > 0 && (
-                  <div className="border-t border-border/30 pt-12">
-                    <AdBanner />
-                  </div>
-                )}
-                {/* Espacio extra para que la barra de navegación móvil no tape nada */}
+              {/* Espacio extra para que la barra de navegación móvil no tape nada */}
+              <div className="mt-12">
                 <div className="h-40 w-full" />
               </div>
             </div>

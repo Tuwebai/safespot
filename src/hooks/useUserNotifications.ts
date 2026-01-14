@@ -51,9 +51,9 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                 }
 
                 // 2. Handle specific types with atomic patches
-                if (data.type === 'achievement') {
-                    import('./useBadgeNotifications').then(({ triggerBadgeCheck }) => triggerBadgeCheck());
-                }
+                // NOTE: 'achievement' type no longer triggers badge check here.
+                // The toast comes from action response's newBadges array (e.g. useCreateReportForm).
+                // SSE only adds notification to list via upsertInList above.
 
                 if (data.type === 'follow') {
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });

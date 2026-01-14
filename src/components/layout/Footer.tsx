@@ -5,10 +5,8 @@ import { ContactModal } from '@/components/contact/ContactModal'
 
 export function Footer() {
   const [isContactOpen, setIsContactOpen] = useState(false);
-  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-  const mpUrl = "https://link.mercadopago.com.ar/safespotapp";
-  const mpDeepLink = `mercadopago://browser?url=${encodeURIComponent(mpUrl)}`;
-  const donationLink = isAndroid ? mpDeepLink : mpUrl;
+  // Use standard URL for all platforms - Android browser handles MP app redirect automatically
+  const donationLink = "https://link.mercadopago.com.ar/safespotapp";
 
   return (
     <>
