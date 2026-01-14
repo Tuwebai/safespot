@@ -17,9 +17,11 @@ declare let self: ServiceWorkerGlobalScope;
 // Google/Meta-Level Resilience
 // ============================================
 
-const SW_VERSION = '2.0.0';
+// CACHE BUSTING: Increment this version whenever SW logic changes
+const SW_VERSION = '2.4.1-resilience';
+console.log(`[SW] Initializing Version: ${SW_VERSION}`);
 const MAX_CACHE_AGE = 24 * 60 * 60 * 1000; // 24h
-const NETWORK_TIMEOUT = 3000; // 3s default
+const NETWORK_TIMEOUT = 15000;
 
 // BroadcastChannel for SW ↔ UI communication
 const swChannel = new BroadcastChannel('safespot-sw-updates');

@@ -419,9 +419,16 @@ router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), 
     }
 
     // REALTIME: Broadcast new comment to all connected clients
-    const clientId = req.headers['x-client-id'];
+    const clientId = req.headers['x-client-id'] || req.headers['x-request-id'];
     try {
       realtimeEvents.emitNewComment(req.body.report_id, data, clientId);
+
+      // CRITICAL: Explicitly broadcast report-update to synchronize counters at 0ms globally
+      // This prevents User B from seeing "0 comments" while User A just added one.
+      realtimeEvents.emitVoteUpdate('report', req.body.report_id, {
+        comments_count_delta: 1
+      }, clientId);
+
     } catch (err) {
       // Ignore realtime errors to not break comment creation
       logError(err, { context: 'realtimeEvents.emitNewComment', reportId: req.body.report_id });

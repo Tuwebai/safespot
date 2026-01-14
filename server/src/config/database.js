@@ -14,7 +14,7 @@ const pool = new Pool({
   ssl: isSupabase || process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: false }
     : false,
-  max: 20,
+  max: 30, // Increased from 20 to handle concurrent background tasks (gamification/notifications)
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000, // Reduced from 20s - fast fail on connection issues
 });

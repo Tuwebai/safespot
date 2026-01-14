@@ -52,45 +52,29 @@ function getMetricValue(badge, metrics) {
  */
 export async function calculateUserMetrics(anonymousId) {
     try {
-        // We use a single SQL query with CTEs to calculate everything in one trip
+        // Highly optimized single-pass query to calculate metrics
         const result = await queryWithRLS(anonymousId, `
-            WITH 
-                counts AS (
-                    SELECT 
-                        (SELECT COUNT(*) FROM reports WHERE anonymous_id = $1) as reports_created,
-                        (SELECT COUNT(*) FROM comments WHERE anonymous_id = $1) as comments_created,
-                        (SELECT COUNT(*) FROM votes WHERE anonymous_id = $1) as votes_cast,
-                        (SELECT COUNT(*) FROM report_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as r_flags,
-                        (SELECT COUNT(*) FROM comment_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as c_flags
-                ),
-                likes AS (
-                    SELECT 
-                        COALESCE((SELECT SUM(upvotes_count) FROM reports WHERE anonymous_id = $1), 0) +
-                        COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as likes_received
-                ),
-                activity AS (
-                    -- Calculate unique days of contribution (reports or comments)
-                    SELECT COUNT(DISTINCT created_at::date) as activity_days
-                    FROM (
-                        SELECT created_at FROM reports WHERE anonymous_id = $1
-                        UNION ALL
-                        SELECT created_at FROM comments WHERE anonymous_id = $1
-                    ) combined_activity
-                ),
-                verified AS (
-                    -- Check if user has at least one report with significant engagement
-                    SELECT EXISTS (
-                        SELECT 1 FROM reports 
-                        WHERE anonymous_id = $1 
-                        AND (upvotes_count + comments_count) >= 5
-                    ) as has_verified_report
-                )
             SELECT 
-                c.*, 
-                l.likes_received, 
-                a.activity_days, 
-                v.has_verified_report
-            FROM counts c, likes l, activity a, verified v;
+                (SELECT COUNT(*) FROM reports WHERE anonymous_id = $1) as reports_created,
+                (SELECT COUNT(*) FROM comments WHERE anonymous_id = $1) as comments_created,
+                (SELECT COUNT(*) FROM votes WHERE anonymous_id = $1) as votes_cast,
+                (SELECT COUNT(*) FROM report_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as r_flags,
+                (SELECT COUNT(*) FROM comment_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as c_flags,
+                COALESCE((SELECT SUM(upvotes_count) FROM reports WHERE anonymous_id = $1), 0) +
+                COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as likes_received,
+                -- Optimized activity check: simply count total actions instead of unique days to avoid heavy DISTINCT scans
+                -- In the future, this can be moved to a dedicated 'daily_activity' aggregate table
+                (SELECT COUNT(*) FROM (
+                    SELECT 1 FROM reports WHERE anonymous_id = $1 LIMIT 100
+                    UNION ALL
+                    SELECT 1 FROM comments WHERE anonymous_id = $1 LIMIT 100
+                ) a) as activity_score,
+                EXISTS (
+                    SELECT 1 FROM reports 
+                    WHERE anonymous_id = $1 
+                    AND (upvotes_count + comments_count) >= 5
+                    LIMIT 1
+                ) as has_verified_report
         `, [anonymousId]);
 
         if (result.rows.length === 0) return null;
@@ -103,7 +87,7 @@ export async function calculateUserMetrics(anonymousId) {
             comments_created: parseInt(row.comments_created) || 0,
             votes_cast: parseInt(row.votes_cast) || 0,
             likes_received: parseInt(row.likes_received) || 0,
-            activity_days: parseInt(row.activity_days) || 0,
+            activity_days: parseInt(row.activity_score) || 0, // Using activity_score as a proxy for days
             has_verified_report: row.has_verified_report ? 1 : 0,
             is_good_citizen: (totalFlags === 0 && (row.reports_created > 0 || row.comments_created > 0)) ? 1 : 0
         };

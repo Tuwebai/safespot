@@ -363,7 +363,20 @@ export const reportsCache = {
             queryKeys.reports.detail(reportId),
             (old) => {
                 if (!old) return undefined;
-                const updates = typeof patch === 'function' ? patch(old) : patch;
+                const updates = typeof patch === 'function' ? patch(old) : (patch as any);
+
+                // ATOMIC DELTA LOGIC
+                // If the patch contains delta fields, apply them instead of overwriting
+                if (updates.comments_count_delta !== undefined) {
+                    const delta = updates.comments_count_delta;
+                    const { comments_count_delta, ...rest } = updates;
+                    return {
+                        ...old,
+                        ...rest,
+                        comments_count: Math.max(0, (old.comments_count || 0) + delta)
+                    };
+                }
+
                 return { ...old, ...updates };
             }
         );
