@@ -1233,6 +1233,15 @@ export const notificationsApi = {
   },
 
   /**
+   * Delete all notifications for the current user
+   */
+  deleteAll: async (): Promise<{ success: boolean }> => {
+    return apiRequest<{ success: boolean }>('/notifications', {
+      method: 'DELETE'
+    });
+  },
+
+  /**
    * Get notification settings
    */
   getSettings: async (): Promise<NotificationSettings> => {

@@ -31,11 +31,38 @@ export default function NotificationsPage() {
 
     // Mark all read
     const handleMarkAllRead = async () => {
+        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
+
+        // Optimistic update
         queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
             Array.isArray(old) ? old.map(n => ({ ...n, is_read: true })) : []
         );
-        await api.notifications.markAllRead();
-        success("Todas las notificaciones marcadas como leídas");
+
+        try {
+            await api.notifications.markAllRead();
+            success("Todas las notificaciones marcadas como leídas");
+        } catch (err) {
+            console.error('Failed to mark all as read', err);
+            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, previousNotifications); // Revert
+        }
+    };
+
+    // Delete All Logic
+    const handleDeleteAll = async () => {
+        if (!confirm('¿Estás seguro de que quieres eliminar todas las notificaciones?')) return;
+
+        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
+
+        // Optimistic Remove All
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, []);
+
+        try {
+            await api.notifications.deleteAll();
+            success("Notificaciones eliminadas");
+        } catch (err) {
+            console.error('Failed to delete all notifications', err);
+            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, previousNotifications); // Revert
+        }
     };
 
     // Delete Logic with Undo
@@ -52,19 +79,6 @@ export default function NotificationsPage() {
 
         // Show Undo UI
         setUndoState({ id, notification: notificationToDelete });
-
-        // Auto-dismiss undo after 5s and sync wipe?
-        // We will optimistically assume delete. If they actually click Undo, we restore.
-        // We trigger the API delete immediately for simplicity, if they undo we can't easily restore without "Undelete" API.
-        // SO: We will WAIT 5 seconds before calling API.
-
-        // Clearing previous timer if any (simple debounce logic not needed if we manage list of undos, but for single undo:)
-        // We'll use a useEffect or just let the API call happen and re-insert if undo.
-        // Better: "Soft delete" via optimistic UI. API call happens on unmount or after timeout?
-        // Let's just call API. If undo, we re-insert via client cache and hope backend syncs later?
-        // No, that's inconsistent.
-        // Safe approach: Call API. If Undo, say "Restoring..." and call a create API? No.
-        // Correct approach: Don't call API yet.
     };
 
     // Handle Undo Action
@@ -87,12 +101,20 @@ export default function NotificationsPage() {
         if (!undoState) return;
 
         const timer = setTimeout(async () => {
-            await api.notifications.delete(undoState.id);
-            setUndoState(null);
+            try {
+                await api.notifications.delete(undoState.id);
+            } catch (err) {
+                console.error('Failed to delete notification', err);
+                // If it fails, we should ideally restore it to the UI, 
+                // but since undo state is gone, we'd need to refetch
+                queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+            } finally {
+                setUndoState(null);
+            }
         }, 5000);
 
         return () => clearTimeout(timer);
-    }, [undoState]);
+    }, [undoState, queryClient]);
 
     // Open Context Logic (The Core Requirement)
     const handleOpenContext = (n: any) => {
@@ -101,13 +123,13 @@ export default function NotificationsPage() {
 
         switch (n.entity_type) {
             case 'report':
-                navigate(`/reportes/${n.entity_id}`);
+                navigate(`/reporte/${n.entity_id}`);
                 break;
             case 'comment':
             case 'mention':
             case 'reply':
                 // Navigate to report with highlight param
-                navigate(`/reportes/${n.report_id}?highlight_comment=${n.entity_id}`);
+                navigate(`/reporte/${n.report_id}?highlight_comment=${n.entity_id}`);
                 break;
             case 'badge':
             case 'achievement':
@@ -118,7 +140,7 @@ export default function NotificationsPage() {
                 break;
             default:
                 // Fallback
-                if (n.report_id) navigate(`/reportes/${n.report_id}`);
+                if (n.report_id) navigate(`/reporte/${n.report_id}`);
         }
     };
 
@@ -136,15 +158,16 @@ export default function NotificationsPage() {
                     <button
                         onClick={handleMarkAllRead}
                         disabled={!hasUnread}
-                        className={`p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-accent transition-colors ${!hasUnread ? 'opacity-40 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground' : ''}`}
+                        className={`p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-accent transition-colors ${!hasUnread ? 'opacity-40 cursor-not-allowed' : ''}`}
                         title="Marcar todo como leído"
                     >
                         <CheckCircle2 className="w-5 h-5" />
                     </button>
                     {/* BUG 4 FIX: Disabled when no notifications exist */}
                     <button
+                        onClick={handleDeleteAll}
                         disabled={!hasNotifications}
-                        className={`p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors ${!hasNotifications ? 'opacity-40 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground' : ''}`}
+                        className={`p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors ${!hasNotifications ? 'opacity-40 cursor-not-allowed' : ''}`}
                         title="Limpiar todo"
                     >
                         <Trash2 className="w-5 h-5" />
