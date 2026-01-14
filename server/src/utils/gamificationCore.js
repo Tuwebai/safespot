@@ -62,13 +62,11 @@ export async function calculateUserMetrics(anonymousId) {
                 (SELECT COUNT(*) FROM comment_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as c_flags,
                 COALESCE((SELECT SUM(upvotes_count) FROM reports WHERE anonymous_id = $1), 0) +
                 COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as likes_received,
-                -- Optimized activity check: simply count total actions instead of unique days to avoid heavy DISTINCT scans
-                -- In the future, this can be moved to a dedicated 'daily_activity' aggregate table
-                (SELECT COUNT(*) FROM (
-                    SELECT 1 FROM reports WHERE anonymous_id = $1 LIMIT 100
-                    UNION ALL
-                    SELECT 1 FROM comments WHERE anonymous_id = $1 LIMIT 100
-                ) a) as activity_score,
+                -- P0 FIX: SQL Syntax Error. Sum counts from separate subqueries instead of UNION ALL
+                (
+                    (SELECT COUNT(*) FROM (SELECT 1 FROM reports WHERE anonymous_id = $1 LIMIT 100) r) +
+                    (SELECT COUNT(*) FROM (SELECT 1 FROM comments WHERE anonymous_id = $1 LIMIT 100) c)
+                ) as activity_score,
                 EXISTS (
                     SELECT 1 FROM reports 
                     WHERE anonymous_id = $1 

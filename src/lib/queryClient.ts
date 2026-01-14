@@ -17,7 +17,7 @@ export const queryClient = new QueryClient({
             // "Source of Truth" is ALWAYS the server.
 
             // 1. Data Validity
-            staleTime: 0, // Data is immediately stale. Always refetch.
+            staleTime: 5000, // P0 FIX: Prevent refetch storms (5s grace period)
             gcTime: 1000 * 60 * 5, // Keep unused data in memory for 5 minutes (reduced thrashing)
 
             // 2. Refetch Triggers (Aggressive)

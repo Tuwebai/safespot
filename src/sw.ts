@@ -196,8 +196,12 @@ function createNetworkFirstHandler(options: NetworkFirstOptions) {
                 // Update cache in background
                 cacheManager.put(request, networkResponse.clone()).catch(console.error);
 
-                // Broadcast cache update
-                broadcastCacheUpdate(request.url);
+                // P0 FIX: STOP THE DEATH LOOP
+                // Only broadcast CACHE_UPDATED for non-GET requests (mutations)
+                // GET requests should rely on SSE for real-time or manual refresh
+                if (request.method !== 'GET') {
+                    broadcastCacheUpdate(request.url);
+                }
 
                 return addSemanticHeaders(networkResponse, {
                     strategy: 'network',
