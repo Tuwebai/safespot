@@ -55,6 +55,16 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                 // The toast comes from action response's newBadges array (e.g. useCreateReportForm).
                 // SSE only adds notification to list via upsertInList above.
 
+                if (data.type === 'notifications-read-all') {
+                    queryClient.setQueryData(['notifications', 'list', anonymousId], (old: any) =>
+                        Array.isArray(old) ? old.map(n => ({ ...n, is_read: true })) : []
+                    );
+                }
+
+                if (data.type === 'notifications-deleted-all') {
+                    queryClient.setQueryData(['notifications', 'list', anonymousId], []);
+                }
+
                 if (data.type === 'follow') {
                     queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
                 }

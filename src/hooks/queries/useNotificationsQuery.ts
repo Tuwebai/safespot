@@ -22,22 +22,24 @@ export function useNotificationsQuery() {
 
 export function useMarkNotificationReadMutation() {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
 
     return useMutation({
         mutationFn: (id: string) => notificationsApi.markRead(id),
         onMutate: async (id) => {
-            await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-            const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);
+            const queryKey = ['notifications', 'list', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousNotifications = queryClient.getQueryData<Notification[]>(queryKey);
 
-            queryClient.setQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY, (old) =>
+            queryClient.setQueryData<Notification[]>(queryKey, (old) =>
                 old?.map(n => n.id === id ? { ...n, is_read: true } : n) || []
             );
 
-            return { previousNotifications };
+            return { previousNotifications, queryKey };
         },
         onError: (_err, _id, context) => {
-            if (context?.previousNotifications) {
-                queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
+            if (context?.previousNotifications && context.queryKey) {
+                queryClient.setQueryData(context.queryKey, context.previousNotifications);
             }
         },
         // ✅ ENTERPRISE FIX: No onSettled invalidation
@@ -47,25 +49,50 @@ export function useMarkNotificationReadMutation() {
 
 export function useMarkAllNotificationsReadMutation() {
     const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
 
     return useMutation({
         mutationFn: () => notificationsApi.markAllRead(),
         onMutate: async () => {
-            await queryClient.cancelQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-            const previousNotifications = queryClient.getQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY);
+            const queryKey = ['notifications', 'list', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousNotifications = queryClient.getQueryData<Notification[]>(queryKey);
 
-            queryClient.setQueryData<Notification[]>(NOTIFICATIONS_QUERY_KEY, (old) =>
+            queryClient.setQueryData<Notification[]>(queryKey, (old) =>
                 old?.map(n => ({ ...n, is_read: true })) || []
             );
 
-            return { previousNotifications };
+            return { previousNotifications, queryKey };
         },
         onError: (_err, _vars, context) => {
-            if (context?.previousNotifications) {
-                queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, context.previousNotifications);
+            if (context?.previousNotifications && context.queryKey) {
+                queryClient.setQueryData(context.queryKey, context.previousNotifications);
             }
         },
         // ✅ ENTERPRISE FIX: No onSettled invalidation
         // Optimistic update is already correct, server confirmation reconciles silently
+    });
+}
+
+export function useDeleteAllNotificationsMutation() {
+    const queryClient = useQueryClient();
+    const anonymousId = useAnonymousId();
+
+    return useMutation({
+        mutationFn: () => notificationsApi.deleteAll(),
+        onMutate: async () => {
+            const queryKey = ['notifications', 'list', anonymousId];
+            await queryClient.cancelQueries({ queryKey });
+            const previousNotifications = queryClient.getQueryData<Notification[]>(queryKey);
+
+            queryClient.setQueryData<Notification[]>(queryKey, []);
+
+            return { previousNotifications, queryKey };
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousNotifications && context.queryKey) {
+                queryClient.setQueryData(context.queryKey, context.previousNotifications);
+            }
+        }
     });
 }

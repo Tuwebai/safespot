@@ -65,6 +65,16 @@ router.patch('/read-all', requireAnonymousId, async (req, res) => {
             WHERE anonymous_id = $1 AND is_read = false
         `, [anonymousId]);
 
+        // Broadcast to all user tabs
+        try {
+            const { realtimeEvents } = await import('../utils/eventEmitter.js');
+            realtimeEvents.emitUserNotification(anonymousId, {
+                type: 'notifications-read-all'
+            });
+        } catch (err) {
+            console.error('[Notifications] Failed to emit read-all event:', err);
+        }
+
         res.json({ success: true });
     } catch (error) {
         logError(error, req);
@@ -193,6 +203,16 @@ router.delete('/', requireAnonymousId, async (req, res) => {
             DELETE FROM notifications 
             WHERE anonymous_id = $1
         `, [anonymousId]);
+
+        // Broadcast to all user tabs
+        try {
+            const { realtimeEvents } = await import('../utils/eventEmitter.js');
+            realtimeEvents.emitUserNotification(anonymousId, {
+                type: 'notifications-deleted-all'
+            });
+        } catch (err) {
+            console.error('[Notifications] Failed to emit deleted-all event:', err);
+        }
 
         res.json({ success: true });
     } catch (error) {

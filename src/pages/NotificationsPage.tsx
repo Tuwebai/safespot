@@ -1,79 +1,63 @@
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useNotificationsQuery, NOTIFICATIONS_QUERY_KEY } from '@/hooks/queries/useNotificationsQuery';
+import {
+    useNotificationsQuery,
+    NOTIFICATIONS_QUERY_KEY,
+    useMarkNotificationReadMutation,
+    useMarkAllNotificationsReadMutation,
+    useDeleteAllNotificationsMutation
+} from '@/hooks/queries/useNotificationsQuery';
 import { useToast } from '@/components/ui/toast/useToast';
 import { NotificationList } from '@/components/notifications/NotificationList';
 import { Trash2, CheckCircle2 } from 'lucide-react';
-import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { useUserNotifications } from '@/hooks/useUserNotifications';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
     const { success } = useToast();
     const queryClient = useQueryClient();
-    const { data: notifications = [], refetch, isLoading } = useNotificationsQuery();
+    const { data: notifications = [], isLoading } = useNotificationsQuery();
     const [undoState, setUndoState] = useState<{ id: string, notification: any } | null>(null);
 
-    // Mark as read handler
-    const handleRead = async (id: string) => {
-        // Optimistic update
-        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
-            Array.isArray(old) ? old.map(n => n.id === id ? { ...n, is_read: true } : n) : []
-        );
+    const markReadMutation = useMarkNotificationReadMutation();
+    const markAllReadMutation = useMarkAllNotificationsReadMutation();
+    const deleteAllMutation = useDeleteAllNotificationsMutation();
 
-        try {
-            await api.notifications.markRead(id);
-        } catch (err) {
-            console.error('Failed to mark read', err);
-            refetch(); // Revert on error
-        }
+    // Enable SSE for real-time list updates (tab-sync)
+    useUserNotifications();
+
+    // Mark as read handler
+    const handleRead = (id: string) => {
+        markReadMutation.mutate(id);
     };
 
     // Mark all read
-    const handleMarkAllRead = async () => {
-        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
-
-        // Optimistic update
-        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
-            Array.isArray(old) ? old.map(n => ({ ...n, is_read: true })) : []
-        );
-
-        try {
-            await api.notifications.markAllRead();
-            success("Todas las notificaciones marcadas como leídas");
-        } catch (err) {
-            console.error('Failed to mark all as read', err);
-            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, previousNotifications); // Revert
-        }
+    const handleMarkAllRead = () => {
+        markAllReadMutation.mutate(undefined, {
+            onSuccess: () => success("Todas las notificaciones marcadas como leídas")
+        });
     };
 
     // Delete All Logic
-    const handleDeleteAll = async () => {
+    const handleDeleteAll = () => {
         if (!confirm('¿Estás seguro de que quieres eliminar todas las notificaciones?')) return;
-
-        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
-
-        // Optimistic Remove All
-        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, []);
-
-        try {
-            await api.notifications.deleteAll();
-            success("Notificaciones eliminadas");
-        } catch (err) {
-            console.error('Failed to delete all notifications', err);
-            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, previousNotifications); // Revert
-        }
+        deleteAllMutation.mutate(undefined, {
+            onSuccess: () => success("Notificaciones eliminadas")
+        });
     };
 
     // Delete Logic with Undo
     const handleDelete = async (id: string) => {
-        const previousNotifications = queryClient.getQueryData<any[]>(NOTIFICATIONS_QUERY_KEY) || [];
+        const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
+        const previousNotifications = notifications;
         const notificationToDelete = previousNotifications.find(n => n.id === id);
 
         if (!notificationToDelete) return;
 
-        // Optimistic Remove
-        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) =>
+        // Optimistic Remove (Manual since we need undo logic)
+        // We use the same key logic as the query hook
+        queryClient.setQueryData(activeKey, (old: any[]) =>
             Array.isArray(old) ? old.filter(n => n.id !== id) : []
         );
 
@@ -102,12 +86,14 @@ export default function NotificationsPage() {
 
         const timer = setTimeout(async () => {
             try {
-                await api.notifications.delete(undoState.id);
+                // Manual call since it's delayed
+                const { notificationsApi } = await import('@/lib/api');
+                await notificationsApi.delete(undoState.id);
             } catch (err) {
                 console.error('Failed to delete notification', err);
-                // If it fails, we should ideally restore it to the UI, 
-                // but since undo state is gone, we'd need to refetch
-                queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+                // Revert
+                const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
+                queryClient.invalidateQueries({ queryKey: activeKey });
             } finally {
                 setUndoState(null);
             }
