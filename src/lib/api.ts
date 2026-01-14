@@ -1181,6 +1181,16 @@ export const chatsApi = {
    */
   getStarredMessages: async (): Promise<ChatMessage[]> => {
     return apiRequest<ChatMessage[]>('/chats/starred');
+  },
+
+  /**
+   * Edit a message (WhatsApp-style: own messages only, within time limit)
+   */
+  editMessage: async (roomId: string, messageId: string, content: string): Promise<{ success: boolean; message: ChatMessage }> => {
+    return apiRequest(`/chats/${roomId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content })
+    });
   }
 };
 

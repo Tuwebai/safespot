@@ -930,7 +930,7 @@ router.post('/messages/:messageId/star', async (req, res) => {
         }
 
         // Insert (ON CONFLICT = idempotent)
-        await pool.query(
+        await queryWithRLS(anonymousId,
             `INSERT INTO starred_messages (user_id, message_id)
              VALUES ($1, $2)
              ON CONFLICT (user_id, message_id) DO NOTHING`,
@@ -953,7 +953,7 @@ router.delete('/messages/:messageId/star', async (req, res) => {
     const { messageId } = req.params;
 
     try {
-        await pool.query(
+        await queryWithRLS(anonymousId,
             'DELETE FROM starred_messages WHERE user_id = $1 AND message_id = $2',
             [anonymousId, messageId]
         );
@@ -988,6 +988,84 @@ router.get('/starred', async (req, res) => {
         );
 
         res.json(result.rows);
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * PATCH /api/chats/:roomId/messages/:messageId
+ * Edit a message (WhatsApp-style: only own messages, within time limit)
+ */
+router.patch('/:roomId/messages/:messageId', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { roomId, messageId } = req.params;
+    const { content } = req.body;
+
+    if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+        return res.status(400).json({ error: 'Content is required' });
+    }
+
+    try {
+        // 1. Verify message exists, belongs to user, and is within edit window (15 min like WhatsApp)
+        const msgCheck = await queryWithRLS(anonymousId,
+            `SELECT id, sender_id, created_at, type FROM chat_messages 
+             WHERE id = $1 AND conversation_id = $2`,
+            [messageId, roomId]
+        );
+
+        if (msgCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+
+        const message = msgCheck.rows[0];
+
+        // Only owner can edit
+        if (message.sender_id !== anonymousId) {
+            return res.status(403).json({ error: 'You can only edit your own messages' });
+        }
+
+        // Only text messages can be edited
+        if (message.type !== 'text') {
+            return res.status(400).json({ error: 'Only text messages can be edited' });
+        }
+
+        // WhatsApp allows editing within 15 minutes (we'll be generous: 24 hours)
+        const createdAt = new Date(message.created_at);
+        const now = new Date();
+        const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+        if (hoursDiff > 24) {
+            return res.status(400).json({ error: 'Message can only be edited within 24 hours' });
+        }
+
+        // 2. Update message
+        const sanitizedContent = sanitizeContent(content.trim());
+        const result = await queryWithRLS(anonymousId,
+            `UPDATE chat_messages 
+             SET content = $1, is_edited = true, edited_at = NOW()
+             WHERE id = $2
+             RETURNING *`,
+            [sanitizedContent, messageId]
+        );
+
+        const updatedMessage = result.rows[0];
+
+        // 3. Emit SSE event
+        realtimeEvents.emit(`room:${roomId}`, {
+            type: 'message-edited',
+            data: {
+                id: updatedMessage.id,
+                content: updatedMessage.content,
+                is_edited: true,
+                edited_at: updatedMessage.edited_at
+            }
+        });
+
+        logSuccess('Message edited', { messageId, anonymousId });
+        res.json({ success: true, message: updatedMessage });
+
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });

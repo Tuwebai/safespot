@@ -188,7 +188,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                 initial={{ y: -50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -50, opacity: 0 }}
-                className="absolute top-0 left-0 right-0 h-14 bg-background/95 backdrop-blur-md border-b border-border/10 z-[200] flex items-center justify-between px-3 shadow-md"
+                className="fixed top-0 left-0 right-0 h-14 bg-background/95 backdrop-blur-md border-b border-border/10 z-[9999] flex items-center justify-between px-3 shadow-md"
             >
                 <div className="flex items-center gap-3">
                     <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
@@ -199,35 +199,95 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
 
                 <div className="flex items-center gap-0.5">
                     {/* Responder */}
-                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onReply(selectedMessage); onClose(); }}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            console.log('[TopBar] Responder clicked', selectedMessage.id);
+                            onReply(selectedMessage);
+                            onClose();
+                        }}
+                    >
                         <Reply className="w-5 h-5" />
                     </Button>
 
                     {/* Copiar */}
-                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onCopy(selectedMessage); onClose(); }}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            console.log('[TopBar] Copiar clicked', selectedMessage.id);
+                            onCopy(selectedMessage);
+                            onClose();
+                        }}
+                    >
                         <Copy className="w-5 h-5" />
                     </Button>
 
                     {/* Fijar */}
-                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onPin(selectedMessage.id); onClose(); }}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            console.log('[TopBar] Fijar clicked', selectedMessage.id);
+                            onPin(selectedMessage.id);
+                            onClose();
+                        }}
+                    >
                         <Pin className={`w-5 h-5 ${pinnedId === selectedMessage.id ? 'fill-current text-primary' : ''}`} />
                     </Button>
 
                     {/* Favorito (para todos) */}
-                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onStar(selectedMessage); onClose(); }}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            console.log('[TopBar] Favorito clicked', selectedMessage.id);
+                            onStar(selectedMessage);
+                            onClose();
+                        }}
+                    >
                         <Star className={`w-5 h-5 ${selectedMessage.is_starred ? 'fill-yellow-400 text-yellow-400' : ''}`} />
                     </Button>
 
                     {/* Editar (solo mensaje propio) */}
                     {isMe && (
-                        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onEdit(selectedMessage); onClose(); }}>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full"
+                            onPointerDown={(e) => {
+                                e.stopPropagation();
+                                console.log('[TopBar] Editar clicked', selectedMessage.id);
+                                onEdit(selectedMessage);
+                                onClose();
+                            }}
+                        >
                             <Pencil className="w-5 h-5" />
                         </Button>
                     )}
 
                     {/* Eliminar (solo mensaje propio) */}
                     {isMe && (
-                        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => { onDelete(selectedMessage); onClose(); }}>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full"
+                            onPointerDown={(e) => {
+                                e.stopPropagation();
+                                console.log('[TopBar] Eliminar clicked', selectedMessage.id);
+                                onDelete(selectedMessage);
+                                onClose();
+                            }}
+                        >
                             <Trash2 className="w-5 h-5 text-destructive" />
                         </Button>
                     )}
@@ -295,8 +355,13 @@ const MessageBubbleWrapper: React.FC<MessageBubbleWrapperProps> = ({
                 </AnimatePresence>
 
                 {/* The actual bubble with LongPress support */}
-                {/* Overlay to prevent text selection during long press activity */}
-                <div {...longPress} className={pickerActive ? 'select-none' : ''}>
+                {/* Prevenir menú contextual nativo + selección de texto */}
+                <div
+                    {...longPress}
+                    className={pickerActive ? 'select-none' : ''}
+                    onContextMenu={(e) => e.preventDefault()}
+                    style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+                >
                     {pickerActive && <div className="absolute inset-0 z-10 bg-black/5 rounded-lg pointer-events-none" />}
                     {children}
                 </div>
@@ -348,6 +413,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
     const [selectedMessageForActions, setSelectedMessageForActions] = useState<ChatMessage | null>(null);
+    const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
 
     // ✅ WhatsApp-Grade Quick Emoji Reactions
 
@@ -535,6 +601,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     };
 
     const handleStarMessage = async (msg: ChatMessage) => {
+        // Optimistic Update - Actualizar cache inmediatamente
+        const newStarredState = !msg.is_starred;
+        const messagesKey = ['chats', 'messages', anonymousId, room.id];
+
+        queryClient.setQueryData<ChatMessage[]>(messagesKey, (old) => {
+            if (!old) return old;
+            return old.map(m => m.id === msg.id ? { ...m, is_starred: newStarredState } : m);
+        });
+
         try {
             if (msg.is_starred) {
                 await chatsApi.unstarMessage(msg.id);
@@ -543,6 +618,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             }
         } catch (err) {
             console.error('[Chat] Star toggle failed:', err);
+            // Rollback en caso de error
+            queryClient.setQueryData<ChatMessage[]>(messagesKey, (old) => {
+                if (!old) return old;
+                return old.map(m => m.id === msg.id ? { ...m, is_starred: msg.is_starred } : m);
+            });
         }
     };
 
@@ -560,14 +640,42 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         if (!message.trim() && !selectedFile) return;
 
         try {
-            const contentToSend = message;
+            const contentToSend = message.trim();
+
+            // ✅ MODO EDICIÓN: Actualizar mensaje existente
+            if (editingMessage) {
+                const messageId = editingMessage.id;
+                const messagesKey = ['chats', 'messages', anonymousId, room.id];
+
+                // Optimistic Update
+                queryClient.setQueryData<ChatMessage[]>(messagesKey, (old) => {
+                    if (!old) return old;
+                    return old.map(m => m.id === messageId
+                        ? { ...m, content: contentToSend, is_edited: true, edited_at: new Date().toISOString() }
+                        : m
+                    );
+                });
+
+                setMessage('');
+                setEditingMessage(null);
+
+                try {
+                    await chatsApi.editMessage(room.id, messageId, contentToSend);
+                } catch (err) {
+                    console.error('Error editando mensaje:', err);
+                    // Rollback (se rehydrata del server via SSE)
+                }
+                return;
+            }
+
+            // ✅ MODO NORMAL: Enviar nuevo mensaje
             const fileToSend = selectedFile;
             const captionToSend = selectedFile ? message : undefined;
 
             setMessage('');
             cancelImageSelection();
 
-            if (contentToSend.trim() || fileToSend) {
+            if (contentToSend || fileToSend) {
                 // Clear state IMMEDIATELY for 0ms lag feel
                 const replyData = replyingTo ? {
                     id: replyingTo.id,
@@ -702,8 +810,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         onPin={(msgId) => handlePinMessage(msgId)}
                         onStar={(msg) => handleStarMessage(msg)}
                         onEdit={(msg) => {
-                            // TODO: Implementar edición inline de mensaje
-                            console.log('Editar mensaje:', msg.id);
+                            // Activar modo edición: poblar input con contenido actual
+                            setEditingMessage(msg);
+                            setMessage(msg.content || '');
                         }}
                         onCopy={async (msg) => {
                             try {
