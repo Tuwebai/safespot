@@ -54,7 +54,7 @@ export function useReportsQuery(filters?: ReportFilters) {
     const isDefaultQuery = !filters || Object.keys(filters).length === 0
 
     return useQuery({
-        queryKey: ['reports', 'list', anonymousId, filters],  // ✅ Include ID for dependency tracking
+        queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
         queryFn: async () => {
             const data = await reportsApi.getAll(filters)
 

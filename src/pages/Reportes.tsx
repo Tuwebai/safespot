@@ -704,7 +704,8 @@ export function Reportes() {
                         data-index={virtualRow.index}
                         ref={(el) => {
                           if (el) {
-                            rowVirtualizer.measureElement(el)
+                            // Defer to avoid flushSync during render
+                            requestAnimationFrame(() => rowVirtualizer.measureElement(el))
                           }
                         }}
                         style={{

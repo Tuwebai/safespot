@@ -30,7 +30,7 @@ export const NotificationService = {
             // 4. Update notification_settings counts
             // All within a single database transaction for performance and consistency.
 
-            await db.query(`
+            const result = await db.query(`
                 WITH matched_recipients AS (
                     -- General proximity matched from settings
                     SELECT 
