@@ -6,7 +6,7 @@ import { ContactModal } from '@/components/contact/ContactModal'
 export function Footer() {
   const [isContactOpen, setIsContactOpen] = useState(false);
   // Use standard URL for all platforms - Android browser handles MP app redirect automatically
-  const donationLink = "https://link.mercadopago.com.ar/safespotapp";
+  const donationLink = "https://link.mercadopago.com.ar/safespotapp"; //commit
 
   return (
     <>
