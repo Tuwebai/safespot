@@ -76,6 +76,14 @@ export function useChatRooms() {
                     const message = data.message;
                     const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
+
+                    // ✅ WhatsApp-Grade: If I received a message from someone else, 
+                    // ACK it as delivered immediately (double grey tick for sender)
+                    if (message.sender_id !== anonymousId) {
+                        chatsApi.markAsDelivered(convId).catch(err => {
+                            console.warn('[Delivered ACK] Failed:', err);
+                        });
+                    }
                 } else if (data.action === 'read') {
                     chatCache.markRoomAsRead(queryClient, convId, anonymousId);
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
@@ -86,6 +94,12 @@ export function useChatRooms() {
                     queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
                         if (!old || !Array.isArray(old)) return old;
                         return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
+                    });
+                } else if (data.action === 'delivered') {
+                    // ✅ WhatsApp-Grade: Update messages to show double tick
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                        if (!old) return old;
+                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
                     });
                 }
             } catch (err) { }

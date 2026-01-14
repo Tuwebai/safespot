@@ -226,6 +226,16 @@ router.get('/chats/:roomId', (req, res) => {
         (async () => {
             try {
                 const { queryWithRLS } = await import('../utils/rls.js');
+
+                // ✅ WhatsApp-Grade: Get senders of undelivered messages BEFORE marking them
+                const sendersResult = await queryWithRLS(anonymousId,
+                    `SELECT DISTINCT sender_id FROM chat_messages 
+                     WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
+                    [roomId, anonymousId]
+                );
+                const senderIds = sendersResult.rows.map(r => r.sender_id);
+
+                // Mark as delivered
                 const result = await queryWithRLS(anonymousId,
                     'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
                     [roomId, anonymousId]
@@ -233,8 +243,18 @@ router.get('/chats/:roomId', (req, res) => {
 
                 // SOLO emitir si realmente se actualizaron mensajes
                 if (result.rowCount > 0) {
+                    // 1. Room SSE (for clients with chat open)
                     realtimeEvents.emitChatStatus('delivered', roomId, {
                         receiverId: anonymousId
+                    });
+
+                    // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
+                    senderIds.forEach(senderId => {
+                        realtimeEvents.emitUserChatUpdate(senderId, {
+                            roomId,
+                            action: 'delivered',
+                            receiverId: anonymousId
+                        });
                     });
                 }
             } catch (err) {

@@ -509,6 +509,14 @@ router.patch('/:roomId/delivered', async (req, res) => {
     const { roomId } = req.params;
 
     try {
+        // ✅ WhatsApp-Grade: Get senders BEFORE marking as delivered
+        const sendersResult = await queryWithRLS(anonymousId,
+            `SELECT DISTINCT sender_id FROM chat_messages 
+             WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
+            [roomId, anonymousId]
+        );
+        const senderIds = sendersResult.rows.map(r => r.sender_id);
+
         const result = await queryWithRLS(anonymousId,
             'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
             [roomId, anonymousId]
@@ -516,9 +524,19 @@ router.patch('/:roomId/delivered', async (req, res) => {
 
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
-            // Notificar al OTRO usuario que sus mensajes en esta sala fueron entregados
+            // 1. Room SSE (for clients with chat open)
             realtimeEvents.emitChatStatus('delivered', roomId, {
                 receiverId: anonymousId
+            });
+
+            // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
+            console.log(`[Delivered] Notifying ${senderIds.length} senders:`, senderIds);
+            senderIds.forEach(senderId => {
+                realtimeEvents.emitUserChatUpdate(senderId, {
+                    roomId,
+                    action: 'delivered',
+                    receiverId: anonymousId
+                });
             });
         }
 
