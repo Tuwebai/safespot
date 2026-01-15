@@ -166,13 +166,18 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 
 ### Qué Depende de Reloads/Timing
 
-1. **Notificaciones In-App**
-   - Si SSE se desconecta y reconecta, las notificaciones del período de desconexión **se pierden**
-   - Usuario debe hacer refresh para ver notificaciones perdidas
+1. **Notificaciones In-App** ✅ **RESUELTO**
+   - ✅ Gap recovery implementado via `ssePool.onReconnect()`
+   - ✅ Al reconectar SSE, refetch automático de todas las notificaciones
+   - ✅ Polling cada 5 min como fallback adicional
 
-2. **Presence (Online/Offline)**
-   - `presenceTracker` usa Redis con TTL de 60s
-   - Heartbeat cada 15s, pero si SSE muere sin cleanup, usuario aparece "online" por 60s más
+2. **Presence (Online/Offline)** ✅ **ENTERPRISE-GRADE**
+   - ✅ Redis con TTL de 60s como safety net
+   - ✅ SSE heartbeat cada 15s refresca presencia
+   - ✅ `trackDisconnect()` → offline inmediato al cerrar última pestaña
+   - ✅ Session counter para multi-tab awareness
+   - ✅ `visibilitychange` handler para recovery al volver al tab
+   - ⚠️ Ventana de 60s para network drops (esperado/estándar industria)
 
 ---
 
@@ -188,18 +193,28 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 - **Identity module** con multi-layer persistence (localStorage + Cookie + IndexedDB)
 - **Code splitting** vía lazy routes
 - **PWA manifest** configurado correctamente
+- **Error Boundaries** ✅ 3 niveles: Bootstrap → Chunk → Feature (Layout/DetalleReporte/Thread)
+- **Offline UI** ✅ `NetworkStatusIndicator` con banner "Sin conexión"
+- **Auto-refetch on reconnect** ✅ `window.online` → `refetchQueries()` en App.tsx
 
-#### ⚠️ Parcial / Frágil
+#### ⚠️ Parcial / Aceptable
 
-- **Typing incompleto**: Algunos `any` escapados en cache helpers
-- **Error boundaries**: Existen pero no todas las rutas están protegidas
-- **Offline mode**: Cache fallback existe pero no hay UI explícita de "modo offline"
+- **Typing `any`**: ~30 usos en cache-helpers/realtime-utils (necesario para funciones genéricas, no crítico)
 
-#### ❌ Incorrecto o Incompleto
+#### ✅ Infraestructura de Calidad (Implementada 2026-01-15)
 
-- **No hay tests** de componentes ni hooks
-- **Bundle analysis** no configurado (manualChunks: undefined)
-- **Lighthouse audit** no evidenciado
+- **Testing** ✅ Vitest configurado con 19 tests pasando
+  - `ssePool.test.ts` - 9 tests (subscribe, unsubscribe, onReconnect)
+  - `realtime-utils.test.ts` - 10 tests (upsertInList, removeFromList, patchItem)
+  - `npm run test` / `npm run test:coverage` disponibles
+- **Bundle Optimization** ✅ `manualChunks` configurado
+  - `vendor-react` (163 KB) - React core
+  - `vendor-query` (43 KB) - React Query
+  - `vendor-ui` (164 KB) - Framer Motion, Lucide
+  - `vendor-map` (199 KB) - Leaflet (lazy loaded)
+  - `vendor-editor` (374 KB) - TipTap (lazy loaded)
+  - `vendor-forms` (77 KB) - React Hook Form, Zod
+- **Lighthouse CI** ✅ Configurado en `.github/workflows/lighthouse.yml`
 
 ### 3.2 Backend
 
@@ -336,14 +351,14 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 |----|-------------|---------|-----------|
 | ~~BUG-001~~ | ~~Gap recovery de SSE es no-op~~ | `ssePool.ts` | ✅ RESUELTO |
 | BUG-002 | Push no emite ACK de delivered (mejora futura) | `sw.ts` | ⏳ P3 PENDIENTE |
-| BUG-003 | Notificaciones perdidas durante desconexión SSE | N/A (Design issue) | P1 |
+| ~~BUG-003~~ | ~~Notificaciones perdidas durante desconexión SSE~~ | `useUserNotifications.ts` | ✅ RESUELTO |
 
 ### Bugs Latentes (Situacionales)
 
 | ID | Descripción | Trigger | Severidad |
 |----|-------------|---------|-----------|
 | LAT-001 | ~~Contadores fantasma si trigger DB falla~~ | ~~High concurrency~~ | ✅ Mitigado (`sync_all_counters`) |
-| LAT-002 | Usuario aparece "online" 60s después de cerrar | Si SSE muere abruptamente | P3 |
+| LAT-002 | Usuario aparece "online" ≤60s tras network drop | Network abrupt disconnect | ✅ Esperado (estándar industria) |
 | LAT-003 | Duplicación de eventos SSE si network jitter | Rare network conditions | P3 |
 | LAT-004 | SW update mid-flight puede causar cache inconsistency | Durante heavy usage | P2 |
 

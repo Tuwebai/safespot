@@ -88,7 +88,32 @@ export default defineConfig({
     chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
-        manualChunks: undefined
+        manualChunks: {
+          // Core React - changes rarely, high cache value
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+
+          // Data layer - changes rarely
+          'vendor-query': ['@tanstack/react-query'],
+
+          // UI animations - medium change frequency
+          'vendor-ui': ['framer-motion', 'lucide-react'],
+
+          // Map - lazy loaded via route, large bundle
+          'vendor-map': ['leaflet', 'react-leaflet', 'react-leaflet-cluster'],
+
+          // Rich text editor - lazy loaded, large bundle
+          'vendor-editor': [
+            '@tiptap/react',
+            '@tiptap/starter-kit',
+            '@tiptap/extension-mention',
+            '@tiptap/extension-placeholder',
+            '@tiptap/extension-character-count',
+            '@tiptap/extension-underline',
+          ],
+
+          // Form handling
+          'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
+        },
       },
     },
   },

@@ -31,6 +31,34 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
 
         const url = `${API_BASE_URL}/realtime/user/${anonymousId}`;
 
+        // ============================================
+        // GAP RECOVERY: On SSE Reconnection
+        // ============================================
+        const unsubReconnect = ssePool.onReconnect(url, async () => {
+            try {
+                console.log('[Notifications] SSE reconnected, fetching missed notifications...');
+
+                // Import dynamically to avoid circular deps
+                const { notificationsApi } = await import('@/lib/api');
+                const freshNotifications = await notificationsApi.getAll();
+
+                if (freshNotifications && freshNotifications.length > 0) {
+                    console.log(`[Notifications] ✅ Recovered ${freshNotifications.length} notifications`);
+                    // Replace entire list with fresh data (dedup not needed - full refresh)
+                    queryClient.setQueryData(
+                        ['notifications', 'list', anonymousId],
+                        freshNotifications
+                    );
+                }
+            } catch (err) {
+                console.error('[Notifications] Gap recovery failed:', err);
+                // Fallback: invalidate to trigger React Query refetch
+                queryClient.invalidateQueries({
+                    queryKey: ['notifications', 'list', anonymousId]
+                });
+            }
+        });
+
         // Helper to handle incoming notifications
         const handleEvent = (event: MessageEvent) => {
             try {
@@ -91,6 +119,7 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
         });
 
         return () => {
+            unsubReconnect();
             unsubscribe();
             unsubscribePresence();
         };
