@@ -84,6 +84,7 @@ export function useChatRooms() {
                             console.warn('[Delivered ACK] Failed:', err);
                         });
                     }
+
                 } else if (data.action === 'read') {
                     chatCache.markRoomAsRead(queryClient, convId, anonymousId);
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
