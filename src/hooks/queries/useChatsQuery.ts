@@ -201,33 +201,59 @@ export function useChatMessages(convId: string | undefined) {
 
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${convId}?anonymousId=${anonymousId}`;
 
+        // ✅ GAP RECOVERY: Watermark = ID of last message received via SSE
+        // Using a local variable instead of ref for this effect's scope
+        let watermark: string | null = null;
+
+        // Initialize watermark from current cache
+        const currentMessages = queryClient.getQueryData<ChatMessage[]>(
+            CHATS_KEYS.messages(convId, anonymousId)
+        );
+        if (currentMessages && currentMessages.length > 0) {
+            watermark = currentMessages[currentMessages.length - 1].id;
+            console.log(`[GapRecovery] Initialized watermark: ${watermark?.substring(0, 8)}...`);
+        }
+
         // ============================================
         // GAP RECOVERY: On SSE Reconnection
         // ============================================
-        const unsubReconnect = ssePool.onReconnect(sseUrl, async (lastEventId) => {
-            if (!lastEventId) {
-                console.log('[GapRecovery] No lastEventId, skipping gap recovery');
+        const unsubReconnect = ssePool.onReconnect(sseUrl, async () => {
+            // Use watermark instead of lastEventId (more reliable)
+            const since = watermark;
+            if (!since) {
+                console.log('[GapRecovery] No watermark, skipping gap recovery');
                 return;
             }
 
             try {
-                console.log(`[GapRecovery] SSE reconnected, fetching gaps since: ${lastEventId}`);
+                console.log(`[GapRecovery] SSE reconnected, fetching gaps since: ${since.substring(0, 8)}...`);
 
                 // Fetch missed messages from backend
-                const missedMessages = await chatsApi.getMessages(convId, lastEventId);
+                const missedMessages = await chatsApi.getMessages(convId, since);
 
                 if (missedMessages && missedMessages.length > 0) {
                     console.log(`[GapRecovery] ✅ Recovered ${missedMessages.length} missed messages`);
 
-                    // Batch upsert for efficient merge
+                    // Batch upsert for efficient merge (dedupe + sort included)
                     chatCache.upsertMessageBatch(queryClient, missedMessages, convId, anonymousId || '');
+
+                    // Update watermark to newest recovered message
+                    watermark = missedMessages[missedMessages.length - 1].id;
                 } else {
                     console.log('[GapRecovery] No missed messages');
                 }
             } catch (err) {
                 console.error('[GapRecovery] Failed to recover gaps:', err);
                 // Fallback: Full refetch if gap recovery fails
-                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
+                try {
+                    const allMessages = await chatsApi.getMessages(convId);
+                    queryClient.setQueryData(CHATS_KEYS.messages(convId, anonymousId), allMessages);
+                    if (allMessages.length > 0) {
+                        watermark = allMessages[allMessages.length - 1].id;
+                    }
+                } catch (e) {
+                    console.error('[GapRecovery] Full refetch also failed:', e);
+                }
             }
 
             // ✅ Clear any stale typing on reconnect
@@ -252,6 +278,9 @@ export function useChatMessages(convId: string | undefined) {
                 // ✅ CRITICAL FIX: Use consistent query key (anonymousId || '')
                 // Must match the key used in optimistic update to find and merge
                 chatCache.upsertMessage(queryClient, message, anonymousId || '');
+
+                // ✅ GAP RECOVERY: Update watermark on every new message
+                watermark = message.id;
             } catch (e) {
                 console.error('[SSE] Error parsing new-message:', e);
             }
