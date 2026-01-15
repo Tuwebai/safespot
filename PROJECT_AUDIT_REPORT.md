@@ -220,6 +220,7 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 
 #### ✅ Correcto
 
+- **Rate Limiting**: ✅ Fully implemented (Global + Granular for Reports, Comments, Auth, Votes)
 - **RLS via queryWithRLS**: Consistente en todas las rutas
 - **Idempotencia**: Chat IDs generados en cliente con fallback server
 - **Redis Pub/Sub** para scaling horizontal (eventEmitter.js)
@@ -228,7 +229,6 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 
 #### ⚠️ Parcial / Frágil
 
-- **Rate Limiting**: `rateLimiter.js` existe pero no está aplicado uniformemente
 - **Error responses**: Inconsistentes (algunos 500 con error message, otros sin)
 - **Logging**: `logError` básico, no estructurado, sin correlation IDs
 

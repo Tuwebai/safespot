@@ -6,7 +6,7 @@ import { reportSchema, geoQuerySchema } from '../utils/schemas.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter, favoriteLimiter, imageUploadLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, favoriteLimiter, imageUploadLimiter, createReportLimiter } from '../utils/rateLimiter.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
@@ -699,6 +699,7 @@ router.get('/:id', async (req, res) => {
 router.post('/',
   requireAnonymousId,
   verifyUserStatus, // Enforce Ban
+  createReportLimiter, // ✅ Limit: 3/min
   imageUploadLimiter,
   upload.array('images', 3),
   async (req, res) => {

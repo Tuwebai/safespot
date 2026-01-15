@@ -4,7 +4,7 @@ import { validate } from '../utils/validateMiddleware.js';
 import { commentSchema, commentUpdateSchema } from '../utils/schemas.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter, likeLimiter } from '../utils/rateLimiter.js';
+import { flagRateLimiter, likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
@@ -203,7 +203,7 @@ router.get('/:reportId', async (req, res) => {
  * Create a new comment
  * Requires: X-Anonymous-Id header
  */
-router.post('/', requireAnonymousId, verifyUserStatus, validate(commentSchema), async (req, res) => {
+router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, validate(commentSchema), async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     let isHidden = false; // Shadow ban status
@@ -648,7 +648,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
  * Requires: X-Anonymous-Id header
  * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) => {
+router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -789,7 +789,7 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, async (req, res) 
  * Requires: X-Anonymous-Id header
  * Rate limited: 30 per minute, 200 per hour
  */
-router.delete('/:id/like', requireAnonymousId, async (req, res) => {
+router.delete('/:id/like', requireAnonymousId, likeLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;

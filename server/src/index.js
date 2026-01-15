@@ -156,14 +156,12 @@ const actionLimiter = rateLimit({
 
 // app.use('/api/realtime', realtimeRouter); // Moved up
 
-// app.use('/api/', globalLimiter);
-// Removed actionLimiter - too restrictive for normal usage
-// app.use(['/api/reports', '/api/comments'], (req, res, next) => {
-//   if (req.method === 'POST') {
-//     return actionLimiter(req, res, next);
-//   }
-//   next();
-// });
+// ============================================
+// RATE LIMITING - ACTIVE
+// ============================================
+
+// Global limiter: Applies to all /api routes except realtime
+app.use('/api/', globalLimiter);
 
 // ============================================
 // HEALTH CHECK

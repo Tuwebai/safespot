@@ -20,7 +20,7 @@ const router = express.Router();
  * Body: { report_id: UUID } OR { comment_id: UUID }
  * Rate limited: 30 per minute, 200 per hour
  */
-router.post('/', requireAnonymousId, validate(voteSchema), async (req, res) => {
+router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     const { report_id, comment_id } = req.body;
