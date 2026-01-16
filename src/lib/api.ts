@@ -1318,6 +1318,22 @@ export const geocodeApi = {
     } catch (error) {
       return null;
     }
+  },
+
+  /**
+   * Get location by IP (Fallback when GPS is denied/unavailable)
+   */
+  getByIp: async (): Promise<GeocodeResponse | null> => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: GeocodeResponse }>(
+        '/geocode/ip',
+        {},
+        0
+      );
+      return (res as any) || null;
+    } catch (error) {
+      return null;
+    }
   }
 };
 

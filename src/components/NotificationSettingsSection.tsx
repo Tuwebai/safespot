@@ -101,101 +101,136 @@ export function NotificationSettingsSection() {
         }
     };
 
-    const handleUpdateLocation = () => {
-        if (!navigator.geolocation) {
-            error('Tu navegador no soporta geolocalización');
-            return;
-        }
-
+    const handleUpdateLocation = async () => {
         setSaving(true);
-        navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-                setPermissionStatus('granted');
-                setIsGeocoding(true);
+        setLoadError(false); // Reset error state
+        info("Detectando ubicación...");
 
-                try {
-                    const { latitude, longitude } = pos.coords;
-                    let city: string | undefined = undefined;
-                    let province: string | undefined = undefined;
-                    let formattedName = null;
+        // --- HELPER: Format & Validate Location ---
+        const formatLocation = (geo: any): string | null => {
+            if (!geo || !geo.address) return null;
+            const addr = geo.address;
 
-                    // 1. Resolve address (User Request: Robust Reverse Geocoding)
-                    try {
-                        // The backend now tries Georef first, then Nominatim, and returns normalized city/province
-                        const geo = await geocodeApi.reverse(latitude, longitude);
+            // STRICT FORMAT: "City, Province"
+            // We prioritize Municipality/City over everything else.
+            const city = addr.city || addr.municipality || addr.town || addr.village || addr.neighborhood || addr.suburb;
+            const province = addr.province || addr.state || addr.region;
 
-                        if (geo && geo.address) {
-                            // Backend already normalizes these fields
-                            city = geo.address.city || geo.address.municipality || geo.address.town || geo.address.neighborhood;
-                            province = geo.address.province || geo.address.state;
-
-                            // Create a nice human-readable string
-                            // Hierarchy: City, Province > Province > Fallback
-                            if (city && province) {
-                                formattedName = `${city}, ${province}`;
-                            } else if (province) {
-                                formattedName = province;
-                            } else if (city) {
-                                formattedName = city;
-                            } else {
-                                // Last resort fallback if geo succeeds but lacks names (rare)
-                                formattedName = "Zona cercana a tu ubicación";
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Reverse geocoding failed', e);
-                        // Network error or 500
-                        formattedName = null;
-                        city = undefined;
-                        province = undefined;
-                    }
-
-                    // Fallback UX logic (Crucial)
-                    // If formattedName is still null here (API error), do NOT show raw coordinates.
-                    const finalDisplayName = formattedName || "Zona sin nombre detectado";
-
-                    // 2. Save everything to backend settings
-                    await notificationsApi.updateSettings({
-                        lat: latitude,
-                        lng: longitude,
-                        city: city || null,
-                        province: province || null
-                    } as any);
-
-                    // 3. Sync with Push Service
-                    updateServiceLocation(latitude, longitude);
-
-                    // 4. Update local state
-                    setSettings(prev => prev ? {
-                        ...prev,
-                        last_known_lat: latitude,
-                        last_known_lng: longitude,
-                        last_known_city: city,
-                        last_known_province: province,
-                        updated_at: new Date().toISOString()
-                    } : null);
-
-                    setLocationName(finalDisplayName);
-
-                    success('Zona de alertas actualizada');
-                } catch (_) {
-                    console.error('[Location UI] Error saving location');
-                    error('Error al guardar ubicación');
-                } finally {
-                    setSaving(false);
-                    setIsGeocoding(false);
-                }
-            },
-            (err) => {
-                if (err.code === err.PERMISSION_DENIED) {
-                    setPermissionStatus('denied');
-                }
-                // USER REQUEST: Si tiene ubicación desactivada que no de error, 
-                // pero indique claramente que debe activar.
-                info("Ubicación desactivada: Para recibir alertas cercanas, activá el GPS.");
-                setSaving(false);
+            if (city && province) {
+                // Remove duplicates (e.g. "Córdoba, Córdoba")
+                if (city.toLowerCase() === province.toLowerCase()) return `${city}, Argentina`;
+                // Remove redundant "Provincia de"
+                const cleanProv = province.replace(/^Provincia de\s+/i, '');
+                return `${city}, ${cleanProv}`;
             }
-        );
+            return null; // Reject partials if we want to be strict, OR accept just Province if City missing?
+            // User says: "Ejemplos válidos: Río Tercero, Córdoba". 
+            // "PROHIBIDO: Texto genérico".
+            // If we only have Province, returning "Córdoba, Argentina" is acceptable fallback.
+            // If we have nothing, return null to trigger next fallback.
+        };
+
+        const saveLocation = async (lat: number, lng: number, formattedName: string, city?: string, prov?: string) => {
+            // 2. Save everything to backend settings
+            await notificationsApi.updateSettings({
+                lat: lat,
+                lng: lng,
+                city: city || null,
+                province: prov || null
+            } as any);
+
+            // 3. Sync with Push Service
+            updateServiceLocation(lat, lng);
+
+            // 4. Update local state
+            setSettings(prev => prev ? {
+                ...prev,
+                last_known_lat: lat,
+                last_known_lng: lng,
+                last_known_city: city,
+                last_known_province: prov,
+                updated_at: new Date().toISOString()
+            } : null);
+
+            setLocationName(formattedName);
+            success(`Ubicación actualizada: ${formattedName}`);
+        };
+
+        // --- PIPELINE STEP 1: GPS ---
+        const tryGps = (): Promise<{ lat: number, lng: number } | null> => {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) return resolve(null);
+
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    (err) => {
+                        console.warn('[Location] GPS Error:', err.message);
+                        resolve(null);
+                    },
+                    { timeout: 8000, enableHighAccuracy: true, maximumAge: 0 }
+                );
+            });
+        };
+
+        try {
+            // A. Attempt GPS
+            const coords = await tryGps();
+
+            if (coords) {
+                setPermissionStatus('granted'); // We got coords, so granted/prompt-accepted
+
+                setIsGeocoding(true);
+                // B. Reverse Geocode GPS Coords
+                const geo = await geocodeApi.reverse(coords.lat, coords.lng);
+                const formatted = formatLocation(geo);
+
+                if (formatted && geo?.address) {
+                    await saveLocation(coords.lat, coords.lng, formatted, geo.address.city || geo.address.municipality, geo.address.province);
+                    return; // SUCCESS EXIT
+                }
+
+                // If Reverse failed but we have Coords... 
+                // We could fallback to IP for NAME, but we have precise COORDS.
+                // However, user mandates "PROHIBIDO ... coordenadas ... texto genérico".
+                // We MUST have a name. One retry via IP for name only? 
+                // Using IP coords + IP name is safer consistency-wise than GPS coords + IP name (mismatch).
+                // So if Reverse fails, we consider GPS 'partial fail' and fall through to IP.
+                console.warn('[Location] GPS Reverse failed/empty, falling back to IP');
+            }
+
+            // --- PIPELINE STEP 2: IP FALLBACK ---
+            // If GPS denied, timed out, OR Reverse failed.
+
+
+            console.log('[Location] Attempting IP Fallback...');
+            const ipGeo = await geocodeApi.getByIp();
+            const ipFormatted = formatLocation(ipGeo);
+
+            if (ipFormatted && ipGeo) {
+                // ipGeo is the resolved object (lat, lon, address), unwrap check passed.
+
+                await saveLocation(
+                    Number(ipGeo.lat),
+                    Number(ipGeo.lon),
+                    ipFormatted,
+                    ipGeo.address.city,
+                    ipGeo.address.province
+                );
+                return; // SUCCESS EXIT
+            }
+
+            // --- PIPELINE STEP 3: ULTIMATE FAILURE ---
+            // Both GPS and IP failed. This implies network is practically dead or API down.
+            console.error('[Location] All methods failed');
+            error('No se pudo determinar tu ubicación. Verificá tu conexión.');
+
+        } catch (e) {
+            console.error('[Location] Critical Pipeline Error:', e);
+            error('Hubo un error al actualizar la ubicación.');
+        } finally {
+            setSaving(false);
+            setIsGeocoding(false);
+        }
     };
 
     if (loading) return (

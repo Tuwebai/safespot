@@ -40,16 +40,6 @@ function checkRateLimit(ip) {
 /**
  * GET /api/geocode/search
  * Proxy for Nominatim geocoding search
- * 
- * Query params:
- * - q: search query (required)
- * - limit: max results (default 5, max 10)
- * - countrycodes: comma-separated country codes (optional, default 'ar')
- * 
- * Why this solves the mobile issue:
- * - Nominatim blocks direct browser requests from mobile (User-Agent detection)
- * - CORS headers are inconsistent on mobile browsers
- * - Backend proxy has stable User-Agent and no CORS restrictions
  */
 router.get('/search', validate(geocodeSearchSchema, 'query'), async (req, res) => {
     try {
@@ -297,6 +287,115 @@ router.get('/reverse', validate(reverseGeocodeSchema, 'query'), async (req, res)
         res.status(500).json({
             error: 'INTERNAL_ERROR',
             message: 'Error interno al obtener la dirección'
+        });
+    }
+});
+
+/**
+ * GET /api/geocode/ip
+ * IP-based geolocation fallback
+ * Used when GPS permission is denied or fails.
+ */
+router.get('/ip', async (req, res) => {
+    try {
+        let clientIp = req.ip || req.connection.remoteAddress || '';
+
+        // Handle localhost/private IPs by resolving REAL Public IP
+        // Enterprise Solution: Never mock, resolve the actual developer location.
+        if (clientIp === '::1' || clientIp === '127.0.0.1' || clientIp.includes('192.168.')) {
+            try {
+                // 1. Get Public IP of the server/dev machine
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                if (ipResponse.ok) {
+                    const ipData = await ipResponse.json();
+                    clientIp = ipData.ip; // Use real public IP for the next step
+                } else {
+                    throw new Error('Could not resolve public IP');
+                }
+            } catch (e) {
+                console.warn('Failed to resolve public IP for localhost, using fallback');
+                // Only use static fallback if we literally can't get internet access to check IP
+                // This keeps it robust but prefers real data.
+                return res.json({
+                    success: true,
+                    data: {
+                        source: 'ip_fallback_dev',
+                        lat: -34.6037,
+                        lon: -58.3816,
+                        display_name: 'Buenos Aires, Argentina (Dev Fallback)',
+                        address: {
+                            city: 'Buenos Aires',
+                            province: 'Buenos Aires',
+                            country: 'Argentina'
+                        }
+                    }
+                });
+            }
+        }
+
+        // Fix for proxies (e.g. Netlify/Vercel)
+        if (req.headers['x-forwarded-for']) {
+            clientIp = req.headers['x-forwarded-for'].split(',')[0].trim();
+        }
+
+        // Rate limit check
+        if (!checkRateLimit(clientIp)) {
+            return res.status(429).json({
+                error: 'RATE_LIMIT_EXCEEDED',
+                message: 'Demasiadas solicitudes.'
+            });
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        // Use ipapi.co (Free tier: 1000/day, fairly reliable for City/Region)
+        // Alternative: ip-api.com (HTTP only for free) -> inconsistent with HTTPS site.
+        // ipapi.co is HTTPS compatible.
+        const response = await fetch(`https://ipapi.co/${clientIp}/json/`, {
+            signal: controller.signal,
+            headers: {
+                'User-Agent': 'SafeSpot/1.0'
+            }
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`IP Geo provider failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.reason || 'IP Geo provider error');
+        }
+
+        // Normalize
+        const city = data.city;
+        const region = data.region; // Province/State
+
+        res.json({
+            success: true,
+            data: {
+                source: 'ip',
+                lat: data.latitude,
+                lon: data.longitude,
+                display_name: `${city}, ${region}, ${data.country_name}`,
+                address: {
+                    city: city,
+                    province: region,
+                    country: data.country_name
+                }
+            }
+        });
+
+    } catch (error) {
+        logError(error, req);
+        // Fallback for IP failure? We really can't do much else without input.
+        res.status(502).json({
+            error: 'IP_GEO_ERROR',
+            message: 'No pudimos detectar tu ubicación por IP.'
         });
     }
 });
