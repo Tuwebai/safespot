@@ -21,6 +21,7 @@ const MisFavoritos = lazyRetry(() => import('@/pages/MisFavoritos').then(m => ({
 const ZoneAlertsPage = lazyRetry(() => import('@/pages/ZoneAlertsPage').then(m => ({ default: m.ZoneAlertsPage })), 'ZoneAlertsPage')
 const TerminosPage = lazyRetry(() => import('@/pages/TerminosPage'), 'Terminos')
 const PrivacidadPage = lazyRetry(() => import('@/pages/PrivacidadPage'), 'Privacidad')
+const AboutPage = lazyRetry(() => import('@/pages/AboutPage'), 'About')
 const NotificationsPage = lazyRetry(() => import('@/pages/NotificationsPage'), 'Notifications')
 const PublicProfile = lazyRetry(() => import('@/pages/PublicProfile').then(m => ({ default: m.PublicProfile })), 'PublicProfile')
 const FollowsPage = lazyRetry(() => import('@/pages/FollowsPage').then(m => ({ default: m.default })), 'FollowsPage')
@@ -109,6 +110,7 @@ function App() {
                   <Route path="/notificaciones" element={<NotificationsPage />} />
                   <Route path="/terminos" element={<TerminosPage />} />
                   <Route path="/privacidad" element={<PrivacidadPage />} />
+                  <Route path="/sobre-nosotros" element={<AboutPage />} />
                   <Route path="/usuario/:alias" element={<PublicProfile />} />
                   <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
                   <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />

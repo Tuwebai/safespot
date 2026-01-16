@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MapPin, Github, Twitter, Mail, MessageSquare } from 'lucide-react'
+import { MapPin, Github, Twitter, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { ContactModal } from '@/components/contact/ContactModal'
 
@@ -15,7 +15,7 @@ export function Footer() {
       <footer className="bg-dark-card border-t border-dark-border py-6">
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
           {/* Main Content Grid */}
-          <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             {/* Branding Column (Spans 2 columns) */}
             <div className="md:col-span-2">
               {/* Logo Group */}
@@ -121,6 +121,14 @@ export function Footer() {
               <ul className="space-y-2">
                 <li>
                   <Link
+                    to="/sobre-nosotros"
+                    className="text-foreground/70 hover:text-neon-green transition-colors"
+                  >
+                    Sobre Nosotros
+                  </Link>
+                </li>
+                <li>
+                  <Link
                     to="/terminos"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
@@ -145,26 +153,6 @@ export function Footer() {
               <p className="text-sm text-foreground/70">
                 © 2024 SafeSpot. Todos los derechos reservados.
               </p>
-
-              {/* Mobile Quick Actions Row */}
-              <div className="md:hidden flex items-center justify-center gap-6 mt-2">
-                <a
-                  href={donationLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-neon-green font-semibold hover:underline"
-                >
-                  💙 Apoyar
-                </a>
-                <span className="text-dark-border">|</span>
-                <button
-                  onClick={() => setIsContactOpen(true)}
-                  className="text-sm text-foreground/80 hover:text-neon-green flex items-center gap-1 font-medium"
-                >
-                  <MessageSquare className="w-3 h-3" />
-                  Contacto
-                </button>
-              </div>
             </div>
             <p className="text-sm text-foreground/70">
               Hecho con ❤️ para la comunidad
