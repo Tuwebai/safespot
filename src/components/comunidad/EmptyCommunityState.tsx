@@ -1,13 +1,17 @@
 import { Button } from '@/components/ui/button';
-import { Users, Share2 } from 'lucide-react';
+import { Users, Share2, MapPin } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useNavigate } from 'react-router-dom';
 
 interface EmptyCommunityStateProps {
     type: 'nearby' | 'global';
+    locality?: string | null;
+    isLocationMissing?: boolean;
 }
 
-export function EmptyCommunityState({ type }: EmptyCommunityStateProps) {
+export function EmptyCommunityState({ type, locality, isLocationMissing }: EmptyCommunityStateProps) {
     const { success, error } = useToast();
+    const navigate = useNavigate();
 
     const handleCopyLink = () => {
         const url = "https://safespot.tuweb-ai.com";
@@ -15,6 +19,33 @@ export function EmptyCommunityState({ type }: EmptyCommunityStateProps) {
             .then(() => success('Link copiado al portapapeles'))
             .catch(() => error('No se pudo copiar el link'));
     };
+
+    const handleConfigureLocation = () => {
+        navigate('/perfil/configuracion');
+    };
+
+    if (type === 'nearby' && isLocationMissing) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-center animate-in fade-in zoom-in duration-500">
+                <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-amber-500/20">
+                    <MapPin className="w-10 h-10 text-amber-500" />
+                </div>
+
+                <h3 className="text-xl font-semibold mb-2 text-foreground">
+                    Para ver personas cerca, actualizá tu ubicación
+                </h3>
+
+                <p className="text-muted-foreground max-w-sm mb-8">
+                    Configurá tu zona de alertas para encontrar usuarios en tu ciudad y recibir reportes relevantes.
+                </p>
+
+                <Button onClick={handleConfigureLocation} size="lg" className="gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Configurar Ubicación
+                </Button>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center animate-in fade-in zoom-in duration-500">
@@ -24,7 +55,7 @@ export function EmptyCommunityState({ type }: EmptyCommunityStateProps) {
 
             <h3 className="text-xl font-semibold mb-2 text-foreground">
                 {type === 'nearby'
-                    ? 'Todavía no hay personas cerca tuyo'
+                    ? (locality ? `No hay personas en ${locality}` : 'Todavía no hay personas cerca tuyo')
                     : 'Aún no hay usuarios en la comunidad'}
             </h3>
 

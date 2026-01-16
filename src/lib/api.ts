@@ -642,7 +642,7 @@ export const usersApi = {
   },
 
   /**
-   * Update user profile (e.g. avatar, theme)
+   * Update user profile (e.g. avatar, theme, alias)
    */
   updateProfile: async (data: {
     avatar_url?: string | null,
@@ -653,6 +653,22 @@ export const usersApi = {
   }): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile', {
       method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update user location (SSOT) - Enterprise Decoupling
+   * Sets current_city/province in anonymous_users
+   */
+  updateLocation: async (data: {
+    city: string,
+    province: string,
+    lat?: number,
+    lng?: number
+  }): Promise<UserProfile> => {
+    return apiRequest<UserProfile>('/users/profile/location', {
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
   },
@@ -759,8 +775,8 @@ export const usersApi = {
     return apiRequest<any[]>(`/users/recommendations`);
   },
 
-  getNearbyUsers: async (): Promise<UserProfile[]> => {
-    return apiRequest<UserProfile[]>(`/users/nearby`);
+  getNearbyUsers: async (): Promise<{ data: UserProfile[], meta: any }> => {
+    return apiRequest<{ data: UserProfile[], meta: any }>(`/users/nearby`);
   },
 
   getGlobalUsers: async (page = 1): Promise<UserProfile[]> => {

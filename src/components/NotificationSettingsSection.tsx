@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { notificationsApi, NotificationSettings, geocodeApi } from '@/lib/api';
+import { notificationsApi, NotificationSettings, geocodeApi, usersApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -148,20 +148,26 @@ export function NotificationSettingsSection() {
         };
 
         const saveLocation = async (lat: number, lng: number, formattedName: string, city?: string, prov?: string) => {
-            // 2. Save everything to backend settings
-            await notificationsApi.updateSettings({
-                lat: lat,
-                lng: lng,
-                city: city || null,
-                province: prov || null
-            } as any);
+            // 2. Save location to User Profile (SSOT) - Enterprise Decoupling
+            await usersApi.updateLocation({
+                city: city || '',
+                province: prov || '',
+                lat,
+                lng
+            });
 
-            // 3. Sync with Push Service
+            // 3. Sync with Push Service (still needed for geo-push if we use it)
             updateServiceLocation(lat, lng);
 
             // 4. Update local state
+            // We still update 'settings' state locally for immediate UI feedback 
+            // even though the data lives in profile now.
+            //Ideally, we should fetch profile again, but for optimistic UI we update here.
             setSettings(prev => prev ? {
                 ...prev,
+                // These are now just local cache/optimistic values, 
+                // backend reads from anonymous_users.
+                // We keep them in state to show 'Ubicación guardada: ...'
                 last_known_lat: lat,
                 last_known_lng: lng,
                 last_known_city: city,

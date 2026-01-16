@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 export function Comunidad() {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'nearby' | 'global'>('nearby');
+    const [userLocality, setUserLocality] = useState<string | null>(null);
+    const [hasNoLocation, setHasNoLocation] = useState(false);
 
     // Fetch Nearby Users
     const {
@@ -19,7 +21,31 @@ export function Comunidad() {
         error: errorNearby
     } = useQuery({
         queryKey: ['users', 'nearby'],
-        queryFn: usersApi.getNearbyUsers,
+        queryFn: async () => {
+            const response = await usersApi.getNearbyUsers();
+
+            // Handle both wrapped response { data, meta } and potential legacy array
+            // though we updated api.ts, runtime safety is good.
+            const meta = (response as any).meta || {};
+            const items = (response as any).data || (Array.isArray(response) ? response : []);
+
+            if (typeof meta.has_location_configured === 'boolean') {
+                // Explicit flag from backend (Best Case)
+                setHasNoLocation(!meta.has_location_configured);
+            } else {
+                // Fallback logic if backend didn't return flag (Shouldn't happen with our fix)
+                // If locality is null, we assume no location configured
+                setHasNoLocation(!meta.locality);
+            }
+
+            if (meta.locality) {
+                setUserLocality(meta.locality);
+            } else {
+                setUserLocality(null);
+            }
+
+            return items;
+        },
         enabled: activeTab === 'nearby',
         staleTime: 1000 * 60 * 5, // 5 minutes cache
     });
@@ -82,7 +108,11 @@ export function Comunidad() {
                         </button>
                     </div>
                 ) : isEmpty ? (
-                    <EmptyCommunityState type={activeTab} />
+                    <EmptyCommunityState
+                        type={activeTab}
+                        locality={userLocality}
+                        isLocationMissing={activeTab === 'nearby' && hasNoLocation}
+                    />
                 ) : (
                     <div className="grid gap-4">
                         {users?.map((user) => (

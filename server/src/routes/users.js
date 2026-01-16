@@ -805,40 +805,130 @@ router.get('/recommendations', requireAnonymousId, async (req, res) => {
  * GET /api/users/nearby
  * Get users in the same locality/city
  */
+/**
+ * LOCATION SSOT
+ *
+ * The user's location MUST be read from anonymous_users.
+ * notification_settings columns (last_known_city/province) are DEPRECATED 
+ * and MUST NOT be used as a location source for queries.
+ *
+ * Breaking this invariant will cause:
+ * - Empty "People Nearby" (if user has alerts off)
+ * - Privacy bugs (showing user when they expect invisibility, or vice versa)
+ * - UX inconsistency
+ */
+
+/**
+ * PATCH /api/users/profile/location
+ * Explicitly updates the user's current location (SSOT).
+ * Does NOT affect notification settings.
+ */
+router.patch('/profile/location', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+    const { city, province, lat, lng } = req.body;
+
+    if (!city || !province) {
+      return res.status(400).json({ error: 'City and Province are required' });
+    }
+
+    // Update SSOT in anonymous_users
+    const result = await queryWithRLS(
+      anonymousId,
+      `UPDATE anonymous_users 
+       SET current_city = $2, 
+           current_province = $3, 
+           last_geo_update = NOW()
+       WHERE anonymous_id = $1
+       RETURNING current_city, current_province`,
+      [anonymousId, city, province]
+    );
+
+    // Optional: We might desire to update lat/lng if we stored them in profile too.
+    // For now, based on migration, we added city/province.
+    // Lat/Lng might still live in settings or we should have migrated them too?
+    // User Prompt "Ajuste 2" body included lat/lng.
+    // "Migración de Ubicación... current_city, current_province, last_geo_update".
+    // It didn't explicitly say lat/lng columns in the table migration, but usually we need them for radius.
+    // Let's stick to city/province for "People Nearby" text logic as requested.
+    // But wait, "People Nearby" query uses locality string, so city/province is enough for that.
+    // Geo-queries need lat/lng. 
+    // IF we want full decoupling, `anonymous_users` should probably have git lat/lng or PostGIS point.
+    // The instructions said "current_city, current_province".
+    // I will stick to what was migrated.
+
+    // Update Legacy Settings (DEPRECATED but kept for consistency if needed during transition)
+    // We do NOT update them here to enforce decoupling? 
+    // "notification_settings NO guarda ubicación: Solo preferencias". -> So we STOP updating them here.
+    // Correct. We only update profile.
+
+    res.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
+/**
+ * GET /api/users/nearby
+ * Get users in the same locality/city
+ * Uses anonymous_users as SSOT.
+ */
 router.get('/nearby', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
 
-    // 1. Determine User's Top Locality (same logic as recommendations)
-    const localityResult = await queryWithRLS(
+    // 1. Determine User's Top Locality from SSOT (anonymous_users)
+    const profileResult = await queryWithRLS(
       anonymousId,
-      `SELECT locality
-       FROM reports
-       WHERE anonymous_id = $1 AND locality IS NOT NULL AND locality != ''
-       GROUP BY locality
-       ORDER BY COUNT(*) DESC
-       LIMIT 1`,
+      `SELECT current_city as locality
+       FROM anonymous_users 
+       WHERE anonymous_id = $1`,
       [anonymousId]
     );
 
     let locality = null;
-    if (localityResult.rows.length > 0) {
-      locality = localityResult.rows[0].locality;
+    let source = 'unknown';
+
+    if (profileResult.rows.length > 0 && profileResult.rows[0].locality) {
+      locality = profileResult.rows[0].locality;
+      source = 'profile';
+    } else {
+      // Fallback: Legacy Reports (only if totally new user with no location set)
+      const reportResult = await queryWithRLS(
+        anonymousId,
+        `SELECT locality
+         FROM reports
+         WHERE anonymous_id = $1 AND locality IS NOT NULL AND locality != ''
+         GROUP BY locality
+         ORDER BY COUNT(*) DESC
+         LIMIT 1`,
+        [anonymousId]
+      );
+
+      if (reportResult.rows.length > 0) {
+        locality = reportResult.rows[0].locality;
+        source = 'reports_fallback';
+      }
     }
 
     if (!locality) {
-      // If no locality found for user, return empty list (client handles empty state)
       return res.json({
         success: true,
         data: [],
-        meta: { locality: null }
+        meta: {
+          locality: null,
+          has_location_configured: false,
+          source: null
+        }
       });
     }
 
     // 2. Fetch users in that locality
-    // Exclude current user and already followed users (optional, but requested "Personas Cerca" usually implies discovery)
-    // Prompt says "Excluir al usuario logueado", doesn't explicitly say exclude followed, but it's good practice for discovery.
-    // However, "Community" might imply seeing your neighbors regardless. Let's stick to just excluding self for now as per prompt "Excluir al usuario logueado".
+    // Join on anonymous_users (SSOT) instead of settings/reports
     const usersResult = await queryWithRLS(
       anonymousId,
       `SELECT DISTINCT ON (u.anonymous_id) 
@@ -850,10 +940,10 @@ router.get('/nearby', requireAnonymousId, async (req, res) => {
          $2 as common_locality,
          EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
        FROM anonymous_users u
-       JOIN reports r ON u.anonymous_id = r.anonymous_id
-       WHERE r.locality = $2
-         AND u.anonymous_id != $1
+       WHERE 
+         u.anonymous_id != $1
          AND u.alias IS NOT NULL AND u.alias != ''
+         AND u.current_city = $2
        ORDER BY u.anonymous_id, u.last_active_at DESC
        LIMIT 50`,
       [anonymousId, locality]
@@ -862,7 +952,11 @@ router.get('/nearby', requireAnonymousId, async (req, res) => {
     res.json({
       success: true,
       data: usersResult.rows,
-      meta: { locality }
+      meta: {
+        locality,
+        has_location_configured: true,
+        source
+      }
     });
 
   } catch (error) {
