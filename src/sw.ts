@@ -8,7 +8,119 @@ import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
-import { BackgroundSyncPlugin } from 'workbox-background-sync';
+import { BackgroundSyncPlugin, Queue } from 'workbox-background-sync';
+
+// ... (other imports)
+
+// ============================================
+// REAL-TIME DELIVERY QUEUE (Background Sync)
+// ============================================
+
+// Queue for retryable delivery ACKs
+// This ensures that if the device receives a push but has flaky network,
+// the "Delivered" ACK will eventually reach the server.
+const deliveryQueue = new Queue('safespot-delivery-acks', {
+    maxRetentionTime: 24 * 60 // Retry for 24 hours
+});
+
+async function sendDeliveryAck(data: any) {
+    const { roomId, anonymousId } = data;
+
+    // Validate payload
+    if (!roomId || !anonymousId) {
+        console.warn('[SW] Cannot send ACK: missing roomId or anonymousId', data);
+        return;
+    }
+
+    const url = `/api/chats/${roomId}/delivered`;
+    const request = new Request(url, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-anonymous-id': anonymousId // Authenticate as recipient
+        }
+    });
+
+    try {
+        console.log(`[SW] Sending Delivery ACK for Room ${roomId}`);
+        const response = await fetch(request.clone());
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+        console.log('[SW] Delivery ACK sent successfully');
+    } catch (err) {
+        console.warn('[SW] Delivery ACK failed (Network/Server), queuing for background sync:', err);
+        await deliveryQueue.pushRequest({ request });
+    }
+}
+
+self.addEventListener('push', (event) => {
+    console.log('[SW] Push received:', event);
+
+    let data = {
+        title: '⚠️ Nuevo reporte cerca tuyo',
+        body: 'Hay actividad en tu zona',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: 'safespot-notification',
+        data: { url: '/mapa' },
+        actions: [],
+    };
+
+    if (event.data) {
+        try {
+            data = event.data.json();
+        } catch (e) {
+            console.error('[SW] Error parsing push data:', e);
+        }
+    }
+
+    const options = {
+        body: data.body,
+        icon: data.icon,
+        badge: data.badge,
+        tag: data.tag,
+        vibrate: [100, 50, 100],
+        data: data.data,
+        actions: data.actions || [],
+        requireInteraction: false,
+    };
+
+    const notificationPromise = self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clientList) => {
+            const hasVisibleClient = clientList.some(
+                (client) =>
+                    client.visibilityState === 'visible' &&
+                    client.url.startsWith(self.location.origin)
+            );
+
+            // ✅ LOGICAL ACK: Send it regardless of UI state
+            // "Delivered" means device received it, not necessarily user saw it
+            // We use event.waitUntil to keep SW alive for this
+            const payloadData = data.data as any;
+            const ackPromise = (payloadData && payloadData.roomId)
+                ? sendDeliveryAck(payloadData)
+                : Promise.resolve();
+
+            return ackPromise.then(() => {
+                if (hasVisibleClient) {
+                    console.log('[SW] App visible - Suppressing native notification');
+                    clientList.forEach((client) => {
+                        client.postMessage({
+                            type: 'IN_APP_NOTIFICATION',
+                            payload: data,
+                        });
+                    });
+                    return;
+                }
+
+                return self.registration.showNotification(data.title, options);
+            });
+        });
+
+    event.waitUntil(notificationPromise);
+});
 
 declare let self: ServiceWorkerGlobalScope;
 
@@ -458,63 +570,7 @@ registerRoute(navigationRoute);
 // PUSH NOTIFICATIONS (unchanged)
 // ============================================
 
-self.addEventListener('push', (event) => {
-    console.log('[SW] Push received:', event);
-
-    let data = {
-        title: '⚠️ Nuevo reporte cerca tuyo',
-        body: 'Hay actividad en tu zona',
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: 'safespot-notification',
-        data: { url: '/mapa' },
-        actions: [],
-    };
-
-    if (event.data) {
-        try {
-            data = event.data.json();
-        } catch (e) {
-            console.error('[SW] Error parsing push data:', e);
-        }
-    }
-
-    const options = {
-        body: data.body,
-        icon: data.icon,
-        badge: data.badge,
-        tag: data.tag,
-        vibrate: [100, 50, 100],
-        data: data.data,
-        actions: data.actions || [],
-        requireInteraction: false,
-    };
-
-    event.waitUntil(
-        self.clients
-            .matchAll({ type: 'window', includeUncontrolled: true })
-            .then((clientList) => {
-                const hasVisibleClient = clientList.some(
-                    (client) =>
-                        client.visibilityState === 'visible' &&
-                        client.url.startsWith(self.location.origin)
-                );
-
-                if (hasVisibleClient) {
-                    console.log('[SW] App visible - Suppressing native notification');
-                    clientList.forEach((client) => {
-                        client.postMessage({
-                            type: 'IN_APP_NOTIFICATION',
-                            payload: data,
-                        });
-                    });
-                    return;
-                }
-
-                return self.registration.showNotification(data.title, options);
-            })
-    );
-});
+// (Old Push Listener Removed)
 
 self.addEventListener('notificationclick', (event: any) => {
     console.log('[SW] Notification click');
