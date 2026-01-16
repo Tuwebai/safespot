@@ -100,7 +100,7 @@ export function usePushNotifications() {
                 });
                 location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             } catch (e) {
-                console.warn('Location access denied or error. Subscribing without location (Chat/Activity only).', e);
+                console.log('[Push] GPS unavailable (Timeout/Denied). Subscribing with generic location scope.');
                 // Proceed with location = null
             }
 

@@ -42,6 +42,20 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.type === 'FORCE_RELOAD') {
       console.log('[SW] Force reload requested by new SW version');
+
+      // CIRCUIT BREAKER: Prevent infinite reload loops
+      // We check if we just reloaded for this exact reason
+
+      if (sessionStorage.getItem('sw_pending_reload')) {
+        console.warn('[SW] Reload loop detected. Aborting force reload.');
+        sessionStorage.removeItem('sw_pending_reload'); // Clear for next valid attempt
+        return;
+      }
+
+      // Mark that we are reloading intentionally
+      sessionStorage.setItem('sw_pending_reload', 'true');
+
+      // Reload safely
       window.location.reload();
     }
   });

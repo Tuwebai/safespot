@@ -8,6 +8,9 @@ import packageJson from './package.json'
 export default defineConfig({
   define: {
     'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
+    // CRITICAL: Inject unique version per build (SemVer + Timestamp)
+    // This guarantees that every new build is treated as a fresh SW version
+    '__SW_VERSION__': JSON.stringify(`${packageJson.version}_${Date.now()}`),
   },
   plugins: [
     react(),

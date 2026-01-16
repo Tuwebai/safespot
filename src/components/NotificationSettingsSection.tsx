@@ -203,6 +203,7 @@ export function NotificationSettingsSection() {
 
                 if (formatted && geo?.address) {
                     await saveLocation(coords.lat, coords.lng, formatted, geo.address.city || geo.address.municipality, geo.address.province);
+                    console.log('[Location] ✅ GPS Success:', formatted);
                     return; // SUCCESS EXIT
                 }
 
@@ -233,6 +234,7 @@ export function NotificationSettingsSection() {
                     ipGeo.address.city,
                     ipGeo.address.province
                 );
+                console.log('[Location] ✅ IP Fallback Success:', ipFormatted);
                 return; // SUCCESS EXIT
             }
 
