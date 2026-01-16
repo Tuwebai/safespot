@@ -362,18 +362,22 @@ app.use((err, req, res, next) => {
 // SERVER START
 // ============================================
 
-const server = app.listen(PORT, async () => {
-  console.log('🚀 SafeSpot API Server');
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
-  console.log('✅ Server ready to accept requests');
-});
+let server;
 
-// INCREASE TIMEOUTS FOR SSE STABILITY
-// Prevent random ERR_CONNECTION_RESET in browsers
-server.keepAliveTimeout = 120000; // 120s
-server.headersTimeout = 130000;  // 130s
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, async () => {
+    console.log('🚀 SafeSpot API Server');
+    console.log(`📍 Port: ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
+    console.log('✅ Server ready to accept requests');
+  });
+
+  // INCREASE TIMEOUTS FOR SSE STABILITY
+  // Prevent random ERR_CONNECTION_RESET in browsers
+  server.keepAliveTimeout = 120000; // 120s
+  server.headersTimeout = 130000;  // 130s
+}
 
 // ============================================
 // GRACEFUL SHUTDOWN

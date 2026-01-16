@@ -102,7 +102,6 @@ class SSEPool {
     }
 
     private requestConnectionOwnership(url: string) {
-        const entry = this.connections.get(url);
         // Don't request if we already have a source or are waiting for one
         // Simpler check prevents spamming ownership queries
 

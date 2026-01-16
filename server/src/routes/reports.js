@@ -661,7 +661,7 @@ router.get('/:id', async (req, res, next) => {
 
     return res.json({
       success: true,
-      data: enrichedReport
+      data: report
     });
   } catch (err) {
     next(err);
@@ -698,7 +698,7 @@ router.post('/',
       // Check for duplicate report (same anonymous_id, category, zone, title within last 10 minutes)
       const title = req.body.title.trim();
       const category = req.body.category;
-      const zone = req.body.zone;
+      const zone = req.body.zone || null;
 
       // Calculate timestamp 10 minutes ago
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -752,8 +752,8 @@ router.post('/',
       // SECURITY: Sanitize all user input BEFORE database insert
       const sanitizedTitle = sanitizeText(req.body.title, 'report.title', sanitizeContext);
       const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
-      const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext);
-      const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext);
+      const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext) || null;
+      const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext) || null;
 
       // GEOLOCATION: Get province/locality from Georef API (Argentina)
       let province = null;
@@ -766,9 +766,9 @@ router.post('/',
             parseFloat(req.body.latitude),
             parseFloat(req.body.longitude)
           );
-          province = geoData.province;
-          locality = geoData.locality;
-          department = geoData.department;
+          province = geoData.province || null;
+          locality = geoData.locality || null;
+          department = geoData.department || null;
           logSuccess('Georef resolved', { province, locality });
         } catch (geoError) {
           // Non-blocking: continue without province data
@@ -882,7 +882,9 @@ router.post('/',
       }
 
       res.status(500).json({
-        error: 'Failed to create report'
+        error: 'Failed to create report',
+        details: error.message,
+        stack: error.stack
       });
     }
   });
