@@ -603,6 +603,8 @@ export interface UserProfile {
   total_votes: number;
   points: number;
   level: number;
+  id?: string;
+  email?: string;
   alias?: string | null;
   avatar_url?: string | null;
   theme?: string;

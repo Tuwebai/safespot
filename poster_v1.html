@@ -1,0 +1,155 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeSpot Promo Poster</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            width: 800px; /* A4-ish ratio width */
+            height: 1131px; /* A4-ish ratio height */
+            background-color: #ffffff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            box-sizing: border-box;
+            border: 1px solid #eee; /* Just to see boundary if viewing in browser */
+        }
+
+        .header {
+            background-color: #DC2626; /* Urgent Red */
+            width: 100%;
+            padding: 60px 40px;
+            text-align: center;
+            color: white;
+        }
+
+        .title {
+            font-size: 64px;
+            font-weight: 900;
+            line-height: 1.1;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            margin-top: 20px;
+            font-size: 28px;
+            font-weight: 400;
+            opacity: 0.95;
+            max-width: 90%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .qr-container {
+            background: white;
+            padding: 30px;
+            border: 8px solid #000;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            margin-bottom: 40px;
+        }
+
+        #qrcode {
+            /* QR code will be injected here */
+        }
+
+        .cta-box {
+            background-color: #000;
+            color: #fff;
+            padding: 20px 60px;
+            border-radius: 100px;
+            margin-top: 20px;
+        }
+
+        .cta-text {
+            font-size: 42px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .footer {
+            width: 100%;
+            padding: 40px;
+            background-color: #f8f9fa;
+            text-align: center;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .footer-text {
+            font-size: 20px;
+            color: #4b5563;
+            font-weight: 500;
+        }
+
+        .highlight {
+            color: #FEF08A; /* Yellow highlight text */
+        }
+        
+        .arrow {
+            font-size: 60px;
+            margin-bottom: 10px;
+            color: #000;
+            animation: bounce 2s infinite;
+        }
+
+        /* Helper for high contrast black & white version logic if needed, 
+           but we'll stick to Red/Black/White as requested */
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="title">📢 Reportá robos<br>en tiempo real</h1>
+        <p class="subtitle">Ayudá a que tu barrio sea más seguro.<br>Alertas ciudadanas al instante.</p>
+    </div>
+
+    <div class="content">
+        <div class="arrow">⬇️</div>
+        
+        <div class="qr-container">
+            <div id="qrcode"></div>
+        </div>
+
+        <div class="cta-box">
+            <span class="cta-text">Escaneá acá</span>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p class="footer-text">safespot.tuweb-ai.com • Seguridad Comunitaria</p>
+    </div>
+
+    <script type="text/javascript">
+        new QRCode(document.getElementById("qrcode"), {
+            text: "https://safespot.tuweb-ai.com/?from=qr_local",
+            width: 400,
+            height: 400,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    </script>
+</body>
+</html>

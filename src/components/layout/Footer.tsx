@@ -132,7 +132,7 @@ export function Footer() {
                     to="/privacidad"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
-                    Política de Privacidad
+                    Privacidad y Seguridad
                   </Link>
                 </li>
               </ul>
