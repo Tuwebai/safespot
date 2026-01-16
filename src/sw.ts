@@ -303,8 +303,10 @@ self.addEventListener('activate', (event) => {
             await Promise.all(
                 cacheNames.map(cacheName => {
                     // Keep only current version caches
-                    if (!cacheName.includes(SW_VERSION)) {
-                        console.log('[SW] Deleting old cache:', cacheName);
+                    // ✅ SAFETY: Only delete caches that we explicitly manage (safespot-)
+                    // and that do NOT match the current version.
+                    if (cacheName.startsWith('safespot-') && !cacheName.includes(SW_VERSION)) {
+                        console.log(`[SW] Deleting stale cache: ${cacheName} (Current: ${SW_VERSION})`);
                         return caches.delete(cacheName);
                     }
                 })
@@ -410,7 +412,9 @@ type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 // E. HTML Navigation: NetworkFirst WITHOUT caching (CRITICAL FIX)
 const navigationRoute = new NavigationRoute(
     async ({ request }) => {
-        const TIMEOUT = 2000;
+        // ✅ TUNING: 5s timeout for slow 3G/4G
+        // 2s was too aggressive and caused false offline positives
+        const TIMEOUT = 5000;
 
         // CRITICAL FIX: Always fetch HTML from network, NEVER cache
         // This prevents stale HTML from being served after deploys
@@ -427,7 +431,6 @@ const navigationRoute = new NavigationRoute(
             const response = await Promise.race([networkPromise, timeoutPromise]);
             if (response.ok) {
                 // CRITICAL: Do NOT cache HTML
-                // Old code: cache.put(request, response.clone());
                 return response;  // Serve fresh HTML directly
             }
             throw new Error(`Response not ok: ${response.status}`);
@@ -436,7 +439,7 @@ const navigationRoute = new NavigationRoute(
             // This prevents serving old version when network fails
             console.warn('[SW] HTML navigation failed, showing offline page');
             return new Response(
-                '<!DOCTYPE html><html><head><title>Offline</title></head><body><h1>Sin conexión</h1><p>Por favor, verifica tu conexión a internet.</p></body></html>',
+                '<!DOCTYPE html><html><head><title>Offline</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#020617;color:white;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:system-ui,-apple-system,sans-serif;text-align:center;"><div><h1 style="color:#00ff88;margin-bottom:1rem">Sin conexión</h1><p>No pudimos cargar la última versión.</p><button onclick="window.location.reload()" style="background:#00ff88;color:#020617;border:none;padding:12px 24px;border-radius:99px;font-weight:bold;cursor:pointer;margin-top:20px">Reintentar</button></div></body></html>',
                 {
                     status: 503,
                     headers: { 'Content-Type': 'text/html' }

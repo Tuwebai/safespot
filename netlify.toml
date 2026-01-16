@@ -1,18 +1,16 @@
+# ENTERPRISE CACHING STRATEGY
+# Goal: Zero State Clients + Immutable Assets
+
 [build]
-  command = "npm run build"
   publish = "dist"
+  command = "npm run build"
 
-[build.environment]
-  NODE_VERSION = "20"
-  NPM_FLAGS = "--legacy-peer-deps"
-
-# CRITICAL FIX: Cache headers for HTML (never cache)
+# 1. HTML & SW must NEVER be cached by the browser
+# This guarantees users always check for new versions
 [[headers]]
-  for = "/"
+  for = "/*"
   [headers.values]
-    Cache-Control = "no-cache, no-store, must-revalidate"
-    Pragma = "no-cache"
-    Expires = "0"
+    Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
   for = "/index.html"
@@ -21,13 +19,6 @@
     Pragma = "no-cache"
     Expires = "0"
 
-# Hashed assets can be cached forever (immutable)
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# Service Worker should never be cached
 [[headers]]
   for = "/sw.js"
   [headers.values]
@@ -35,13 +26,18 @@
     Pragma = "no-cache"
     Expires = "0"
 
+# 2. Hashed Assets are Immutable
+# JS/CSS/Images with hashes can be cached forever
 [[headers]]
-  for = "/manifest.webmanifest"
+  for = "/assets/*"
   [headers.values]
-    Cache-Control = "no-cache, no-store, must-revalidate"
+    Cache-Control = "public, max-age=31536000, immutable"
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
+# 3. Security Headers (Defense in Depth)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

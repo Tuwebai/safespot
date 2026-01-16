@@ -37,26 +37,30 @@ if ('serviceWorker' in navigator) {
       });
   });
 
-  // CRITICAL FIX: Handle FORCE_RELOAD message from SW
-  // When SW updates, it sends this message to force clients to reload
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'FORCE_RELOAD') {
-      console.log('[SW] Force reload requested by new SW version');
+  // CRITICAL FIX: Handle Controller Change (Standard SW lifecycle)
+  // This event fires when the new SW takes control (clients.claim())
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('[SW] Controller changed. Reloading...');
 
-      // CIRCUIT BREAKER: Prevent infinite reload loops
-      // We check if we just reloaded for this exact reason
-
-      if (sessionStorage.getItem('sw_pending_reload')) {
-        console.warn('[SW] Reload loop detected. Aborting force reload.');
-        sessionStorage.removeItem('sw_pending_reload'); // Clear for next valid attempt
+    // PROTECTION: Prevent infinite loops if SW keeps claiming controlling
+    if (sessionStorage.getItem('sw_refreshed_ts')) {
+      const lastRefresh = parseInt(sessionStorage.getItem('sw_refreshed_ts') || '0');
+      if (Date.now() - lastRefresh < 10000) {
+        console.warn('[SW] Loop detected. Aborting reload.');
         return;
       }
+    }
 
-      // Mark that we are reloading intentionally
-      sessionStorage.setItem('sw_pending_reload', 'true');
+    sessionStorage.setItem('sw_refreshed_ts', String(Date.now()));
+    window.location.reload();
+  });
 
-      // Reload safely
-      window.location.reload();
+  // Keep FORCE_RELOAD as backup signal
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'FORCE_RELOAD') {
+      // logic handled by controllerchange usually, but keeping as fallback
+      // merely logging here to trace
+      console.log('[SW] Received FORCE_RELOAD signal');
     }
   });
 }
