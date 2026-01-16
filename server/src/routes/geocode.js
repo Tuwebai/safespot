@@ -168,7 +168,12 @@ async function fetchGeoref(lat, lon, signal) {
 
         // Priority for City: Municipio > Departamento
         // Note: Georef sometimes returns 'null' string or actual null
-        const city = (muni && muni !== 'null') ? muni : depto;
+        let city = (muni && muni !== 'null') ? muni : depto;
+
+        // Final fallback: If city is still null (e.g. some rural areas), uses Province to avoid 'null, Province'
+        if (!city || city === 'null') {
+            city = prov;
+        }
 
         if (!prov) return null; // If no province, it's likely not useful or outside AR logic
 
@@ -309,13 +314,13 @@ router.get('/ip', async (req, res) => {
                 if (ipResponse.ok) {
                     const ipData = await ipResponse.json();
                     clientIp = ipData.ip; // Use real public IP for the next step
+                    console.log(`[Geocode] 🌍 Localhost detected. Resolved Public IP: ${clientIp}`);
                 } else {
                     throw new Error('Could not resolve public IP');
                 }
             } catch (e) {
                 console.warn('Failed to resolve public IP for localhost, using fallback');
-                // Only use static fallback if we literally can't get internet access to check IP
-                // This keeps it robust but prefers real data.
+                // Only use static fallback if we literally can't get internet access
                 return res.json({
                     success: true,
                     data: {
@@ -349,43 +354,76 @@ router.get('/ip', async (req, res) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        // Use ipapi.co (Free tier: 1000/day, fairly reliable for City/Region)
-        // Alternative: ip-api.com (HTTP only for free) -> inconsistent with HTTPS site.
-        // ipapi.co is HTTPS compatible.
-        const response = await fetch(`https://ipapi.co/${clientIp}/json/`, {
-            signal: controller.signal,
-            headers: {
-                'User-Agent': 'SafeSpot/1.0'
+        let data = null;
+        let provider = 'ipapi';
+
+        try {
+            // 1. Try ipapi.co (HTTPS, Reliable)
+            const response = await fetch(`https://ipapi.co/${clientIp}/json/`, {
+                signal: controller.signal,
+                headers: { 'User-Agent': 'SafeSpot/1.0' }
+            });
+            if (response.ok) {
+                const json = await response.json();
+                if (!json.error) {
+                    data = {
+                        lat: json.latitude,
+                        lon: json.longitude,
+                        city: json.city,
+                        region: json.region, // Province
+                        country: json.country_name
+                    };
+                }
             }
-        });
+        } catch (e) {
+            console.warn('[Geocode] ipapi.co failed, trying fallback...', e.message);
+        }
+
+        // 2. Fallback: ip-api.com (HTTP, Fast, lenient)
+        if (!data) {
+            try {
+                // ip-api.com doesn't support HTTPS on free tier, but server-to-server HTTP is fine
+                const fallbackResponse = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,message,country,regionName,city,lat,lon`);
+                if (fallbackResponse.ok) {
+                    const json = await fallbackResponse.json();
+                    if (json.status === 'success') {
+                        provider = 'ip-api';
+                        data = {
+                            lat: json.lat,
+                            lon: json.lon,
+                            city: json.city,
+                            region: json.regionName,
+                            country: json.country
+                        };
+                    }
+                }
+            } catch (e) {
+                console.error('[Geocode] ip-api.com fallback failed:', e.message);
+            }
+        }
 
         clearTimeout(timeoutId);
 
-        if (!response.ok) {
-            throw new Error(`IP Geo provider failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(data.reason || 'IP Geo provider error');
+        if (!data) {
+            throw new Error('All IP Geo providers failed');
         }
 
         // Normalize
-        const city = data.city;
-        const region = data.region; // Province/State
+        // Ensure City is present. If city is missing/generic, use Region.
+        const city = data.city || data.region;
+        const region = data.region || data.city;
 
         res.json({
             success: true,
             data: {
-                source: 'ip',
-                lat: data.latitude,
-                lon: data.longitude,
-                display_name: `${city}, ${region}, ${data.country_name}`,
+                source: `ip_${provider}`,
+                lat: data.lat,
+                lon: data.lon,
+                display_name: `${city}, ${region}, ${data.country}`,
                 address: {
                     city: city,
                     province: region,
-                    country: data.country_name
+                    country: data.country
                 }
             }
         });

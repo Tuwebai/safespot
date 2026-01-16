@@ -54,6 +54,16 @@ export function NotificationSettingsSection() {
         }
     }, []);
 
+    // AUTO-DETECT LOCATION IF MISSING (Enterprise Requirement)
+    useEffect(() => {
+        if (!loading && !locationName && settings && !loadError && !saving) {
+            // Only auto-detect if we literally have NO location
+            // and we haven't tried yet (avoid loops)
+            console.log('[Location] Auto-detecting missing location...');
+            handleUpdateLocation(true); // Pass flag to indicate silent/auto mode
+        }
+    }, [loading, locationName, settings, loadError]);
+
     const handleToggle = async (key: keyof NotificationSettings) => {
         if (!settings) return;
 
@@ -101,10 +111,13 @@ export function NotificationSettingsSection() {
         }
     };
 
-    const handleUpdateLocation = async () => {
+    const handleUpdateLocation = async (isAuto: boolean | unknown = false) => {
+        const silent = typeof isAuto === 'boolean' && isAuto === true;
+        if (saving) return; // Prevent double taps or loops
+
         setSaving(true);
         setLoadError(false); // Reset error state
-        info("Detectando ubicación...");
+        if (!silent) info("Detectando ubicación...");
 
         // --- HELPER: Format & Validate Location ---
         const formatLocation = (geo: any): string | null => {
@@ -113,7 +126,7 @@ export function NotificationSettingsSection() {
 
             // STRICT FORMAT: "City, Province"
             // We prioritize Municipality/City over everything else.
-            const city = addr.city || addr.municipality || addr.town || addr.village || addr.neighborhood || addr.suburb;
+            const city = addr.city || addr.municipality || addr.town || addr.village || addr.neighborhood || addr.suburb || addr.province || addr.state; // Fallback to province as city if really needed
             const province = addr.province || addr.state || addr.region;
 
             if (city && province) {
@@ -123,7 +136,11 @@ export function NotificationSettingsSection() {
                 const cleanProv = province.replace(/^Provincia de\s+/i, '');
                 return `${city}, ${cleanProv}`;
             }
-            return null; // Reject partials if we want to be strict, OR accept just Province if City missing?
+            // If we have at least one (should be guaranteed by fallback to province above), return it
+            if (province) return `${province}, Argentina`;
+            if (city) return `${city}, Argentina`;
+
+            return null; // Reject only if completely empty
             // User says: "Ejemplos válidos: Río Tercero, Córdoba". 
             // "PROHIBIDO: Texto genérico".
             // If we only have Province, returning "Córdoba, Argentina" is acceptable fallback.
@@ -153,7 +170,7 @@ export function NotificationSettingsSection() {
             } : null);
 
             setLocationName(formattedName);
-            success(`Ubicación actualizada: ${formattedName}`);
+            if (!silent) success(`Ubicación actualizada: ${formattedName}`);
         };
 
         // --- PIPELINE STEP 1: GPS ---
@@ -222,7 +239,7 @@ export function NotificationSettingsSection() {
             // --- PIPELINE STEP 3: ULTIMATE FAILURE ---
             // Both GPS and IP failed. This implies network is practically dead or API down.
             console.error('[Location] All methods failed');
-            error('No se pudo determinar tu ubicación. Verificá tu conexión.');
+            if (!silent) error('No se pudo determinar tu ubicación. Verificá tu conexión.');
 
         } catch (e) {
             console.error('[Location] Critical Pipeline Error:', e);
@@ -391,7 +408,7 @@ export function NotificationSettingsSection() {
                                                 size="sm"
                                                 variant="outline"
                                                 className="h-8 text-xs border-neon-green/30 hover:bg-neon-green/5"
-                                                onClick={handleUpdateLocation}
+                                                onClick={() => handleUpdateLocation(false)}
                                                 disabled={saving || isGeocoding}
                                             >
                                                 {saving || isGeocoding ? "Actualizando..." : "Actualizar mi zona"}
@@ -409,7 +426,7 @@ export function NotificationSettingsSection() {
                                                 size="sm"
                                                 variant="outline"
                                                 className="h-8 text-xs border-neon-green/30 hover:bg-neon-green/5"
-                                                onClick={handleUpdateLocation}
+                                                onClick={() => handleUpdateLocation(false)}
                                                 disabled={saving}
                                             >
                                                 {saving ? "Guardando..." : (permissionStatus === 'granted' ? "Guardar mi zona" : "Activar ubicación")}

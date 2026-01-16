@@ -1306,12 +1306,14 @@ export const geocodeApi = {
   /**
    * Reverse geocode coordinates to get a human-readable address
    */
+  /**
+   * Reverse geocode coordinates to get a human-readable address
+   */
   reverse: async (lat: number, lng: number): Promise<GeocodeResponse | null> => {
     try {
       const res = await apiRequest<{ success: boolean; data: GeocodeResponse }>(
-        `/geocode/reverse?lat=${lat}&lon=${lng}`,
-        {},
-        1 // Only retry once as this is non-critical
+        `/geocode/reverse?lat=${lat}&lon=${lng}`
+        // No custom timeout, use default
       );
       // Ensure we return the inner data object
       return (res as any) || null;
@@ -1326,9 +1328,8 @@ export const geocodeApi = {
   getByIp: async (): Promise<GeocodeResponse | null> => {
     try {
       const res = await apiRequest<{ success: boolean; data: GeocodeResponse }>(
-        '/geocode/ip',
-        {},
-        0
+        '/geocode/ip'
+        // No custom timeout, use default
       );
       return (res as any) || null;
     } catch (error) {
