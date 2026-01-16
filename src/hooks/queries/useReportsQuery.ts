@@ -244,7 +244,10 @@ export function useCreateReportMutation() {
         },
         onSettled: () => {
             // Final sync with server
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            // HOTFIX: Removed invalidateQueries for reports.all to prevent race condition
+            // where refetch happens before backend commit is visible, causing empty list.
+            // The optimistic update + SSE events handle list updates correctly.
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },
