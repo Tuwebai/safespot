@@ -8,6 +8,8 @@ import { validateAnonymousId } from '../utils/validation.js';
 import { authLimiter } from '../utils/rateLimiter.js';
 import { verifyGoogleToken } from '../services/googleAuth.js';
 import jwt from 'jsonwebtoken';
+import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
+import { ErrorCodes } from '../utils/errorCodes.js';
 
 const router = express.Router();
 
@@ -21,24 +23,24 @@ router.post('/register', authLimiter, async (req, res) => {
 
         // 1. Validation
         if (!email || !password || !current_anonymous_id) {
-            return res.status(400).json({ error: 'Faltan datos requeridos (email, password, current_anonymous_id)' });
+            throw new ValidationError('Faltan datos requeridos (email, password, current_anonymous_id)');
         }
 
         if (password.length < 6) {
-            return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+            throw new ValidationError('La contraseña debe tener al menos 6 caracteres');
         }
 
         // Validate UUID format
         try {
             validateAnonymousId(current_anonymous_id);
         } catch (e) {
-            return res.status(400).json({ error: 'ID Anónimo inválido' });
+            throw new ValidationError('ID Anónimo inválido');
         }
 
         // 2. Check overlap
         const existing = await pool.query('SELECT id FROM user_auth WHERE email = $1', [email]);
         if (existing.rows.length > 0) {
-            return res.status(409).json({ error: 'El email ya está registrado' });
+            throw new ConflictError('El email ya está registrado');
         }
 
         // 3. Hash Password
@@ -83,8 +85,7 @@ router.post('/register', authLimiter, async (req, res) => {
         });
 
     } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Error del servidor al registrar user' });
+        next(err);
     }
 });
 
@@ -97,7 +98,7 @@ router.post('/login', authLimiter, async (req, res) => {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).json({ error: 'Email y contraseña requeridos' });
+            throw new ValidationError('Email y contraseña requeridos');
         }
 
         // 1. Find User
@@ -107,7 +108,7 @@ router.post('/login', authLimiter, async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            throw new UnauthorizedError('Credenciales inválidas');
         }
 
         const user = result.rows[0];
@@ -115,7 +116,7 @@ router.post('/login', authLimiter, async (req, res) => {
         // 2. Verify Password
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            throw new UnauthorizedError('Credenciales inválidas');
         }
 
         // 3. Update Last Login
@@ -150,7 +151,7 @@ router.post('/login', authLimiter, async (req, res) => {
 router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) return res.status(400).json({ error: 'Email requerido' });
+        if (!email) throw new ValidationError('Email requerido');
 
         // 1. Find user (Silent fail check later)
         const result = await pool.query('SELECT id FROM user_auth WHERE email = $1', [email]);
@@ -198,11 +199,11 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     try {
         const { email, token, newPassword } = req.body;
         if (!email || !token || !newPassword) {
-            return res.status(400).json({ error: 'Datos incompletos' });
+            throw new ValidationError('Datos incompletos');
         }
 
         if (newPassword.length < 6) {
-            return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+            throw new ValidationError('La contraseña debe tener al menos 6 caracteres');
         }
 
         // 1. Find User by Email
@@ -213,18 +214,18 @@ router.post('/reset-password', authLimiter, async (req, res) => {
         const user = result.rows[0];
 
         if (!user || !user.reset_token) {
-            return res.status(400).json({ error: 'Token inválido o expirado' });
+            throw new ValidationError('Token inválido o expirado');
         }
 
         // 2. Check Expiration
         if (new Date() > new Date(user.reset_token_expires)) {
-            return res.status(400).json({ error: 'Token expirado' });
+            throw new ValidationError('Token expirado');
         }
 
         // 3. Verify Token Hash
         const isValid = await bcrypt.compare(token, user.reset_token);
         if (!isValid) {
-            return res.status(400).json({ error: 'Token inválido' });
+            throw new ValidationError('Token inválido');
         }
 
         // 4. Update Password & Clear Token
@@ -249,21 +250,21 @@ router.post('/reset-password', authLimiter, async (req, res) => {
  * Authenticated user password change.
  */
 router.post('/change-password', validateAuth, authLimiter, async (req, res) => {
-    if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+    if (!req.user) throw new UnauthorizedError('No autenticado');
 
     try {
         const { currentPassword, newPassword } = req.body;
-        if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Faltan datos' });
+        if (!currentPassword || !newPassword) throw new ValidationError('Faltan datos');
 
         // 1. Get User Password Hash
         const result = await pool.query('SELECT password_hash FROM user_auth WHERE id = $1', [req.user.auth_id]);
         const user = result.rows[0];
 
-        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+        if (!user) throw new NotFoundError('Usuario no encontrado');
 
         // 2. Verify Current
         const isValid = await bcrypt.compare(currentPassword, user.password_hash);
-        if (!isValid) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+        if (!isValid) throw new UnauthorizedError('Contraseña actual incorrecta');
 
         // 3. Update
         const newHash = await bcrypt.hash(newPassword, 10);
@@ -313,7 +314,7 @@ router.post('/google', authLimiter, async (req, res) => {
 
         if ((!google_id_token && !google_access_token) || !current_anonymous_id) {
             console.error('[DEBUG] Missing required fields for Google Auth');
-            return res.status(400).json({ error: 'Token y ID anónimo requeridos' });
+            throw new ValidationError('Token y ID anónimo requeridos');
         }
 
         // 1. Verify Token (supports both now)
@@ -441,8 +442,7 @@ router.post('/google', authLimiter, async (req, res) => {
         });
 
     } catch (err) {
-        logError(err, req);
-        res.status(401).json({ error: 'Falló la autenticación con Google' });
+        next(err);
     }
 });
 

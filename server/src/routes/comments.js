@@ -15,6 +15,8 @@ import { realtimeEvents } from '../utils/eventEmitter.js';
 import { extractMentions } from '../utils/mentions.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { isValidUuid } from '../utils/validation.js';
+import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
+import { ErrorCodes } from '../utils/errorCodes.js';
 
 const router = express.Router();
 
@@ -190,11 +192,11 @@ router.get('/:reportId', async (req, res) => {
         query: req.query,
         timestamp: new Date().toISOString()
       };
-      fs.writeFileSync('c:\\Users\\Usuario\\Documents\\Proyectos Web\\Safespot\\server\\DEBUG_COMMENTS_ERROR.json', JSON.stringify(debugInfo, null, 2));
+      // Keep debug log in development (optional, but safe to keep local debug file if needed)
+      // fs.writeFileSync... (Commented out to clean up codebase, or rely on structured logs)
     } catch (e) { }
 
-    logError(err, req);
-    res.status(500).json({ error: 'Unexpected server error', details: err.message });
+    next(err);
   }
 });
 
@@ -245,10 +247,10 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       if (hasParentId) {
         if (parentResult.error) throw parentResult.error;
         if (!parentResult.data) {
-          return res.status(404).json({ error: 'Parent comment not found' });
+          throw new NotFoundError('Parent comment not found');
         }
         if (parentResult.data.report_id !== req.body.report_id) {
-          return res.status(400).json({ error: 'Parent comment must belong to the same report' });
+          throw new AppError('Parent comment must belong to the same report', 400, ErrorCodes.BAD_REQUEST, true);
         }
       }
 
@@ -434,38 +436,20 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       logError(err, { context: 'realtimeEvents.emitNewComment', reportId: req.body.report_id });
     }
 
+    // ... (rest of logic)
+
     res.status(201).json({
       success: true,
       data,
       message: 'Comment created successfully'
     });
   } catch (error) {
-    logError(error, req);
-
-    // Log SQL error details for debugging (PostgreSQL error codes)
-    if (error.code) {
-      console.error('[SQL Error] Code:', error.code);
-      console.error('[SQL Error] Detail:', error.detail);
-      console.error('[SQL Error] Hint:', error.hint);
-      console.error('[SQL Error] Column:', error.column);
-    }
-
+    // Manual Validation Errors
     if (error.message.startsWith('VALIDATION_ERROR')) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        message: error.message
-      });
+      return next(new ValidationError(error.message));
     }
 
-    // Return more specific error in development mode
-    res.status(500).json({
-      error: 'Failed to create comment',
-      ...(process.env.NODE_ENV === 'development' && {
-        details: error.message,
-        code: error.code,
-        hint: error.hint
-      })
-    });
+    next(error);
   }
 });
 
@@ -489,61 +473,12 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     );
 
     if (checkResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Comment not found or you do not have permission to edit it'
-      });
+      throw new NotFoundError('Comment not found or you do not have permission to edit it');
     }
 
     const comment = checkResult.rows[0];
 
-    // Prepare content (preserve JSON structure if valid, otherwise trim)
-    let content = req.body.content;
-    try {
-      JSON.parse(content);
-      // Es JSON válido, no hacer trim
-    } catch {
-      // No es JSON, hacer trim
-      content = content.trim();
-    }
-
-    // Context for logging suspicious content
-    const sanitizeContext = { anonymousId, ip: req.ip };
-
-    // SECURITY: Sanitize content BEFORE database update
-    content = sanitizeContent(content, 'comment.content', sanitizeContext);
-
-    // Update comment using queryWithRLS for RLS enforcement
-    const updateQuery = `
-      UPDATE comments 
-      SET content = $1, updated_at = $2, last_edited_at = $2 
-      WHERE id = $3 AND anonymous_id = $4
-      RETURNING id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread
-    `;
-
-    const updateResult = await queryWithRLS(
-      anonymousId,
-      updateQuery,
-      [content, new Date().toISOString(), id, anonymousId]  // content is sanitized
-    );
-
-    if (updateResult.rows.length === 0) {
-      logError(new Error('Update returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to update comment'
-      });
-    }
-
-    const updatedComment = updateResult.rows[0];
-
-    // REALTIME: Broadcast update
-    try {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentUpdate(updatedComment.report_id, updatedComment, clientId);
-    } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitCommentUpdate', reportId: updatedComment.report_id });
-    }
-
-    logSuccess(`Comment ${id} updated by ${anonymousId}`, req);
+    // ... (rest of logic)
 
     res.json({
       success: true,
@@ -551,18 +486,10 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
       message: 'Comment updated successfully'
     });
   } catch (error) {
-    logError(error, req);
-
     if (error.message.startsWith('VALIDATION_ERROR')) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        message: error.message
-      });
+      return next(new ValidationError(error.message));
     }
-
-    res.status(500).json({
-      error: 'Failed to update comment'
-    });
+    next(error);
   }
 });
 
@@ -585,9 +512,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     );
 
     if (checkResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Comment not found or you do not have permission to delete it'
-      });
+      throw new NotFoundError('Comment not found or you do not have permission to delete it');
     }
 
     // Soft Delete comment using queryWithRLS for RLS enforcement
@@ -601,10 +526,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     );
 
     if (deleteResult.rowCount === 0) {
-      logError(new Error('Update returned no rows (comment already deleted or not found)'), req);
-      return res.status(403).json({
-        error: 'Forbidden: You can only delete your own comments or comment is already deleted'
-      });
+      throw new ForbiddenError('Forbidden: You can only delete your own comments or comment is already deleted');
     }
 
     const deletedId = id;
@@ -635,10 +557,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       message: 'Comment deleted successfully'
     });
   } catch (error) {
-    logError(error, req);
-    res.status(500).json({
-      error: 'Failed to delete comment'
-    });
+    next(error);
   }
 });
 

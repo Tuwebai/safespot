@@ -1,10 +1,11 @@
 /**
- * SSE Connection Pool Manager (v3 - Multi-Tab Shared Singleton)
+ * SSE Connection Pool Manager (v3.5 - Enterprise Resilience)
  * 
- * Solving ERR_INSUFFICIENT_RESOURCES:
- * - Only 1 real EventSource per URL across ALL browser tabs.
- * - Uses BroadcastChannel to distribute events to other tabs.
- * - Simple Leader Election: First tab to request URL connects, others listen.
+ * Capability:
+ * - Single EventSource per URL (Leader Election via BroadcastChannel)
+ * - Enterprise Retry Strategy: Exponential Backoff + Jitter
+ * - Structured Observability: Standardized logs
+ * - Gap Recovery: Watermark tracking
  */
 
 const TAB_ID = Math.random().toString(36).substring(2, 11);
@@ -20,7 +21,35 @@ interface SSEEntry {
     listeners: Map<string, Set<SSEListener>>;
     reconnectCallbacks: Set<ReconnectCallback>;
     lastEventId: string | null;
-    wasEverConnected: boolean;  // ✅ Track if connection was ever established
+    wasEverConnected: boolean;
+    backoff: Backoff; // ✅ Resilience: Per-connection backoff state
+}
+
+/**
+ * Enterprise Backoff Strategy
+ * Full Jitter: Sleep = random_between(0, min(cap, base * 2 ** attempt))
+ */
+class Backoff {
+    private attempt = 0;
+    private maxDelay = 30000; // Cap at 30s
+    private baseDelay = 1000; // Start at 1s
+
+    getDelay() {
+        const exponential = this.baseDelay * Math.pow(2, this.attempt);
+        const cap = Math.min(exponential, this.maxDelay);
+        this.attempt++;
+        // Full Jitter
+        return Math.floor(Math.random() * cap);
+    }
+
+    reset() {
+        if (this.attempt > 0) {
+            console.log(`[SSE-Backoff] Resetting attempts (was ${this.attempt})`);
+        }
+        this.attempt = 0;
+    }
+
+    get count() { return this.attempt; }
 }
 
 class SSEPool {
@@ -28,7 +57,6 @@ class SSEPool {
 
     constructor() {
         broadcast.onmessage = (event) => this.handleBroadcast(event);
-        // Clean up connections on tab close
         window.addEventListener('beforeunload', () => this.cleanupOnUnload());
     }
 
@@ -37,6 +65,12 @@ class SSEPool {
         let needsConnection = false;
 
         if (!entry) {
+            // ✅ Monitoring: Check for browser connection limits
+            // Browsers (Chrome/Safari) often limit to 6 connections per domain.
+            if (this.connections.size >= 4) {
+                console.warn(`[SSE-Monitor] ⚠️ High connection count detected (${this.connections.size + 1}). Browser limit is ~6. Potential starvation.`);
+            }
+
             entry = {
                 source: null,
                 isOwner: false,
@@ -44,12 +78,12 @@ class SSEPool {
                 listeners: new Map(),
                 reconnectCallbacks: new Set(),
                 lastEventId: null,
-                wasEverConnected: false
+                wasEverConnected: false,
+                backoff: new Backoff() // ✅ Init Backoff
             };
             this.connections.set(url, entry);
             needsConnection = true;
         } else if (!entry.source && !entry.isOwner && entry.refCount === 0) {
-            // Entry exists (e.g., from onReconnect) but no connection yet
             needsConnection = true;
         }
 
@@ -60,7 +94,6 @@ class SSEPool {
         }
         entry.listeners.get(eventName)!.add(listener);
 
-        // Request connection AFTER setting up listener
         if (needsConnection) {
             this.requestConnectionOwnership(url);
         }
@@ -69,15 +102,18 @@ class SSEPool {
     }
 
     private requestConnectionOwnership(url: string) {
-        // Broadcast that we want to connect. If no one responds "I am owner", we take it.
+        const entry = this.connections.get(url);
+        // Don't request if we already have a source or are waiting for one
+        // Simpler check prevents spamming ownership queries
+
         broadcast.postMessage({ type: 'OWNERSHIP_QUERY', url, tabId: TAB_ID });
 
-        // If no one claims ownership in 300ms, we become the owner
+        // Wait random time before assuming leadership to allow ACK
         setTimeout(() => {
-            const entry = this.connections.get(url);
-            if (entry && !entry.isOwner && !entry.source) {
-                console.log(`[SSEPool] No owner for ${url}, becoming leader.`);
-                this.establishConnection(url, entry);
+            const currentEntry = this.connections.get(url);
+            if (currentEntry && !currentEntry.isOwner && !currentEntry.source) {
+                console.log(`[SSE-Pool] 👑 Becoming Leader for ${url}`);
+                this.establishConnection(url, currentEntry);
             }
         }, 300 + Math.random() * 200);
     }
@@ -85,8 +121,9 @@ class SSEPool {
     private establishConnection(url: string, entry: SSEEntry) {
         if (entry.source) entry.source.close();
 
-        // ✅ GAP RECOVERY: Track if this is a reconnection (not first connection)
         const wasConnected = entry.wasEverConnected;
+
+        console.log(`[SSE-Connect] Attempting connection to ${url} (Attempt ${entry.backoff.count + 1})`);
 
         const source = new EventSource(url);
         entry.source = source;
@@ -94,35 +131,32 @@ class SSEPool {
 
         source.onmessage = (e) => this.forwardEvent(url, 'message', e);
 
-        // Standard events for comments/reports
+        // Standard events
         ['new-comment', 'comment-update', 'comment-delete', 'report-update', 'notification', 'presence-update'].forEach(name => {
             source.addEventListener(name, (e) => this.forwardEvent(url, name, e as MessageEvent));
         });
 
-        // ✅ FIX: Chat-specific events (were missing!)
-        // Includes: room events + user inbox events (chat-update, chat-rollback)
+        // Chat & Realtime events
         ['new-message', 'typing', 'messages-read', 'messages-delivered', 'presence', 'connected', 'inbox-update', 'pin-update', 'chat-update', 'chat-rollback'].forEach(name => {
             source.addEventListener(name, (e) => this.forwardEvent(url, name, e as MessageEvent));
         });
 
         source.onopen = () => {
-            console.log(`[SSEPool] ✅ Connection established (Leader): ${url}`);
-            broadcast.postMessage({ type: 'OWNER_ANNOUNCE', url, tabId: TAB_ID });
+            console.log(`[SSE-State] ✅ Connected: ${url}`);
 
-            // ✅ Mark as connected for future reconnection detection
+            // ✅ Resilience: Reset backoff on successful connection
+            entry.backoff.reset();
             entry.wasEverConnected = true;
 
-            // ✅ GAP RECOVERY: If this was a reconnection, trigger callbacks
+            broadcast.postMessage({ type: 'OWNER_ANNOUNCE', url, tabId: TAB_ID });
+
+            // ✅ Gap Recovery Trigger
             if (wasConnected && entry.reconnectCallbacks.size > 0) {
-                console.log(`[SSEPool] 🔄 Reconnection detected, triggering ${entry.reconnectCallbacks.size} recovery callback(s)`);
+                console.log(`[SSE-Recovery] 🔄 Triggering ${entry.reconnectCallbacks.size} callbacks`);
                 entry.reconnectCallbacks.forEach(cb => {
-                    try {
-                        cb(entry.lastEventId);
-                    } catch (e) {
-                        console.error('[SSEPool] Recovery callback error:', e);
-                    }
+                    try { cb(entry.lastEventId); } catch (e) { console.error('[SSE-Error] Recovery callback failed:', e); }
                 });
-                // Broadcast to follower tabs so they can also recover
+
                 broadcast.postMessage({
                     type: 'SSE_RECONNECTED',
                     url,
@@ -133,10 +167,24 @@ class SSEPool {
         };
 
         source.onerror = () => {
-            if (source.readyState === EventSource.CLOSED) {
-                entry.isOwner = false;
+            // EventSource auto-retries by default, but lacks control.
+            // We close it to impose our own Backoff strategy.
+            if (source.readyState === EventSource.CLOSED || source.readyState === EventSource.CONNECTING) {
+                console.warn(`[SSE-State] ⚠️ Connection lost: ${url}`);
+                entry.source?.close();
                 entry.source = null;
-                setTimeout(() => this.requestConnectionOwnership(url), 2000);
+                entry.isOwner = true; // Keep ownership logic during retry
+
+                // ✅ Resilience: Calculate Backoff Delay
+                const delay = entry.backoff.getDelay();
+                console.log(`[SSE-Retry] ⏳ Waiting ${delay}ms before reconnecting...`);
+
+                setTimeout(() => {
+                    // Check if we still need this connection (user might have navigated away)
+                    if (this.connections.has(url) && this.connections.get(url)?.refCount! > 0) {
+                        this.establishConnection(url, entry);
+                    }
+                }, delay);
             }
         };
     }
@@ -146,15 +194,12 @@ class SSEPool {
         const entry = this.connections.get(url);
         if (!entry) return;
 
-        // ✅ GAP RECOVERY: Track lastEventId for watermark
         if (event.lastEventId) {
             entry.lastEventId = event.lastEventId;
         }
 
-        // 1. Dispatch locally
         this.dispatchLocally(url, eventName, event);
 
-        // 2. Broadcast to other tabs
         broadcast.postMessage({
             type: 'SSE_EVENT',
             url,
@@ -166,7 +211,6 @@ class SSEPool {
 
     private handleBroadcast(event: MessageEvent) {
         const { type, url, eventName, data, lastEventId, tabId } = event.data;
-
         const entry = this.connections.get(url);
 
         switch (type) {
@@ -179,15 +223,16 @@ class SSEPool {
             case 'OWNER_ANNOUNCE':
                 if (entry && tabId !== TAB_ID) {
                     if (entry.isOwner) {
-                        // Conflict resolution: lower tabId wins
                         if (tabId < TAB_ID) {
-                            console.warn(`[SSEPool] Relinquishing ownership of ${url} to ${tabId}`);
+                            console.warn(`[SSE-Pool] 🏳️ Yielding leadership for ${url} to ${tabId}`);
                             entry.isOwner = false;
                             entry.source?.close();
                             entry.source = null;
+                            // Reset backoff as we are now follower
+                            entry.backoff.reset();
                         }
                     } else {
-                        // We found an owner
+                        // Found owner, ensure we are clean
                         if (entry.source) entry.source.close();
                         entry.source = null;
                     }
@@ -196,26 +241,27 @@ class SSEPool {
 
             case 'SSE_EVENT':
                 if (entry && !entry.isOwner) {
-                    // ✅ GAP RECOVERY: Track lastEventId for follower tabs too
-                    if (lastEventId) {
-                        entry.lastEventId = lastEventId;
-                    }
+                    if (lastEventId) entry.lastEventId = lastEventId;
                     const mockEvent = new MessageEvent(eventName, { data, lastEventId });
                     this.dispatchLocally(url, eventName, mockEvent);
                 }
                 break;
 
             case 'SSE_RECONNECTED':
-                // ✅ GAP RECOVERY: Follower tabs should also trigger their recovery callbacks
                 if (entry && !entry.isOwner && tabId !== TAB_ID && entry.reconnectCallbacks.size > 0) {
-                    console.log(`[SSEPool] 🔄 Follower tab received reconnect signal for ${url}`);
+                    console.log(`[SSE-Recovery] 🔄 Follower triggering recovery`);
                     entry.reconnectCallbacks.forEach(cb => {
-                        try {
-                            cb(lastEventId);
-                        } catch (e) {
-                            console.error('[SSEPool] Follower recovery callback error:', e);
-                        }
+                        try { cb(lastEventId); } catch (e) { console.error('[SSE-Error] Follower recovery failed:', e); }
                     });
+                }
+                break;
+
+            case 'OWNER_RETIRE':
+                // Previous owner died. If we are monitoring this URL, we might need to step up.
+                // We rely on random timeout in requestConnectionOwnership usually, but we could trigger election.
+                if (entry && !entry.isOwner) {
+                    console.log(`[SSE-Pool] Owner retired for ${url}, unexpected vacancy.`);
+                    this.requestConnectionOwnership(url);
                 }
                 break;
         }
@@ -239,6 +285,7 @@ class SSEPool {
         entry.listeners.get(eventName)?.delete(listener);
 
         if (entry.refCount <= 0) {
+            console.log(`[SSE-Cleanup] Closing idle connection: ${url}`);
             if (entry.isOwner && entry.source) {
                 entry.source.close();
             }
@@ -255,19 +302,10 @@ class SSEPool {
         });
     }
 
-    /**
-     * Register a callback to be called when SSE reconnects after a disconnection.
-     * Used for gap recovery (fetching missed messages).
-     * 
-     * @param url - SSE endpoint URL
-     * @param callback - Function called with lastEventId on reconnection
-     * @returns Unsubscribe function
-     */
     onReconnect(url: string, callback: ReconnectCallback): () => void {
         let entry = this.connections.get(url);
 
         if (!entry) {
-            // Create entry if not exists (listener might register before subscribe)
             entry = {
                 source: null,
                 isOwner: false,
@@ -275,14 +313,13 @@ class SSEPool {
                 listeners: new Map(),
                 reconnectCallbacks: new Set(),
                 lastEventId: null,
-                wasEverConnected: false
+                wasEverConnected: false,
+                backoff: new Backoff()
             };
             this.connections.set(url, entry);
         }
 
         entry.reconnectCallbacks.add(callback);
-        console.log(`[SSEPool] Registered reconnect callback for ${url} (total: ${entry.reconnectCallbacks.size})`);
-
         return () => {
             const currentEntry = this.connections.get(url);
             currentEntry?.reconnectCallbacks.delete(callback);

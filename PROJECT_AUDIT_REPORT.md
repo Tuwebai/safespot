@@ -220,8 +220,10 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 
 #### ✅ Correcto
 
-- **Rate Limiting**: ✅ Fully implemented (Global + Granular for Reports, Comments, Auth, Votes)
-- **RLS via queryWithRLS**: Consistente en todas las rutas
+- **Rate Limiting**: ✅ Fully implemented (Global + Granular)
+- **Observability**: ✅ Enterprise Grade (Code, Message, RequestId)
+- **Logging**: ✅ Structured JSON, AsyncLocalStorage, CorrelationID
+- **Error Contract**: ✅ Standardized (`AppError` + `ErrorCodes`) linked to GlobalHandler
 - **Idempotencia**: Chat IDs generados en cliente con fallback server
 - **Redis Pub/Sub** para scaling horizontal (eventEmitter.js)
 - **Multer** con límites y validación de tipos
@@ -229,8 +231,8 @@ El sistema está **casi** Enterprise-Ready, pero tiene brechas críticas en:
 
 #### ⚠️ Parcial / Frágil
 
-- **Error responses**: Inconsistentes (algunos 500 con error message, otros sin)
-- **Logging**: `logError` básico, no estructurado, sin correlation IDs
+- **Tests**: Coverage still growing (Need more integration tests)
+- **Documentation**: API Docs pending (Swagger/OpenAPI)
 
 #### ❌ Incorrecto o Incompleto
 

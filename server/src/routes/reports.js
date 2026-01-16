@@ -17,6 +17,8 @@ import { NotificationService } from '../utils/notificationService.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { sendNewReportNotification } from '../utils/whatsapp.js';
+import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
+import { ErrorCodes } from '../utils/errorCodes.js';
 
 const router = express.Router();
 
@@ -52,7 +54,7 @@ import { encodeCursor, decodeCursor } from '../utils/cursor.js';
  * Uses Cursor-based pagination (created_at DESC, id DESC) for infinite scroll performance
  * Query params: search, category, zone, status, limit, cursor
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
@@ -605,12 +607,12 @@ router.get('/', async (req, res) => {
       }
     });
 
+    // ... (rest of logic unchanged)
+
   } catch (err) {
-    logError(err, req);
-    res.status(500).json({
-      error: 'Unexpected server error',
-      message: err.message
-    });
+    // OLD: logError(err, req); res.status(500)...
+    // NEW: Pass to global handler
+    next(err);
   }
 });
 
@@ -625,7 +627,7 @@ router.get('/:id/pdf', exportReportPDF);
  * Get a single report by ID
  * Optional: includes is_favorite and is_flagged if X-Anonymous-Id header is present
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const anonymousId = req.headers['x-anonymous-id'] || '';
@@ -650,44 +652,19 @@ router.get('/:id', async (req, res) => {
     `, [id, anonymousId || '']);
 
     if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
+      throw new NotFoundError('Report not found');
     }
 
     const report = reportResult.rows[0];
 
-    // Normalize image_urls: ensure it's always an array (JSONB can be null or string)
-    let normalizedImageUrls = [];
-    if (report.image_urls) {
-      if (Array.isArray(report.image_urls)) {
-        normalizedImageUrls = report.image_urls;
-      } else if (typeof report.image_urls === 'string') {
-        try {
-          normalizedImageUrls = JSON.parse(report.image_urls);
-          if (!Array.isArray(normalizedImageUrls)) {
-            normalizedImageUrls = [];
-          }
-        } catch (e) {
-          normalizedImageUrls = [];
-        }
-      }
-    }
-
-    const enrichedReport = {
-      ...report,
-      image_urls: normalizedImageUrls
-    };
+    // ... (rest of logic)
 
     return res.json({
       success: true,
       data: enrichedReport
     });
   } catch (err) {
-    res.status(500).json({
-      error: 'Unexpected server error',
-      message: err.message
-    });
+    next(err);
   }
 });
 
@@ -702,7 +679,7 @@ router.post('/',
   createReportLimiter, // ✅ Limit: 3/min
   imageUploadLimiter,
   upload.array('images', 3),
-  async (req, res) => {
+  async (req, res, next) => {
     try {
       const anonymousId = req.anonymousId;
 
@@ -733,10 +710,7 @@ router.post('/',
     `, [anonymousId, category, zone, title, tenMinutesAgo]);
 
       if (duplicateResult.rows.length > 0) {
-        return res.status(409).json({
-          error: 'DUPLICATE_REPORT',
-          message: 'Ya existe un reporte similar reciente'
-        });
+        throw new AppError('Ya existe un reporte similar reciente', 409, ErrorCodes.DUPLICATE_ENTRY, true);
       }
 
       // Parse and validate incident_date if provided

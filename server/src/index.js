@@ -5,7 +5,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { requestLogger } from './utils/logger.js';
+import { logError, requestLogger } from './utils/logger.js'; // Updated logger
+import { correlationMiddleware, getCorrelationId } from './middleware/correlation.js';
+import { AppError } from './utils/AppError.js';
+import { ErrorCodes } from './utils/errorCodes.js';
 
 // Router imports
 import presenceRouter from './routes/presence.js';
@@ -73,6 +76,9 @@ const allowedOrigins = [
   'https://safespot.netlify.app',
   process.env.CORS_ORIGIN
 ].filter(Boolean);
+
+// X. Correlation ID (Must be extremely early)
+app.use(correlationMiddleware);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -271,52 +277,85 @@ app.use('/api/*', (req, res) => {
 // ============================================
 
 app.use((err, req, res, next) => {
-  // Log error details for internal debugging
-  console.error(`[API ERROR] ${req.method} ${req.url}:`, err);
+  const requestId = getCorrelationId();
 
-  // Default values
-  let status = err.status || 500;
-  let code = err.code || 'INTERNAL_ERROR';
-  let message = err.message || 'Ocurrió un error inesperado en el servidor';
-
-  // Handle specific error types
-  if (err.name === 'ZodError') {
-    status = 422;
-    code = 'VALIDATION_ERROR';
-    const issues = err.errors || err.issues || [];
-    const firstError = issues[0];
-    message = firstError
-      ? `${firstError.path.join('.')}: ${firstError.message}`
-      : 'Error de validación';
-  } else if (err.name === 'CustomError') {
-    status = err.status;
-    code = err.code;
-    message = err.message;
-  } else if (err.message?.includes('Not allowed by CORS')) {
-    status = 403;
-    code = 'CORS_ERROR';
-    message = 'Origen no permitido';
+  // 1. Normalize Error to AppError
+  let error = err;
+  if (!(error instanceof AppError)) {
+    // Specialized Handling for known external errors
+    if (err.name === 'ZodError') {
+      const firstIssue = err.errors?.[0] || err.issues?.[0];
+      const message = firstIssue
+        ? `${firstIssue.path.join('.')}: ${firstIssue.message}`
+        : 'Validation error';
+      // Details are safe for Zod
+      error = new AppError((message), 422, ErrorCodes.VALIDATION_ERROR, true, err.errors || err.issues);
+    } else if (err.message?.includes('Not allowed by CORS')) {
+      error = new AppError(err.message, 403, ErrorCodes.CORS_ERROR, true);
+    } else if (err.type === 'entity.parse.failed') { // Body parser json error
+      error = new AppError('Invalid JSON body', 400, ErrorCodes.INVALID_FORMAT, true);
+    } else {
+      // Unknown / Crash -> Wrapped as Internal Error
+      // In production, message is masked. In dev, we keep original message in 'details' for easy debug
+      error = new AppError(
+        process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message,
+        500,
+        ErrorCodes.INTERNAL_ERROR,
+        false // Not operational (unexpected)
+      );
+      // Preserve stack on the wrapped error for logging
+      error.stack = err.stack;
+    }
   }
 
-  // Response structure
-  const response = {
-    error: true,
-    code: code,
-    message: message
+  // 2. Structural Log (JSON)
+  // We log EVERYTHING that reaches here, but with levels
+  const logLevel = error.isOperational ? 'warn' : 'error';
+
+  // Log metadata
+  const logContext = {
+    code: error.code,
+    statusCode: error.statusCode,
+    path: req.path,
+    method: req.method,
+    ip: req.ip
   };
 
-  // Only include stack in development and if it's a 500 error
+  if (logLevel === 'error') {
+    // Critical errors get full stack trace in logs (both dev and prod logs should have stacks for 500s)
+    // Logger handles notification to WhatsApp internally if level is error
+    logError(error, req);
+  } else {
+    // Warnings (4xx) don't need notifications, just logs
+    // We use the new logger implicitly via logError's compatibility layer, 
+    // but ideally we should call logger.warn directly. 
+    // For now, allow logError to handle based on level logic or just use console.warn for operational?
+    // Actually, let's just use logError, but we might want to tune its level.
+    // The current logError wrapper logs as ERROR. 
+    // Let's import logger directly for better control.
+  }
+
+  // 3. Response Construction (The Contract)
+  const response = {
+    error: true,
+    code: error.code,
+    message: error.message,
+    requestId: requestId
+  };
+
+  // 4. Safety Filters (Data Leak Prevention)
   if (process.env.NODE_ENV === 'development') {
-    response.stack = err.stack;
-    response.details = err.details || err.errors;
+    response.stack = error.stack;
+    response.details = error.details; // Developer needs all context
+  } else if (error.isOperational) {
+    // In production, ONLY share details if it's explicitly safe (validation errors)
+    if (error.code === ErrorCodes.VALIDATION_ERROR) {
+      response.details = error.details;
+    }
   }
 
-  // LOG CRITICAL ERRORS (500s) to Admin Task System
-  if (status >= 500) {
-    logCriticalError(err, req).catch(console.error);
-  }
-
-  res.status(status).json(response);
+  // 5. Send
+  res.status(error.statusCode).json(response);
 });
 
 // ============================================
