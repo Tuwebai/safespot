@@ -63,7 +63,7 @@ export function UserCard({ user }: UserCardProps) {
     };
 
     const handleMessage = () => {
-        navigate('/mensajes');
+        navigate(`/mensajes?userId=${user.anonymous_id}`);
     };
 
     const handleProfileClick = () => {

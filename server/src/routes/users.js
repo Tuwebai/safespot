@@ -943,7 +943,11 @@ router.get('/nearby', requireAnonymousId, async (req, res) => {
        WHERE 
          u.anonymous_id != $1
          AND u.alias IS NOT NULL AND u.alias != ''
-         AND u.current_city = $2
+         AND (
+           u.current_city = $2
+           OR
+           translate(lower(u.current_city), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') = translate(lower($2), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
+         )
        ORDER BY u.anonymous_id, u.last_active_at DESC
        LIMIT 50`,
       [anonymousId, locality]

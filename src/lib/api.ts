@@ -117,6 +117,11 @@ export async function apiRequest<T>(
       throw error;
     }
 
+    // Preserve 'meta' if it exists (don't unwrap aggressively)
+    if (data.data && data.meta) {
+      return data;
+    }
+
     return data.data || data;
 
   } catch (error) {

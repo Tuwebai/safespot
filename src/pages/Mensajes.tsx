@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -205,6 +205,45 @@ const Mensajes: React.FC = () => {
 
         runSearch();
     }, [debouncedUserSearch]);
+
+    // OPTIMISTIC CHAT CREATION / NAVIGATION
+    const [searchParams] = useSearchParams();
+    const startChatUserId = searchParams.get('userId');
+    const isHandlingStartChat = React.useRef(false);
+
+    React.useEffect(() => {
+        if (!startChatUserId || isLoading || !rooms || isHandlingStartChat.current) return;
+
+        const initChat = async () => {
+            isHandlingStartChat.current = true;
+
+            // 1. Check if we already have a DM with this user
+            const existingRoom = rooms.find(r =>
+                r.type === 'dm' &&
+                r.other_participant_id === startChatUserId
+            );
+
+            if (existingRoom) {
+                // Found! Open it.
+                navigate(`/mensajes/${existingRoom.id}`, { replace: true });
+            } else {
+                // Not found. Create it.
+                try {
+                    const newRoom = await chatsApi.createRoom({ recipientId: startChatUserId });
+                    // Invalidate to refresh sidebar
+                    queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
+                    navigate(`/mensajes/${newRoom.id}`, { replace: true });
+                } catch (e) {
+                    toast.error('No se pudo iniciar el chat.');
+                    console.error(e);
+                    // Clear param to avoid loop
+                    navigate('/mensajes', { replace: true });
+                }
+            }
+        };
+
+        initChat();
+    }, [startChatUserId, rooms, isLoading, navigate, queryClient, toast]);
 
 
     const createChatMutation = useMutation({

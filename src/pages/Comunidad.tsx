@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { usersApi } from '@/lib/api';
+import { usersApi, UserProfile } from '@/lib/api';
 import { CommunityTabs } from '@/components/comunidad/CommunityTabs';
 import { UserCard } from '@/components/comunidad/UserCard';
 import { EmptyCommunityState } from '@/components/comunidad/EmptyCommunityState';
@@ -27,7 +27,7 @@ export function Comunidad() {
             // Handle both wrapped response { data, meta } and potential legacy array
             // though we updated api.ts, runtime safety is good.
             const meta = (response as any).meta || {};
-            const items = (response as any).data || (Array.isArray(response) ? response : []);
+            const items = ((response as any).data || (Array.isArray(response) ? response : [])) as UserProfile[];
 
             if (typeof meta.has_location_configured === 'boolean') {
                 // Explicit flag from backend (Best Case)
@@ -47,7 +47,8 @@ export function Comunidad() {
             return items;
         },
         enabled: activeTab === 'nearby',
-        staleTime: 1000 * 60 * 5, // 5 minutes cache
+        staleTime: 1000 * 10, // 10 seconds cache (Freshness)
+        refetchInterval: 1000 * 30, // Poll every 30 seconds for "real-time" feel
     });
 
     // Fetch Global Users
