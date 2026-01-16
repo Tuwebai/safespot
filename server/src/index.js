@@ -70,22 +70,37 @@ if (missingVars.length > 0) {
 app.set('trust proxy', 1);
 
 // 1. CORS - MUST be first for cross-origin SSE/API requests
-const allowedOrigins = [
+const baseOrigins = [
   'http://localhost:5174',
   'http://localhost:5173',
   'https://safespot.netlify.app',
-  process.env.CORS_ORIGIN
+  process.env.CORS_ORIGIN // e.g. https://safespot.tuweb-ai.com
 ].filter(Boolean);
+
+// Generate authorized origins including www. versions and stripping trailing slashes
+const allowedOrigins = baseOrigins.flatMap(origin => {
+  const normalized = origin.replace(/\/$/, ''); // Remove trailing slash
+  const domain = normalized.replace(/^https?:\/\//, '');
+  return [
+    normalized,
+    normalized.replace('//', '//www.') // Add www version
+  ];
+});
 
 // X. Correlation ID (Must be extremely early)
 app.use(correlationMiddleware);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (!origin) return callback(null, true); // Allow server-to-server, mobile apps, or curl
+
+    // Normalize incoming origin (just in case)
+    const normalizedOrigin = origin.replace(/\/$/, '');
+
+    if (allowedOrigins.includes(normalizedOrigin)) {
       callback(null, true);
     } else {
+      console.warn(`[CORS] Blocked origin: ${origin}`); // Log blocked origin for debugging
       callback(new Error('Not allowed by CORS'));
     }
   },
