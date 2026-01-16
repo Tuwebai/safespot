@@ -18,7 +18,7 @@ declare let self: ServiceWorkerGlobalScope;
 // ============================================
 
 // CACHE BUSTING: Increment this version whenever SW logic changes
-const SW_VERSION = '2.4.1-resilience';
+const SW_VERSION = '2.4.2-deploy-fix';
 console.log(`[SW] Initializing Version: ${SW_VERSION}`);
 const MAX_CACHE_AGE = 24 * 60 * 60 * 1000; // 24h
 const NETWORK_TIMEOUT = 15000;
@@ -296,6 +296,19 @@ self.addEventListener('activate', (event) => {
 
     event.waitUntil(
         (async () => {
+            // CRITICAL FIX: Delete ALL old caches
+            // This prevents stale data from persisting across SW updates
+            const cacheNames = await caches.keys();
+            await Promise.all(
+                cacheNames.map(cacheName => {
+                    // Keep only current version caches
+                    if (!cacheName.includes(SW_VERSION)) {
+                        console.log('[SW] Deleting old cache:', cacheName);
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+
             await self.clients.claim();
 
             // Notify all clients that SW updated
@@ -305,6 +318,12 @@ self.addEventListener('activate', (event) => {
                     type: 'SW_UPDATED',
                     version: SW_VERSION,
                 });
+            });
+
+            // CRITICAL FIX: Force reload all clients to use new SW
+            // This ensures users see the new version immediately
+            clients.forEach((client) => {
+                client.postMessage({ type: 'FORCE_RELOAD' });
             });
         })()
     );
@@ -387,13 +406,18 @@ type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
     );
 });
 
-// E. HTML Navigation: NetworkFirst with timeout
+// E. HTML Navigation: NetworkFirst WITHOUT caching (CRITICAL FIX)
 const navigationRoute = new NavigationRoute(
     async ({ request }) => {
-        const CACHE_NAME = 'safespot-html-v2';
         const TIMEOUT = 2000;
 
-        const networkPromise = fetch(request, { cache: 'no-cache' });
+        // CRITICAL FIX: Always fetch HTML from network, NEVER cache
+        // This prevents stale HTML from being served after deploys
+        const networkPromise = fetch(request, {
+            cache: 'no-store',  // Prevent browser cache
+            headers: { 'Cache-Control': 'no-cache' }  // Force revalidation
+        });
+
         const timeoutPromise = new Promise<Response>((_, reject) => {
             setTimeout(() => reject(new Error('timeout')), TIMEOUT);
         });
@@ -401,18 +425,22 @@ const navigationRoute = new NavigationRoute(
         try {
             const response = await Promise.race([networkPromise, timeoutPromise]);
             if (response.ok) {
-                const cache = await caches.open(CACHE_NAME);
-                cache.put(request, response.clone());
-                return response;
+                // CRITICAL: Do NOT cache HTML
+                // Old code: cache.put(request, response.clone());
+                return response;  // Serve fresh HTML directly
             }
             throw new Error(`Response not ok: ${response.status}`);
         } catch (error) {
-            console.warn('[SW] HTML navigation failed, using cache');
-            const cache = await caches.open(CACHE_NAME);
-            const cached = await cache.match(request);
-            if (cached) return cached;
-
-            return new Response('Offline', { status: 503 });
+            // OFFLINE FALLBACK: Show offline page, NOT stale HTML
+            // This prevents serving old version when network fails
+            console.warn('[SW] HTML navigation failed, showing offline page');
+            return new Response(
+                '<!DOCTYPE html><html><head><title>Offline</title></head><body><h1>Sin conexión</h1><p>Por favor, verifica tu conexión a internet.</p></body></html>',
+                {
+                    status: 503,
+                    headers: { 'Content-Type': 'text/html' }
+                }
+            );
         }
     },
     {

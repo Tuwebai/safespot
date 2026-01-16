@@ -20,13 +20,33 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
         console.log('[SW] Registered:', registration);
+
+        // CRITICAL FIX: Force update check on every load
+        // This ensures new SW is detected immediately after deploy
+        registration.update();
+
+        // Check for updates every 60 seconds
+        // Ensures users get updates within 1 minute of deploy
+        setInterval(() => {
+          registration.update();
+        }, 60 * 1000);
       })
       .catch(error => {
         console.warn('[SW] Registration failed:', error);
         // Non-critical - app works without SW
       });
   });
+
+  // CRITICAL FIX: Handle FORCE_RELOAD message from SW
+  // When SW updates, it sends this message to force clients to reload
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'FORCE_RELOAD') {
+      console.log('[SW] Force reload requested by new SW version');
+      window.location.reload();
+    }
+  });
 }
+
 
 // ============================================
 // REACT MOUNT (SYNCHRONOUS - PHASE 2)
