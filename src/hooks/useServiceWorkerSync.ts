@@ -108,14 +108,20 @@ function urlToQueryKeys(url: string): unknown[][] {
 
         const queryKeys: unknown[][] = [];
 
+
         // Reports
         if (pathname.includes('/api/reports')) {
-            queryKeys.push(['reports']);  // Invalidate all report queries
+            // HOTFIX: Skip reports LIST invalidation (handled by SSE + Optimistic Updates)
+            // Reports MUST NOT be invalidated by SW cache updates to prevent race conditions
+            // This is critical for mobile browsers where SW cache can overwrite optimistic updates
+            console.log('[SW Sync] Skipping reports list invalidation (SSE-managed)');
 
-            // Specific report detail
+            // Only invalidate specific report detail if needed
             const reportIdMatch = pathname.match(/\/api\/reports\/([a-f0-9-]+)$/);
             if (reportIdMatch) {
-                queryKeys.push(['reports', 'detail']);
+                const reportId = reportIdMatch[1];
+                // HOTFIX: Only invalidate the specific detail, NOT the list
+                queryKeys.push(['reports', 'detail', reportId]);
             }
         }
 

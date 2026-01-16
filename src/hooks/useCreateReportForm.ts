@@ -221,7 +221,11 @@ export function useCreateReportForm() {
                 if (imageFiles.length > 0) {
                     reportsApi.uploadImages(newReport.id, imageFiles)
                         .then(() => {
-                            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+                            // HOTFIX: Don't invalidate - SSE will propagate the update
+                            // The report is already in the cache from optimistic update
+                            // When images finish uploading, SSE will send report-update event
+                            // which will patch the canonical cache with image URLs
+                            console.log('[CreateReport] Images uploaded, waiting for SSE update')
                         })
                         .catch((error) => {
                             handleErrorSilently(error, 'useCreateReportForm.uploadImages.bg')

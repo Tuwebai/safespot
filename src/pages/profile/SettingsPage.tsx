@@ -142,8 +142,10 @@ export function SettingsPage() {
         try {
             await usersApi.updateProfile({ interest_radius_meters: interestRadius });
             toast.success(`Burbuja de seguridad actualizada a ${interestRadius}m`);
-            // Invalidate feeds to force reload with new radius
-            queryClient.invalidateQueries({ queryKey: ['reports'] });
+            // HOTFIX: Don't invalidate reports - user can manually refresh if needed
+            // SSE will handle updates from other users
+            // Reports MUST ONLY be updated via SSE + Optimistic Updates (no invalidation)
+            toast.info('Recarga la página de reportes para ver cambios con el nuevo radio');
         } catch (err) {
             handleError(err, toast.error, 'Settings.saveRadius');
         } finally {

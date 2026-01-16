@@ -10,6 +10,9 @@
 
 import { QueryClient } from '@tanstack/react-query'
 
+// CRITICAL INVARIANT: Reports are ONLY updated via SSE + Optimistic Updates
+const PROTECTED_QUERY_KEYS = ['reports'];
+
 export const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
@@ -47,6 +50,37 @@ export const queryClient = new QueryClient({
         },
     },
 })
+
+// ENTERPRISE GUARD: Wrap invalidateQueries to prevent reports invalidation
+const originalInvalidateQueries = queryClient.invalidateQueries.bind(queryClient);
+
+queryClient.invalidateQueries = function (filters?: any) {
+    // Check if trying to invalidate protected keys
+    if (filters?.queryKey) {
+        const keyStr = JSON.stringify(filters.queryKey);
+        const isProtected = PROTECTED_QUERY_KEYS.some(key => keyStr.includes(key));
+
+        if (isProtected) {
+            console.error(
+                '[QueryClient] ❌ BLOCKED: Attempted to invalidate protected query key:',
+                filters.queryKey,
+                '\nReports MUST ONLY be updated via SSE + Optimistic Updates.',
+                '\nStack trace:',
+                new Error().stack
+            );
+
+            // In DEV: throw error to catch violations immediately
+            if (import.meta.env.DEV) {
+                throw new Error(`INVARIANT VIOLATION: Cannot invalidate protected query key: ${keyStr}`);
+            }
+
+            // In PROD: log error but don't break app
+            return Promise.resolve();
+        }
+    }
+
+    return originalInvalidateQueries(filters);
+} as typeof queryClient.invalidateQueries;
 
 /**
  * Helper to determine a sensible refetch interval based on network quality.

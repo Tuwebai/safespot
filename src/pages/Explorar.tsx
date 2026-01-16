@@ -8,7 +8,7 @@ import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
 // CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
 const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
@@ -26,7 +26,6 @@ const MapLoadingFallback = () => (
 export function Explorar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const queryClient = useQueryClient()
   const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
   const activateZoneType = (location.state as any)?.activateZoneType as any
   const [searchParams] = useSearchParams()
@@ -73,8 +72,10 @@ export function Explorar() {
     if (!mapBounds) return
     setBoundsSearchEnabled(true)
     setShowSearchAreaButton(false)
-    queryClient.invalidateQueries({ queryKey: ['reports'] })
-  }, [mapBounds, setShowSearchAreaButton, queryClient])
+    // HOTFIX: Don't invalidate - changing queryKey will trigger refetch automatically
+    // The queryKey includes mapBounds, so React Query will refetch when bounds change
+    // No need for manual invalidation (violates SSE-only invariant)
+  }, [mapBounds, setShowSearchAreaButton])
 
   return (
     <>

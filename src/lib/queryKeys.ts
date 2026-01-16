@@ -6,13 +6,34 @@
  * - Keys are arrays for granular invalidation
  * - Factory functions for parameterized queries
  * - Hierarchical structure (entity.action.params)
+ * 
+ * ============================================
+ * CRITICAL INVARIANT - REPORTS QUERIES
+ * ============================================
+ * 
+ * Reports queries are PROTECTED and MUST NOT be invalidated manually.
+ * 
+ * Updates are handled EXCLUSIVELY via:
+ * 1. Optimistic Updates (same client, immediate feedback)
+ * 2. SSE Events (cross-client propagation)
+ * 
+ * DO NOT:
+ * - queryClient.invalidateQueries({ queryKey: ['reports'] })
+ * - queryClient.refetchQueries({ queryKey: ['reports'] })
+ * - refetchInterval on reports queries
+ * - refetchOnWindowFocus: true on reports queries
+ * 
+ * Violating this will cause race conditions on mobile browsers
+ * where refetch overwrites optimistic updates before backend commit.
+ * 
+ * See: reports_sources_final_audit.md for full analysis
  */
 
 import type { ReportFilters } from '@/lib/api'
 
 export const queryKeys = {
     // ============================================
-    // REPORTS
+    // REPORTS (SSE-MANAGED, DO NOT INVALIDATE)
     // ============================================
     reports: {
         // Base key for all report queries

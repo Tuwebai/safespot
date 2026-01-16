@@ -639,7 +639,10 @@ export function Reportes() {
       {/* Listado de Reportes */}
       < PullToRefresh
         onRefresh={async () => {
-          await queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+          // HOTFIX: Don't invalidate reports - violates SSE-only invariant
+          // Pull-to-refresh should rely on SSE for updates
+          // Only cancel in-flight queries to prevent race conditions
+          await queryClient.cancelQueries({ queryKey: queryKeys.reports.all });
         }
         }
         className="mb-8"
