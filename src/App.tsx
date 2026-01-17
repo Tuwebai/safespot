@@ -5,7 +5,7 @@ import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteL
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { lazyRetry } from '@/lib/lazyRetry'
 import { useQueryClient } from '@tanstack/react-query'
-import { useServiceWorkerSync } from '@/hooks/useServiceWorkerSync'
+
 
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
 const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home })), 'Home')
@@ -29,6 +29,12 @@ const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ def
 const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
 const Comunidad = lazyRetry(() => import('@/pages/Comunidad').then(m => ({ default: m.Comunidad })), 'Comunidad')
 const ResetPassword = lazyRetry(() => import('@/pages/ResetPassword'), 'ResetPassword')
+
+// Product Pages
+const ComoFuncionaPage = lazyRetry(() => import('@/pages/ComoFuncionaPage'), 'ComoFunciona')
+const FaqPage = lazyRetry(() => import('@/pages/FaqPage'), 'Faq')
+const GuiaSeguridadSimple = lazyRetry(() => import('@/pages/GuiaSeguridadSimple'), 'GuiaSeguridad')
+const AuthPage = lazyRetry(() => import('@/pages/AuthPage'), 'AuthPage')
 
 // Admin Imports (Lazy Loaded)
 const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
@@ -66,9 +72,7 @@ function App() {
     return () => window.removeEventListener('online', handleOnline);
   }, [queryClient]);
 
-  // ✅ ENTERPRISE FIX: Service Worker Sync
-  // Synchronize SW cache updates with React Query
-  useServiceWorkerSync();
+
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
@@ -110,6 +114,11 @@ function App() {
                   <Route path="/notificaciones" element={<NotificationsPage />} />
                   <Route path="/terminos" element={<TerminosPage />} />
                   <Route path="/privacidad" element={<PrivacidadPage />} />
+                  <Route path="/como-funciona" element={<ComoFuncionaPage />} />
+                  <Route path="/faq" element={<FaqPage />} />
+                  <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
+                  <Route path="/login" element={<AuthPage />} />
+                  <Route path="/register" element={<AuthPage />} />
                   <Route path="/sobre-nosotros" element={<AboutPage />} />
                   <Route path="/usuario/:alias" element={<PublicProfile />} />
                   <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />

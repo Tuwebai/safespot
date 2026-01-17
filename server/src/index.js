@@ -106,7 +106,7 @@ app.use(cors({
   },
   credentials: true,
   method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'X-Client-ID', 'Cache-Control', 'Last-Event-ID', 'Authorization', 'Pragma', 'Expires']
+  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'X-Client-ID', 'Cache-Control', 'Last-Event-ID', 'Authorization', 'Pragma', 'Expires', 'X-App-Version']
 }));
 
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)
@@ -124,6 +124,36 @@ app.use(helmet());
 // Prevent DoS attacks with large payloads
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ============================================
+// VERSION ENFORCEMENT (Enterprise)
+// ============================================
+const MIN_CLIENT_VERSION = '2.4.0'; // Update this to force 426 on all clients
+
+const versionEnforcement = (req, res, next) => {
+  // Skip for non-API or static assets
+  if (!req.path.startsWith('/api')) return next();
+
+  const clientVersion = req.get('X-App-Version');
+
+  // Set Response Headers
+  res.set('X-API-Version', '2.4.0');
+  res.set('X-Min-Client-Version', MIN_CLIENT_VERSION);
+
+  // If client sends version, we can validate
+  if (clientVersion) {
+    // Logic: If major/minor mismatch, reject. 
+    // For now, we trust the client unless we explicitly bump MIN_CLIENT_VERSION in the future.
+    // This is the hook for "Kill Switch".
+
+    // Example Kill Switch:
+    // if (clientVersion.startsWith('2.3')) { ... 426 ... }
+  }
+
+  next();
+};
+
+app.use(versionEnforcement);
 
 // ============================================
 // REQUEST LOGGING

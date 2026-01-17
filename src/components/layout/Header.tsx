@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare, Users } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare, Users, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
 import { useChatRooms } from '@/hooks/queries/useChatsQuery'
+
 
 export function Header() {
   const location = useLocation()
@@ -323,6 +324,21 @@ export function Header() {
                 </Avatar>
               </div>
               <span className="font-medium">Mi Perfil y Logros</span>
+            </Link>
+
+            <Link
+              to="/perfil/configuracion"
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center px-4 py-3 rounded-lg transition-all duration-200',
+                'active:scale-95',
+                isActive('/perfil/configuracion')
+                  ? 'text-neon-green bg-neon-green/10'
+                  : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+              )}
+            >
+              <Settings className="mr-3 h-5 w-5" />
+              <span className="font-medium">Ajustes</span>
             </Link>
           </div>
 

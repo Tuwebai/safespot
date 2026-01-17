@@ -14,13 +14,16 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
 
 
 /**
- * Get headers with anonymous_id and client_id
+ * Get headers with anonymous_id, client_id, and APP VERSION
  */
 function getHeaders(): HeadersInit {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Client-ID': getClientId(),
     'X-Anonymous-Id': ensureAnonymousId(),
+    // ✅ ENTERPRISE: Semantic Version Injection
+    // Allows backend to reject incompatible clients (426 Upgrade Required)
+    'X-App-Version': __SW_VERSION__,
   };
 
   // INJECT AUTH TOKEN (Phase 2)
@@ -52,10 +55,7 @@ export async function apiRequest<T>(
   options: RequestInit = {},
   timeout = 45000 // 45 seconds default timeout (Accommodates Render cold starts)
 ): Promise<T> {
-  // 1. Check offline status immediately
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    throw new Error('Sin conexión. Revisá tu internet.');
-  }
+
 
   // 2. Normalize endpoint: Remove any existing /api or api/ prefix to avoid duplication
   let cleanEndpoint = endpoint;
@@ -96,6 +96,21 @@ export async function apiRequest<T>(
       signal,
     });
     clearTimeout(id);
+
+    // ✅ ENTERPRISE: Handle 426 Upgrade Required (Breaking Change Protection)
+    if (response.status === 426) {
+      console.error('[API] 🚨 Client outdated (426). Forced Update Initiated.');
+
+      // Force Service Worker check immediately
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        await reg?.update();
+      }
+
+      // Reload to pick up new version
+      window.location.reload();
+      throw new Error('Client outdated. Reloading...');
+    }
 
     // Handle 429 Too Many Requests specifically
     if (response.status === 429) {
@@ -1068,7 +1083,8 @@ export const chatsApi = {
   sendMessage: async (roomId: string, content: string, type: 'text' | 'image' | 'sighting' | 'location' = 'text', caption?: string, replyToId?: string, id?: string): Promise<ChatMessage> => {
     return apiRequest<ChatMessage>(`/chats/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, id })
+      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, id }),
+      keepalive: true // ✅ ENTERPRISE FIX: Persistent Outbox
     });
   },
 
@@ -1171,7 +1187,8 @@ export const chatsApi = {
   reactToMessage: async (roomId: string, messageId: string, emoji: string): Promise<{ success: boolean; reactions: { [emoji: string]: string[] }; action: 'add' | 'remove' }> => {
     return apiRequest(`/chats/${roomId}/messages/${messageId}/react`, {
       method: 'POST',
-      body: JSON.stringify({ emoji })
+      body: JSON.stringify({ emoji }),
+      keepalive: true // ✅ ENTERPRISE FIX
     });
   },
 
@@ -1214,9 +1231,10 @@ export const chatsApi = {
    * Edit a message (WhatsApp-style: own messages only, within time limit)
    */
   editMessage: async (roomId: string, messageId: string, content: string): Promise<{ success: boolean; message: ChatMessage }> => {
-    return apiRequest(`/chats/${roomId}/messages/${messageId}`, {
+    return apiRequest(`/chats/${roomId}/messages/${messageId}/edit`, {
       method: 'PATCH',
-      body: JSON.stringify({ content })
+      body: JSON.stringify({ content }),
+      keepalive: true // ✅ ENTERPRISE FIX
     });
   }
 };

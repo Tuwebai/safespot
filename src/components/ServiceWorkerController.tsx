@@ -18,6 +18,30 @@ export function ServiceWorkerController() {
     const queryClient = useQueryClient();  // ✅ For SW update handling
     const toast = useToast();
 
+    // ✅ ENTERPRISE: Auth Sync to Service Worker (IDB)
+    useEffect(() => {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            try {
+                // Read from Zustand persistence
+                const storedAuth = localStorage.getItem('auth-storage');
+                if (storedAuth) {
+                    const parsed = JSON.parse(storedAuth);
+                    const token = parsed.state?.token;
+
+                    if (token) {
+                        console.log('[ServiceWorkerController] Syncing Auth Token to SW');
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'SYNC_AUTH',
+                            token: token
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('[ServiceWorkerController] Auth Sync failed:', e);
+            }
+        }
+    }, [navigate]); // Re-check on navigation (low cost, ensures freshness)
+
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return;
 
@@ -75,7 +99,26 @@ export function ServiceWorkerController() {
 
             if (type === 'SW_UPDATED') {
                 console.log('[ServiceWorkerController] SW updated, invalidating queries');
+                // ✅ ENTERPRISE: Soft Update UX - Notify user
+                toast.info('Nueva versión disponible. Por favor recarga la página para aplicar cambios.', Infinity);
                 queryClient.invalidateQueries();  // Refetch all with new SW
+            }
+
+            // ✅ ENTERPRISE RULE: INVALID PAYLOAD FALLBACK
+            // If SW detects malformed Push (e.g. missing roomId in mark-read),
+            // it commands us to reconcile state manually.
+            if (type === 'INVALID_PAYLOAD_DETECTED') {
+                console.error('[ServiceWorkerController] ⚠️ Malformed Push detected, forcing State Reconciliation', event.data);
+
+                // Force global re-fetch to ensure UI is consistent
+                // Use a small debounce/delay if needed, but here instant is safer
+                queryClient.invalidateQueries();
+            }
+
+            // ✅ BACKGROUND DATA SYNC
+            if (type === 'BACKGROUND_DATA_UPDATE') {
+                console.log('[ServiceWorkerController] Background data update, refreshing queries');
+                queryClient.invalidateQueries();
             }
         };
 

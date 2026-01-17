@@ -182,5 +182,50 @@ export const chatCache = {
             if (!old) return old;
             return { ...old, unread_count: 0 };
         });
+    },
+
+    // ============================================
+    // PERSISTENCE (Outbox / Volatile State Protection)
+    // ============================================
+
+    persistPendingMessage: (roomId: string, message: ChatMessage) => {
+        try {
+            const key = `pending_msg_${roomId}`;
+            const existing = JSON.parse(localStorage.getItem(key) || '[]');
+            // Dedupe by ID just in case
+            const filtered = existing.filter((m: ChatMessage) => m.id !== message.id);
+            filtered.push(message);
+            localStorage.setItem(key, JSON.stringify(filtered));
+        } catch (e) {
+            console.error('[Persistence] Failed to save pending message:', e);
+        }
+    },
+
+    removePendingMessage: (roomId: string, tempId: string) => {
+        try {
+            const key = `pending_msg_${roomId}`;
+            const existing = JSON.parse(localStorage.getItem(key) || '[]');
+            const filtered = existing.filter((m: ChatMessage) => m.id !== tempId);
+            if (filtered.length === 0) {
+                localStorage.removeItem(key);
+            } else {
+                localStorage.setItem(key, JSON.stringify(filtered));
+            }
+        } catch (e) { }
+    },
+
+    /**
+     * Rehydrates pending messages into the React Query cache on mount.
+     * This restores the "Sending..." UI state after F5.
+     */
+    rehydratePendingMessages: (queryClient: QueryClient, roomId: string, anonymousId: string) => {
+        try {
+            const key = `pending_msg_${roomId}`;
+            const pending = JSON.parse(localStorage.getItem(key) || '[]');
+            if (pending.length > 0) {
+                console.log(`[Persistence] Rehydrating ${pending.length} pending messages for Room ${roomId}`);
+                chatCache.upsertMessageBatch(queryClient, pending, roomId, anonymousId);
+            }
+        } catch (e) { }
     }
 };

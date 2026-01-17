@@ -222,13 +222,32 @@ router.get('/:roomId/messages', async (req, res) => {
                 JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
                 LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
                 LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
-                WHERE cm.conversation_id = $1 
+                 WHERE cm.conversation_id = $1 
                   AND cm.created_at > (
                       SELECT created_at FROM chat_messages WHERE id = $2
                   )
-                ORDER BY cm.created_at ASC
+                ORDER BY cm.created_at ASC, cm.id ASC
             `;
             params = [roomId, since, anonymousId];
+
+            // ✅ Enterprise Hardening: "Phantom Reference Conflict"
+            // Before running the gap query, check if the reference message actually exists.
+            // If it was deleted, the subquery returns NULL, resulting in an empty list (False Negative).
+            // We must return 410 GONE to force a full client refetch.
+            const referenceCheck = await queryWithRLS(
+                anonymousId,
+                'SELECT 1 FROM chat_messages WHERE id = $1',
+                [since]
+            );
+
+            if (referenceCheck.rows.length === 0) {
+                console.warn(`[GapRecovery] 🚨 Reference message ${since} not found (Deleted?). Returning 410.`);
+                return res.status(410).json({
+                    error: 'Gap Recovery Failed: Reference message missing',
+                    code: 'REF_GONE',
+                    retry_strategy: 'full_resync'
+                });
+            }
 
             console.log(`[GapRecovery] Fetching messages for room ${roomId} since ${since}`);
         } else {
@@ -248,7 +267,7 @@ router.get('/:roomId/messages', async (req, res) => {
                 LEFT JOIN chat_messages rm ON cm.reply_to_id = rm.id
                 LEFT JOIN anonymous_users ru ON rm.sender_id = ru.anonymous_id
                 WHERE cm.conversation_id = $1
-                ORDER BY cm.created_at ASC
+                ORDER BY cm.created_at ASC, cm.id ASC
             `;
             params = [roomId, anonymousId];
         }

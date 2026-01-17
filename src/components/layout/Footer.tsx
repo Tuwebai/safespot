@@ -15,7 +15,7 @@ export function Footer() {
       <footer className="bg-dark-card border-t border-dark-border py-6">
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-8 mb-8">
             {/* Branding Column (Spans 2 columns) */}
             <div className="md:col-span-2">
               {/* Logo Group */}
@@ -117,22 +117,45 @@ export function Footer() {
 
             {/* Support Column */}
             <div>
-              <h3 className="font-semibold text-foreground mb-4">Legal</h3>
+              <h3 className="font-semibold text-foreground mb-4">Producto</h3>
               <ul className="space-y-2">
                 <li>
                   <Link
-                    to="/sobre-nosotros"
+                    to="/como-funciona"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
-                    Sobre Nosotros
+                    Cómo funciona
                   </Link>
                 </li>
+                <li>
+                  <Link
+                    to="/faq"
+                    className="text-foreground/70 hover:text-neon-green transition-colors"
+                  >
+                    Preguntas Frecuentes
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/guia-seguridad"
+                    className="text-foreground/70 hover:text-neon-green transition-colors"
+                  >
+                    Guía de Seguridad
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Legal Column */}
+            <div>
+              <h3 className="font-semibold text-foreground mb-4">Legal</h3>
+              <ul className="space-y-2">
                 <li>
                   <Link
                     to="/terminos"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
-                    Términos y Condiciones
+                    Términos
                   </Link>
                 </li>
                 <li>
@@ -140,7 +163,7 @@ export function Footer() {
                     to="/privacidad"
                     className="text-foreground/70 hover:text-neon-green transition-colors"
                   >
-                    Privacidad y Seguridad
+                    Privacidad
                   </Link>
                 </li>
               </ul>
