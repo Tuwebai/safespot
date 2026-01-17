@@ -259,16 +259,16 @@ export function createChatNotificationPayload(message, room) {
     return {
         title: `💬 Nuevo mensaje de @${senderAlias}`,
         body: `${reportTitle}: ${message.content}`,
-        icon: '/favicon.svg',
-        badge: '/favicon.svg',
-        tag: `chat-${message.room_id}`, // Tagging by room id groups notifications from the same chat
-        renotify: true,
+        icon: '/icons/icon-192.png', // ✅ Standard PWA Icon (Reliable)
+        badge: '/icons/icon-192.png',
+        tag: `chat-${message.room_id}`, // Groups notifications
+        renotify: true, // ✅ Force sound
         data: {
             roomId: message.room_id,
-            messageId: message.id || null, // ✅ P1 FIX: Incluir messageId
-            anonymousId: message.recipientAnonymousId || null, // ✅ P1 FIX: Incluir la identidad del destinatario
-            type: 'chat-message', // ✅ Contrato SW
-            url: `/mensajes/${message.room_id}`, // Link to messaging center
+            messageId: message.id || null,
+            anonymousId: message.recipientAnonymousId || null,
+            type: 'chat-message',
+            url: `/mensajes/${message.room_id}`,
             timestamp: Date.now()
         },
         actions: [

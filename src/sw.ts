@@ -23,36 +23,7 @@ const deliveryQueue = new Queue('safespot-delivery-acks', {
     maxRetentionTime: 24 * 60 // Retry for 24 hours
 });
 
-async function sendDeliveryAck(data: any) {
-    const { roomId, anonymousId } = data;
 
-    // Validate payload
-    if (!roomId || !anonymousId) {
-        console.warn('[SW] Cannot send ACK: missing roomId or anonymousId', data);
-        return;
-    }
-
-    const url = `/api/chats/${roomId}/delivered`;
-    const request = new Request(url, {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-anonymous-id': anonymousId // Authenticate as recipient
-        }
-    });
-
-    try {
-        console.log(`[SW] Sending Delivery ACK for Room ${roomId}`);
-        const response = await fetch(request.clone(), { keepalive: true }); // ✅ FIX: Keepalive for reliability
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-        }
-        console.log('[SW] Delivery ACK sent successfully');
-    } catch (err) {
-        console.warn('[SW] Delivery ACK failed (Network/Server), queuing for background sync:', err);
-        await deliveryQueue.pushRequest({ request });
-    }
-}
 
 self.addEventListener('push', (event) => {
     // [SW-06] Log estructurado
@@ -75,9 +46,19 @@ self.addEventListener('push', (event) => {
         try {
             // Merge defaults with payload to prevent missing fields
             const payload = event.data.json();
-            data = { ...data, ...payload };
+
+            // ✅ DEFENSIVE MERGE: Ensure data is an object
+            if (payload && typeof payload === 'object') {
+                data = { ...data, ...payload };
+
+                // ✅ FIX: Flatten nested data if backend sends { data: { type: ... } }
+                // Backend 'webPush.js' puts 'type' inside 'data', so we must ensure 'data.data' is preserved
+                if (payload.data && typeof payload.data === 'object') {
+                    data.data = { ...data.data, ...payload.data };
+                }
+            }
         } catch (e) {
-            console.error('[SW] Error parsing push data:', e);
+            console.error('[SW] Error parsing push data, using defaults:', e);
         }
     }
 
@@ -110,7 +91,7 @@ self.addEventListener('push', (event) => {
     // Paralelizamos totalmente el ACK y la Notificación.
     // El fallo del ACK jamás debe detener el sonido.
 
-    // 1. Delivery ACK (Background - Network)
+    // 2. Delivery ACK (Background - Network)
     // Starts immediately, runs in parallel
     const payloadData = data.data as any;
     const ackPromise = (payloadData && payloadData.roomId)
@@ -120,7 +101,7 @@ self.addEventListener('push', (event) => {
             })
         : Promise.resolve();
 
-    // 2. UI Logic (Show Notification or In-App Message)
+    // 3. UI Logic (Show Notification or In-App Message)
     const uiPromise = self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then((clientList) => {
             const hasVisibleClient = clientList.some(
@@ -145,9 +126,42 @@ self.addEventListener('push', (event) => {
                 .catch(err => console.error(`[SW-v${SW_VERSION}] [PUSH] Show failed`, err));
         });
 
-    // 3. Wait for both (Keep SW alive)
+    // 4. Wait for both (Keep SW alive)
     event.waitUntil(Promise.allSettled([uiPromise, ackPromise]));
 });
+
+async function sendDeliveryAck(data: any) {
+    const { roomId, anonymousId } = data;
+
+    // Validate payload
+    if (!roomId || !anonymousId) {
+        console.warn('[SW] Cannot send ACK: missing roomId or anonymousId', data);
+        return;
+    }
+
+    const url = `/api/chats/${roomId}/delivered`;
+    const request = new Request(url, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-anonymous-id': anonymousId // Authenticate as recipient
+        },
+        body: JSON.stringify({}) // ✅ FIX: Explicit empty body to avoid parser errors
+    });
+
+    try {
+        console.log(`[SW] Sending Delivery ACK for Room ${roomId}`);
+        // ✅ FIX: Removed keepalive: true (Redundant in SW, potentially buggy in some contexts)
+        const response = await fetch(request.clone());
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+        console.log('[SW] Delivery ACK sent successfully');
+    } catch (err) {
+        console.warn('[SW] Delivery ACK failed (Network/Server), queuing for background sync:', err);
+        await deliveryQueue.pushRequest({ request });
+    }
+}
 
 declare let self: ServiceWorkerGlobalScope;
 
