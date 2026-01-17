@@ -757,14 +757,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     return (
         <motion.div
             className="h-full w-full"
-            drag="x"
-            dragConstraints={{ left: 0, right: 1000 }}
-            dragElastic={0.1}
-            onDragEnd={(_, info) => {
-                if (info.offset.x > 100 && onBack) {
-                    onBack();
-                }
-            }}
         >
             <Card className="flex flex-col h-full bg-background border-border overflow-hidden shadow-2xl">
                 <div className="p-4 border-b border-border flex items-center gap-3 bg-card/50">
