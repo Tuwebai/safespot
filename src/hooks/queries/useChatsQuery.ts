@@ -256,6 +256,11 @@ export function useChatMessages(convId: string | undefined) {
                 }
             }
 
+            // ✅ FIX: Force refresh of message statuses (DELIVERED/READ ticks)
+            // Gap Recovery only gets *new* messages, but old messages might have been read/delivered while we were offline.
+            // Invalidate to fetch latest states without full refetch if possible, or let React Query handle stales.
+            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
+
             // ✅ Clear any stale typing on reconnect
             setIsTyping(false);
             if (typingTimeoutRef.current) {

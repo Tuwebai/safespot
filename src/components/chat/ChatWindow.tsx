@@ -423,6 +423,28 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const anonymousId = useAnonymousId();
 
     const [message, setMessage] = useState('');
+
+    // ✅ FIX: Draft Persistence (Anti-Data Loss on Deploy)
+    // Restore draft on mount if exists
+    useEffect(() => {
+        if (!room?.id) return;
+        const draftKey = `chat_draft_${room.id}`;
+        const savedDraft = localStorage.getItem(draftKey);
+        if (savedDraft) {
+            console.log('[Drafts] Restored draft for room', room.id);
+            setMessage(savedDraft);
+        }
+    }, [room?.id]);
+
+    // Save draft on change
+    const updateMessage = (newValue: string) => {
+        setMessage(newValue);
+        if (room?.id) {
+            localStorage.setItem(`chat_draft_${room.id}`, newValue);
+        }
+    };
+
+
     const {
         data: messages,
         isLoading: messagesLoading,
@@ -656,8 +678,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                     );
                 });
 
+                // Limpiar input y borradores
                 setMessage('');
+                if (room.id) localStorage.removeItem(`chat_draft_${room.id}`);
+
                 setEditingMessage(null);
+                setPreviewUrl(null);
 
                 try {
                     await chatsApi.editMessage(room.id, messageId, contentToSend);
@@ -1232,7 +1258,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         <Input
                             ref={inputRef}
                             value={message}
-                            onChange={(e) => setMessage(e.target.value)}
+                            onChange={(e) => updateMessage(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             placeholder={previewUrl ? "Añadir leyenda..." : "Escribí un mensaje..."}
                             className="bg-muted border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/50"

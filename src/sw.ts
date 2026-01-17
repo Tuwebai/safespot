@@ -43,7 +43,7 @@ async function sendDeliveryAck(data: any) {
 
     try {
         console.log(`[SW] Sending Delivery ACK for Room ${roomId}`);
-        const response = await fetch(request.clone());
+        const response = await fetch(request.clone(), { keepalive: true }); // ✅ FIX: Keepalive for reliability
         if (!response.ok) {
             throw new Error(`Server returned ${response.status}`);
         }
@@ -63,6 +63,7 @@ self.addEventListener('push', (event) => {
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: 'safespot-notification',
+        renotify: true, // Default to true for generic notifications
         data: { url: '/mapa' },
         actions: [],
     };
@@ -84,6 +85,12 @@ self.addEventListener('push', (event) => {
         data: data.data,
         actions: data.actions || [],
         requireInteraction: false,
+        // IMPORTANT:
+        // When reusing a notification `tag` (chat grouping),
+        // browsers will silence subsequent notifications
+        // unless `renotify: true` is explicitly set.
+        // Removing this will cause silent notifications on consecutive messages.
+        renotify: data.renotify,
     };
 
     const notificationPromise = self.clients
