@@ -2,6 +2,8 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from './ui/toast';
+import { playNotificationSound } from '../lib/sound';
 
 /**
  * ServiceWorkerController
@@ -14,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 export function ServiceWorkerController() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();  // ✅ For SW update handling
+    const toast = useToast();
 
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return;
@@ -37,7 +40,31 @@ export function ServiceWorkerController() {
             }
 
             if (type === 'IN_APP_NOTIFICATION') {
-                // Fallback toast for push notifications when app is visible
+                const payload = event.data.payload; // Correct payload structure
+                const notifData = payload.data || {};
+                const targetUrl = notifData.url;
+
+                // 1. Play Sound (Always)
+                playNotificationSound();
+
+                // 2. Check if we are already in the chat
+                // URL usually looks like /mensajes/:roomId
+                // pathname looks like /mensajes/:roomId
+                const currentPath = window.location.pathname;
+
+                // If we are NOT in the target chat, show toast
+                if (targetUrl && currentPath !== targetUrl) {
+                    // Adapter for Custom Toast System (Simple API)
+                    // Since we cannot pass actions/title, we append the intent to the message
+                    toast.info(`💬 ${payload.title}: ${payload.body}`, 4000);
+
+                    // We can't attach an onClick to the simple toast, 
+                    // but the user can click the notification in the system tray if background.
+                    // For in-app, we rely on the sound and visual cue.
+                    // Ideally, we upgrade the Toast system later to support actions.
+                } else {
+                    console.log('[SW-Controller] Muted toast (already in chat)');
+                }
             }
 
             // ✅ ENTERPRISE: SW Update Events

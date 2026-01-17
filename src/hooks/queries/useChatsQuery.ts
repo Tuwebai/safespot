@@ -8,6 +8,7 @@ import { ssePool } from '@/lib/ssePool';
 import { chatCache } from '../../lib/chatCache';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
 import { chatBroadcast } from '@/lib/chatBroadcast';
+import { playNotificationSound } from '@/lib/sound';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -283,6 +284,17 @@ export function useChatMessages(convId: string | undefined) {
                 // ✅ CRITICAL FIX: Use consistent query key (anonymousId || '')
                 // Must match the key used in optimistic update to find and merge
                 chatCache.upsertMessage(queryClient, message, anonymousId || '');
+
+                // ✅ WhatsApp-Grade: Instant ACK + Sound if active
+                if (message.sender_id !== anonymousId) {
+                    // 1. Play "Pop" Sound
+                    playNotificationSound();
+
+                    // 2. Send Delivery ACK (Tick Gris)
+                    chatsApi.markAsDelivered(convId).catch(e =>
+                        console.warn('[ACK] Failed to mark as delivered:', e)
+                    );
+                }
 
                 // ✅ GAP RECOVERY: Update watermark on every new message
                 watermark = message.id;
