@@ -1076,6 +1076,7 @@ export const chatsApi = {
   markAsRead: async (roomId: string): Promise<{ success: boolean }> => {
     return apiRequest<{ success: boolean }>(`/chats/${roomId}/read`, {
       method: 'PATCH',
+      keepalive: true, // ✅ ENTERPRISE FIX: Ensure complete even if tab closes
     });
   },
 
@@ -1092,6 +1093,7 @@ export const chatsApi = {
   markAsDelivered: async (roomId: string): Promise<{ success: boolean }> => {
     return apiRequest<{ success: boolean }>(`/chats/${roomId}/delivered`, {
       method: 'PATCH',
+      keepalive: true, // ✅ ENTERPRISE FIX: Ensure complete even if tab closes
     });
   },
 
@@ -1236,7 +1238,8 @@ export const notificationsApi = {
    */
   markRead: async (id: string): Promise<{ success: boolean }> => {
     return apiRequest<{ success: boolean }>(`/notifications/${id}/read`, {
-      method: 'PATCH'
+      method: 'PATCH',
+      keepalive: true, // ✅ ENTERPRISE FIX
     });
   },
 

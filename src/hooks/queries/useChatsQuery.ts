@@ -192,9 +192,26 @@ export function useChatMessages(convId: string | undefined) {
         enabled: !!convId && !!anonymousId,  // ✅ Both required
         staleTime: Infinity, // ✅ ENTERPRISE: No refetch automático - SSE es la fuente de actualizaciones
         gcTime: 1000 * 60 * 30, // 30 min garbage collection
-        refetchOnWindowFocus: false, // ✅ SSE maneja sincronización
+        refetchOnWindowFocus: false, // ✅ CONTROLADO MANUALMENTE (ver abajo)
         refetchOnReconnect: false, // ✅ Gap Recovery maneja reconexión
     });
+
+    // ✅ STATUS RECONCILIATION (Lost Write Fix)
+    // Cuando el usuario vuelve a la app (tab focus o app switching), forzamos
+    // una reconciliación de estado para actualizar "tildes" (Delivered/Read)
+    // que pudieron llegar por SSE mientras la app estaba en background.
+    useEffect(() => {
+        const handleFocus = () => {
+            if (convId && anonymousId) {
+                console.log('[Chat] Window focused - Reconciling message statuses (Anti-Lost Write)');
+                // Invalidate forcea un refetch aunque staleTime sea Infinity
+                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
+            }
+        };
+
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+    }, [convId, anonymousId, queryClient]);
 
     // Integración SSE para tiempo real + Gap Recovery
     useEffect(() => {

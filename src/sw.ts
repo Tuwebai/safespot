@@ -60,35 +60,50 @@ self.addEventListener('push', (event) => {
 
     // [SW-04] HARDCODED DEFAULTS (Reliability)
     // No confiamos 100% en el payload para invariantes de sonido.
-    let data = {
+    let data: any = {
         title: '⚠️ Nuevo reporte',
         body: 'Actividad en tu zona',
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: 'safespot-notification',
-        renotify: true, // INVARIANT: Always true
+        renotify: true,
         data: { url: '/mapa' },
         actions: [],
     };
 
     if (event.data) {
         try {
-            data = event.data.json();
+            // Merge defaults with payload to prevent missing fields
+            const payload = event.data.json();
+            data = { ...data, ...payload };
         } catch (e) {
             console.error('[SW] Error parsing push data:', e);
         }
     }
+
+    // [SW-04] PHASE 2 STRICT FIX: CHAT RELIABILITY (Definitive)
+    // "Regla de Oro: Todo mensaje de tipo chat DEBE sonar siempre"
+    // Detectamos chat message explícitamente para no afectar otras notificaciones.
+    const isChat = data.data?.type === 'chat-message' || (data.tag && data.tag.startsWith('chat-'));
 
     const options = {
         body: data.body,
         icon: data.icon,
         badge: data.badge,
         tag: data.tag,
-        vibrate: [200, 100, 200], // [SW-04] INVARIANT: Default vibration pattern
+
+        // [SW-04] INVARIANT: Chat ALWAYS vibrates.
+        // Forzamos patrón de vibración si es chat.
+        vibrate: isChat ? [200, 100, 200] : (data.vibrate || [200, 100, 200]),
+
         data: data.data,
         actions: data.actions || [],
         requireInteraction: false,
-        renotify: true, // [SW-04] INVARIANT: Force renotify always (Override payload if needed)
+
+        // [SW-04] INVARIANT: Chat ALWAYS renotifies.
+        // Si es chat, ignoramos data.renotify y forzamos true (Anti-Silencio).
+        // Si no es chat, respetamos el payload o default true.
+        renotify: isChat ? true : (data.renotify ?? true),
     };
 
     // [SW-01] ZERO BLOCKING UI STRATEGY
