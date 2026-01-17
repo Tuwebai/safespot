@@ -15,6 +15,7 @@ import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { usePresenceHeartbeat } from '@/hooks/usePresenceHeartbeat'
 import { AdModal } from '@/components/ads/AdModal'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
+import { ServiceWorkerController } from '@/components/ServiceWorkerController'
 import { cn } from '@/lib/utils'
 
 import { NotificationFeedbackListener } from '@/components/notifications/NotificationFeedbackListener'
@@ -50,6 +51,7 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <ToastProvider>
+      <ServiceWorkerController />
       <NotificationFeedbackListener />
       <AdModal />
       <BadgeNotificationManager />

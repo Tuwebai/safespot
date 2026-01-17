@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useToast } from './ui/toast';
+import { useToast } from '@/components/ui/toast';
 import { playNotificationSound } from '../lib/sound';
 
 /**

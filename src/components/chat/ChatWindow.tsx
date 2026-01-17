@@ -699,6 +699,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             const captionToSend = selectedFile ? message : undefined;
 
             setMessage('');
+            if (room.id) localStorage.removeItem(`chat_draft_${room.id}`);
             cancelImageSelection();
 
             if (contentToSend || fileToSend) {

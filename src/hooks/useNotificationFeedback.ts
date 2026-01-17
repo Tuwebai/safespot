@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNotificationsQuery } from '@/hooks/queries/useNotificationsQuery';
-import { useToast } from '@/components/ui/toast/useToast';
-import { playNotificationSound } from '@/lib/audio';
+import { useToast } from '@/components/ui/toast';
+import { playNotificationSound } from '@/lib/sound';
 
 export function useNotificationFeedback() {
     const { data: notifications } = useNotificationsQuery();

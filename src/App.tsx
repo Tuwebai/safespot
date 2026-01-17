@@ -44,7 +44,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
 
 import { SEO } from '@/components/SEO'
-import { ServiceWorkerController } from '@/components/ServiceWorkerController'
+
 import { AuthToastListener } from '@/components/auth/AuthToastListener'
 
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -79,7 +79,7 @@ function App() {
         }}
       >
         <ThemeProvider>
-          <ServiceWorkerController />
+
           <FirstTimeOnboardingTheme />
 
           <SEO />
