@@ -1,10 +1,6 @@
-/**
- * API Client for SafeSpot Backend
- * All requests include X-Anonymous-Id header
- */
-
-import { ensureAnonymousId } from './identity';
+import { AppClientError } from './errors';
 import { getClientId } from './clientId';
+import { ensureAnonymousId } from './identity';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -15,22 +11,21 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
 
 /**
  * Get headers with anonymous_id, client_id, and APP VERSION
+ * 
+ * ✅ ENTERPRISE TRACING: Injects X-Request-ID for E2E Observability
  */
-function getHeaders(): HeadersInit {
+function getHeaders(requestId?: string): HeadersInit {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Client-ID': getClientId(),
     'X-Anonymous-Id': ensureAnonymousId(),
     // ✅ ENTERPRISE: Semantic Version Injection
-    // Allows backend to reject incompatible clients (426 Upgrade Required)
     'X-App-Version': __SW_VERSION__,
+    // ✅ ENTERPRISE: Distributed Tracing
+    'X-Request-ID': requestId || self.crypto.randomUUID(),
   };
 
   // INJECT AUTH TOKEN (Phase 2)
-  // We read directly from localStorage to avoid circular deps with Zustand store outside components
-  // The key 'auth-storage' is where Zustand persists data by default logic above.
-  // Zustand persists as JSON: { state: { token: "...", ... }, version: 0 }
-
   try {
     const storedAuth = localStorage.getItem('auth-storage');
     if (storedAuth) {
@@ -56,6 +51,8 @@ export async function apiRequest<T>(
   timeout = 45000 // 45 seconds default timeout (Accommodates Render cold starts)
 ): Promise<T> {
 
+  // 1. Generate Correlation ID for this specific request
+  const requestId = self.crypto.randomUUID();
 
   // 2. Normalize endpoint: Remove any existing /api or api/ prefix to avoid duplication
   let cleanEndpoint = endpoint;
@@ -69,12 +66,12 @@ export async function apiRequest<T>(
 
   // Log in development to catch issues fast
   if (import.meta.env.DEV) {
-    console.debug(`[API Request] ${options.method || 'GET'} ${url}`);
+    console.debug(`[API Request] [${requestId}] ${options.method || 'GET'} ${url}`);
   }
 
   try {
     const headers: HeadersInit = {
-      ...getHeaders(),
+      ...getHeaders(requestId), // Pass ID to headers generator
       ...options.headers,
     };
 
@@ -99,7 +96,7 @@ export async function apiRequest<T>(
 
     // ✅ ENTERPRISE: Handle 426 Upgrade Required (Breaking Change Protection)
     if (response.status === 426) {
-      console.error('[API] 🚨 Client outdated (426). Forced Update Initiated.');
+      console.error(`[API] [${requestId}] 🚨 Client outdated (426). Forced Update Initiated.`);
 
       // Force Service Worker check immediately
       if ('serviceWorker' in navigator) {
@@ -109,14 +106,17 @@ export async function apiRequest<T>(
 
       // Reload to pick up new version
       window.location.reload();
-      throw new Error('Client outdated. Reloading...');
+      throw new AppClientError('Client outdated', 'CLIENT_OUTDATED', 426);
     }
 
     // Handle 429 Too Many Requests specifically
     if (response.status === 429) {
-      const error = new Error('Demasiadas peticiones. Por favor, esperá un momento.') as any;
-      error.status = 429;
-      throw error;
+      throw new AppClientError(
+        'Demasiadas peticiones. Por favor, esperá un momento.',
+        'RATE_LIMIT_EXCEEDED',
+        429,
+        true
+      );
     }
 
     // Parse JSON safely
@@ -127,9 +127,13 @@ export async function apiRequest<T>(
 
     // 2. Handle HTTP errors - FAIL FAST (No internal retries)
     if (!response.ok) {
-      const error = new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`) as Error & { status?: number };
-      error.status = response.status;
-      throw error;
+      throw new AppClientError(
+        data.message || data.error || `HTTP ${response.status}: ${response.statusText}`,
+        data.code || 'HTTP_ERROR',
+        response.status,
+        true, // Assume HTTP errors are operational unless proven otherwise
+        data.details || data // Attach full context
+      );
     }
 
     // Preserve 'meta' if it exists (don't unwrap aggressively)
@@ -146,20 +150,40 @@ export async function apiRequest<T>(
 
     // Enhance error objects for React Query to detect logic
     if (isTimeout) {
-      const timeoutError = new Error('La solicitud tardó demasiado. Por favor, verificá tu conexión.') as any;
-      timeoutError.status = 408; // Request Timeout simulation
-      timeoutError.code = 'TIMEOUT';
-      throw timeoutError;
+      const err = new AppClientError(
+        'La solicitud tardó demasiado. Por favor, verificá tu conexión.',
+        'TIMEOUT',
+        408
+      );
+      throw err;
     }
 
     if (isNetworkError) {
-      // Pass through as is, React Query handles 'error instanceof TypeError' as network error typically
-      // We can attach a status 0 to indicate network fail if we want
-      (error as any).status = 0;
+      // Logic for network error (status 0)
+      const err = new AppClientError(
+        'Error de conexión. Verificá tu internet.',
+        'NETWORK_ERROR',
+        0,
+        true
+      );
+      throw err;
     }
 
-    // Pass through immediately
-    throw error;
+    // Pass through if it is already AppClientError
+    if (error instanceof AppClientError) {
+      // Inyectar requestId si faltaba
+      if (!error.requestId) (error as any).requestId = requestId;
+      throw error;
+    }
+
+    // Wrap unknown errors
+    throw new AppClientError(
+      (error as any).message || 'Unknown API Error',
+      'UNKNOWN',
+      500,
+      false,
+      { originalError: error }
+    );
   }
 }
 

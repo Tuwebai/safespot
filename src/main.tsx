@@ -9,6 +9,11 @@ import { IdentityInitializer } from './components/IdentityInitializer'
 
 import { HelmetProvider } from 'react-helmet-async'
 
+// Enterprise Protocol: Observability
+import { initSentry } from './lib/sentry'
+// Initialize ASAP
+initSentry();
+
 // ============================================
 // SERVICE WORKER REGISTRATION (NON-BLOCKING)
 // ============================================

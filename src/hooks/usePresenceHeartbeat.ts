@@ -43,8 +43,9 @@ export const usePresenceHeartbeat = () => {
                 });
             } catch (err) {
                 // Silently fail - presence is "soft state"
-                if (import.meta.env.DEV) {
-                    console.warn('[Presence] Heartbeat failed:', err);
+                // Do not warn in console to keep hygiene clean unless explicitly debugging presence
+                if (import.meta.env.DEV && localStorage.getItem('debug_presence') === 'true') {
+                    console.debug('[Presence] Heartbeat failed:', err);
                 }
             }
         };
