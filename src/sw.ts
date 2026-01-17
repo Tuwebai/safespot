@@ -2,7 +2,7 @@
 // @ts-ignore - Silence Workbox logs
 self.__WB_DISABLE_DEV_LOGS = true;
 
-import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { cleanupOutdatedCaches, precacheAndRoute, matchPrecache } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
@@ -55,15 +55,18 @@ async function sendDeliveryAck(data: any) {
 }
 
 self.addEventListener('push', (event) => {
-    console.log('[SW] Push received:', event);
+    // [SW-06] Log estructurado
+    console.log(`[SW-v${SW_VERSION}] [PUSH] Event received`, event);
 
+    // [SW-04] HARDCODED DEFAULTS (Reliability)
+    // No confiamos 100% en el payload para invariantes de sonido.
     let data = {
-        title: '⚠️ Nuevo reporte cerca tuyo',
-        body: 'Hay actividad en tu zona',
+        title: '⚠️ Nuevo reporte',
+        body: 'Actividad en tu zona',
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: 'safespot-notification',
-        renotify: true, // Default to true for generic notifications
+        renotify: true, // INVARIANT: Always true
         data: { url: '/mapa' },
         actions: [],
     };
@@ -81,20 +84,29 @@ self.addEventListener('push', (event) => {
         icon: data.icon,
         badge: data.badge,
         tag: data.tag,
-        vibrate: [100, 50, 100],
+        vibrate: [200, 100, 200], // [SW-04] INVARIANT: Default vibration pattern
         data: data.data,
         actions: data.actions || [],
         requireInteraction: false,
-        // IMPORTANT:
-        // When reusing a notification `tag` (chat grouping),
-        // browsers will silence subsequent notifications
-        // unless `renotify: true` is explicitly set.
-        // Removing this will cause silent notifications on consecutive messages.
-        renotify: data.renotify,
+        renotify: true, // [SW-04] INVARIANT: Force renotify always (Override payload if needed)
     };
 
-    const notificationPromise = self.clients
-        .matchAll({ type: 'window', includeUncontrolled: true })
+    // [SW-01] ZERO BLOCKING UI STRATEGY
+    // Paralelizamos totalmente el ACK y la Notificación.
+    // El fallo del ACK jamás debe detener el sonido.
+
+    // 1. Delivery ACK (Background - Network)
+    // Starts immediately, runs in parallel
+    const payloadData = data.data as any;
+    const ackPromise = (payloadData && payloadData.roomId)
+        ? sendDeliveryAck(payloadData)
+            .catch(err => {
+                console.error(`[SW-v${SW_VERSION}] [PUSH] ACK Fatal Error`, err);
+            })
+        : Promise.resolve();
+
+    // 2. UI Logic (Show Notification or In-App Message)
+    const uiPromise = self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then((clientList) => {
             const hasVisibleClient = clientList.some(
                 (client) =>
@@ -102,31 +114,24 @@ self.addEventListener('push', (event) => {
                     client.url.startsWith(self.location.origin)
             );
 
-            // ✅ LOGICAL ACK: Send it regardless of UI state
-            // "Delivered" means device received it, not necessarily user saw it
-            // We use event.waitUntil to keep SW alive for this
-            const payloadData = data.data as any;
-            const ackPromise = (payloadData && payloadData.roomId)
-                ? sendDeliveryAck(payloadData)
-                : Promise.resolve();
-
-            return ackPromise.then(() => {
-                if (hasVisibleClient) {
-                    console.log('[SW] App visible - Suppressing native notification');
-                    clientList.forEach((client) => {
-                        client.postMessage({
-                            type: 'IN_APP_NOTIFICATION',
-                            payload: data,
-                        });
+            if (hasVisibleClient) {
+                console.log(`[SW-v${SW_VERSION}] [PUSH] App visible - Suppressing native notification`);
+                clientList.forEach((client) => {
+                    client.postMessage({
+                        type: 'IN_APP_NOTIFICATION',
+                        payload: data,
                     });
-                    return;
-                }
+                });
+                return;
+            }
 
-                return self.registration.showNotification(data.title, options);
-            });
+            return self.registration.showNotification(data.title, options)
+                .then(() => console.log(`[SW-v${SW_VERSION}] [PUSH] Notification shown`))
+                .catch(err => console.error(`[SW-v${SW_VERSION}] [PUSH] Show failed`, err));
         });
 
-    event.waitUntil(notificationPromise);
+    // 3. Wait for both (Keep SW alive)
+    event.waitUntil(Promise.allSettled([uiPromise, ackPromise]));
 });
 
 declare let self: ServiceWorkerGlobalScope;
@@ -462,7 +467,7 @@ self.addEventListener('message', (event) => {
 // CACHE STRATEGIES
 // ============================================
 
-// A. Images: StaleWhileRev alidate
+// A. Images: StaleWhileRevalidate
 registerRoute(
     ({ request }) => request.destination === 'image',
     new StaleWhileRevalidate({
@@ -529,17 +534,18 @@ type HTTPMethod = 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 });
 
 // E. HTML Navigation: NetworkFirst WITHOUT caching (CRITICAL FIX)
+// E. HTML Navigation: App Shell Fallback (Offline First + Network Freshness)
+// [SW-02] Offline Dead-End FIX
 const navigationRoute = new NavigationRoute(
     async ({ request }) => {
-        // ✅ TUNING: 5s timeout for slow 3G/4G
-        // 2s was too aggressive and caused false offline positives
+        // Timeout tunning (5s)
         const TIMEOUT = 5000;
 
-        // CRITICAL FIX: Always fetch HTML from network, NEVER cache
-        // This prevents stale HTML from being served after deploys
+        // 1. Try Network (Freshness)
+        // We want the latest HTML if possible
         const networkPromise = fetch(request, {
-            cache: 'no-store',  // Prevent browser cache
-            headers: { 'Cache-Control': 'no-cache' }  // Force revalidation
+            cache: 'no-store', // Always fetch fresh
+            headers: { 'Cache-Control': 'no-cache' }
         });
 
         const timeoutPromise = new Promise<Response>((_, reject) => {
@@ -549,20 +555,26 @@ const navigationRoute = new NavigationRoute(
         try {
             const response = await Promise.race([networkPromise, timeoutPromise]);
             if (response.ok) {
-                // CRITICAL: Do NOT cache HTML
-                return response;  // Serve fresh HTML directly
+                return response; // Fresh HTML
             }
             throw new Error(`Response not ok: ${response.status}`);
         } catch (error) {
-            // OFFLINE FALLBACK: Show offline page, NOT stale HTML
-            // This prevents serving old version when network fails
-            console.warn('[SW] HTML navigation failed, showing offline page');
+            // 2. Offline Fallback: Serve App Shell
+            // [SW-02] Fix: Never return static error HTML.
+            // Return cached /index.html so the app can mount and show local data.
+            console.warn(`[SW-v${SW_VERSION}] [NAV] Navigation failed, serving App Shell`, error);
+
+            // Use matchPrecache to safely retrieve the versioned index.html
+            const cachedResponse = await matchPrecache('/index.html');
+
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+
+            // Fallback purely defensive if Precache failed completely (Should not happen)
             return new Response(
-                '<!DOCTYPE html><html><head><title>Offline</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#020617;color:white;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:system-ui,-apple-system,sans-serif;text-align:center;"><div><h1 style="color:#00ff88;margin-bottom:1rem">Sin conexión</h1><p>No pudimos cargar la última versión.</p><button onclick="window.location.reload()" style="background:#00ff88;color:#020617;border:none;padding:12px 24px;border-radius:99px;font-weight:bold;cursor:pointer;margin-top:20px">Reintentar</button></div></body></html>',
-                {
-                    status: 503,
-                    headers: { 'Content-Type': 'text/html' }
-                }
+                '<!DOCTYPE html><html><body><h1>Offline Mode Check</h1><p>App Shell missing.</p></body></html>',
+                { status: 503, headers: { 'Content-Type': 'text/html' } }
             );
         }
     },
