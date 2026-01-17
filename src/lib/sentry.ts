@@ -1,6 +1,4 @@
 import * as Sentry from "@sentry/react";
-import { useEffect } from "react";
-import { useLocation, useNavigationType, createRoutesFromChildren, matchRoutes } from "react-router-dom";
 
 /**
  * Initialize Sentry for Enterprise Observability
