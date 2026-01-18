@@ -245,6 +245,7 @@ export interface UserZone {
 // DO NOT duplicate the interface here
 
 export interface CreateReportData {
+  id?: string; // ✅ Enterprise: Client-side ID (Optional)
   title: string;
   description: string;
   category: string;

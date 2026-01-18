@@ -791,19 +791,21 @@ router.post('/',
         finalZone = locality || department || sanitizedZone || '';
       }
 
-      // Insert report using queryWithRLS for RLS consistency
-      const insertResult = await queryWithRLS(anonymousId, `
-      INSERT INTO reports (
-        anonymous_id, title, description, category, zone, address, 
-        latitude, longitude, status, incident_date, is_hidden,
-        province, locality, department
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING *
-    `, [
+      // ALLOW CLIENT-GENERATED ID (Enterprise Pattern)
+      // This enables 0ms UI updates by letting the client define the ID upfront.
+      const reportId = (req.body.id && isValidUuid(req.body.id)) ? req.body.id : null;
+
+      const columns = [
+        'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
+        'latitude', 'longitude', 'status', 'incident_date', 'is_hidden',
+        'province', 'locality', 'department'
+      ];
+
+      const values = [
         anonymousId,
         sanitizedTitle,
         sanitizedDescription,
-        req.body.category,  // Validated against whitelist, no sanitization needed
+        req.body.category,
         finalZone,
         sanitizedAddress,
         req.body.latitude || null,
@@ -814,7 +816,22 @@ router.post('/',
         province,
         locality,
         department
-      ]);
+      ];
+
+      // If client provided a valid ID, use it
+      if (reportId) {
+        columns.push('id');
+        values.push(reportId);
+      }
+
+      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+
+      // Insert report using queryWithRLS for RLS consistency
+      const insertResult = await queryWithRLS(anonymousId, `
+      INSERT INTO reports (${columns.join(', ')})
+      VALUES (${placeholders})
+      RETURNING *
+    `, values);
 
       if (insertResult.rows.length === 0) {
         logError(new Error('Insert returned no data'), req);

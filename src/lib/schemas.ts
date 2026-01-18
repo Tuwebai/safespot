@@ -45,7 +45,8 @@ export const reportSchema = z.object({
     flags_count: z.number().int().optional(),
     province: z.string().optional(),
     locality: z.string().optional(),
-    department: z.string().optional()
+    department: z.string().optional(),
+    _isOptimistic: z.boolean().optional()
 });
 
 /**

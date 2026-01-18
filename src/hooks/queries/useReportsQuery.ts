@@ -189,22 +189,27 @@ export function useCreateReportMutation() {
     return useMutation({
         mutationFn: (data: CreateReportData) => reportsApi.create(data),
         onMutate: async (newReportData) => {
-            // Cancel outgoing queries
+            // 1. Cancel outgoing queries
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
             await queryClient.cancelQueries({ queryKey: queryKeys.stats.global })
             await queryClient.cancelQueries({ queryKey: queryKeys.stats.categories })
 
-            // Snapshot previous state for rollback
+            // 2. Snapshot previous state
             const previousReports = queryClient.getQueriesData({ queryKey: ['reports', 'list'] })
             const previousGlobalStats = queryClient.getQueryData(queryKeys.stats.global)
             const previousCategoryStats = queryClient.getQueryData(queryKeys.stats.categories)
 
-            // Generate temporary ID for optimistic report
-            const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            // 3. GENERATE REAL ID (Enterprise Pattern)
+            // If ID was passed, use it. Otherwise generate one.
+            // We mutate the object to ensure mutationFn sends the SAME ID.
+            if (!newReportData.id) {
+                newReportData.id = crypto.randomUUID()
+            }
+            const reportId = newReportData.id!
 
-            // Create optimistic report object
+            // 4. Create Optimistic Report (Final ID, no Temp)
             const optimisticReport: Report = {
-                id: tempId,
+                id: reportId,
                 title: newReportData.title,
                 description: newReportData.description,
                 category: newReportData.category,
@@ -216,29 +221,26 @@ export function useCreateReportMutation() {
                 incident_date: newReportData.incident_date,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                image_urls: [], // Images upload separately
+                image_urls: [],
                 comments_count: 0,
                 threads_count: 0,
                 is_favorite: false,
                 is_flagged: false,
-                anonymous_id: '', // Will be set by server
+                anonymous_id: '',
                 avatar_url: null,
-                // Optimistic flag to identify temp reports
-                _isOptimistic: true
+                _isOptimistic: true // Marker for UI
             } as any
 
-            // USE HELPER: Prepend Optimistic Report (SSOT + Lists)
+            // 5. STORE IMMEDIATELY (0ms UI Update)
             reportsCache.prepend(queryClient, optimisticReport)
 
-            // Update global count
+            // 6. Update Stats Optimistically
             if (previousGlobalStats) {
                 queryClient.setQueryData(
                     queryKeys.stats.global,
                     (old: any) => ({ ...old, total_reports: (old?.total_reports || 0) + 1 })
                 )
             }
-
-            // Update category count
             if (previousCategoryStats && newReportData.category) {
                 queryClient.setQueryData(
                     queryKeys.stats.categories,
@@ -249,46 +251,36 @@ export function useCreateReportMutation() {
                 )
             }
 
-            return { previousReports, previousGlobalStats, previousCategoryStats, tempId }
+            return { previousReports, previousGlobalStats, previousCategoryStats, reportId }
         },
-        onSuccess: (serverReport, _variables, context) => {
-            // Replace temporary report with real server report
-            if (context?.tempId) {
-                // 1. Store Real Detail
-                reportsCache.store(queryClient, [serverReport])
+        onSuccess: (serverReport) => {
+            // SERVER CONFIRMATION
+            // The ID is the same. We just merge any server-side fields (like created_at exact time, anonymous_id).
+            // We do NOT swap IDs.
 
-                // 2. Swap ID in Lists
-                queryClient.setQueriesData<string[]>(
-                    { queryKey: ['reports', 'list'] },
-                    (oldIds) => {
-                        if (!oldIds) return []
-                        // Map tempId to realId
-                        return oldIds.map(id => id === context.tempId ? serverReport.id : id)
-                    }
-                )
+            reportsCache.patch(queryClient, serverReport.id, {
+                ...serverReport,
+                _isOptimistic: false
+            })
 
-                // 3. Remove Optimistic Detail
-                queryClient.removeQueries({ queryKey: queryKeys.reports.detail(context.tempId) })
-
-                // 4. Update localStorage (for default view persistence)
+            // Update localStorage (persistence)
+            try {
                 const defaultKey = queryKeys.reports.list()
                 const defaultIds = queryClient.getQueryData<string[]>(defaultKey)
                 if (defaultIds && defaultIds.includes(serverReport.id)) {
-                    // Re-capture full reports for storage
                     const allReports = defaultIds
                         .map(id => queryClient.getQueryData<Report>(queryKeys.reports.detail(id)))
                         .filter(Boolean) as Report[]
                     localStorage.setItem('safespot_reports_all_v2', JSON.stringify(allReports))
                 }
-            }
+            } catch (e) { console.error('Storage update failed', e) }
         },
         onError: (_err, _newReport, context) => {
-            // Rollback: Remove optimistic report
-            if (context?.tempId) {
-                reportsCache.remove(queryClient, context.tempId)
+            // Rollback: Remove values
+            if (context?.reportId) {
+                reportsCache.remove(queryClient, context.reportId)
             }
 
-            // Rollback stats
             if (context?.previousGlobalStats) {
                 queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
             }
@@ -297,11 +289,7 @@ export function useCreateReportMutation() {
             }
         },
         onSettled: () => {
-            // Final sync with server
-            // HOTFIX: Removed invalidateQueries for reports.all to prevent race condition
-            // where refetch happens before backend commit is visible, causing empty list.
-            // The optimistic update + SSE events handle list updates correctly.
-            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            // Final Sync (Stats only, reports are SSOT managed)
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },
