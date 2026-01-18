@@ -1,188 +1,167 @@
 import { Link } from 'react-router-dom'
-import { MapPin, Github, Twitter, Mail } from 'lucide-react'
+import { MapPin, Github, Twitter, Mail, ShieldCheck, Heart } from 'lucide-react'
 import { useState } from 'react'
 import { ContactModal } from '@/components/contact/ContactModal'
+import { StatusIndicator } from './StatusIndicator'
+import { InstallAppButton } from './InstallAppButton'
 
 export function Footer() {
   const [isContactOpen, setIsContactOpen] = useState(false);
-  // Use standard URL for all platforms - Android browser handles MP app redirect automatically
-  const donationLink = "https://link.mercadopago.com.ar/safespotapp"; //commit
+  const donationLink = "https://link.mercadopago.com.ar/safespotapp";
+  const currentYear = new Date().getFullYear();
 
   return (
     <>
       <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
 
-      <footer className="bg-dark-card border-t border-dark-border py-6">
-        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-8 mb-8">
-            {/* Branding Column (Spans 2 columns) */}
-            <div className="md:col-span-2">
-              {/* Logo Group */}
-              <div className="flex items-center space-x-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-dark-bg" />
-                </div>
-                <div className="text-xl font-bold gradient-text">SafeSpot</div>
-              </div>
+      {/* Enterprise Gradient Border Top */}
+      <footer className="relative bg-dark-card pt-16 pb-8 border-t border-dark-border z-10">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-neon-green/50 to-transparent" />
 
-              {/* Description */}
-              <p className="text-foreground/70 mb-4 max-w-md">
-                Plataforma colaborativa para reportar robos y recuperar objetos robados junto con tu comunidad.
+        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+          {/* Top Section: Brand & Install */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 pb-8 border-b border-white/5 gap-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-green to-emerald-600 flex items-center justify-center shadow-lg shadow-neon-green/20">
+                <MapPin className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold tracking-tight text-white">SafeSpot</div>
+                <div className="text-xs text-white/50 uppercase tracking-widest font-medium">Enterprise Security</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <StatusIndicator />
+              <InstallAppButton />
+            </div>
+          </div>
+
+          {/* Main Grid Content */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 lg:gap-12 mb-16">
+
+            {/* Column 1: Mission */}
+            <div className="col-span-2 lg:col-span-2 space-y-6 pr-4">
+              <p className="text-foreground/60 leading-relaxed max-w-sm">
+                Plataforma colaborativa de nueva generación para la seguridad comunitaria.
+                Reportá incidentes en tiempo real y recuperá lo que te pertenece con la ayuda de tu red local.
               </p>
 
-              {/* Social Icons */}
               <div className="flex items-center space-x-4">
-                <a
-                  href="https://github.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-foreground/70 hover:text-neon-green transition-colors"
-                >
-                  <Github className="w-5 h-5" />
-                </a>
-                <a
-                  href="https://twitter.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-foreground/70 hover:text-neon-green transition-colors"
-                >
-                  <Twitter className="w-5 h-5" />
-                </a>
+                <SocialLink href="https://github.com" icon={Github} label="GitHub" />
+                <SocialLink href="https://twitter.com" icon={Twitter} label="Twitter" />
                 <button
                   onClick={() => setIsContactOpen(true)}
-                  className="text-foreground/70 hover:text-neon-green transition-colors"
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/60 hover:text-neon-green transition-all duration-300"
+                  aria-label="Contact"
                 >
                   <Mail className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Quick Links Column */}
-            <div>
-              <h3 className="font-semibold text-foreground mb-4">Enlaces Rápidos</h3>
+            {/* Links Columns */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Producto</h4>
               <ul className="space-y-2">
-                <li>
-                  <Link
-                    to="/reportes"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Ver Reportes
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/explorar"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Mapa Interactivo
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/comunidad"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Comunidad
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/crear-reporte"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Crear Reporte
-                  </Link>
-                </li>
-                <li>
-                  <button
-                    onClick={() => setIsContactOpen(true)}
-                    className="text-foreground/70 hover:text-neon-green transition-colors flex items-center gap-2"
-                  >
-                    Contacto
-                  </button>
-                </li>
+                <FooterLink to="/reportes">Explorar Reportes</FooterLink>
+                <FooterLink to="/explorar">Mapa en Vivo</FooterLink>
+                <FooterLink to="/crear-reporte">Reportar</FooterLink>
+                <FooterLink to="/comunidad">Comunidad</FooterLink>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Soporte</h4>
+              <ul className="space-y-2">
+                <FooterLink to="/como-funciona">Cómo Funciona</FooterLink>
+                <FooterLink to="/guia-seguridad">Guía de Seguridad</FooterLink>
+                <FooterLink to="/faq">FAQ / Ayuda</FooterLink>
+                <FooterButton onClick={() => setIsContactOpen(true)}>Contactar Soporte</FooterButton>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Compañía</h4>
+              <ul className="space-y-2">
+                <FooterLink to="/terminos">Términos de Servicio</FooterLink>
+                <FooterLink to="/privacidad">Política de Privacidad</FooterLink>
                 <li>
                   <a
                     href={donationLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-neon-green hover:text-neon-green/80 font-medium transition-colors flex items-center gap-2"
+                    className="group flex items-center gap-2 text-sm text-foreground/60 hover:text-white transition-colors mt-4"
                   >
-                    💙 Apoyar Proyecto
+                    <Heart className="w-4 h-4 text-sky-500 group-hover:fill-sky-500 transition-colors" />
+                    <span className="font-medium text-sky-500 group-hover:text-sky-400">Donar al Proyecto</span>
                   </a>
-                </li>
-              </ul>
-            </div>
-
-            {/* Support Column */}
-            <div>
-              <h3 className="font-semibold text-foreground mb-4">Producto</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link
-                    to="/como-funciona"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Cómo funciona
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/faq"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Preguntas Frecuentes
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/guia-seguridad"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Guía de Seguridad
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            {/* Legal Column */}
-            <div>
-              <h3 className="font-semibold text-foreground mb-4">Legal</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link
-                    to="/terminos"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Términos
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/privacidad"
-                    className="text-foreground/70 hover:text-neon-green transition-colors"
-                  >
-                    Privacidad
-                  </Link>
                 </li>
               </ul>
             </div>
           </div>
 
-          {/* Copyright Bar */}
-          <div className="border-t border-dark-border mt-8 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
-            <div className="flex flex-col gap-1">
-              <p className="text-sm text-foreground/70">
-                © 2024 SafeSpot. Todos los derechos reservados.
-              </p>
+          {/* Bottom Bar: Copyright & Compliance */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 py-8 border-t border-white/5 text-sm text-foreground/40">
+            <div className="flex items-center gap-2">
+              <span>&copy; {currentYear} SafeSpot Platform</span>
+              <span className="hidden md:inline mx-2">&middot;</span>
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-xs">
+                <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                <span>v2.4.0-pro</span>
+              </span>
             </div>
-            <p className="text-sm text-foreground/70">
-              Hecho con ❤️ para la comunidad
-            </p>
-          </div >
-        </div >
+
+            <div className="flex items-center gap-6">
+              <Link to="/status" className="hover:text-foreground transition-colors">Estado del Sistema</Link>
+              <Link to="/cookies" className="hover:text-foreground transition-colors">Cookies</Link>
+            </div>
+          </div>
+
+        </div>
       </footer>
     </>
+  )
+}
+
+// Sub-components for cleaner code
+function FooterLink({ to, children }: { to: string, children: React.ReactNode }) {
+  return (
+    <li>
+      <Link
+        to={to}
+        className="text-sm text-foreground/60 hover:text-neon-green transition-colors duration-200 block"
+      >
+        {children}
+      </Link>
+    </li>
+  )
+}
+
+function FooterButton({ onClick, children }: { onClick: () => void, children: React.ReactNode }) {
+  return (
+    <li>
+      <button
+        onClick={onClick}
+        className="text-sm text-foreground/60 hover:text-neon-green transition-colors duration-200 block text-left w-full"
+      >
+        {children}
+      </button>
+    </li>
+  )
+}
+
+function SocialLink({ href, icon: Icon, label }: { href: string, icon: any, label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/60 hover:text-neon-green transition-all duration-300"
+      aria-label={label}
+    >
+      <Icon className="w-5 h-5" />
+    </a>
   )
 }

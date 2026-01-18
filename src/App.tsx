@@ -34,6 +34,8 @@ const ThreadPage = lazyRetry(() => import('./pages/ThreadPage').then(m => ({ def
 const Mensajes = lazyRetry(() => import('@/pages/Mensajes'), 'Mensajes')
 const Comunidad = lazyRetry(() => import('@/pages/Comunidad').then(m => ({ default: m.Comunidad })), 'Comunidad')
 const ResetPassword = lazyRetry(() => import('@/pages/ResetPassword'), 'ResetPassword')
+const SystemStatus = lazyRetry(() => import('@/pages/SystemStatus').then(m => ({ default: m.SystemStatus })), 'SystemStatus')
+const CookiesPolicy = lazyRetry(() => import('@/pages/CookiesPolicy').then(m => ({ default: m.CookiesPolicy })), 'CookiesPolicy')
 
 // Product Pages
 const ComoFuncionaPage = lazyRetry(() => import('@/pages/ComoFuncionaPage'), 'ComoFunciona')
@@ -128,8 +130,13 @@ function App() {
                     <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
                     <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
                     <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                    <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
                     <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
                     <Route path="/mensajes/:roomId?" element={<Mensajes />} />
+
+                    {/* Enterprise Security Pages */}
+                    <Route path="/status" element={<SystemStatus />} />
+                    <Route path="/cookies" element={<CookiesPolicy />} />
 
                     {/* --- ADMIN ROUTES (Protected by Guard) --- */}
                     {/* 

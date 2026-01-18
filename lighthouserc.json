@@ -55,9 +55,6 @@
                     }
                 ]
             }
-        },
-        "upload": {
-            "target": "temporary-public-storage"
         }
     }
 }
