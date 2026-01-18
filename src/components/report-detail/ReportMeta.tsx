@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Calendar, GitBranch, MessageCircle } from 'lucide-react'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 import { formatReportDate } from '@/lib/dateUtils'
 
 // ============================================

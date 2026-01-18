@@ -2,14 +2,15 @@ import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react
 import { Helmet } from 'react-helmet-async'
 // import { PullToRefresh } from '@/components/ui/PullToRefresh' // Removed for map compatibility
 import { reportsApi } from '@/lib/api'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 import { MapLayout } from '@/layouts/MapLayout'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EmptyState } from '@/components/ui/empty-state'
+import { reportsCache } from '@/lib/cache-helpers'
 
 // CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
 const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
@@ -27,6 +28,7 @@ const MapLoadingFallback = () => (
 export function Explorar() {
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
   const activateZoneType = (location.state as any)?.activateZoneType as any
   const [searchParams] = useSearchParams()
@@ -44,15 +46,19 @@ export function Explorar() {
     }
   }, [searchParams, setSelectedReportId])
 
-  // MAIN REPORTS QUERY
-  const { data: reports = [], isFetching } = useQuery<Report[]>({
-    queryKey: ['reports', boundsSearchEnabled ? mapBounds : 'all'],
+  // MAIN REPORTS QUERY - Returns IDs (Enterprise Normalization)
+  const { data: reportIds = [], isFetching } = useQuery<string[]>({
+    queryKey: ['reports', 'list', boundsSearchEnabled ? mapBounds : 'all'],
     queryFn: async () => {
+      let data: Report[]
       if (boundsSearchEnabled && mapBounds) {
         const { north, south, east, west } = mapBounds
-        return reportsApi.getReportsInBounds(north, south, east, west)
+        data = await reportsApi.getReportsInBounds(north, south, east, west)
+      } else {
+        data = await reportsApi.getAll()
       }
-      return reportsApi.getAll()
+      // ENTERPRISE: Normalize into cache, return IDs
+      return reportsCache.store(queryClient, data)
     },
     staleTime: 30000, // 30 seconds fresh
     gcTime: 5 * 60 * 1000,
@@ -62,12 +68,14 @@ export function Explorar() {
   // MERGE STATE REPORT: Ensure the focused report exists in the list even if not fetched yet
   const reportFromState = (location.state as any)?.report as Report | undefined
 
-  const displayReports = useMemo<Report[]>(() => {
-    if (reportFromState && !reports.find(r => r.id === reportFromState.id)) {
-      return [reportFromState, ...reports]
+  const displayReportIds = useMemo<string[]>(() => {
+    if (reportFromState && !reportIds.includes(reportFromState.id)) {
+      // Store the report from state in cache
+      reportsCache.store(queryClient, [reportFromState])
+      return [reportFromState.id, ...reportIds]
     }
-    return reports
-  }, [reports, reportFromState])
+    return reportIds
+  }, [reportIds, reportFromState, queryClient])
 
   const handleSearchInArea = useCallback(() => {
     if (!mapBounds) return
@@ -88,12 +96,12 @@ export function Explorar() {
       <MapLayout>
         <Suspense fallback={<MapLoadingFallback />}>
           <SafeSpotMap
-            reports={displayReports}
+            reportIds={displayReportIds}
             initialFocus={initialFocus}
             activateZoneType={activateZoneType}
             onSearchArea={handleSearchInArea}
             // ENTERPRISE FIX: loading = cold start only. Background fetches are silent.
-            isSearching={isFetching && reports.length === 0}
+            isSearching={isFetching && reportIds.length === 0}
           />
         </Suspense>
 
@@ -109,7 +117,7 @@ export function Explorar() {
         </div>
 
         {/* Empty State Overlay */}
-        {!isFetching && reports.length === 0 && (
+        {!isFetching && reportIds.length === 0 && (
           <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-[1000] w-full max-w-md px-4 pointer-events-none">
             <div className="pointer-events-auto shadow-2xl rounded-xl overflow-hidden">
               <EmptyState

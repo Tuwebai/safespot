@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { Report, ZoneType } from '@/lib/api'
+import type { ZoneType } from '@/lib/api'
 
 interface SafeSpotMapProps {
-    reports: Report[]
+    reportIds: string[]
     className?: string
     onSearchArea?: () => void
     initialFocus?: { focusReportId: string, lat: number, lng: number } | null

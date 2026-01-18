@@ -214,7 +214,7 @@ export function useCreateReportForm() {
 
 
                 // Trigger badge check
-                triggerBadgeCheck(newReport.newBadges)
+                triggerBadgeCheck((newReport as any).newBadges)
                 queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
 
                 // Background Image Upload

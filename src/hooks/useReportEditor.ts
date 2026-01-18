@@ -3,7 +3,7 @@ import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { useUpdateReportMutation } from '@/hooks/queries/useReportsQuery'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 
 // ============================================
 // STATE TYPES

@@ -205,11 +205,11 @@ export function DetalleReporte() {
     created_at: report.created_at,
     updated_at: report.updated_at,
     image_urls: imageUrls,
-    latitude: report.latitude,
-    longitude: report.longitude,
-    locality: report.locality,
-    zone: report.zone,
-    province: report.province
+    latitude: report.latitude ?? undefined,
+    longitude: report.longitude ?? undefined,
+    locality: report.locality ?? undefined,
+    zone: report.zone ?? undefined,
+    province: report.province ?? undefined
   })
 
   return (
@@ -288,8 +288,8 @@ export function DetalleReporte() {
             {/* 3. Images Section */}
             <ReportImages
               imageUrls={imageUrls}
-              lat={report.latitude}
-              lng={report.longitude}
+              lat={report.latitude ?? undefined}
+              lng={report.longitude ?? undefined}
             />
 
             {/* 4. Stats Section */}

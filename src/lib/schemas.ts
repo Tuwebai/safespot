@@ -1,46 +1,66 @@
 import { z } from 'zod';
 
 /**
- * Common building blocks
+ * SINGLE SOURCE OF TRUTH para el tipo Report
+ * 
+ * Este schema refleja EXACTAMENTE lo que los componentes frontend usan.
+ * Basado en auditoría de ReportCard.tsx y otros componentes.
+ * 
+ * REGLAS:
+ * - Campos obligatorios: SIEMPRE presentes en responses del backend
+ * - Campos opcionales: Pueden no estar presentes
+ * - null: Backend puede devolver null, lo aceptamos
  */
-const dateSchema = z.string().datetime();
-const uuidSchema = z.string().uuid();
-const anonymousIdSchema = z.string();
 
-/**
- * Report Response Schema (Matches Backend perfectly)
- */
 export const reportSchema = z.object({
-    id: uuidSchema,
-    anonymous_id: anonymousIdSchema,
+    // ===== CAMPOS OBLIGATORIOS =====
+    id: z.string(),
+    anonymous_id: z.string(),
     title: z.string(),
     description: z.string(),
     category: z.string(),
+    status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado']),
+    upvotes_count: z.number().int(),
+    comments_count: z.number().int(),
+    created_at: z.string(),
+    updated_at: z.string(),
+
+    // ===== CAMPOS NULLABLE (backend puede devolver null) =====
     zone: z.string().nullable(),
     address: z.string().nullable(),
     latitude: z.number().nullable(),
     longitude: z.number().nullable(),
-    status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado']),
-    upvotes_count: z.number().int().default(0),
-    comments_count: z.number().int().default(0),
-    threads_count: z.number().int().optional().default(0),
-    created_at: dateSchema,
-    updated_at: dateSchema,
-    last_edited_at: dateSchema.nullable().optional(),
-    incident_date: dateSchema.nullable().optional(),
-    image_urls: z.array(z.string()).default([]),
+    last_edited_at: z.string().nullable(),
+    incident_date: z.string().nullable(),
+    avatar_url: z.string().nullable(),
+    alias: z.string().nullable(),
+    priority_zone: z.string().nullable(),
+    distance_meters: z.number().nullable(),
 
-    // Enriched fields
-    is_favorite: z.boolean().default(false),
-    is_flagged: z.boolean().default(false),
-    avatar_url: z.string().nullable().optional(),
-    alias: z.string().nullable().optional(),
-    priority_zone: z.string().nullable().optional(),
-    distance_meters: z.number().nullable().optional()
+    // ===== CAMPOS OPCIONALES (pueden no estar presentes) =====
+    threads_count: z.number().int().optional(),
+    image_urls: z.array(z.string()).optional(),
+    is_favorite: z.boolean().optional(),
+    is_flagged: z.boolean().optional(),
+    flags_count: z.number().int().optional(),
+    province: z.string().optional(),
+    locality: z.string().optional(),
+    department: z.string().optional()
 });
 
 /**
- * Paginated Reports Response Schema
+ * Tipo SafeSpotReport inferido del schema
+ * Este es el ÚNICO tipo SafeSpotReport que debe usarse en todo el proyecto
+ * Renombrado de "Report" para evitar conflicto con globalThis.Report
+ */
+export type SafeSpotReport = z.infer<typeof reportSchema>;
+
+// Re-export como "Report" para compatibilidad con código existente
+export type Report = SafeSpotReport;
+
+
+/**
+ * Response schemas para validación de API
  */
 export const reportsListResponseSchema = z.object({
     success: z.boolean(),
@@ -62,5 +82,3 @@ export const singleReportResponseSchema = z.object({
     success: z.boolean(),
     data: reportSchema
 });
-
-export type Report = z.infer<typeof reportSchema>;

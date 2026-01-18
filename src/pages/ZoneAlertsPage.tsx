@@ -2,25 +2,24 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { generateSEOTags } from '@/lib/seo'
-import { seoApi, reportsApi } from '@/lib/api'
-import type { Report, ZoneSEO } from '@/lib/api'
+import { seoApi } from '@/lib/api' // Removed reportsApi
+import type { ZoneSEO } from '@/lib/api' // Removed Report type
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MapPin, TrendingUp, Shield, ArrowLeft } from 'lucide-react'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
-import { SmartLink } from '@/components/SmartLink'
-import { OptimizedImage } from '@/components/OptimizedImage'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useNavigate } from 'react-router-dom'
+import { useReportsQuery } from '@/hooks/queries/useReportsQuery'
+import { ReportCard } from '@/components/ReportCard'
 
 export function ZoneAlertsPage() {
     const navigate = useNavigate()
     const { zoneSlug } = useParams<{ zoneSlug: string }>()
     const [zones, setZones] = useState<ZoneSEO[]>([])
-    const [reports, setReports] = useState<Report[]>([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
+    const [loadingZones, setLoadingZones] = useState(true)
+    const [zonesError, setZonesError] = useState<string | null>(null)
 
     // Find the current zone display name from slug
     const currentZone = useMemo(() => {
@@ -29,31 +28,37 @@ export function ZoneAlertsPage() {
 
     const zoneName = currentZone?.name || zoneSlug?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Zona Desconocida'
 
+    // SSOT: Use React Query for reports
+    const {
+        data: reportIds = [],
+        isLoading: loadingReports,
+        isError: reportsError
+    } = useReportsQuery({
+        zone: zoneName,
+        limit: 20
+    })
+
     useEffect(() => {
-        async function fetchData() {
-            setLoading(true)
+        async function fetchZones() {
+            setLoadingZones(true)
             try {
-                // 1. Fetch all zones to find the display name (cached in real use, but here simple)
                 const zoneData = await seoApi.getZones()
                 setZones(zoneData)
-
-                // 2. Fetch reports for this specific zone
-                // We use the real name found or fallback to slug transformation
-                const zoneToSearch = zoneData.find(z => z.slug === zoneSlug)?.name || zoneName
-                const reportsData = await reportsApi.getAll({ zone: zoneToSearch, limit: 20 })
-                setReports(reportsData)
             } catch (err) {
                 console.error('Error fetching zone data:', err)
-                setError('No pudimos cargar la información de esta zona.')
+                setZonesError('No pudimos cargar la información de esta zona.')
             } finally {
-                setLoading(false)
+                setLoadingZones(false)
             }
         }
 
         if (zoneSlug) {
-            fetchData()
+            fetchZones()
         }
-    }, [zoneSlug, zoneName])
+    }, [zoneSlug])
+
+    const loading = loadingZones || loadingReports
+    const error = zonesError || (reportsError ? 'Error al cargar los reportes' : null)
 
     // SEO
     const seo = generateSEOTags({
@@ -65,8 +70,8 @@ export function ZoneAlertsPage() {
 
     // Dynamic Contextual Intro (Programmatic)
     const getContextualIntro = () => {
-        if (reports.length === 0) return `Actualmente no hay reportes recientes en ${zoneName}. SafeSpot es una red ciudadana colaborativa: si sabés de algún incidente, tu reporte puede ayudar a otros vecinos.`
-        return `Se han detectado ${reports.length} incidentes recientes en ${zoneName}. Esta información es generada de forma anónima y colaborativa por ciudadanos de la zona para fomentar la prevención comunitaria.`
+        if (reportIds.length === 0) return `Actualmente no hay reportes recientes en ${zoneName}. SafeSpot es una red ciudadana colaborativa: si sabés de algún incidente, tu reporte puede ayudar a otros vecinos.`
+        return `Se han detectado ${reportIds.length} incidentes recientes en ${zoneName}. Esta información es generada de forma anónima y colaborativa por ciudadanos de la zona para fomentar la prevención comunitaria.`
     }
 
     // Senior SEO Content Generator (300-500 words)
@@ -125,15 +130,7 @@ export function ZoneAlertsPage() {
         )
     }
 
-    const getStatusColor = (status: Report['status']) => {
-        switch (status) {
-            case 'pendiente': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-            case 'en_proceso': return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-            case 'resuelto': return 'bg-green-500/20 text-green-400 border-green-500/30'
-            case 'cerrado': return 'bg-red-500/20 text-red-400 border-red-500/30'
-            default: return ''
-        }
-    }
+    // Helper functions removed as they are handled by ReportCard now
 
     return (
         <div className="min-h-screen bg-dark-bg">
@@ -228,7 +225,7 @@ export function ZoneAlertsPage() {
                                 </div>
                                 <div className="bg-neon-green/5 rounded-lg p-6 border border-neon-green/10 min-w-[200px]">
                                     <div className="text-4xl font-bold text-foreground mb-1">
-                                        {reports.length}
+                                        {reportIds.length}
                                     </div>
                                     <div className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">
                                         Alertas Activas
@@ -257,7 +254,7 @@ export function ZoneAlertsPage() {
                         <Card className="bg-dark-card border-red-500/20 py-12 text-center">
                             <p className="text-foreground/70">{error}</p>
                         </Card>
-                    ) : reports.length === 0 ? (
+                    ) : reportIds.length === 0 ? (
                         <EmptyState
                             variant="default"
                             title="Sin incidentes recientes"
@@ -271,47 +268,16 @@ export function ZoneAlertsPage() {
                         />
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {reports.map((report) => {
-                                const imageUrls = Array.isArray(report.image_urls) ? report.image_urls : []
-                                return (
-                                    <SmartLink
-                                        key={report.id}
-                                        to={`/reporte/${report.id}`}
-                                        className="block h-full group"
-                                    >
-                                        <Card className="bg-dark-card border-dark-border card-glow h-full overflow-hidden hover:border-neon-green/50 transition-all duration-300 flex flex-col">
-                                            {imageUrls.length > 0 && (
-                                                <div className="relative aspect-video overflow-hidden">
-                                                    <OptimizedImage
-                                                        src={imageUrls[0]}
-                                                        alt={report.title}
-                                                        className="group-hover:scale-105 transition-transform duration-500"
-                                                    />
-                                                </div>
-                                            )}
-                                            <CardContent className="p-6 flex-1 flex flex-col">
-                                                <div className="flex items-start justify-between mb-3">
-                                                    <Badge className={getStatusColor(report.status)}>
-                                                        {report.status.replace('_', ' ')}
-                                                    </Badge>
-                                                    <span className="text-xs text-muted-foreground">
-                                                        {new Date(report.created_at).toLocaleDateString('es-AR')}
-                                                    </span>
-                                                </div>
-                                                <h3 className="text-xl font-bold text-foreground mb-3 line-clamp-2">
-                                                    {report.title}
-                                                </h3>
-                                                <p className="text-foreground/70 text-sm mb-6 line-clamp-3">
-                                                    {report.description}
-                                                </p>
-                                                <div className="mt-auto flex items-center text-sm font-medium text-neon-green group-hover:translate-x-1 transition-transform">
-                                                    Ver reporte completo →
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    </SmartLink>
-                                )
-                            })}
+                            {reportIds.map((id) => (
+                                <div key={id} className="h-full">
+                                    <ReportCard
+                                        reportId={id}
+                                        onToggleFavorite={() => { }}
+                                        onFlag={() => { }}
+                                        isFlagging={false}
+                                    />
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

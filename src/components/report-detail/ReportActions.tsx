@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Edit, Trash2, Flag, Save, X, FileText, MoreVertical, Heart } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { cn } from '@/lib/utils'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 import { ShareButton } from '@/components/ShareButton'
 
 // ============================================

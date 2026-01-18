@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useReportDetailQuery } from '@/hooks/queries/useReportsQuery'
 import { queryKeys } from '@/lib/queryKeys'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 
 // ============================================
 // TYPES

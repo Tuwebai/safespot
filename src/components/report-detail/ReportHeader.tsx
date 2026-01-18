@@ -6,7 +6,7 @@ import { MapPin } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAvatarUrl } from '@/lib/avatar'
 

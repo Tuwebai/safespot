@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { ImagePlus, X, Image as ImageIcon } from 'lucide-react'
 import { STATUS_OPTIONS } from '@/lib/constants'
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 import type { useReportEditor } from '@/hooks/useReportEditor'
 
 // ============================================

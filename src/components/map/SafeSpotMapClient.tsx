@@ -1,21 +1,24 @@
 import { divIcon } from 'leaflet'
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl, Circle } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
-import { getMarkerIcon } from '@/lib/map-utils'
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import type { Report, ZoneType } from '@/lib/api'
+// Remove getMarkerIcon
+// Remove getMarkerIcon
+import type { ZoneType } from '@/lib/api' // Remove Report
+// Remove Link if unused (will check lint after)
 import { notificationsApi } from '@/lib/api'
 import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+// Remove Link
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useUserZones } from '@/hooks/useUserZones'
+import { useReport, useReportsBatch } from '@/hooks/queries/useReportsQuery'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
-import { getAvatarUrl } from '@/lib/avatar'
+// Remove getAvatarUrl
 import { LocationPermissionDenied } from './LocationPermissionDenied'
+import { SafeSpotMapMarker } from './SafeSpotMapMarker'
 
 // Add custom style for placement mode cursor
 // Extracted CenterManager to prevent re-mounting loops
@@ -375,39 +378,36 @@ function MapEvents() {
 
 // ... MapSync ...
 
-function MapSync({ reports }: { reports: Report[] }) {
+function MapSync() {
     const map = useMap()
     const selectedReportId = useMapStore(s => s.selectedReportId)
+    const { data: report } = useReport(selectedReportId || '')
 
     useEffect(() => {
-        if (selectedReportId) {
-            const report = reports.find(r => r.id === selectedReportId)
+        if (selectedReportId && report) {
+            const lat = Number(report.latitude)
+            const lng = Number(report.longitude)
 
-            if (report) {
-                const lat = Number(report.latitude)
-                const lng = Number(report.longitude)
-
-                // Guard against undefined/invalid coordinates
-                if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-                    map.flyTo([lat, lng], 16, { duration: 1.5 })
-                }
+            // Guard against undefined/invalid coordinates
+            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                map.flyTo([lat, lng], 16, { duration: 1.5 })
             }
         }
-    }, [selectedReportId, reports, map])
+    }, [selectedReportId, report, map])
     return null
 }
 
 interface SafeSpotMapProps {
-    reports: Report[]
+    reportIds: string[]
     className?: string
     onSearchArea?: () => void
-    initialFocus?: { lat: number, lng: number } | null
+    initialFocus?: { focusReportId?: string, lat: number, lng: number } | null
     isSearching?: boolean
     activateZoneType?: ZoneType | null
 }
 
 export function SafeSpotMapClient({
-    reports,
+    reportIds,
     className,
     onSearchArea,
     initialFocus,
@@ -421,6 +421,9 @@ export function SafeSpotMapClient({
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
     const { zones, saveZone } = useUserZones()
     const isMountedRef = useRef(true)
+
+    // ✅ OPTIMIZATION: Resolve all reports in one batch for clustering
+    const reports = useReportsBatch(reportIds)
 
     // ✅ ENTERPRISE GEOLOCATION STATE MACHINE
     type LocationState = 'idle' | 'resolving' | 'retrying_timeout' | 'resolved' | 'denied' | 'unavailable' | 'manual_retry';
@@ -636,22 +639,10 @@ export function SafeSpotMapClient({
         // We just ensure leaflet is imported if needed, but no longer mess with Icon.Default
     }, [])
 
-    // Memoize the transformation of data to prevent redundant calculations on every render
-    const validReports = useMemo(() => {
-        return reports
-            .map(r => ({
-                ...r,
-                latitude: Number(r.latitude),
-                longitude: Number(r.longitude)
-            }))
-            .filter(r =>
-                !isNaN(r.latitude) &&
-                !isNaN(r.longitude) &&
-                r.latitude !== 0
-            )
-    }, [reports])
+    // Memo removed
 
-    const highlightedId = useMapStore(s => s.highlightedReportId)
+
+    // Memo removed
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
 
     // 🛑 BLOCK RENDER Logic
@@ -737,7 +728,7 @@ export function SafeSpotMapClient({
                 <MapEvents />
                 <MapClickListener activeType={activeZoneType} onPlace={handlePlaceZone} />
                 <MouseTracker activeType={activeZoneType} isSaving={isSavingZone} />
-                <MapSync reports={reports} />
+                <MapSync />
                 <ZoneMarkers />
 
                 <TileLayer
@@ -764,47 +755,8 @@ export function SafeSpotMapClient({
                     maxClusterRadius={cleanMap ? 80 : 60}
                     disableClusteringAtZoom={cleanMap ? undefined : 17}
                 >
-                    {validReports.map((report) => (
-                        <Marker
-                            key={report.id}
-                            position={[report.latitude, report.longitude]}
-                            icon={getMarkerIcon({
-                                category: report.category,
-                                status: report.status,
-                                isHighlighted: highlightedId === report.id
-                            })}
-                        >
-                            <Popup className="custom-popup">
-                                <div className="min-w-[200px] p-1">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground border px-1 rounded">{report.category}</span>
-                                        {report.priority_zone && (
-                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${report.priority_zone === 'home' ? 'bg-emerald-500' :
-                                                report.priority_zone === 'work' ? 'bg-blue-500' : 'bg-amber-500'
-                                                } text-white`}>
-                                                En tu {report.priority_zone === 'home' ? 'Casa' : report.priority_zone === 'work' ? 'Trabajo' : 'Zona'}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <h4 className="font-bold text-sm mb-1 line-clamp-2">{report.title}</h4>
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                                        <Avatar className="h-5 w-5 border border-white/10 shrink-0">
-                                            <AvatarImage
-                                                src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
-                                                alt="Avatar"
-                                            />
-                                            <AvatarFallback className="bg-dark-bg text-[8px] text-gray-400 flex items-center justify-center">
-                                                {report.anonymous_id.substring(0, 2).toUpperCase()}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <span>{new Date(report.created_at).toLocaleDateString()}</span>
-                                    </div>
-                                    <Link to={`/reporte/${report.id}`}>
-                                        <Button size="sm" variant="neon" className="w-full h-8 text-xs">Ver Detalles</Button>
-                                    </Link>
-                                </div>
-                            </Popup>
-                        </Marker>
+                    {reports.map((report) => (
+                        <SafeSpotMapMarker key={report.id} report={report} />
                     ))}
                 </MarkerClusterGroup>
 

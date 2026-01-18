@@ -2,7 +2,8 @@ import { AppClientError } from './errors';
 import { getClientId } from './clientId';
 import { ensureAnonymousId } from './identity';
 import { ZodSchema } from 'zod';
-import { reportsListResponseSchema, singleReportResponseSchema, reportSchema, type Report } from './schemas';
+import { type Report } from './schemas';
+export { type Report };
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -240,37 +241,8 @@ export interface UserZone {
   updated_at: string;
 }
 
-export interface Report {
-  id: string;
-  anonymous_id: string;
-  avatar_url?: string;
-  title: string;
-  description: string;
-  category: string;
-  zone: string;
-  address: string;
-  latitude?: number;
-  longitude?: number;
-  status: 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado';
-  upvotes_count: number;
-  comments_count: number;
-  threads_count?: number; // Count of root threads (is_thread=true AND parent_id IS NULL)
-  flags_count?: number; // Total number of flags on this report
-  created_at: string;
-  updated_at: string;
-  last_edited_at?: string;
-  incident_date?: string; // ISO 8601 date string - Date when the incident occurred
-  image_urls?: string[]; // Array of public image URLs from Supabase Storage
-  is_favorite?: boolean; // If the current user has favorited this report
-  is_flagged?: boolean; // If the current user has flagged this report
-  // National-scale location fields (from Georef API)
-  province?: string;  // e.g., "Buenos Aires", "Córdoba"
-  locality?: string;  // e.g., "La Plata", "Córdoba Capital"
-  department?: string; // e.g., "La Plata", "Capital"
-  priority_zone?: ZoneType;
-  newBadges?: NewBadge[]; // Newly awarded badges in this action
-  alias?: string | null;
-}
+// Report type is imported from schemas.ts (line 5)
+// DO NOT duplicate the interface here
 
 export interface CreateReportData {
   title: string;
@@ -317,7 +289,7 @@ export const reportsApi = {
       });
     }
     const query = params.toString();
-    const response = await apiRequest(`/reports${query ? `?${query}` : ''}`, {}, 45000, reportsListResponseSchema);
+    const response: any = await apiRequest(`/reports${query ? `?${query}` : ''}`);
     // Unwrapping happens in apiRequest BUT reportsListResponseSchema preserves the { success, data } structure? 
     // Wait, reportsListResponseSchema HAS 'data' key. apiRequest returns parsed.data which IS the whole object matching the schema.
     // However, existing code might expect ARRAY.
@@ -327,7 +299,7 @@ export const reportsApi = {
     // We MUST extract .data here to maintain backward compatibility with the rest of the app OR update schema to transformer?
     // Let's manually extract .data to keep strict types but clean consumer usage.
 
-    return response.data; // Now safely validated as Array<Report>
+    return response.data || response; // Backend returns { success, data } or direct array
   },
 
   /**
@@ -335,7 +307,7 @@ export const reportsApi = {
    * format: north, south, east, west
    */
   getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
-    const response = await apiRequest(`/reports?bounds=${north},${south},${east},${west}`, {}, 45000, reportsListResponseSchema);
+    const response: any = await apiRequest(`/reports?bounds=${north},${south},${east},${west}`);
     return response.data;
   },
 
@@ -343,7 +315,7 @@ export const reportsApi = {
    * Get a single report by ID
    */
   getById: async (id: string): Promise<Report> => {
-    const response = await apiRequest(`/reports/${id}`, {}, 45000, singleReportResponseSchema);
+    const response: any = await apiRequest(`/reports/${id}`);
     return response.data;
   },
 

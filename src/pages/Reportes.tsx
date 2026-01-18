@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Search, MapPin, Filter, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
-import type { Report, ReportFilters } from '@/lib/api'
+import type { Report } from '@/lib/schemas'; import type { ReportFilters } from '@/lib/api'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
 import { BottomSheet } from '@/components/ui/bottom-sheet'

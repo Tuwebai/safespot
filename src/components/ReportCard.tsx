@@ -14,7 +14,7 @@ import { getAvatarUrl } from '@/lib/avatar'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
-import type { Report } from '@/lib/api'
+import type { Report } from '@/lib/schemas'
 
 // HELPER FUNCTIONS (Moved from Reportes.tsx)
 const getStatusColor = (status: Report['status']) => {
@@ -129,9 +129,10 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                             </div>
                         ) : (
                             <ReportMapFallback
-                                lat={report.latitude}
-                                lng={report.longitude}
+                                lat={report.latitude ?? undefined}
+                                lng={report.longitude ?? undefined}
                             />
+
                         )}
                     </div>
 

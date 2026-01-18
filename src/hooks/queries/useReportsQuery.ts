@@ -7,9 +7,13 @@
  * - Mutations for report CRUD
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
+
+
+
 import { queryKeys } from '@/lib/queryKeys'
-import { reportsApi, type Report, type ReportFilters, type CreateReportData } from '@/lib/api'
+import { reportsApi, type ReportFilters, type CreateReportData } from '@/lib/api'
+import { type Report } from '@/lib/schemas'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 
@@ -38,14 +42,28 @@ import { reportsCache } from '@/lib/cache-helpers'
  * @returns The report object (live from cache)
  */
 export function useReport(id: string) {
-    const anonymousId = useAnonymousId()  // ✅ SSOT
+    const queryClient = useQueryClient()
+    const anonymousId = useAnonymousId()  // Required for Auth context but NOT for data key of public entities
 
     return useQuery({
-        queryKey: ['reports', 'detail', anonymousId, id],  // ✅ Include ID
-        queryFn: () => reportsApi.getById(id),
-        enabled: !!id && !!anonymousId,  // ✅ Both required
-        staleTime: Infinity, // Rely on SSE/Mutation patches
-        refetchOnWindowFocus: false, // Don't refetch automatically
+        // CRITICAL FIX: Match standard SSOT key (no anonymousId in key)
+        queryKey: queryKeys.reports.detail(id),
+        queryFn: async () => {
+            const report = await reportsApi.getById(id)
+
+            // CRITICAL CHECK: Contract Violation
+            if (!report) {
+                throw new Error(`Report ${id} returned undefined from API`)
+            }
+
+            // ENTERPRISE NORMALIZATION: Store via helper to trigger side-effects (persistence, list updates)
+            reportsCache.store(queryClient, [report])
+
+            return report
+        },
+        enabled: !!id && !!anonymousId,
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
     })
 }
 
@@ -58,7 +76,7 @@ export function useReportsQuery(filters?: ReportFilters) {
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()  // ✅ SSOT for identity
 
-    return useQuery({
+    return useQuery<string[]>({
         queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
         queryFn: async () => {
             const data = await reportsApi.getAll(filters)
@@ -105,18 +123,51 @@ export function useReportsQuery(filters?: ReportFilters) {
 }
 
 /**
+ * Batched Selector for Maps/Clustering
+ * efficiently resolves a list of IDs to full Report objects from the cache.
+ * Reactive: Updates when individual reports change (via SSE/Mutation).
+ * SSOT: Reads from the canonical ['reports', 'detail', id] keys.
+ * 
+ * Performance Note: This creates an observer for each ID.
+ * Use valid IDs derived from useReportsQuery to minimize overhead.
+ */
+export function useReportsBatch(ids: string[]) {
+    const anonymousId = useAnonymousId()
+
+    // Create a query object for each ID to resolve DATA from cache
+    const result = useQueries({
+        queries: ids.map(id => ({
+            queryKey: queryKeys.reports.detail(id), // ✅ Match SSOT Key
+            queryFn: () => reportsApi.getById(id),
+            enabled: !!id && !!anonymousId,
+            staleTime: Infinity,
+        }))
+    })
+
+    // Map and filter valid reports
+    return result.map(q => q.data).filter((r): r is Report => !!r)
+}
+
+/**
  * Fetch a single report by ID (Server Fallback)
  * Use this ONLY when you don't have the ID in a list yet (e.g. direct link).
  * Otherwise prefer useReport(id).
  */
 export function useReportDetailQuery(reportId: string | undefined, enabled = true) {
-    const anonymousId = useAnonymousId()  // ✅ SSOT
+    const queryClient = useQueryClient()
+    const anonymousId = useAnonymousId()
 
     return useQuery({
-        queryKey: ['reports', 'detail', anonymousId, reportId ?? ''],  // ✅ Include ID
-        queryFn: () => reportsApi.getById(reportId!),
-        enabled: !!reportId && enabled && !!anonymousId,  // ✅ All conditions required
-        staleTime: Infinity, // Start trusting the normalized cache
+        queryKey: queryKeys.reports.detail(reportId ?? ''), // ✅ Match SSOT Key
+        queryFn: async () => {
+            if (!reportId) throw new Error("No ID")
+            const report = await reportsApi.getById(reportId)
+            if (!report) throw new Error("Not found")
+            reportsCache.store(queryClient, [report])
+            return report
+        },
+        enabled: !!reportId && enabled && !!anonymousId,
+        staleTime: Infinity,
         refetchOnWindowFocus: false,
         retry: 1,
     })
@@ -365,15 +416,13 @@ export function useDeleteReportMutation() {
             // Rollback global stats
             if (context?.previousGlobalStats) {
                 queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
-            }
-            // Rollback category stats
-            if (context?.previousCategoryStats) {
                 queryClient.setQueryData(queryKeys.stats.categories, context.previousCategoryStats)
             }
         },
         onSettled: () => {
             // Final Sync
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+            // PROTECTED: Do not invalidate reports.all. Trust SSE/Optimistic.
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         },

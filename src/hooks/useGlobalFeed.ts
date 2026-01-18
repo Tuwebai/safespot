@@ -42,21 +42,16 @@ export function useGlobalFeed() {
                 if (reportId && processedReports.current.has(reportId)) return
                 if (reportId) processedReports.current.add(reportId)
 
-                // Validate Partial Schema
-                const parsed = reportSchema.partial().safeParse(data.partial)
+                // Validate Schema (Strict for Create)
+                const parsed = reportSchema.safeParse(data.partial)
                 if (!parsed.success) {
                     console.warn('[SSE] Dropping invalid report-create', parsed.error)
                     return
                 }
 
                 reportsCache.prepend(queryClient, parsed.data)
-                if (parsed.data.category) {
-                    // status is optional in partial, default to pending if missing? 
-                    // Actually partial() makes everything optional.
-                    // We need to trust the event or ensure minimal required fields.
-                    // For now, type safety is enough to prevent crashes.
-                    statsCache.applyReportCreate(queryClient, parsed.data.category, parsed.data.status || 'pendiente')
-                }
+                // Guaranteed by schema
+                statsCache.applyReportCreate(queryClient, parsed.data.category, parsed.data.status)
             } catch (e) {
                 console.error('[SSE] Error processing report-create', e)
             }
