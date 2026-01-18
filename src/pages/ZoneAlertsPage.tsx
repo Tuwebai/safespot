@@ -11,8 +11,11 @@ import { MapPin, TrendingUp, Shield, ArrowLeft } from 'lucide-react'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { SmartLink } from '@/components/SmartLink'
 import { OptimizedImage } from '@/components/OptimizedImage'
+import { EmptyState } from '@/components/ui/empty-state'
+import { useNavigate } from 'react-router-dom'
 
 export function ZoneAlertsPage() {
+    const navigate = useNavigate()
     const { zoneSlug } = useParams<{ zoneSlug: string }>()
     const [zones, setZones] = useState<ZoneSEO[]>([])
     const [reports, setReports] = useState<Report[]>([])
@@ -255,14 +258,17 @@ export function ZoneAlertsPage() {
                             <p className="text-foreground/70">{error}</p>
                         </Card>
                     ) : reports.length === 0 ? (
-                        <Card className="bg-dark-card border-dark-border py-12 text-center">
-                            <CardContent>
-                                <p className="text-foreground/70 mb-6 font-medium">No se encontraron reportes recientes en esta zona específica.</p>
-                                <Link to="/crear-reporte">
-                                    <Button variant="neon">Reportar un incidente</Button>
-                                </Link>
-                            </CardContent>
-                        </Card>
+                        <EmptyState
+                            variant="default"
+                            title="Sin incidentes recientes"
+                            description="No se encontraron reportes recientes en esta zona específica. Si viste algo, podés ser el primero en reportarlo."
+                            action={{
+                                label: "Reportar un incidente",
+                                onClick: () => navigate('/crear-reporte'),
+                                variant: "neon"
+                            }}
+                            className="bg-dark-card border border-dark-border rounded-xl py-12"
+                        />
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {reports.map((report) => {

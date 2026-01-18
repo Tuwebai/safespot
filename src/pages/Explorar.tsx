@@ -9,6 +9,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { EmptyState } from '@/components/ui/empty-state'
 
 // CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
 const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
@@ -105,6 +106,25 @@ export function Explorar() {
             Ver Lista
           </Button>
         </div>
+
+        {/* Empty State Overlay */}
+        {!isFetching && reports.length === 0 && (
+          <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-[1000] w-full max-w-md px-4 pointer-events-none">
+            <div className="pointer-events-auto shadow-2xl rounded-xl overflow-hidden">
+              <EmptyState
+                variant="map"
+                title="No hay reportes visibles"
+                description={boundsSearchEnabled ? "No encontramos reportes en esta área específica del mapa." : "Actualmente no hay reportes cargados en el sistema."}
+                action={{
+                  label: "Ver Lista Completa",
+                  onClick: () => navigate('/reportes'),
+                  variant: "secondary"
+                }}
+                className="bg-background/90 backdrop-blur-md border border-border py-6"
+              />
+            </div>
+          </div>
+        )}
       </MapLayout>
     </>
   )

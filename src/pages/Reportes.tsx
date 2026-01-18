@@ -32,6 +32,7 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { ReportCard } from '@/components/ReportCard'
+import { EmptyState } from '@/components/ui/empty-state'
 import { reportsCache } from '@/lib/cache-helpers'
 
 // ============================================
@@ -675,13 +676,28 @@ export function Reportes() {
               </CardContent>
             </Card>
           ) : reports.length === 0 ? (
-            <Card className="bg-card border-border">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  No se encontraron reportes con los filtros seleccionados.
-                </p>
-              </CardContent>
-            </Card>
+            <div className="py-12">
+              <EmptyState
+                variant={searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' || showAdvancedFilters ? "search" : "default"}
+                title={searchTerm ? "No encontramos coincidencias" : "No hay reportes aquí"}
+                description={searchTerm || selectedCategory !== 'all' ? "No hay reportes que coincidan con tus filtros. Intenta búsquedas más generales." : "Parece que esta zona está tranquila por ahora. Si ves algo, repórtalo."}
+                action={{
+                  label: "Limpiar Filtros",
+                  onClick: () => {
+                    setSearchTerm('')
+                    setSelectedCategory('all')
+                    setSelectedStatus('all')
+                    setSortBy('recent')
+                    setStartDate('')
+                    setEndDate('')
+                    setAddressQuery('')
+                    setSelectedLocation(null)
+                    setAddressSuggestions([])
+                  },
+                  variant: "outline"
+                }}
+              />
+            </div>
           ) : (
             <div className="flex flex-col">
               <div

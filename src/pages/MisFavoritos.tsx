@@ -13,6 +13,7 @@ import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { useRef } from 'react'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
+import { EmptyState } from '@/components/ui/empty-state'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
@@ -137,26 +138,21 @@ export function MisFavoritos() {
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
           <h1 className="text-3xl font-bold gradient-text mb-2">Mis Favoritos</h1>
-          <p className="text-foreground/70">Reportes que has guardado como favoritos</p>
+          <p className="text-foreground/70">Colección de reportes guardados</p>
         </div>
 
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Card className="bg-dark-card border-dark-border max-w-md">
-            <CardContent className="p-6 text-center">
-              <Heart className="h-12 w-12 text-foreground/30 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-foreground mb-2">No tienes favoritos aún</h2>
-              <p className="text-foreground/70 mb-4">
-                Los reportes que marques como favoritos aparecerán aquí
-              </p>
-              <Button
-                onClick={() => navigate('/reportes')}
-                className="bg-neon-green hover:bg-neon-green/90 text-dark-bg"
-              >
-                Explorar Reportes
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <EmptyState
+          variant="default"
+          icon={Heart}
+          title="Aún no tienes favoritos"
+          description="Guarda los reportes que te interesan para hacerles seguimiento rápido. Aparecerán aquí."
+          action={{
+            label: "Explorar Reportes",
+            onClick: () => navigate('/reportes'),
+            variant: "neon"
+          }}
+          className="bg-card/30 border border-dashed border-border rounded-xl"
+        />
       </div>
     )
   }

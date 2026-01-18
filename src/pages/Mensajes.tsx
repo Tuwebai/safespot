@@ -20,6 +20,7 @@ import { ChatWindow } from '../components/chat/ChatWindow';
 import { ChatContextMenu } from '../components/chat/ChatContextMenu';
 import useLongPress from '../hooks/useLongPress';
 import { ChevronDown, Pin } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -443,31 +444,23 @@ const Mensajes: React.FC = () => {
                                     ))}
                                 </div>
                             ) : filteredRooms.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center p-8 text-center h-full">
-                                    <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mb-4">
-                                        {viewMode === 'archived' ? <Archive className="text-muted-foreground/30 w-8 h-8" /> : <MessageSquare className="text-muted-foreground/30 w-8 h-8" />}
-                                    </div>
-                                    <h3 className="text-foreground font-bold text-base">
-                                        {searchTerm ? 'Sin resultados' : viewMode === 'archived' ? 'No hay chats archivados' : 'Bandeja Vacía'}
-                                    </h3>
-                                    <p className="text-muted-foreground text-[12px] mt-2 max-w-[200px] leading-relaxed">
-                                        {searchTerm
-                                            ? `No encontramos conversaciones para "${searchTerm}"`
-                                            : viewMode === 'archived'
-                                                ? 'Tus conversaciones archivadas aparecerán aquí.'
-                                                : 'Inicia una conversación con alguien o colabora en un reporte.'}
-                                    </p>
-                                    {!searchTerm && viewMode === 'inbox' && (
-                                        <Button
-                                            variant="neon"
-                                            size="sm"
-                                            onClick={() => setIsNewChatOpen(true)}
-                                            className="mt-6 rounded-full px-6 text-[11px]"
-                                        >
-                                            Iniciar Nuevo Chat
-                                        </Button>
-                                    )}
-                                </div>
+
+                                <EmptyState
+                                    variant={searchTerm ? "search" : "messages"}
+                                    icon={viewMode === 'archived' ? Archive : MessageSquare}
+                                    title={searchTerm ? 'Sin resultados' : viewMode === 'archived' ? 'No hay chats archivados' : 'Bandeja Vacía'}
+                                    description={searchTerm
+                                        ? `No encontramos conversaciones para "${searchTerm}"`
+                                        : viewMode === 'archived'
+                                            ? 'Tus conversaciones archivadas aparecerán aquí.'
+                                            : 'Inicia una conversación con alguien o colabora en un reporte.'}
+                                    action={(!searchTerm && viewMode === 'inbox') ? {
+                                        label: "Iniciar Nuevo Chat",
+                                        onClick: () => setIsNewChatOpen(true),
+                                        variant: "neon"
+                                    } : undefined}
+                                    className="h-full justify-center"
+                                />
                             ) : (
                                 <div className="divide-y divide-border/50">
                                     {filteredRooms.map((room) => (

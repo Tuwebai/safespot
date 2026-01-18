@@ -1,5 +1,5 @@
-import { Button } from '@/components/ui/button';
-import { Users, Share2, MapPin } from 'lucide-react';
+import { Users, MapPin } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import { useNavigate } from 'react-router-dom';
 
@@ -26,49 +26,36 @@ export function EmptyCommunityState({ type, locality, isLocationMissing }: Empty
 
     if (type === 'nearby' && isLocationMissing) {
         return (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center animate-in fade-in zoom-in duration-500">
-                <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-amber-500/20">
-                    <MapPin className="w-10 h-10 text-amber-500" />
-                </div>
-
-                <h3 className="text-xl font-semibold mb-2 text-foreground">
-                    Para ver personas cerca, actualizá tu ubicación
-                </h3>
-
-                <p className="text-muted-foreground max-w-sm mb-8">
-                    Configurá tu zona de alertas para encontrar usuarios en tu ciudad y recibir reportes relevantes.
-                </p>
-
-                <Button onClick={handleConfigureLocation} size="lg" className="gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Configurar Ubicación
-                </Button>
-            </div>
+            <EmptyState
+                variant="permission"
+                icon={MapPin}
+                title="Para ver personas cerca, actualizá tu ubicación"
+                description="Configurá tu zona de alertas para encontrar usuarios en tu ciudad y recibir reportes relevantes."
+                action={{
+                    label: "Configurar Ubicación",
+                    onClick: handleConfigureLocation,
+                }}
+                className="py-12"
+            />
         );
     }
 
     return (
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center animate-in fade-in zoom-in duration-500">
-            <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mb-6">
-                <Users className="w-10 h-10 text-muted-foreground/50" />
-            </div>
-
-            <h3 className="text-xl font-semibold mb-2 text-foreground">
-                {type === 'nearby'
-                    ? (locality ? `No hay personas en ${locality}` : 'Todavía no hay personas cerca tuyo')
-                    : 'Aún no hay usuarios en la comunidad'}
-            </h3>
-
-            <p className="text-muted-foreground max-w-sm mb-8">
-                {type === 'nearby'
-                    ? 'Compartí SafeSpot para que más personas de tu ciudad se sumen a la comunidad y se cuiden entre sí.'
-                    : 'Sé el primero en invitar a tus amigos a unirse a SafeSpot.'}
-            </p>
-
-            <Button onClick={handleCopyLink} size="lg" className="gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all">
-                <Share2 className="w-4 h-4" />
-                Copiar link para compartir
-            </Button>
-        </div>
+        <EmptyState
+            variant="community"
+            icon={Users}
+            title={type === 'nearby'
+                ? (locality ? `No hay personas en ${locality}` : 'Todavía no hay personas cerca tuyo')
+                : 'Aún no hay usuarios en la comunidad'}
+            description={type === 'nearby'
+                ? 'Compartí SafeSpot para que más personas de tu ciudad se sumen a la comunidad y se cuiden entre sí.'
+                : 'Sé el primero en invitar a tus amigos a unirse a SafeSpot.'}
+            action={{
+                label: "Copiar link para compartir",
+                onClick: handleCopyLink,
+                variant: "neon"
+            }}
+            className="py-12"
+        />
     );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NotificationItem } from './NotificationItem';
+import { EmptyState } from '@/components/ui/empty-state';
 import { format, isToday, isYesterday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BellOff } from 'lucide-react';
@@ -30,14 +31,14 @@ export function NotificationList({ notifications, onRead, onDelete, onOpenContex
 
     if (notifications.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <div className="bg-muted p-4 rounded-full mb-4">
-                    <BellOff className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">Estás al día</h3>
-                <p className="text-sm text-muted-foreground max-w-xs">
-                    No tienes notificaciones nuevas. Disfruta de la tranquilidad.
-                </p>
+            <div className="py-20 px-4">
+                <EmptyState
+                    variant="default"
+                    icon={BellOff}
+                    title="Estás al día"
+                    description="No tienes notificaciones nuevas por ahora. Disfruta de la tranquilidad."
+                    className="max-w-sm mx-auto"
+                />
             </div>
         );
     }
