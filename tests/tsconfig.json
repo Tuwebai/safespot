@@ -1,0 +1,17 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "types": [
+            "vitest/globals",
+            "@testing-library/jest-dom"
+        ],
+        "skipLibCheck": true,
+        "allowJs": true,
+        "noImplicitAny": false
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js"
+    ]
+}

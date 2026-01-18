@@ -1,0 +1,289 @@
+name: CI Pipeline - Enterprise Testing (Optimized)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# Permisos mínimos necesarios
+permissions:
+  contents: read
+  pull-requests: write
+
+# Variables de entorno globales
+env:
+  NODE_VERSION: '20'
+  PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
+
+jobs:
+  # ============================================
+  # FASE 1: Tests Paralelos (Unit, Integration, Contract)
+  # ============================================
+  
+  # Job 1: Unit Tests (BLOQUEANTE) - Corre en paralelo
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Cache de node_modules (optimización crítica)
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Unit Tests
+        run: npm run test:unit
+      
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: coverage/
+          retention-days: 7
+
+  # Job 2: Integration Tests (BLOQUEANTE) - Corre en paralelo
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    
+    # DB dockerizada para tests
+    services:
+      postgres:
+        image: postgres:15-alpine  # Alpine para menor tamaño
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: safespot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Integration Tests
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/safespot_test
+          NODE_ENV: test
+        run: npm run test:integration
+
+  # Job 3: Contract Tests (BLOQUEANTE) - Corre en paralelo
+  contract-tests:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: safespot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Contract Tests
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/safespot_test
+          NODE_ENV: test
+        run: npm run test:contract
+
+  # ============================================
+  # FASE 2: E2E Tests (Depende de Fase 1)
+  # ============================================
+  
+  e2e-tests:
+    name: E2E Tests
+    needs: [unit-tests, integration-tests, contract-tests]
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: safespot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      # Cache de Playwright browsers (optimización crítica)
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(npm list @playwright/test --depth=0 | grep @playwright | sed 's/.*@//')" >> $GITHUB_OUTPUT
+      
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+      
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      
+      - name: Run E2E Tests
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/safespot_test
+          NODE_ENV: test
+        run: npm run test:e2e
+      
+      - name: Upload Playwright Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+      
+      # Notificación SOLO si E2E falla (crítico)
+      - name: Notify E2E Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚨 E2E Tests FAILED",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🚨 E2E Tests Failed*\n*Repo:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ============================================
+  # FASE 3: Coverage Check (Paralelo con E2E)
+  # ============================================
+  
+  coverage-check:
+    name: Coverage Check (≥70%)
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Coverage
+        run: npm run test:coverage
+      
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+      
+      # Notificación SOLO si coverage falla (crítico)
+      - name: Notify Coverage Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "⚠️ Coverage Check FAILED",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*⚠️ Coverage < 70%*\n*Repo:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ============================================
+  # FASE 4: Verificación Final
+  # ============================================
+  
+  verify-all:
+    name: ✅ All Tests Passed
+    needs: [unit-tests, integration-tests, contract-tests, e2e-tests, coverage-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Success
+        run: |
+          echo "✅ Unit Tests: PASSED"
+          echo "✅ Integration Tests: PASSED"
+          echo "✅ Contract Tests: PASSED"
+          echo "✅ E2E Tests: PASSED"
+          echo "✅ Coverage ≥ 70%: PASSED"
+          echo ""
+          echo "🚀 Pipeline Enterprise: READY TO MERGE/DEPLOY"
