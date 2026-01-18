@@ -13,7 +13,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { usePresenceHeartbeat } from '@/hooks/usePresenceHeartbeat'
-import { AdModal } from '@/components/ads/AdModal'
+// import { AdModal } from '@/components/ads/AdModal'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { ServiceWorkerController } from '@/components/ServiceWorkerController'
 import { cn } from '@/lib/utils'
@@ -53,7 +53,7 @@ export function Layout({ children }: LayoutProps) {
     <ToastProvider>
       <ServiceWorkerController />
       <NotificationFeedbackListener />
-      <AdModal />
+      {/* <AdModal /> */}
       <BadgeNotificationManager />
       <NetworkStatusIndicator />
 
