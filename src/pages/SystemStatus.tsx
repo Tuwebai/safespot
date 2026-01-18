@@ -1,6 +1,5 @@
 import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle, Activity, Server, Database, Globe } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { StatusIndicator } from '@/components/layout/StatusIndicator'
+import { Card, CardContent } from '@/components/ui/card'
 
 interface ServiceStatus {
     name: string;
