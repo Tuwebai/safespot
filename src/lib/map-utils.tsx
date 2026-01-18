@@ -1,38 +1,18 @@
 import L from 'leaflet'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Bike, Car, Package, Search, HelpCircle, MapPin } from 'lucide-react'
-
-export const getCategoryIcon = (category: string) => {
-    switch (category) {
-        case 'Robo de Bicicleta': return Bike
-        case 'Robo de Vehículo': return Car
-        case 'Robo de Objetos Personales': return Package
-        case 'Pérdida de Objetos': return Search
-        case 'Encontrado': return MapPin
-        default: return HelpCircle
-    }
-}
-
-export const getCategoryColor = (category: string) => {
-    switch (category) {
-        case 'Robo de Bicicleta': return '#ef4444' // red-500
-        case 'Robo de Vehículo': return '#f97316' // orange-500
-        case 'Robo de Objetos Personales': return '#a855f7' // purple-500
-        case 'Pérdida de Objetos': return '#3b82f6' // blue-500
-        case 'Encontrado': return '#22c55e' // green-500
-        default: return '#6b7280' // gray-500
-    }
-}
+import { resolveCategoryIcon } from '@/lib/icons/category-icons'
 
 // Icon cache to avoid redundant generations
 const iconCache: Record<string, L.Icon> = {}
 
 export const getMarkerIcon = ({ category, status, isHighlighted }: { category: string, status: string, isHighlighted?: boolean }) => {
+    // 1. Resolve Config from Registry (SSOT)
+    // This eliminates the switch statement and ensures we always look up against official categories
+    const { icon: IconComponent, color } = resolveCategoryIcon(category)
+
     const cacheKey = `${category}-${status}-${isHighlighted ? 'h' : 'n'}`
     if (iconCache[cacheKey]) return iconCache[cacheKey]
 
-    const IconComponent = getCategoryIcon(category)
-    const color = getCategoryColor(category)
     const isResolved = status === 'resuelto' || status === 'cerrado'
     const isInProgress = status === 'en_proceso'
 
@@ -82,3 +62,4 @@ export const getMarkerIcon = ({ category, status, isHighlighted }: { category: s
     iconCache[cacheKey] = icon
     return icon
 }
+
