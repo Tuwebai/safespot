@@ -13,6 +13,12 @@ import { reportsApi, type Report, type ReportFilters, type CreateReportData } fr
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 
+// Enterprise Data Freshness SLA:
+// - UI may show data up to 1 minute old (staleTime).
+// - Consistency > Freshness for UX stability.
+// - "Refetch" never degrades the UI (0 items) if valid data exists.
+// - Invalid backend responses trigger silent alerts, not UI crashes.
+
 // ============================================
 // QUERIES (READ)
 // ============================================
@@ -51,7 +57,6 @@ export function useReport(id: string) {
 export function useReportsQuery(filters?: ReportFilters) {
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()  // ✅ SSOT for identity
-    const isDefaultQuery = !filters || Object.keys(filters).length === 0
 
     return useQuery({
         queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
@@ -61,43 +66,41 @@ export function useReportsQuery(filters?: ReportFilters) {
             // SIDE EFFECT: Normalize data into canonical cache
             const ids = reportsCache.store(queryClient, data)
 
-            // SIDE EFFECT: Persist default view
-            if (isDefaultQuery) {
-                localStorage.setItem('safespot_reports_all_v2', JSON.stringify(data))
-            }
-
             return ids
         },
         enabled: !!anonymousId,  // ✅ CRITICAL: Never execute with null ID
-        initialData: () => {
-            // ... logic for initial data (needs to hydrate detail cache too)
-            if (isDefaultQuery) {
-                try {
-                    const item = localStorage.getItem('safespot_reports_all_v2')
-                    if (item) {
-                        const reports = JSON.parse(item) as Report[]
-                        // Hydrate canonical cache immediately
-                        reportsCache.store(queryClient, reports)
-                        return reports.map(r => r.id)
-                    }
-                } catch (e) { return undefined }
-            }
-            return undefined
-        },
-        staleTime: 30 * 1000, // 30s stale time to allow optimistic updates to survive navigation
+        // ENTERPRISE: No initialData from localStorage.
+        // We trust React Query cache + Persistence (gcTime) ONLY.
+        // This avoids hydration mismatches and stale "empty" states.
+        staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         retry: 1,
         // SAFETY: Firewall against cache corruption.
-        // Ensures that even if objects slip into the cache list, we ONLY return IDs to the UI.
         select: (data: any) => {
-            if (!Array.isArray(data)) return []
+            // CRITICAL FIX: Never return [] for invalid data.
+            // If the backend sends trash, we want to FAIL (keep old data), not show 0.
+            if (!Array.isArray(data)) {
+                const validationError = new Error('SERVER_CONTRACT_VIOLATION: Expected array of reports')
+                // STAFF-LEVEL: Silent health check. Log, but allow React Query to handle the error state.
+                // This alerts us to backend regressions without crashing the UI if placeholderData exists.
+                import('@sentry/react').then(({ captureException }) => {
+                    captureException(validationError, {
+                        extra: { context: 'useReportsQuery:select', received: typeof data }
+                    })
+                }).catch(() => console.error(validationError))
+
+                // Throwing here triggers isError: true and keeps previousData
+                throw validationError
+            }
             return data.map(item => {
                 if (typeof item === 'object' && item !== null && 'id' in item) {
                     return item.id
                 }
                 return item
             })
-        }
+        },
+        // ENTERPRISE: CONTINUITY IS KING
+        placeholderData: (previousData) => previousData,
     })
 }
 

@@ -23,8 +23,9 @@ export function useGlobalStatsQuery() {
             const data = await usersApi.getStats()
             return data
         },
-        // STRICT REAL-TIME: No leftovers from previous sessions.
-        // We rely on the global QueryClient config (staleTime: 0, gcTime: 0)
+        // ENTERPRISE: CONTINUITY IS KING
+        // Invariante: Si ya existen datos, nunca mostrar loading/skeletons.
+        placeholderData: (previousData) => previousData,
     })
 }
 
@@ -39,5 +40,6 @@ export function useCategoryStatsQuery() {
             const data = await usersApi.getCategoryStats()
             return data
         },
+        placeholderData: (previousData) => previousData,
     })
 }

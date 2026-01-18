@@ -17,6 +17,8 @@ export function useNotificationsQuery() {
         refetchOnWindowFocus: false, // Prevent spam on tab switch
         refetchOnReconnect: false, // Prevent spam on network reconnect
         refetchInterval: 5 * 60 * 1000, // Poll every 5 minutes (very conservative)
+        // ENTERPRISE: CONTINUITY IS KING
+        placeholderData: (previousData) => previousData,
     });
 }
 

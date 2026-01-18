@@ -137,7 +137,7 @@ export function Reportes() {
   }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly])
 
   // React Query - cached, deduplicated, background refetch
-  const { data: reports = [], isLoading, isFetching, error: queryError, refetch } = useReportsQuery(filters)
+  const { data: reports = [], isLoading, error: queryError, refetch } = useReportsQuery(filters)
 
   // ============================================
   // HANDLERS (memoized with useCallback)
@@ -650,7 +650,7 @@ export function Reportes() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pt-4">
           <h2 className="text-xl sm:text-2xl font-semibold text-foreground">
-            Reportes {isFetching ? '...' : `(${reports.length})`}
+            Reportes ({reports.length})
           </h2>
           <Link to="/crear-reporte" className="w-full sm:w-auto">
             <Button variant="neon" className="w-full">
@@ -660,13 +660,13 @@ export function Reportes() {
         </div>
 
         {
-          isLoading ? (
+          (isLoading && reports.length === 0) ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <ReportCardSkeleton key={i} />
               ))}
             </div>
-          ) : error ? (
+          ) : (error && reports.length === 0) ? (
             <Card className="bg-card border-border">
               <CardContent className="py-12 text-center">
                 <p className="text-destructive mb-4">{error}</p>

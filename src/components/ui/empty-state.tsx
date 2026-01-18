@@ -2,7 +2,7 @@
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
-import { Search, ShieldAlert, Map, MessageSquare, Users, EyeOff, Filter } from "lucide-react"
+import { Search, ShieldAlert, Map, MessageSquare, Users, EyeOff } from "lucide-react"
 
 export type EmptyStateVariant = 'default' | 'search' | 'permission' | 'error' | 'success' | 'map' | 'community' | 'messages'
 

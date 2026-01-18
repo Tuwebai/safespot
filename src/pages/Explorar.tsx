@@ -92,7 +92,8 @@ export function Explorar() {
             initialFocus={initialFocus}
             activateZoneType={activateZoneType}
             onSearchArea={handleSearchInArea}
-            isSearching={isFetching}
+            // ENTERPRISE FIX: loading = cold start only. Background fetches are silent.
+            isSearching={isFetching && reports.length === 0}
           />
         </Suspense>
 

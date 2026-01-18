@@ -161,28 +161,35 @@ const CategoryCard = memo(({ name, color, count }: { name: string, color: string
 export function Home() {
   useGlobalFeed()
   // ... hooks unchanged ...
-  const { data: stats, isLoading: statsLoading, isError: statsError } = useGlobalStatsQuery()
-  const { data: categoryStats, isLoading: categoryLoading, isError: categoryError } = useCategoryStatsQuery()
+  const { data: stats, isLoading: statsLoading } = useGlobalStatsQuery()
+  const { data: categoryStats, isLoading: categoryLoading } = useCategoryStatsQuery()
 
-  const loading = statsLoading || categoryLoading
-  const error = statsError || categoryError
+  // ENTERPRISE UI PATTERN:
+  // loading = Cold Start ONLY.
+  // If we have data (even old), we show it. No skeletons on background refresh.
+  const hasData = !!stats && !!categoryStats
+  const showSkeleton = (statsLoading || categoryLoading) && !hasData
+
+  // We ignore isError for the UI if we have stale data to show.
+  // Errors are logged to Sentry/Console by the global error handler or query client.
 
   const statsDisplay = [
     {
       label: 'Reportes Totales',
-      value: error ? '0' : (stats?.total_reports?.toString() || '0'),
+      // UI LOGIC: If we have data, show it. If not, wait for loading. If error and no data, show 0.
+      value: stats?.total_reports?.toString() || '0',
       icon: TrendingUp,
       color: 'text-neon-green'
     },
     {
       label: 'Recuperados',
-      value: error ? '0' : (stats?.resolved_reports?.toString() || '0'),
+      value: stats?.resolved_reports?.toString() || '0',
       icon: CheckCircle,
       color: 'text-green-400'
     },
     {
       label: 'Usuarios Totales',
-      value: error ? '0' : (stats?.total_users?.toString() || '0'),
+      value: stats?.total_users?.toString() || '0',
       icon: Users,
       color: 'text-blue-400'
     },
@@ -212,7 +219,7 @@ export function Home() {
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {statsDisplay.map((stat, index) => (
-              <StatCard key={index} {...stat} loading={loading} />
+              <StatCard key={index} {...stat} loading={showSkeleton} />
             ))}
           </div>
         </div>
@@ -233,7 +240,7 @@ export function Home() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {categories.map((category, index) => {
-              const count = loading ? '...' : (categoryStats?.[category.name as keyof CategoryStats]?.toString() || '0')
+              const count = showSkeleton ? '...' : (categoryStats?.[category.name as keyof CategoryStats]?.toString() || '0')
               return <CategoryCard key={index} {...category} count={count} />
             })}
           </div>

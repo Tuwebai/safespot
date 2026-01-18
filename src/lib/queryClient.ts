@@ -20,29 +20,24 @@ export const queryClient = new QueryClient({
             // "Source of Truth" is ALWAYS the server.
 
             // 1. Data Validity
-            staleTime: 5000, // P0 FIX: Prevent refetch storms (5s grace period)
-            gcTime: 1000 * 60 * 5, // Keep unused data in memory for 5 minutes (reduced thrashing)
+            staleTime: 60000, // ENTERPRISE: 1 min valid data (Evita refetch storms)
+            gcTime: 1000 * 60 * 10, // ENTERPRISE: 10 min persistence (Navegación instantánea al volver)
 
-            // 2. Refetch Triggers (Aggressive)
-            refetchOnWindowFocus: true, // Force check when user looks at screen
-            refetchOnMount: true,       // Force check when component opens
-            refetchOnReconnect: true,   // Force check when network comes back
+            // 2. Refetch Triggers (Aggressive background updates)
+            refetchOnWindowFocus: true,
+            refetchOnReconnect: true,
+            refetchOnMount: true,
 
             // 3. Network Behavior - RETRY LOGIC (Unified)
             retry: (failureCount, error: any) => {
-                // FAIL FAST on 4xx Client Errors (except 408 Timeout or 429 Too Many Requests)
+                // FAIL FAST on 4xx Client Errors (except 408/429)
                 if (error?.status >= 400 && error?.status < 500) {
-                    // special handling for 429/408 which MIGHT be worth retrying once or twice? 
-                    // But generally standard React Query practice is to fail on 4xx.
-                    // We let 429 propagate so the UI can show "Too Many Requests" specific error.
                     return false
                 }
-
-                // Retry only up to 2 times (Total 3 attempts) for Network/Server errors
                 return failureCount < 2
             },
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential Backoff
-            networkMode: 'online', // Only fetch if we *think* we are online. 
+            networkMode: 'online',
         },
         mutations: {
             retry: 0, // Fail fast on actions.
