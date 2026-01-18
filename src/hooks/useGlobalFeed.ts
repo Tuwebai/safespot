@@ -5,6 +5,7 @@ import { reportsCache, statsCache } from '@/lib/cache-helpers'
 
 import { getClientId } from '@/lib/clientId'
 import { ssePool } from '@/lib/ssePool'
+import { reportSchema } from '@/lib/schemas' // Import Schema
 
 /**
  * Global Real-time Feed Hook
@@ -41,9 +42,20 @@ export function useGlobalFeed() {
                 if (reportId && processedReports.current.has(reportId)) return
                 if (reportId) processedReports.current.add(reportId)
 
-                reportsCache.prepend(queryClient, data.partial)
-                if (data.partial?.category) {
-                    statsCache.applyReportCreate(queryClient, data.partial.category, data.partial.status)
+                // Validate Partial Schema
+                const parsed = reportSchema.partial().safeParse(data.partial)
+                if (!parsed.success) {
+                    console.warn('[SSE] Dropping invalid report-create', parsed.error)
+                    return
+                }
+
+                reportsCache.prepend(queryClient, parsed.data)
+                if (parsed.data.category) {
+                    // status is optional in partial, default to pending if missing? 
+                    // Actually partial() makes everything optional.
+                    // We need to trust the event or ensure minimal required fields.
+                    // For now, type safety is enough to prevent crashes.
+                    statsCache.applyReportCreate(queryClient, parsed.data.category, parsed.data.status || 'pendiente')
                 }
             } catch (e) {
                 console.error('[SSE] Error processing report-create', e)
@@ -62,7 +74,12 @@ export function useGlobalFeed() {
                 } else if (data.isCommentDelta) {
                     reportsCache.applyCommentDelta(queryClient, data.id, data.delta);
                 } else {
-                    reportsCache.patch(queryClient, data.id, data.partial)
+                    const parsed = reportSchema.partial().safeParse(data.partial)
+                    if (parsed.success) {
+                        reportsCache.patch(queryClient, data.id, parsed.data)
+                    } else {
+                        console.warn('[SSE] Invalid patch data', parsed.error)
+                    }
                 }
             } catch (e) {
                 console.error('[SSE] Error processing report-update', e)

@@ -10,9 +10,11 @@
     "migrate": "node src/scripts/migrate.js",
     "sync:counters": "node src/scripts/syncCounters.js",
     "test-connection": "node test-connection.js",
-    "test-db": "node test-direct-connection.js"
+    "test-db": "node test-direct-connection.js",
+    "test:contracts": "node src/scripts/verify-contract.js"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.4.0",
     "@supabase/supabase-js": "^2.89.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
@@ -30,6 +32,7 @@
     "pdfkit": "^0.17.2",
     "pg": "^8.16.3",
     "sharp": "^0.34.5",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7",
     "xss": "^1.0.15",

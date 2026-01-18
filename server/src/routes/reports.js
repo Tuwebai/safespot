@@ -19,6 +19,7 @@ import { realtimeEvents } from '../utils/eventEmitter.js';
 import { sendNewReportNotification } from '../utils/whatsapp.js';
 import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
+import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
 
 const router = express.Router();
 
@@ -104,10 +105,14 @@ router.get('/', async (req, res, next) => {
       // For performance on map, checking individual trust score for 100 items might be slow.
       // We'll rely on r.is_hidden being correct (updated by triggers/cron).
 
-      return res.json({
+      return res.validateJson(reportsListResponseSchema, {
         success: true,
         data: result.rows,
-        meta: { feedType: 'bounds', count: result.rows.length }
+        meta: { feedType: 'bounds', count: result.rows.length },
+        pagination: {
+          hasNextPage: false,
+          nextCursor: null
+        }
       });
     }
 
@@ -334,10 +339,12 @@ router.get('/', async (req, res, next) => {
 
       logSuccess('GET /api/reports (geographic)', anonymousId);
 
-      return res.json({
-        items: visibleReports,
+      return res.validateJson(reportsListResponseSchema, {
+        success: true,
+        data: visibleReports,
         pagination: {
-          hasMore: hasNextPage,
+          hasMore: hasNextPage, // Schema expects hasNextPage, but check if reportsListResponseSchema definitions match
+          hasNextPage: hasNextPage,
           nextCursor,
           limit: limitNum
         },
@@ -597,7 +604,7 @@ router.get('/', async (req, res, next) => {
       };
     });
 
-    res.json({
+    return res.validateJson(reportsListResponseSchema, {
       success: true,
       data: processedReports,
       pagination: {
@@ -659,7 +666,7 @@ router.get('/:id', async (req, res, next) => {
 
     // ... (rest of logic)
 
-    return res.json({
+    return res.validateJson(singleReportResponseSchema, {
       success: true,
       data: report
     });

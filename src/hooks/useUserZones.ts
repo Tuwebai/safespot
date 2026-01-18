@@ -16,14 +16,9 @@ export const useUserZones = () => {
         queryKey,
         queryFn: async () => {
             if (!anonymousId) return [];
-            try {
-                // apiRequest already unwraps 'data' property
-                const response = await apiRequest<UserZone[]>('/user-zones');
-                return response || [];
-            } catch (err) {
-                console.error('[useUserZones] Fetch failed:', err);
-                return []; // Always return array for safety
-            }
+            // apiRequest already unwraps 'data' property and validates contract
+            const response = await apiRequest<UserZone[]>('/user-zones');
+            return response;
         },
         enabled: !!anonymousId,
         staleTime: 5 * 60 * 1000, // 5 minutes fresh

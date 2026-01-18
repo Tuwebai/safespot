@@ -1,6 +1,8 @@
 import { AppClientError } from './errors';
 import { getClientId } from './clientId';
 import { ensureAnonymousId } from './identity';
+import { ZodSchema } from 'zod';
+import { reportsListResponseSchema, singleReportResponseSchema, reportSchema, type Report } from './schemas';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -48,7 +50,8 @@ function getHeaders(requestId?: string): HeadersInit {
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
-  timeout = 45000 // 45 seconds default timeout (Accommodates Render cold starts)
+  timeout = 45000,
+  schema?: ZodSchema<T>
 ): Promise<T> {
 
   // 1. Generate Correlation ID for this specific request
@@ -138,10 +141,33 @@ export async function apiRequest<T>(
 
     // Preserve 'meta' if it exists (don't unwrap aggressively)
     if (data.data && data.meta) {
+      if (schema) {
+        const parsed = schema.safeParse(data);
+        if (!parsed.success) {
+          console.error('🚨 API CONTRACT BREACH', parsed.error);
+          throw new AppClientError('Invalid API Response (Contract Breach)', 'INVALID_CONTRACT', 500, false, parsed.error);
+        }
+        return parsed.data;
+      }
       return data;
     }
 
-    return data.data || data;
+    const payload = data.data || data;
+
+    if (schema) {
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) {
+        // Try parsing the root object if payload failed (sometimes we wrap/unwrap inconsistently)
+        const parsedRoot = schema.safeParse(data);
+        if (parsedRoot.success) return parsedRoot.data;
+
+        console.error('🚨 API CONTRACT BREACH', parsed.error);
+        throw new AppClientError('Invalid API Response (Contract Breach)', 'INVALID_CONTRACT', 500, false, parsed.error);
+      }
+      return parsed.data;
+    }
+
+    return payload;
 
   } catch (error) {
     // 3. Handle Network Errors (fetch failed)
@@ -291,7 +317,17 @@ export const reportsApi = {
       });
     }
     const query = params.toString();
-    return apiRequest<Report[]>(`/reports${query ? `?${query}` : ''}`);
+    const response = await apiRequest(`/reports${query ? `?${query}` : ''}`, {}, 45000, reportsListResponseSchema);
+    // Unwrapping happens in apiRequest BUT reportsListResponseSchema preserves the { success, data } structure? 
+    // Wait, reportsListResponseSchema HAS 'data' key. apiRequest returns parsed.data which IS the whole object matching the schema.
+    // However, existing code might expect ARRAY.
+    // The previous implementation returned `data.data || data`.
+    // If backend returns { success: true, data: [...] }, standard apiRequest (no schema) returned [...].
+    // NOW with schema, it returns { success: true, data: [...] }.
+    // We MUST extract .data here to maintain backward compatibility with the rest of the app OR update schema to transformer?
+    // Let's manually extract .data to keep strict types but clean consumer usage.
+
+    return response.data; // Now safely validated as Array<Report>
   },
 
   /**
@@ -299,34 +335,16 @@ export const reportsApi = {
    * format: north, south, east, west
    */
   getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
-    return apiRequest<Report[]>(`/reports?bounds=${north},${south},${east},${west}`);
+    const response = await apiRequest(`/reports?bounds=${north},${south},${east},${west}`, {}, 45000, reportsListResponseSchema);
+    return response.data;
   },
 
   /**
    * Get a single report by ID
    */
   getById: async (id: string): Promise<Report> => {
-    const report = await apiRequest<Report>(`/reports/${id}`);
-
-    // Normalize image_urls: ensure it's always an array
-    if (report) {
-      if (!report.image_urls) {
-        report.image_urls = [];
-      } else if (typeof report.image_urls === 'string') {
-        try {
-          report.image_urls = JSON.parse(report.image_urls);
-          if (!Array.isArray(report.image_urls)) {
-            report.image_urls = [];
-          }
-        } catch (e) {
-          report.image_urls = [];
-        }
-      } else if (!Array.isArray(report.image_urls)) {
-        report.image_urls = [];
-      }
-    }
-
-    return report;
+    const response = await apiRequest(`/reports/${id}`, {}, 45000, singleReportResponseSchema);
+    return response.data;
   },
 
   /**

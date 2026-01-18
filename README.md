@@ -110,6 +110,15 @@ Todos los componentes siguen el sistema de diseño:
 - **API Calls**: Todas las interacciones se realizan mediante llamadas al backend
 - **Listo para Producción**: El frontend está completo y funcional
 
+## 🛡️ Data Philosophy (Enterprise)
+
+- **Single Source of Truth**: React Query manages all server state.
+- **Fail Loud**: Backend enforces strict Zod contracts. Any violation 500s immediately.
+- **UI Stability**: We prefer "stale" data over "loading" states or empty screens.
+- **Last Known Good State**: Errors never wipe visible data.
+- **No Silencing**: We never use `|| []` to mask API failures.
+
+
 ## 🎯 Próximos Pasos
 
 - Integración de mapas reales (Leaflet/Mapbox)

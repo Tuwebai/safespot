@@ -10,6 +10,10 @@ import { correlationMiddleware, getCorrelationId } from './middleware/correlatio
 import { AppError } from './utils/AppError.js';
 import { ErrorCodes } from './utils/errorCodes.js';
 
+import { responseValidationMiddleware } from './utils/validationWrapper.js';
+import swaggerUi from 'swagger-ui-express';
+import { generateOpenApiSpecs } from './docs/openapi.js';
+
 // Router imports
 import presenceRouter from './routes/presence.js';
 import reportsRouter from './routes/reports.js';
@@ -160,6 +164,20 @@ app.use(versionEnforcement);
 // ============================================
 
 app.use(requestLogger);
+
+// ============================================
+// RESPONSE VALIDATION MIDDLEWARE (Enterprise)
+// ============================================
+app.use(responseValidationMiddleware);
+
+// ============================================
+// OPENAPI DOCUMENTATION
+// ============================================
+if (process.env.NODE_ENV !== 'production') {
+  const openApiSpecs = generateOpenApiSpecs();
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpecs));
+  console.log('📚 OpenAPI Docs available at /api-docs');
+}
 
 // ============================================
 // AUTH MIDDLEWARE (Global)
