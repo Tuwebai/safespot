@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/confirmation-manager'
 
 interface AdminTask {
     id: string
@@ -169,14 +170,21 @@ export function TasksPage() {
         type: ''
     })
     const navigate = useNavigate()
+    const { confirm } = useConfirm()
 
-    const handleViewDetails = (task: AdminTask) => {
+    const handleViewDetails = async (task: AdminTask) => {
         if (task.metadata?.report_id) {
             navigate(`/admin/moderation?reportId=${task.metadata.report_id}`)
         } else if (task.metadata?.user_id) {
             navigate(`/admin/users?search=${task.metadata.user_id}`)
         } else {
-            alert(`Detalles de la Tarea:\n\n${task.description}\n\nNota: No hay un link directo para este tipo de evento.`)
+            await confirm({
+                title: 'Detalles de la Tarea',
+                description: task.description,
+                confirmText: 'Entendido',
+                cancelText: '', // Hide cancel button
+                variant: 'default'
+            })
         }
     }
 
@@ -202,7 +210,12 @@ export function TasksPage() {
     }
 
     const deleteTask = async (taskId: string) => {
-        if (!confirm('¿Estás seguro de que quieres eliminar esta tarea permanentemente?')) return
+        if (!await confirm({
+            title: '¿Eliminar tarea?',
+            description: '¿Estás seguro de que quieres eliminar esta tarea permanentemente? Esta acción es irreversible.',
+            confirmText: 'Eliminar',
+            variant: 'danger'
+        })) return
 
         try {
             const token = localStorage.getItem('safespot_admin_token')

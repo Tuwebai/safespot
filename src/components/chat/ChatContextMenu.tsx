@@ -10,6 +10,7 @@ import { ChatRoom } from "@/lib/api";
 import { Archive, Pin, PinOff, Trash2, Mail, MailOpen } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ui/confirmation-manager";
 
 interface ChatContextMenuProps {
     chat: ChatRoom;
@@ -24,6 +25,7 @@ interface ChatContextMenuProps {
 export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerClassName, onAction }: ChatContextMenuProps) {
     const { pinChat, archiveChat, markUnread, deleteChat } = useChatActions();
     const [open, setOpen] = useState(false);
+    const { confirm } = useConfirm();
 
     // Controlled vs Uncontrolled
     const isControlled = isOpen !== undefined;
@@ -108,10 +110,19 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
                 <DropdownMenuSeparator className="bg-zinc-800" />
 
                 <DropdownMenuItem
-                    onClick={(e) => {
+                    onClick={async (e) => {
                         e.stopPropagation();
-                        if (confirm("¿Estás seguro de eliminar este chat?")) {
-                            handleAction(() => deleteChat(chat.id));
+                        // Close menu first to prevent weird UI layering if modal opens
+                        handleOpenChange(false);
+
+                        if (await confirm({
+                            title: '¿Eliminar chat?',
+                            description: 'Se eliminará el historial de mensajes de este chat para ambos participantes. Esta acción no se puede deshacer.',
+                            confirmText: 'Eliminar',
+                            variant: 'danger'
+                        })) {
+                            deleteChat(chat.id);
+                            onAction?.();
                         }
                     }}
                     className="focus:bg-red-900/50 focus:text-red-300 text-red-400 cursor-pointer"

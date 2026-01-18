@@ -15,29 +15,16 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { getAvatarUrl } from '@/lib/avatar'
+import { LocationPermissionDenied } from './LocationPermissionDenied'
 
 // Add custom style for placement mode cursor
 // Extracted CenterManager to prevent re-mounting loops
 const CenterManager = ({
     activeZoneType,
-    hasCenteredRef,
-    setIsMapReady,
-    handleInitialCentering
 }: {
     activeZoneType: ZoneType | null,
-    hasCenteredRef: React.MutableRefObject<boolean>,
-    setIsMapReady: (ready: boolean) => void,
-    handleInitialCentering: (map: any) => void
 }) => {
     const map = useMap()
-
-    // Initial centering
-    useEffect(() => {
-        if (map && !hasCenteredRef.current) {
-            setIsMapReady(true)
-            handleInitialCentering(map)
-        }
-    }, [map, hasCenteredRef, setIsMapReady, handleInitialCentering])
 
     // EXPLICIT: Ensure dragging is ENABLED in placement mode
     useEffect(() => {
@@ -88,9 +75,7 @@ const createPinIcon = (color: string) => {
     })
 }
 
-// CRITICAL: Leaflet initialization flag
-// This MUST be at module level to persist across component re-renders
-let leafletIconsInitialized = false
+
 
 const RecenterButton = () => {
     const map = useMap()
@@ -431,14 +416,18 @@ export function SafeSpotMapClient({
 }: SafeSpotMapProps) {
     // --- LOAD SAVED SETTINGS ---
     const mapStyle = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_style') || 'streets') : 'streets';
-    const autoCenterEnabled = typeof window !== 'undefined' ? (localStorage.getItem('safespot_auto_center') !== 'false') : true; // Default true
     const cleanMap = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_density') === 'true') : false;
 
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
     const { zones, saveZone } = useUserZones()
-    const hasCenteredRef = useRef(false)
-    const [isMapReady, setIsMapReady] = useState(false)
     const isMountedRef = useRef(true)
+
+    // ✅ ENTERPRISE GEOLOCATION STATE MACHINE
+    type LocationState = 'idle' | 'resolving' | 'retrying_timeout' | 'resolved' | 'denied' | 'unavailable' | 'manual_retry';
+
+    const [locationState, setLocationState] = useState<LocationState>('idle');
+    const [startPosition, setStartPosition] = useState<[number, number] | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string>('');
 
     // Cleanup on unmount
     useEffect(() => {
@@ -455,94 +444,156 @@ export function SafeSpotMapClient({
         }
     }, [externalActivateZoneType])
 
-    // Helper to safely call map.setView
-    const safeSetView = useCallback((map: any, coords: [number, number], zoom: number) => {
-        if (!isMountedRef.current) return false
-        if (!map || !map.getContainer || !map.getContainer()) return false
 
-        try {
-            map.setView(coords, zoom)
-            return true
-        } catch (e) {
-            console.warn('[Map] setView failed - map may be unmounted')
-            return false
-        }
-    }, [])
+    // ✅ ENTERPRISE LOCATION RESOLVER PIPELINE
+    const resolveLocation = useCallback(async (retryMode: 'auto' | 'manual' = 'auto') => {
+        if (!isMountedRef.current) return;
 
-    // PRIORITY CENTERING LOGIC - DETERMINISTIC ONCE
-    const handleInitialCentering = useCallback(async (map: any) => {
-        // Guard 0: Already centered or map not ready
-        if (hasCenteredRef.current || !isMapReady || !isMountedRef.current) return
+        // Reset state only if starting fresh or manual retry
+        setLocationState('resolving');
+        setStatusMessage(retryMode === 'manual' ? 'Reintentando ubicarte...' : 'Iniciando geolocalización...');
 
-        // 1. Zoom to initialFocus (deep link) - Robust check
+        // 1. Initial Focus (Deep Link) -> HIGHEST PRIORITY (Instant)
         if (initialFocus) {
             const lat = Number(initialFocus.lat)
             const lng = Number(initialFocus.lng)
-
             if (!isNaN(lat) && !isNaN(lng)) {
-                if (safeSetView(map, [lat, lng], 16)) {
-                    hasCenteredRef.current = true
-                    return
-                }
+                setStartPosition([lat, lng]);
+                setLocationState('resolved');
+                return;
             }
         }
 
-        // 2. Priority Zones: Home > Work > Frequent
+        // 2. Priority Zones (Home > Work > Frequent) (Cache/Instant)
         const home = zones.find(z => z.type === 'home')
         const work = zones.find(z => z.type === 'work')
         const frequent = zones.find(z => z.type === 'frequent')
         const priorityZone = home || work || frequent
 
         if (priorityZone && typeof priorityZone.lat === 'number' && typeof priorityZone.lng === 'number' && !isNaN(priorityZone.lat) && !isNaN(priorityZone.lng)) {
-            if (safeSetView(map, [priorityZone.lat, priorityZone.lng], 14)) {
-                hasCenteredRef.current = true
-                return
-            }
+            setStartPosition([priorityZone.lat, priorityZone.lng]);
+            setLocationState('resolved');
+            return;
         }
 
-        // 3. Last Known Location from Settings
+        // 3. Last Known Location (Settings) (Async/Fast)
         try {
             const settings = await notificationsApi.getSettings()
             if (settings && typeof settings.last_known_lat === 'number' && typeof settings.last_known_lng === 'number' && !isNaN(settings.last_known_lat) && !isNaN(settings.last_known_lng)) {
-                if (safeSetView(map, [settings.last_known_lat, settings.last_known_lng], 13)) {
-                    hasCenteredRef.current = true
-                    return
+                setStartPosition([settings.last_known_lat, settings.last_known_lng]);
+                setLocationState('resolved');
+                return;
+            }
+        } catch (e) {
+            // Proceed to GPS if settings fail
+        }
+
+        // 4. BROWSER GEOLOCATION (The Tricky Part)
+        if (!('geolocation' in navigator)) {
+            setLocationState('unavailable');
+            setStatusMessage('Tu navegador no soporta geolocalización.');
+            return;
+        }
+
+        // 4.1 Check Permissions API first (if available) to fail fast
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                const result = await navigator.permissions.query({ name: 'geolocation' });
+                if (result.state === 'denied') {
+                    if (isMountedRef.current) setLocationState('denied');
+                    return;
                 }
             }
         } catch (e) {
-            // Only log errors, not flow
-            console.error('[Map] Settings fetch failed', e)
+            // Ignore permission query errors (some browsers don't support it well)
         }
 
-        // 4. Browser Geolocation (Only if auto-center is enabled or no priority zones)
-        if (autoCenterEnabled && 'geolocation' in navigator && isMountedRef.current) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    // Double check component is still mounted
-                    if (!isMountedRef.current) return
+        setStatusMessage('Solicitando ubicación precisa...');
 
-                    if (pos.coords.latitude && pos.coords.longitude) {
-                        if (safeSetView(map, [pos.coords.latitude, pos.coords.longitude], 13)) {
-                            hasCenteredRef.current = true
-                        }
-                    }
-                },
-                () => {
-                    // 5. Fallback: Buenos Aires
-                    if (!isMountedRef.current) return
+        // 4.2 Helper function for promisified Geolocation
+        const getTimestamp = () => new Date().toLocaleTimeString();
 
-                    if (safeSetView(map, [-34.6037, -58.3816], 12)) {
-                        hasCenteredRef.current = true
+        const getPosition = (options: PositionOptions): Promise<GeolocationPosition> => {
+            return new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, options);
+            });
+        };
+
+        // 4.3 Strategy: High Accuracy (Short Timeout) -> Relaxed (Long Timeout)
+        try {
+            // ATTEMPT 1: High Accuracy, 6s timeout
+            // Desktop often times out here if it's trying to use WiFi triangulation slowly
+            console.log(`[Map ${getTimestamp()}] Attempting High Accuracy Location...`);
+            const pos = await getPosition({
+                enableHighAccuracy: true,
+                timeout: 6000,
+                maximumAge: 10000
+            });
+
+            if (isMountedRef.current) {
+                setStartPosition([pos.coords.latitude, pos.coords.longitude]);
+                setLocationState('resolved');
+            }
+
+        } catch (err: any) {
+            if (!isMountedRef.current) return;
+            console.warn(`[Map ${getTimestamp()}] High Accuracy Failed:`, err.code, err.message);
+
+            // Handle Specifc Errors State 1
+            if (err.code === 1) { // PERMISSION_DENIED
+                setLocationState('denied');
+                return;
+            }
+            if (err.code === 2) { // POSITION_UNAVAILABLE
+                setLocationState('unavailable');
+                setStatusMessage('No pudimos determinar tu ubicación. Verifica tu GPS o red.');
+                return;
+            }
+
+            // TIMEOUT (Code 3) or other errors -> RETRY STRATEGY
+            if (err.code === 3 || retryMode === 'manual') {
+                console.log(`[Map ${getTimestamp()}] Retrying with Relaxed Constraints...`);
+                setLocationState('retrying_timeout');
+                setStatusMessage('Afinando ubicación (modo extendido)...');
+
+                try {
+                    // ATTEMPT 2: Low Accuracy (Accept WiFi/IP), 15s timeout
+                    const posRetry = await getPosition({
+                        enableHighAccuracy: false,
+                        timeout: 15000,
+                        maximumAge: 60000
+                    });
+
+                    if (isMountedRef.current) {
+                        setStartPosition([posRetry.coords.latitude, posRetry.coords.longitude]);
+                        setLocationState('resolved');
                     }
-                },
-                { timeout: 5000 }
-            )
-        } else {
-            if (safeSetView(map, [-34.6037, -58.3816], 12)) {
-                hasCenteredRef.current = true
+                } catch (retryErr: any) {
+                    if (!isMountedRef.current) return;
+                    console.error(`[Map ${getTimestamp()}] Retry Failed:`, retryErr.code, retryErr.message);
+
+                    if (retryErr.code === 1) {
+                        setLocationState('denied');
+                    } else if (retryErr.code === 2) {
+                        setLocationState('unavailable');
+                    } else {
+                        // Double Timeout or Unknown -> Manual Retry State
+                        setLocationState('manual_retry');
+                        setStatusMessage('El servicio de ubicación tardó demasiado.');
+                    }
+                }
+            } else {
+                // Unknown error not suitable for retry
+                setLocationState('unavailable');
             }
         }
-    }, [isMapReady, zones, initialFocus, safeSetView])
+
+    }, [initialFocus, zones]);
+
+    // Initial Resolution Effect
+    useEffect(() => {
+        resolveLocation('auto');
+    }, [resolveLocation]);
 
     // Use the comprehensive top-level styles for placement mode
     const [isSavingZone, setIsSavingZone] = useState(false)
@@ -578,19 +629,11 @@ export function SafeSpotMapClient({
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [activeZoneType])
 
-    // CRITICAL: Initialize Leaflet icons ONLY in browser
+    // CRITICAL: Initialize Leaflet icons
+    // Note: Global default icons are handled in App.tsx, but we ensure Leaflet is loaded here.
     useEffect(() => {
-        if (leafletIconsInitialized || typeof window === 'undefined') return
-        import('leaflet').then((L) => {
-            // @ts-expect-error - Leaflet icon internals
-            delete L.default.Icon.Default.prototype._getIconUrl
-            L.default.Icon.Default.mergeOptions({
-                iconRetinaUrl: null,
-                iconUrl: null,
-                shadowUrl: null,
-            })
-            leafletIconsInitialized = true
-        }).catch(err => console.error('Leaflet icons failed', err))
+        if (typeof window === 'undefined') return
+        // We just ensure leaflet is imported if needed, but no longer mess with Icon.Default
     }, [])
 
     // Memoize the transformation of data to prevent redundant calculations on every render
@@ -611,32 +654,64 @@ export function SafeSpotMapClient({
     const highlightedId = useMapStore(s => s.highlightedReportId)
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
 
-    // Compute initial center synchronously to avoid visual jump
-    const defaultCenter = useMemo((): [number, number] => {
-        // 1. Initial Focus (Deep Link)
-        if (initialFocus) {
-            const lat = Number(initialFocus.lat)
-            const lng = Number(initialFocus.lng)
-            if (!isNaN(lat) && !isNaN(lng)) {
-                return [lat, lng]
-            }
-        }
+    // 🛑 BLOCK RENDER Logic
+    // If not resolved or resolving, handle UI states
 
-        // 2. Priority Zones (Home > Work > Frequent)
-        // Since we have staleTime on useQuery, these should be available immediately from cache
-        const home = zones.find(z => z.type === 'home')
-        const work = zones.find(z => z.type === 'work')
-        const frequent = zones.find(z => z.type === 'frequent')
-        const priorityZone = home || work || frequent
+    // 1. Permission Denied (Strict)
+    if (locationState === 'denied') {
+        return <LocationPermissionDenied onRetry={() => resolveLocation('manual')} />;
+    }
 
-        if (priorityZone && typeof priorityZone.lat === 'number' && typeof priorityZone.lng === 'number') {
-            return [priorityZone.lat, priorityZone.lng]
-        }
+    // 2. Loading States (Resolving Or Retrying)
+    if (locationState === 'resolving' || locationState === 'retrying_timeout') {
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-dark-bg">
+                <div className="text-center">
+                    <div className="animate-spin h-12 w-12 border-4 border-neon-green border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p className="text-foreground/80 font-medium animate-pulse">{statusMessage}</p>
+                    {locationState === 'retrying_timeout' && (
+                        <p className="text-xs text-muted-foreground mt-2 max-w-[200px] mx-auto">
+                            Esto puede demorar unos segundos en PC...
+                        </p>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
-        // 3. Fallback
-        return [-34.6037, -58.3816]
-    }, [initialFocus, zones])
+    // 3. Unavailable / Manual Retry
+    if (locationState === 'unavailable' || locationState === 'manual_retry') {
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-dark-bg p-6">
+                <div className="max-w-xs text-center space-y-4">
+                    <div className="mx-auto w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mb-2">
+                        <MapPin className="w-8 h-8 text-yellow-500" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white">Ubicación no disponible</h3>
+                    <p className="text-sm text-muted-foreground">
+                        {statusMessage || 'No pudimos detectarte automáticamente.'}
+                    </p>
+                    <Button
+                        onClick={() => resolveLocation('manual')}
+                        className="w-full bg-white text-black hover:bg-gray-200"
+                    >
+                        Intentar de Nuevo
+                    </Button>
+                </div>
+            </div>
+        );
+    }
 
+    if (locationState !== 'resolved' || !startPosition) {
+        // Fallback for any unknown state (shouldn't happen)
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-dark-bg">
+                <div className="animate-spin h-8 w-8 border-2 border-white border-t-transparent rounded-full"></div>
+            </div>
+        )
+    }
+
+    // ✅ Only mount MapContainer when startPosition is known
     return (
         <div
             className={`relative w-full h-full min-h-[500px] bg-dark-bg z-0 ${className} ${activeZoneType ? 'map-placement-mode' : ''}`}
@@ -646,8 +721,8 @@ export function SafeSpotMapClient({
 
 
             <MapContainer
-                center={defaultCenter}
-                zoom={12}
+                center={startPosition}
+                zoom={14}
                 scrollWheelZoom={true}
                 dragging={true}
                 doubleClickZoom={true}
@@ -657,9 +732,6 @@ export function SafeSpotMapClient({
             >
                 <CenterManager
                     activeZoneType={activeZoneType}
-                    hasCenteredRef={hasCenteredRef}
-                    setIsMapReady={setIsMapReady}
-                    handleInitialCentering={handleInitialCentering}
                 />
                 <ZoomControl position="bottomright" />
                 <MapEvents />

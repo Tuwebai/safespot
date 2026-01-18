@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthForm, AuthMode } from '@/components/auth/AuthForm';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, MapPin } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 export default function AuthPage() {
@@ -17,7 +17,7 @@ export default function AuthPage() {
     // Redirect if already authenticated
     useEffect(() => {
         if (isAuthenticated) {
-            navigate('/perfil');
+            navigate('/register');
         }
     }, [isAuthenticated, navigate]);
 
@@ -38,13 +38,8 @@ export default function AuthPage() {
                     </Link>
 
                     <div className="flex justify-center mb-4">
-                        <div className="h-12 w-12 bg-neon-green rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.3)]">
-                            <img src="/safespot-icon.svg" alt="SafeSpot" className="w-8 h-8 invert" onError={(e) => {
-                                // Fallback if svg not found, just show generic icon
-                                e.currentTarget.style.display = 'none';
-                            }} />
-                            {/* Fallback Icon if image fails or while loading */}
-                            <span className="text-black font-black text-xl">S</span>
+                        <div className="h-12 w-12 rounded-xl bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                            <MapPin className="w-7 h-7 text-zinc-950" />
                         </div>
                     </div>
 

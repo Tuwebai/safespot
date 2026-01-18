@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAvatarUrl } from '@/lib/avatar';
+import { useConfirm } from '@/components/ui/confirmation-manager';
 
 interface ModerationItem {
     id: string;
@@ -33,6 +34,7 @@ interface ModerationItem {
 export function ModerationPage() {
     const [activeTab, setActiveTab] = useState<'report' | 'comment'>('report');
     const queryClient = useQueryClient();
+    const { confirm } = useConfirm();
 
     // Fetch Pending Items
     const { data: items, isLoading } = useQuery<ModerationItem[]>({
@@ -68,10 +70,16 @@ export function ModerationPage() {
         }
     });
 
-    const handleAction = (item: ModerationItem, action: 'approve' | 'reject' | 'dismiss') => {
+    const handleAction = async (item: ModerationItem, action: 'approve' | 'reject' | 'dismiss') => {
         let banUser = false;
         if (action === 'reject') {
-            if (confirm('¿Deseas también BANEAR al usuario autor de este contenido?')) {
+            if (await confirm({
+                title: '¿Banear usuario?',
+                description: '¿Deseas también BANEAR al usuario autor de este contenido para prevenir futuros incidentes?',
+                confirmText: 'Sí, banear usuario',
+                cancelText: 'No, solo rechazar contenido',
+                variant: 'danger'
+            })) {
                 banUser = true;
             }
         }

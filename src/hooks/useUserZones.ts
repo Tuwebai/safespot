@@ -3,13 +3,16 @@ import { apiRequest, ZoneType, UserZone } from '@/lib/api';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { useToast } from '@/components/ui/toast';
 
+
+const EMPTY_ARRAY: UserZone[] = [];
+
 export const useUserZones = () => {
     const anonymousId = getAnonymousIdSafe();
     const queryClient = useQueryClient();
     const { success, error } = useToast();
     const queryKey = ['user-zones', anonymousId];
 
-    const { data: zones = [], isLoading } = useQuery<UserZone[]>({
+    const { data: zones = EMPTY_ARRAY, isLoading } = useQuery<UserZone[]>({
         queryKey,
         queryFn: async () => {
             if (!anonymousId) return [];

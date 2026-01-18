@@ -14,6 +14,16 @@ export function Comunidad() {
     const [userLocality, setUserLocality] = useState<string | null>(null);
     const [hasNoLocation, setHasNoLocation] = useState(false);
 
+    // ✅ ENTERPRISE: Robust Data Normalization
+    // Ensures we ALWAYS work with UserProfile[] regardless of API response shape
+    const normalizeUsers = (data: any): UserProfile[] => {
+        if (!data) return [];
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.data)) return data.data;
+        if (Array.isArray(data.users)) return data.users;
+        return [];
+    };
+
     // Fetch Nearby Users
     const {
         data: nearbyUsers,
@@ -24,31 +34,28 @@ export function Comunidad() {
         queryFn: async () => {
             const response = await usersApi.getNearbyUsers();
 
-            // Handle both wrapped response { data, meta } and potential legacy array
-            // though we updated api.ts, runtime safety is good.
+            // Extract meta for side-effects (locality) if present
             const meta = (response as any).meta || {};
-            const items = ((response as any).data || (Array.isArray(response) ? response : [])) as UserProfile[];
 
+            // Side-effect: Update location state
+            // Note: In a pure architecture, this should be in useEffect or onSuccess, 
+            // but we keep it here to strictly follow "no massive refactor" rule while fixing the crash.
             if (typeof meta.has_location_configured === 'boolean') {
-                // Explicit flag from backend (Best Case)
                 setHasNoLocation(!meta.has_location_configured);
-            } else {
-                // Fallback logic if backend didn't return flag (Shouldn't happen with our fix)
-                // If locality is null, we assume no location configured
+            } else if (meta.locality !== undefined) {
                 setHasNoLocation(!meta.locality);
             }
 
             if (meta.locality) {
                 setUserLocality(meta.locality);
-            } else {
-                setUserLocality(null);
             }
 
-            return items;
+            return response;
         },
+        select: (data) => normalizeUsers(data), // ✅ Safe normalization
         enabled: activeTab === 'nearby',
-        staleTime: 1000 * 10, // 10 seconds cache (Freshness)
-        refetchInterval: 1000 * 30, // Poll every 30 seconds for "real-time" feel
+        staleTime: 1000 * 10,
+        refetchInterval: 1000 * 30,
     });
 
     // Fetch Global Users
@@ -59,13 +66,14 @@ export function Comunidad() {
     } = useQuery({
         queryKey: ['users', 'global'],
         queryFn: () => usersApi.getGlobalUsers(1),
+        select: (data) => normalizeUsers(data), // ✅ Safe normalization
         enabled: activeTab === 'global',
-        staleTime: 1000 * 60 * 5, // 5 minutes cache
+        staleTime: 1000 * 60 * 5,
     });
 
     const isLoading = activeTab === 'nearby' ? isLoadingNearby : isLoadingGlobal;
     const error = activeTab === 'nearby' ? errorNearby : errorGlobal;
-    const users = activeTab === 'nearby' ? nearbyUsers : globalUsers;
+    const users = (activeTab === 'nearby' ? nearbyUsers : globalUsers) || [];
     const isEmpty = !isLoading && (!users || users.length === 0);
 
     return (

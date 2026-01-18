@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
 import { getAvatarUrl } from '@/lib/avatar'
+import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useToast } from '@/components/ui/toast/useToast'
 
 interface AdminUser {
     anonymous_id: string
@@ -49,6 +51,8 @@ export function UsersPage() {
     const [hoveredUser, setHoveredUser] = useState<{ user: AdminUser, x: number, y: number } | null>(null)
     const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const debouncedSearch = useDebounce(search, 500)
+    const { confirm } = useConfirm()
+    const { error: showError } = useToast()
 
     // Cleanup timeout on unmount
     useEffect(() => {
@@ -121,16 +125,23 @@ export function UsersPage() {
             if (context?.previousData) {
                 queryClient.setQueryData(['admin', 'users', page, debouncedSearch], context.previousData)
             }
-            alert('Falló la acción de baneo. Reintentando...')
+            showError('Falló la acción de cambio de estado')
         },
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
         }
     })
 
-    const handleBanToggle = (user: AdminUser) => {
+    const handleBanToggle = async (user: AdminUser) => {
         const isBanned = user.status === 'banned'
-        if (confirm(`¿Estás seguro de que quieres ${isBanned ? 'desbanear' : 'BANEAR'} a este usuario?`)) {
+        if (await confirm({
+            title: isBanned ? '¿Desbanear usuario?' : '¿BANEAR USUARIO?',
+            description: isBanned
+                ? `¿Restituir acceso a ${user.alias || 'este usuario'}?`
+                : `Estás a punto de banear a ${user.alias || 'este usuario'}. Perderá el acceso inmediatamente.`,
+            confirmText: isBanned ? 'Desbanear' : 'BANEAR',
+            variant: isBanned ? 'default' : 'danger'
+        })) {
             banMutation.mutate({ id: user.anonymous_id, ban: !isBanned })
         }
     }

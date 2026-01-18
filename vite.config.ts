@@ -61,7 +61,7 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router-dom',
-      'react-helmet-async',
+      'react-router-dom',
       'framer-motion',
       'lucide-react',
       '@tanstack/react-query'
@@ -93,7 +93,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           // Core React - changes rarely, high cache value
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', 'react-helmet-async'],
 
           // Data layer - changes rarely
           'vendor-query': ['@tanstack/react-query'],

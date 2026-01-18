@@ -11,11 +11,15 @@ import { useReportDetail } from '@/hooks/useReportDetail'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
+
 import { ReplyModal } from '@/components/comments/ReplyModal'
+import { useConfirm } from '@/components/ui/confirmation-manager'
 
 export function ThreadPage() {
+
     const { reportId, commentId } = useParams<{ reportId: string; commentId: string }>()
     const navigate = useNavigate()
+    const { confirm } = useConfirm()
 
     // 1. Fetch Report Detail (for SEO/Context)
     useReportDetail({ reportId })
@@ -93,17 +97,29 @@ export function ThreadPage() {
     }, [toggleLike])
 
     const handleDelete = useCallback(async (id: string) => {
-        if (confirm('¿Estás seguro de que quieres eliminar este comentario?')) {
+        if (await confirm({
+            title: 'Eliminar comentario',
+            description: '¿Estás seguro de que quieres eliminar este comentario? Esta acción no se puede deshacer.',
+            confirmText: 'Eliminar',
+            variant: 'danger'
+        })) {
             await deleteComment(id)
             if (id === commentId) navigate(`/reporte/${reportId}`)
         }
-    }, [deleteComment, commentId, reportId, navigate])
+    }, [deleteComment, commentId, reportId, navigate, confirm])
 
     const handleFlag = useCallback(async (id: string, isFlagged: boolean, ownerId: string) => {
-        if (confirm('¿Reportar como inapropiado?')) {
+        if (await confirm({
+            title: isFlagged ? 'Retirar reporte' : 'Reportar comentario',
+            description: isFlagged
+                ? '¿Quieres cancelar el reporte sobre este comentario?'
+                : '¿Reportar este contenido como inapropiado, spam u ofensivo?',
+            confirmText: isFlagged ? 'Retirar' : 'Reportar',
+            variant: 'default' // Making it neutral as report is not instant deletion
+        })) {
             await flagComment(id, isFlagged, ownerId)
         }
-    }, [flagComment])
+    }, [flagComment, confirm])
 
     if (isLoading) {
         return (

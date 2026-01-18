@@ -3,8 +3,13 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteLoadingFallback'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
+import { ConfirmationProvider } from '@/components/ui/confirmation-manager'
 import { lazyRetry } from '@/lib/lazyRetry'
 import { useQueryClient } from '@tanstack/react-query'
+import { initializeLeafletIcons } from '@/lib/leaflet-setup'
+
+// CRITICAL: Initialize Leaflet icons globally to prevent "iconUrl not set" errors
+initializeLeafletIcons();
 
 
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
@@ -83,78 +88,78 @@ function App() {
         }}
       >
         <ThemeProvider>
+          <ConfirmationProvider>
+            <FirstTimeOnboardingTheme />
+            <SEO />
+            <Layout>
+              <ChunkErrorBoundary>
+                <Suspense fallback={<RouteLoadingFallback />}>
+                  <AuthToastListener />
+                  <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/reportes" element={<Reportes />} />
+                    <Route path="/crear-reporte" element={<CrearReporte />} />
+                    <Route
+                      path="/reporte/:id"
+                      element={
+                        <Suspense fallback={<DetailLoadingFallback />}>
+                          <DetalleReporte />
+                        </Suspense>
+                      }
+                    />
+                    <Route path="/explorar" element={<Explorar />} />
+                    <Route path="/gamificacion" element={<Gamificacion />} />
+                    <Route path="/perfil" element={<Perfil />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/perfil/configuracion" element={<SettingsPage />} />
+                    <Route path="/favoritos" element={<MisFavoritos />} />
+                    <Route path="/comunidad" element={<Comunidad />} />
+                    <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
+                    <Route path="/notificaciones" element={<NotificationsPage />} />
+                    <Route path="/terminos" element={<TerminosPage />} />
+                    <Route path="/privacidad" element={<PrivacidadPage />} />
+                    <Route path="/como-funciona" element={<ComoFuncionaPage />} />
+                    <Route path="/faq" element={<FaqPage />} />
+                    <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
+                    <Route path="/login" element={<AuthPage />} />
+                    <Route path="/register" element={<AuthPage />} />
+                    <Route path="/sobre-nosotros" element={<AboutPage />} />
+                    <Route path="/usuario/:alias" element={<PublicProfile />} />
+                    <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
+                    <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
+                    <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                    <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
+                    <Route path="/mensajes/:roomId?" element={<Mensajes />} />
 
-          <FirstTimeOnboardingTheme />
-
-          <SEO />
-          <Layout>
-            <ChunkErrorBoundary>
-              <Suspense fallback={<RouteLoadingFallback />}>
-                <AuthToastListener />
-                <Routes>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/reportes" element={<Reportes />} />
-                  <Route path="/crear-reporte" element={<CrearReporte />} />
-                  <Route
-                    path="/reporte/:id"
-                    element={
-                      <Suspense fallback={<DetailLoadingFallback />}>
-                        <DetalleReporte />
-                      </Suspense>
-                    }
-                  />
-                  <Route path="/explorar" element={<Explorar />} />
-                  <Route path="/gamificacion" element={<Gamificacion />} />
-                  <Route path="/perfil" element={<Perfil />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/perfil/configuracion" element={<SettingsPage />} />
-                  <Route path="/favoritos" element={<MisFavoritos />} />
-                  <Route path="/comunidad" element={<Comunidad />} />
-                  <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
-                  <Route path="/notificaciones" element={<NotificationsPage />} />
-                  <Route path="/terminos" element={<TerminosPage />} />
-                  <Route path="/privacidad" element={<PrivacidadPage />} />
-                  <Route path="/como-funciona" element={<ComoFuncionaPage />} />
-                  <Route path="/faq" element={<FaqPage />} />
-                  <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
-                  <Route path="/login" element={<AuthPage />} />
-                  <Route path="/register" element={<AuthPage />} />
-                  <Route path="/sobre-nosotros" element={<AboutPage />} />
-                  <Route path="/usuario/:alias" element={<PublicProfile />} />
-                  <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
-                  <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
-                  <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
-                  <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
-                  <Route path="/mensajes/:roomId?" element={<Mensajes />} />
-
-                  {/* --- ADMIN ROUTES (Protected by Guard) --- */}
-                  {/* 
+                    {/* --- ADMIN ROUTES (Protected by Guard) --- */}
+                    {/* 
                     Ghost Protocol Logic Update: 
                     User requested "/admin" to be the entry. 
                     - If unauthorized -> Show Login Screen (at /admin).
                     - If authorized -> Show Admin Layout (at /admin).
                     We will handle this in a wrapper component. 
                 */}
-                  <Route path="/admin/*" element={
-                    <AdminGuard>
-                      <AdminLayout />
-                    </AdminGuard>
-                  }>
-                    <Route index element={<AdminDashboard />} />
-                    <Route path="reports" element={<AdminReportsPage />} />
-                    <Route path="users" element={<UsersPage />} />
-                    <Route path="moderation" element={<AdminModerationPage />} />
-                    <Route path="tasks" element={<AdminTasksPage />} />
-                    {/* Add other admin sub-routes here */}
-                  </Route>
+                    <Route path="/admin/*" element={
+                      <AdminGuard>
+                        <AdminLayout />
+                      </AdminGuard>
+                    }>
+                      <Route index element={<AdminDashboard />} />
+                      <Route path="reports" element={<AdminReportsPage />} />
+                      <Route path="users" element={<UsersPage />} />
+                      <Route path="moderation" element={<AdminModerationPage />} />
+                      <Route path="tasks" element={<AdminTasksPage />} />
+                      {/* Add other admin sub-routes here */}
+                    </Route>
 
-                </Routes>
-              </Suspense>
-            </ChunkErrorBoundary>
-          </Layout>
-        </ThemeProvider>
+                  </Routes>
+                </Suspense>
+              </ChunkErrorBoundary >
+            </Layout >
+          </ConfirmationProvider>
+        </ThemeProvider >
       </BrowserRouter >
-    </GoogleOAuthProvider>
+    </GoogleOAuthProvider >
   )
 }
 

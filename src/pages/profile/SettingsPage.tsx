@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useConfirm } from '@/components/ui/confirmation-manager';
 import { Button } from '@/components/ui/button';
 import {
     ArrowLeft, Bell, Palette, Monitor, Map as MapIcon,
@@ -25,6 +26,7 @@ import { RealtimeStatusIndicator } from '@/components/RealtimeStatusIndicator';
 
 export function SettingsPage() {
     const navigate = useNavigate();
+    const { confirm } = useConfirm();
     const toast = useToast();
     const queryClient = useQueryClient();
     const { theme, setTheme, openCustomizer, savePreferences } = useTheme();
@@ -110,7 +112,12 @@ export function SettingsPage() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!confirm("⚠️ ¿Estás seguro? Tu identidad actual será reemplazada y la aplicación se reiniciará.")) {
+        if (await confirm({
+            title: '¿Restablecer identidad?',
+            description: 'Tu identidad actual será reemplazada y la aplicación se reiniciará. Esta acción no se puede deshacer.',
+            confirmText: 'Restablecer',
+            variant: 'danger'
+        })) {
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -509,8 +516,13 @@ export function SettingsPage() {
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={() => {
-                                        if (confirm("¿Estás seguro? Se borrarán todos tus ajustes locales.")) {
+                                    onClick={async () => {
+                                        if (await confirm({
+                                            title: '¿Borrar datos locales?',
+                                            description: 'Se borrarán todos tus ajustes locales y caché. Deberás iniciar sesión nuevamente.',
+                                            confirmText: 'Borrar todo',
+                                            variant: 'danger'
+                                        })) {
                                             localStorage.clear();
                                             window.location.reload();
                                         }

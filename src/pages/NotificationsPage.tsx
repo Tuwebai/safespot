@@ -12,9 +12,11 @@ import { NotificationList } from '@/components/notifications/NotificationList';
 import { Trash2, CheckCircle2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserNotifications } from '@/hooks/useUserNotifications';
+import { useConfirm } from '@/components/ui/confirmation-manager';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
+    const { confirm } = useConfirm(); // Initialized confirm hook
     const { success } = useToast();
     const queryClient = useQueryClient();
     const { data: notifications = [], isLoading } = useNotificationsQuery();
@@ -40,11 +42,21 @@ export default function NotificationsPage() {
     };
 
     // Delete All Logic
-    const handleDeleteAll = () => {
-        if (!confirm('¿Estás seguro de que quieres eliminar todas las notificaciones?')) return;
+    const clearAll = () => {
         deleteAllMutation.mutate(undefined, {
             onSuccess: () => success("Notificaciones eliminadas")
         });
+    };
+
+    const handleClearAll = async () => {
+        if (await confirm({
+            title: '¿Eliminar todas?',
+            description: '¿Estás seguro de que quieres eliminar todas las notificaciones? No podrás recuperarlas.',
+            confirmText: 'Eliminar todas',
+            variant: 'danger'
+        })) {
+            clearAll();
+        }
     };
 
     // Delete Logic with Undo
@@ -151,7 +163,7 @@ export default function NotificationsPage() {
                     </button>
                     {/* BUG 4 FIX: Disabled when no notifications exist */}
                     <button
-                        onClick={handleDeleteAll}
+                        onClick={handleClearAll}
                         disabled={!hasNotifications}
                         className={`p-2 text-muted-foreground hover:text-red-500 rounded-full hover:bg-accent transition-colors ${!hasNotifications ? 'opacity-40 cursor-not-allowed' : ''}`}
                         title="Limpiar todo"

@@ -13,6 +13,7 @@ import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
 import { ReplyModal } from '@/components/comments/ReplyModal'
 import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
+import { useConfirm } from '@/components/ui/confirmation-manager'
 
 // ============================================
 // TYPES
@@ -45,6 +46,7 @@ export function CommentsSection({
 
     // Global state for comment context menus (only one can be open)
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
+    const { confirm } = useConfirm()
 
     const commentsManager = useCommentsManager({
         reportId,
@@ -99,15 +101,25 @@ export function CommentsSection({
 
     // Handle delete with confirmation
     const handleDeleteComment = useCallback(async (commentId: string) => {
-        if (!confirm('¿Estás seguro de que quieres eliminar este comentario?')) return
+        if (!await confirm({
+            title: '¿Eliminar comentario?',
+            description: '¿Estás seguro de que quieres eliminar este comentario?',
+            confirmText: 'Eliminar',
+            variant: 'danger'
+        })) return
         await deleteComment(commentId)
-    }, [deleteComment])
+    }, [deleteComment, confirm])
 
     // Handle flag with confirmation
     const handleFlagComment = useCallback(async (commentId: string, isFlagged: boolean, ownerId: string) => {
-        if (!confirm('¿Estás seguro de que quieres reportar este comentario como inapropiado?')) return
+        if (!await confirm({
+            title: '¿Reportar comentario?',
+            description: '¿Estás seguro de que quieres reportar este comentario como inapropiado?',
+            confirmText: 'Reportar',
+            variant: 'danger'
+        })) return
         await flagComment(commentId, isFlagged, ownerId)
-    }, [flagComment])
+    }, [flagComment, confirm])
 
     // Handle sighting submission
     const handleSightingSubmit = async (data: { zone: string, content: string, type: SightingType }) => {

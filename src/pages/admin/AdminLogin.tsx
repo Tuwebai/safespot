@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MapPin } from 'lucide-react'
+import { useToast } from '@/components/ui/toast/useToast'
 
 export function AdminLogin() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
+    const { error: showError } = useToast()
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -27,11 +29,11 @@ export function AdminLogin() {
                 // Reload to re-trigger Guard check and render Layout
                 window.location.href = '/admin'
             } else {
-                alert('Credenciales inválidas')
+                showError('Credenciales inválidas')
             }
         } catch (error) {
             console.error('Login failed', error)
-            alert('Error de conexión')
+            showError('Error de conexión con el servidor')
         } finally {
             setLoading(false)
         }
