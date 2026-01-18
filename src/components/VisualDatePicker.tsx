@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Clock, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -84,18 +85,24 @@ export function VisualDatePicker({ value, onChange, error }: VisualDatePickerPro
         className={`cursor-pointer ${error ? 'border-destructive' : ''}`}
       />
 
-      {isOpen && (
+      {isOpen && createPortal(
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 bg-black/50 z-[9990]"
             onClick={() => setIsOpen(false)}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-dark-card border border-dark-border rounded-lg shadow-xl max-w-md w-full p-6 space-y-6">
-              <h3 className="text-xl font-bold text-foreground">Seleccionar Fecha y Hora</h3>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+            {/* 
+                pointer-events-auto added to the modal content so clicks inside work,
+                while the container lets clicks pass through (though backdrop catches them usually).
+                The backdrop handles the outside click.
+            */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-6 relative overflow-hidden pointer-events-auto">
+              <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+              <h3 className="text-xl font-bold text-white relative z-10">Seleccionar Fecha y Hora</h3>
 
               {/* Calendar */}
               <div className="space-y-4">
@@ -220,7 +227,8 @@ export function VisualDatePicker({ value, onChange, error }: VisualDatePickerPro
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {error && (
