@@ -23,24 +23,47 @@ const CACHE_SCHEMA_VERSION = 'safespot_v2_secure_boot_1.0';
     if (currentVersion !== CACHE_SCHEMA_VERSION) {
       console.warn(`[SecureBoot] ⚠️ Detectado cambio de versión (${currentVersion} -> ${CACHE_SCHEMA_VERSION}). Ejecutando limpieza profunda...`);
 
-      // 1. Nuke LocalStorage (excepto claves críticas si las hubiera, hoy borramos todo para seguridad)
+      // ✅ ENTERPRISE FIX #3: PRESERVAR identidad ANTES de limpiar
+      // BUG ANTERIOR: localStorage.clear() borraba TODO, incluyendo identidad
+      // CONSECUENCIA: Usuarios perdían acceso a sus propios reportes (anonymous_id cambiaba)
+      // FIX: Preservar claves críticas selectivamente
+
+      const keysToPreserve = [
+        'safespot_anonymous_id',  // Identidad principal
+        'ss_identity_backup',      // Backup de identidad
+      ];
+
+      // 1. Backup de valores críticos
+      const preserved: Record<string, string | null> = {};
+      keysToPreserve.forEach(key => {
+        preserved[key] = localStorage.getItem(key);
+      });
+
+      // 2. Limpieza completa
       localStorage.clear();
 
-      // 2. Nuke SessionStorage
+      // 3. RESTAURAR valores críticos
+      Object.entries(preserved).forEach(([key, value]) => {
+        if (value) {
+          localStorage.setItem(key, value);
+          console.log(`[SecureBoot] ✅ ${key} preservado`);
+        }
+      });
+
+      // 4. SessionStorage se limpia (es temporal por diseño)
       sessionStorage.clear();
 
-      // 3. Marcar nueva versión
+      // 5. Marcar nueva versión
       localStorage.setItem('CACHE_SCHEMA_VERSION', CACHE_SCHEMA_VERSION);
 
-      // 4. Purgar Service Workers Antiguos (Zombie Killer)
+      // 6. Purgar Service Workers Antiguos (Zombie Killer)
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(registrations => {
           for (const registration of registrations) {
             console.log('[SecureBoot] 💀 Desregistrando SW zombie:', registration);
             registration.unregister();
           }
-          // Forzar recarga para asegurar que el nuevo SW tome control limpio
-          // Solo si acabamos de desregistrar algo, para evitar loops si no había nada
+          // Forzar recarga solo si había SWs para eliminar
           if (registrations.length > 0) {
             console.log('[SecureBoot] 🔄 Recargando para aplicar cambios limpios...');
             window.location.reload();

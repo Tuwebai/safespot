@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { generateReportStructuredData } from '@/lib/seo'
 import { normalizeReportForUI } from '@/lib/normalizeReport'
 import type { Report } from '@/lib/schemas'
+import { getAnonymousId } from '@/lib/identity'
 import { SEO } from '@/components/SEO'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -127,7 +128,11 @@ export function DetalleReporte() {
     }
   };
 
-  const isOwner = report?.anonymous_id === localStorage.getItem('safespot_anonymous_id');
+  // ✅ ENTERPRISE FIX #1: Use SSOT for identity (not direct localStorage access)
+  // BEFORE: const isOwner = report?.anonymous_id === localStorage.getItem('safespot_anonymous_id');
+  // BUG: Direct localStorage access breaks after SecureBoot (versionedStorage format differs)
+  // FIX: Use official identity system that handles multi-layer storage
+  const isOwner = report?.anonymous_id === getAnonymousId();
 
 
 
