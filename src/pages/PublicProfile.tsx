@@ -18,6 +18,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Users, UserCircle } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { SEO } from '@/components/SEO'
+// 🔴 CRITICAL FIX: Auth guard for chat creation
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 interface PublicUserProfile {
     anonymous_id: string
@@ -62,6 +64,7 @@ export function PublicProfile() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const currentAnonymousId = useMemo(() => getAnonymousIdSafe(), [])
+    const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
 
     // Real-time updates
     useUserNotifications((data) => {
@@ -271,6 +274,11 @@ rounded - full px - 8 font - bold transition - all duration - 300
                                         {/* DM Button */}
                                         <Button
                                             onClick={async () => {
+                                                // 🔴 CRITICAL FIX: Block anonymous users
+                                                if (!checkAuth()) {
+                                                    return; // Modal opens automatically
+                                                }
+
                                                 try {
                                                     // Import dynamically if needed or assume hook logic. 
                                                     // Dynamic import to use api directly without adding hook complexity here

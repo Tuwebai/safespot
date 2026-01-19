@@ -67,31 +67,49 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
             </div>
 
-            <PrefetchLink
-                to={`/usuario/${report.alias || report.anonymous_id}`}
-                prefetchRoute="PublicProfile"
-            >
-                <div className="relative">
-                    <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">
-                        <AvatarImage
-                            src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
-                            alt="Avatar"
-                        />
+            {/* 🛡️ DEFENSIVE CODING: Don't link to deleted users */}
+            {report.displayAuthor === 'Usuario eliminado' ? (
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-muted/50 border border-border/30 opacity-60">
+                    <Avatar className="h-8 w-8 border border-white/10">
                         <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
                             {report.avatarFallback}
                         </AvatarFallback>
                     </Avatar>
-                    <div className="absolute inset-0 bg-neon-green/10 rounded-full opacity-0 group-hover/author:opacity-100 blur-[2px] transition-opacity" />
+                    <div className="flex flex-col">
+                        <span className="text-sm font-medium text-muted-foreground leading-none">
+                            {report.displayAuthor}
+                        </span>
+                        <span className="text-xs text-muted-foreground/70">
+                            {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}
+                        </span>
+                    </div>
                 </div>
-                <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground/90 leading-none group-hover/author:text-white transition-colors">
-                        {report.displayAuthor}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}
-                    </span>
-                </div>
-            </PrefetchLink>
+            ) : (
+                <PrefetchLink
+                    to={`/usuario/${report.alias || report.anonymous_id}`}
+                    prefetchRoute="PublicProfile"
+                >
+                    <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-neon-green/30 transition-all group/author cursor-pointer">
+                        <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">
+                            <AvatarImage
+                                src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
+                                alt="Avatar"
+                            />
+                            <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
+                                {report.avatarFallback}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium text-foreground/90 leading-none group-hover/author:text-white transition-colors">
+                                {report.displayAuthor}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}
+                            </span>
+                        </div>
+                    </div>
+                </PrefetchLink>
+            )}
         </div>
     )
 })

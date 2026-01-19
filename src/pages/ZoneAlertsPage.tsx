@@ -13,9 +13,18 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useNavigate } from 'react-router-dom'
 import { useReportsQuery } from '@/hooks/queries/useReportsQuery'
 import { ReportCard } from '@/components/ReportCard'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 export function ZoneAlertsPage() {
     const navigate = useNavigate()
+    const { checkAuth } = useAuthGuard()
+
+    // 🛡️ PRE-AUTH GUARD: Check auth BEFORE navigating to form
+    const handleCreateReport = () => {
+        if (!checkAuth()) return;
+        navigate('/crear-reporte');
+    };
+
     const { zoneSlug } = useParams<{ zoneSlug: string }>()
     const [zones, setZones] = useState<ZoneSEO[]>([])
     const [loadingZones, setLoadingZones] = useState(true)
@@ -261,7 +270,7 @@ export function ZoneAlertsPage() {
                             description="No se encontraron reportes recientes en esta zona específica. Si viste algo, podés ser el primero en reportarlo."
                             action={{
                                 label: "Reportar un incidente",
-                                onClick: () => navigate('/crear-reporte'),
+                                onClick: handleCreateReport,
                                 variant: "neon"
                             }}
                             className="bg-dark-card border border-dark-border rounded-xl py-12"
@@ -292,9 +301,7 @@ export function ZoneAlertsPage() {
                         <p className="text-sm text-foreground/60 leading-relaxed">
                             Tu colaboración es fundamental. Si presenciaste un robo o encontraste algo sospechoso, repórtalo anónimamente.
                         </p>
-                        <Link to="/crear-reporte" className="block">
-                            <Button variant="neon" className="w-full">Reportar ahora</Button>
-                        </Link>
+                        <Button onClick={handleCreateReport} variant="neon" className="w-full">Reportar ahora</Button>
                     </div>
                     <div className="space-y-4">
                         <h4 className="font-bold text-lg">Seguridad en {zoneName}</h4>

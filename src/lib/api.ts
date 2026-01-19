@@ -317,8 +317,8 @@ export const reportsApi = {
    * Get a single report by ID
    */
   getById: async (id: string): Promise<Report> => {
-    const response: any = await apiRequest(`/reports/${id}`);
-    return response.data;
+    // 🐛 FIX: apiRequest already unwraps .data, don't do it twice
+    return apiRequest<Report>(`/reports/${id}`);
   },
 
   /**

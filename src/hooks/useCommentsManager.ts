@@ -17,6 +17,7 @@ import {
     usePinCommentMutation,
     useUnpinCommentMutation
 } from '@/hooks/queries/useCommentsQuery'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 // ============================================
 // STATE TYPES
@@ -131,6 +132,7 @@ interface UseCommentsManagerProps {
 
 export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     const toast = useToast()
+    const { checkAuth } = useAuthGuard()
     const [state, dispatch] = useReducer(commentsReducer, initialState)
 
     // ============================================
@@ -208,6 +210,9 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     // ============================================
 
     const submitComment = useCallback(async (overridingContent?: unknown) => {
+        // 🛡️ PRE-AUTH GUARD: Check auth before submitting
+        if (!checkAuth()) return
+
         // Detect if overridingContent is a React event/SyntheticEvent
         const isEvent = overridingContent && typeof overridingContent === 'object' && ('_reactName' in overridingContent || 'nativeEvent' in overridingContent)
 
@@ -242,6 +247,9 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     }, [reportId, state.commentText, state.submitting, normalizeCommentPayload, createMutation, toast])
 
     const submitReply = useCallback(async (parentId: string) => {
+        // 🛡️ PRE-AUTH GUARD
+        if (!checkAuth()) return
+
         const { plain, rich } = normalizeCommentPayload(state.replyText)
 
         if (!reportId || !plain.trim()) {
@@ -271,6 +279,9 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     }, [reportId, state.replyText, state.submitting, normalizeCommentPayload, createMutation, toast])
 
     const submitThread = useCallback(async () => {
+        // 🛡️ PRE-AUTH GUARD
+        if (!checkAuth()) return
+
         const { plain, rich } = normalizeCommentPayload(state.threadText)
 
         if (!reportId || !plain.trim()) {
@@ -401,8 +412,9 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     // ============================================
 
     const startReply = useCallback((commentId: string) => {
+        if (!checkAuth()) return
         dispatch({ type: 'START_REPLY', payload: commentId })
-    }, [])
+    }, [checkAuth])
 
     const cancelReply = useCallback(() => {
         dispatch({ type: 'CANCEL_REPLY' })
@@ -417,8 +429,9 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     }, [])
 
     const startThread = useCallback(() => {
+        if (!checkAuth()) return
         dispatch({ type: 'START_THREAD' })
-    }, [])
+    }, [checkAuth])
 
     const cancelThread = useCallback(() => {
         dispatch({ type: 'CANCEL_THREAD' })

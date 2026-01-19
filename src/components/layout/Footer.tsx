@@ -3,12 +3,22 @@ import { MapPin, Github, Twitter, Mail, ShieldCheck, Heart } from 'lucide-react'
 import { useState } from 'react'
 import { ContactModal } from '@/components/contact/ContactModal'
 import { StatusIndicator } from './StatusIndicator'
+import { useNavigate } from 'react-router-dom'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { InstallAppButton } from './InstallAppButton'
 
 export function Footer() {
   const [isContactOpen, setIsContactOpen] = useState(false);
   const donationLink = "https://link.mercadopago.com.ar/safespotapp";
   const currentYear = new Date().getFullYear();
+  const navigate = useNavigate()
+  const { checkAuth } = useAuthGuard()
+
+  // 🛡️ PRE-AUTH GUARD
+  const handleCreateReport = () => {
+    if (!checkAuth()) return;
+    navigate('/crear-reporte');
+  };
 
   return (
     <>
@@ -67,7 +77,7 @@ export function Footer() {
               <ul className="space-y-2">
                 <FooterLink to="/reportes">Explorar Reportes</FooterLink>
                 <FooterLink to="/explorar">Mapa en Vivo</FooterLink>
-                <FooterLink to="/crear-reporte">Reportar</FooterLink>
+                <FooterButton onClick={handleCreateReport}>Reportar</FooterButton>
                 <FooterLink to="/comunidad">Comunidad</FooterLink>
               </ul>
             </div>

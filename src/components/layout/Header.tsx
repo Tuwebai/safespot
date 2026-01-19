@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare, Users, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
 import { useChatRooms } from '@/hooks/queries/useChatsQuery'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 
 export function Header() {
   const location = useLocation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { data: profile } = useProfileQuery()
   const { data: rooms } = useChatRooms()
   const anonymousId = getAnonymousIdSafe()
+  const { checkAuth } = useAuthGuard()
+
+  // 🛡️ PRE-AUTH GUARD: Prevent data loss by checking auth BEFORE mounting form
+  const handleCreateReport = () => {
+    if (!checkAuth()) return; // Modal appears HERE, not after filling form
+    navigate('/crear-reporte');
+  };
 
   const unreadMessagesCount = rooms?.reduce((acc, room) => acc + (room.unread_count || 0), 0) || 0
 
@@ -163,14 +172,13 @@ export function Header() {
                 </Avatar>
               </div>
             </Link>
-            <Link to="/crear-reporte">
-              <Button
-                className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg transition-all active:scale-95"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Reporte
-              </Button>
-            </Link>
+            <Button
+              onClick={handleCreateReport}
+              className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg transition-all active:scale-95"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Crear Reporte
+            </Button>
           </div>
 
           {/* Mobile Menu Button */}
@@ -342,18 +350,16 @@ export function Header() {
             </Link>
           </div>
 
-          <Link
-            to="/crear-reporte"
-            onClick={() => setMobileMenuOpen(false)}
-            className="mt-4"
+          <Button
+            onClick={() => {
+              setMobileMenuOpen(false);
+              handleCreateReport();
+            }}
+            className="w-full neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg py-6 mt-4"
           >
-            <Button
-              className="w-full neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg py-6"
-            >
-              <Plus className="mr-2 h-5 w-5" />
-              Crear Reporte
-            </Button>
-          </Link>
+            <Plus className="mr-2 h-5 w-5" />
+            Crear Reporte
+          </Button>
         </nav>
       </div>
     </header>

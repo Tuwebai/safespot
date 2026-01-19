@@ -13,6 +13,8 @@ import { Trash2, CheckCircle2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserNotifications } from '@/hooks/useUserNotifications';
 import { useConfirm } from '@/components/ui/confirmation-manager';
+// 🔴 CRITICAL FIX: Auth guard for notification delete
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
@@ -28,6 +30,7 @@ export default function NotificationsPage() {
 
     // Enable SSE for real-time list updates (tab-sync)
     useUserNotifications();
+    const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
 
     // Mark as read handler
     const handleRead = (id: string) => {
@@ -97,6 +100,15 @@ export default function NotificationsPage() {
         if (!undoState) return;
 
         const timer = setTimeout(async () => {
+            // 🔴 CRITICAL FIX: Block anonymous users
+            if (!checkAuth()) {
+                // Revert optimistic delete if user is not authenticated
+                const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
+                queryClient.invalidateQueries({ queryKey: activeKey });
+                setUndoState(null);
+                return;
+            }
+
             try {
                 // Manual call since it's delayed
                 const { notificationsApi } = await import('@/lib/api');
@@ -112,7 +124,7 @@ export default function NotificationsPage() {
         }, 5000);
 
         return () => clearTimeout(timer);
-    }, [undoState, queryClient]);
+    }, [undoState, queryClient, checkAuth]);
 
     // Open Context Logic (The Core Requirement)
     const handleOpenContext = (n: any) => {

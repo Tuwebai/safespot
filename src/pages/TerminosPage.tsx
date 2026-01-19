@@ -69,11 +69,31 @@ export default function TerminosPage() {
                         </div>
                     </section>
 
-                    {/* 2. Código de Conducta (From Privacy Page) */}
+                    {/* 2. Cuentas y Registro (NEW SECTION) */}
+                    <section className="bg-white/5 rounded-2xl p-8 border border-white/5">
+                        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                            <Shield className="h-6 w-6 text-neon-green" />
+                            2. Cuentas y Autenticación
+                        </h2>
+                        <div className="space-y-4 text-muted-foreground">
+                            <p>
+                                SafeSpot opera bajo un modelo de confianza verificado:
+                            </p>
+                            <ul className="list-disc pl-5 space-y-2">
+                                <li><strong>Modo Invitado:</strong> Puedes visualizar información pública sin crear una cuenta.</li>
+                                <li><strong>Modo Colaborador:</strong> Para <strong>crear reportes, comentar o validar alertas</strong>, es OBLIGATORIO registrarse/iniciar sesión. Esto nos permite mantener la calidad de los datos y evitar el spam automatizado.</li>
+                            </ul>
+                            <p className="mt-4 text-sm bg-white/5 p-4 rounded-lg">
+                                <strong>Responsabilidad de la Cuenta:</strong> Eres responsable de mantener la seguridad de tus credenciales. Cualquier actividad realizada desde tu cuenta se presume realizada por ti.
+                            </p>
+                        </div>
+                    </section>
+
+                    {/* 3. Código de Conducta (Renumbered) */}
                     <section>
                         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
                             <Users className="h-6 w-6 text-blue-400" />
-                            2. Código de Conducta y Uso Aceptable
+                            3. Código de Conducta y Uso Aceptable
                         </h2>
                         <p className="text-muted-foreground mb-6">
                             Nos reservamos el derecho de <strong>bloquear permanentemente</strong> (Shadowban o Ban) a usuarios que violen estas reglas fundamentales:
@@ -118,11 +138,11 @@ export default function TerminosPage() {
                         </div>
                     </section>
 
-                    {/* 3. Limitación de Responsabilidad */}
+                    {/* 4. Limitación de Responsabilidad (Renumbered) */}
                     <section className="bg-white/5 rounded-2xl p-8 border border-white/5">
                         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                            <Shield className="h-6 w-6 text-yellow-500" />
-                            3. Limitación de Responsabilidad
+                            <AlertTriangle className="h-6 w-6 text-yellow-500" />
+                            4. Limitación de Responsabilidad
                         </h2>
                         <ul className="space-y-4 text-muted-foreground text-sm">
                             <li className="flex gap-3">
@@ -131,20 +151,24 @@ export default function TerminosPage() {
                             </li>
                             <li className="flex gap-3">
                                 <div className="h-1.5 w-1.5 rounded-full bg-white/30 mt-2 shrink-0"></div>
-                                <p><strong>Interrupciones:</strong> No garantizamos que el servicio sea ininterrumpido o libre de errores. Realizamos mantenimiento y actualizaciones periódicas.</p>
+                                <p><strong>Interrupciones:</strong> No garantizamos que el servicio sea ininterrumpido. Realizamos mantenimiento periódico.</p>
                             </li>
                             <li className="flex gap-3">
                                 <div className="h-1.5 w-1.5 rounded-full bg-white/30 mt-2 shrink-0"></div>
                                 <p><strong>Uso "As-Is":</strong> La plataforma se ofrece tal cual es. El uso de la información para transitar por zonas peligrosas es bajo tu propio riesgo.</p>
                             </li>
+                            <li className="flex gap-3">
+                                <div className="h-1.5 w-1.5 rounded-full bg-white/30 mt-2 shrink-0"></div>
+                                <p><strong>Datos sin Cuenta:</strong> SafeSpot NO garantiza la persistencia o accesibilidad de datos generados en "Modo Invitado" (si aplicara temporalmente) si el usuario cambia de dispositivo o borra cookies.</p>
+                            </li>
                         </ul>
                     </section>
 
-                    {/* 4. Propiedad Intelectual */}
+                    {/* 5. Propiedad Intelectual (Renumbered) */}
                     <section>
                         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
                             <FileText className="h-6 w-6 text-purple-400" />
-                            4. Propiedad Intelectual y Licencia
+                            5. Propiedad Intelectual y Licencia
                         </h2>
                         <p className="text-muted-foreground text-sm leading-relaxed mb-4">
                             Al subir contenido a SafeSpot (textos, fotos, ubicaciones), otorgas a la plataforma una licencia mundial, no exclusiva y libre de regalías para visualizar, distribuir y agregar dicha información en mapas de calor y estadísticas de seguridad.
@@ -154,11 +178,11 @@ export default function TerminosPage() {
                         </p>
                     </section>
 
-                    {/* 5. Jurisdicción */}
+                    {/* 6. Jurisdicción (Renumbered) */}
                     <section>
                         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
                             <Gavel className="h-6 w-6 text-gray-400" />
-                            5. Jurisdicción y Ley Aplicable
+                            6. Jurisdicción y Ley Aplicable
                         </h2>
                         <p className="text-muted-foreground text-sm">
                             Estos términos se rigen por las leyes vigentes en la República Argentina. Cualquier disputa será resuelta en los tribunales ordinarios de la Ciudad Autónoma de Buenos Aires, renunciando a cualquier otro fuero o jurisdicción.

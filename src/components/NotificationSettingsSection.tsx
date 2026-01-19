@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+// 🔴 CRITICAL FIX: Auth guard for settings updates
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export function NotificationSettingsSection() {
     const [settings, setSettings] = useState<NotificationSettings | null>(null);
@@ -19,6 +21,7 @@ export function NotificationSettingsSection() {
     const [isGeocoding, setIsGeocoding] = useState(false);
     const { success, error, info } = useToast();
     const { isSubscribed, subscribe, updateServiceLocation } = usePushNotifications();
+    const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -67,6 +70,11 @@ export function NotificationSettingsSection() {
     const handleToggle = async (key: keyof NotificationSettings) => {
         if (!settings) return;
 
+        // 🔴 CRITICAL FIX: Block anonymous users
+        if (!checkAuth()) {
+            return; // Modal opens automatically
+        }
+
         const newVal = !settings[key];
         const updated = { ...settings, [key]: newVal };
 
@@ -101,6 +109,12 @@ export function NotificationSettingsSection() {
 
     const handleRadiusChange = async (radius: number) => {
         if (!settings) return;
+
+        // 🔴 CRITICAL FIX: Block anonymous users
+        if (!checkAuth()) {
+            return; // Modal opens automatically
+        }
+
         const updated = { ...settings, radius_meters: radius };
         setSettings(updated);
         try {

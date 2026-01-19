@@ -20,17 +20,24 @@ export interface NormalizedReport extends Report {
  * Guarantees all derived fields are present and valid
  */
 export function normalizeReportForUI(report: Report): NormalizedReport {
+    // 🛡️ DEFENSIVE CODING: Handle deleted/missing users
     // Ensure anonymous_id has minimum length (fallback to ID if empty)
     const safeAnonymousId = report.anonymous_id || report.id || 'unknown'
+
+    // 🛡️ Check if this report has a deleted/missing author
+    // If anonymous_id is 'unknown' or if critical user data is missing, mark as deleted
+    const isDeletedUser = !report.anonymous_id || safeAnonymousId === 'unknown'
 
     return {
         ...report,
         // Pre-computed fields for UI
         shortId: safeAnonymousId.substring(0, 6),
-        avatarFallback: safeAnonymousId.substring(0, 2).toUpperCase(),
-        displayAuthor: report.alias
-            ? `@${report.alias}`
-            : `Usuario ${safeAnonymousId.substring(0, 6)}`,
+        avatarFallback: isDeletedUser ? '?' : safeAnonymousId.substring(0, 2).toUpperCase(),
+        displayAuthor: isDeletedUser
+            ? 'Usuario eliminado'
+            : report.alias
+                ? `@${report.alias}`
+                : `Usuario ${safeAnonymousId.substring(0, 6)}`,
         formattedDate: formatDate(report.created_at)
     }
 }

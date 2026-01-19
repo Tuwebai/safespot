@@ -9,6 +9,8 @@ import { chatCache } from '../../lib/chatCache';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
 import { chatBroadcast } from '@/lib/chatBroadcast';
 import { playNotificationSound } from '@/lib/sound';
+// ✅ PHASE 2: Auth Guard for Mutations
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -530,7 +532,7 @@ export function useSendMessageMutation() {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID
     const toast = useToast();
-
+    const { checkAuth } = useAuthGuard(); // ✅ PHASE 2: Auth guard
 
     return useMutation({
         mutationFn: async ({ roomId, content, type, caption, file, replyToId, id }: {
@@ -546,10 +548,12 @@ export function useSendMessageMutation() {
             replyToSenderId?: string;
             id?: string; // ✅ Enterprise: Client-Gen ID
         }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
             if (type === 'image' && file) {
-                // 1. Subir la imagen primero si es un archivo
                 const { url } = await chatsApi.uploadChatImage(roomId, file);
-                // 2. Enviar el mensaje con la URL final
                 return chatsApi.sendMessage(roomId, url, type, caption, replyToId, id);
             }
             return chatsApi.sendMessage(roomId, content, type, caption, replyToId, id);
@@ -686,9 +690,16 @@ export function useSendMessageMutation() {
 export function useCreateChatMutation() {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();
+    const { checkAuth } = useAuthGuard(); // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: (params: { reportId?: string; recipientId?: string }) => chatsApi.createRoom(params),
+        mutationFn: async (params: { reportId?: string; recipientId?: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return chatsApi.createRoom(params);
+        },
         onSuccess: () => {
             if (anonymousId) {
                 queryClient.invalidateQueries({ queryKey: CHATS_KEYS.rooms(anonymousId) });
@@ -702,9 +713,16 @@ export function useCreateChatMutation() {
 export function useMarkAsReadMutation() {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID at top level
+    const { checkAuth } = useAuthGuard();  // 🔴 SECURITY FIX: Auth guard
 
     return useMutation({
-        mutationFn: (roomId: string) => chatsApi.markAsRead(roomId),
+        mutationFn: async (roomId: string) => {
+            // 🔴 SECURITY FIX: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return chatsApi.markAsRead(roomId);
+        },
         onSuccess: (_, roomId) => {
             if (!anonymousId) return;
             // 1. Patch Global Inbox List (Sidebar)
@@ -728,9 +746,16 @@ export function useMarkAsReadMutation() {
 export function useMarkAsDeliveredMutation() {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID at top level
+    const { checkAuth } = useAuthGuard();  // 🔴 SECURITY FIX: Auth guard
 
     return useMutation({
-        mutationFn: (roomId: string) => chatsApi.markAsDelivered(roomId),
+        mutationFn: async (roomId: string) => {
+            // 🔴 SECURITY FIX: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return chatsApi.markAsDelivered(roomId);
+        },
         onSuccess: (_, roomId) => {
             if (!anonymousId) return;
             queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, anonymousId), (old) => {
@@ -747,9 +772,14 @@ export function useMarkAsDeliveredMutation() {
 export function useReactionMutation() {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();
+    const { checkAuth } = useAuthGuard();  // 🔴 SECURITY FIX: Auth guard
 
     return useMutation({
         mutationFn: async ({ roomId, messageId, emoji }: { roomId: string; messageId: string; emoji: string }) => {
+            // 🔴 SECURITY FIX: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
             return chatsApi.reactToMessage(roomId, messageId, emoji);
         },
         onMutate: async ({ roomId, messageId, emoji }) => {
@@ -814,9 +844,14 @@ export function useReactionMutation() {
 export const useDeleteMessageMutation = () => {
     const queryClient = useQueryClient();
     const anonymousId = useAnonymousId();
+    const { checkAuth } = useAuthGuard();  // 🔴 SECURITY FIX: Auth guard
 
     return useMutation({
         mutationFn: async ({ roomId, messageId }: { roomId: string; messageId: string }) => {
+            // 🔴 SECURITY FIX: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
             return chatsApi.deleteMessage(roomId, messageId);
         },
         onMutate: async ({ roomId, messageId }) => {

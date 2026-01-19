@@ -6,7 +6,6 @@ import { CommentThread } from '@/components/comments/comment-thread'
 import { ThreadList } from '@/components/comments/thread-list'
 import { useCommentsManager } from '@/hooks/useCommentsManager'
 import { getAnonymousIdSafe } from '@/lib/identity'
-import { commentsApi } from '@/lib/api'
 import { MessageCircle } from 'lucide-react'
 import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
@@ -14,6 +13,9 @@ import { SightingCard, SightingData } from './SightingCard'
 import { ReplyModal } from '@/components/comments/ReplyModal'
 import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
 import { useConfirm } from '@/components/ui/confirmation-manager'
+// 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
+import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 // ============================================
 // TYPES
@@ -41,8 +43,10 @@ export function CommentsSection({
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
+    const { checkAuth } = useAuthGuard()
 
-
+    // 🔴 CRITICAL FIX: Use protected mutation instead of direct API call
+    const { mutateAsync: createComment } = useCreateCommentMutation()
 
     // Global state for comment context menus (only one can be open)
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
@@ -121,7 +125,8 @@ export function CommentsSection({
         await flagComment(commentId, isFlagged, ownerId)
     }, [flagComment, confirm])
 
-    // Handle sighting submission
+    // 🔴 CRITICAL FIX: Sighting submission now uses protected mutation
+    // Anonymous users will see auth modal automatically via useAuthGuard in the mutation
     const handleSightingSubmit = async (data: { zone: string, content: string, type: SightingType }) => {
         try {
             setIsSubmittingSighting(true)
@@ -136,7 +141,9 @@ export function CommentsSection({
                 }
             })
 
-            await commentsApi.create({
+            // ✅ ENTERPRISE FIX: Use protected mutation instead of direct API call
+            // This ensures auth guard is applied (anonymous users see modal)
+            await createComment({
                 report_id: reportId,
                 content: payload
             })
@@ -145,6 +152,13 @@ export function CommentsSection({
             await loadComments()
             setSightingModalType(null)
         } catch (error) {
+            // Handle AUTH_REQUIRED silently (modal already shown)
+            if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
+                // User canceled auth, just close the sighting modal
+                setSightingModalType(null)
+                return
+            }
+
             console.error('Error submitting sighting:', error)
             alert('Error al enviar el reporte. Por favor intentá de nuevo.')
         } finally {
@@ -251,7 +265,9 @@ export function CommentsSection({
             {/* ACTIONABLE SIGHTINGS BUTTONS - Always visible in comments view */}
             {viewMode === 'comments' && (
                 <SightingActions
-                    onActionClick={setSightingModalType}
+                    onActionClick={(type) => {
+                        if (checkAuth()) setSightingModalType(type)
+                    }}
                     disabled={isSubmittingSighting}
                 />
             )}

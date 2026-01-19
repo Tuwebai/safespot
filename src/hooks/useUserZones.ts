@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, ZoneType, UserZone } from '@/lib/api';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { useToast } from '@/components/ui/toast';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 
 const EMPTY_ARRAY: UserZone[] = [];
@@ -10,6 +11,7 @@ export const useUserZones = () => {
     const anonymousId = getAnonymousIdSafe();
     const queryClient = useQueryClient();
     const { success, error } = useToast();
+    const { checkAuth } = useAuthGuard(); // ✅ HOTFIX: Auth Guard
     const queryKey = ['user-zones', anonymousId];
 
     const { data: zones = EMPTY_ARRAY, isLoading } = useQuery<UserZone[]>({
@@ -33,6 +35,10 @@ export const useUserZones = () => {
 
     const saveZone = useMutation({
         mutationFn: async (zone: Partial<UserZone>) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
             return apiRequest<{ data: UserZone }>('/user-zones', {
                 method: 'POST',
                 body: JSON.stringify(zone)
@@ -74,7 +80,10 @@ export const useUserZones = () => {
             if (context?.previousZones) {
                 queryClient.setQueryData(queryKey, context.previousZones);
             }
-            error('Error al guardar la zona');
+            // Don't show generic error if it is auth required (handled by modal)
+            if (_err.message !== 'AUTH_REQUIRED') {
+                error('Error al guardar la zona');
+            }
         },
         onSettled: () => {
             // 5. Always refetch to sync with server
@@ -87,6 +96,10 @@ export const useUserZones = () => {
 
     const deleteZone = useMutation({
         mutationFn: async (type: ZoneType) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
             return apiRequest(`/user-zones/${type}`, {
                 method: 'DELETE'
             });

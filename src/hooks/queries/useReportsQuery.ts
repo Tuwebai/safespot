@@ -1,13 +1,15 @@
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 
-
-
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type ReportFilters, type CreateReportData } from '@/lib/api'
 import { type Report } from '@/lib/schemas'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 import { normalizeReportForUI, type NormalizedReport } from '@/lib/normalizeReport'
+// ✅ PHASE 2: Auth Guard for Mutations
+import { useAuthGuard } from '@/hooks/useAuthGuard'
+// 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
+import { resolveCreator } from '@/lib/auth/resolveCreator'
 
 // Enterprise Data Freshness SLA:
 // - UI may show data up to 1 minute old (staleTime).
@@ -104,9 +106,11 @@ export function useReportsQuery(filters?: ReportFilters) {
             // This prevents the "Ghost List" race condition.
             return reportsCache.store(queryClient, data)
         },
-        // ENTERPRISE: CONTINUITY IS KING
-        // ✅ MEDIUM #9 FIX: Guarantee valid return (never undefined)
-        placeholderData: (previousData) => previousData ?? [],
+        // 🟡 ROBUSTNESS FIX: Conditional placeholderData
+        // Public query but may fail due to filters/auth. Using previousData without
+        // fallback to [] allows errors to propagate while maintaining smooth UX.
+        // If error occurs, previousData will be undefined and UI can handle it.
+        placeholderData: (previousData) => previousData,
     })
 }
 
@@ -178,10 +182,16 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
  */
 export function useCreateReportMutation() {
     const queryClient = useQueryClient()
-    const anonymousId = useAnonymousId() // ✅ Get identity for complete optimistic report
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: (data: CreateReportData) => reportsApi.create(data),
+        mutationFn: async (data: CreateReportData) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return reportsApi.create(data);
+        },
         onMutate: async (newReportData) => {
             // 1. Cancel outgoing queries
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
@@ -201,12 +211,15 @@ export function useCreateReportMutation() {
             }
             const reportId = newReportData.id!
 
+            // 🔵 ROBUSTNESS FIX: Resolve creator correctly
+            const creator = resolveCreator();
+
             // 4. Create Optimistic Report (Final ID, no Temp)
             // ✅ ENTERPRISE FIX: Complete entity with ALL required fields matching schema
             const optimisticReport: Report = {
                 // Required fields
                 id: reportId,
-                anonymous_id: anonymousId || '', // ✅ CRITICAL: Use real identity
+                anonymous_id: creator.creator_id || '', // 🔵 FIX: Use correct creator
                 title: newReportData.title,
                 description: newReportData.description,
                 category: newReportData.category,
@@ -313,10 +326,16 @@ export function useCreateReportMutation() {
  */
 export function useUpdateReportMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id, data }: { id: string; data: Partial<CreateReportData> }) =>
-            reportsApi.update(id, data),
+        mutationFn: async ({ id, data }: { id: string; data: Partial<CreateReportData> }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return reportsApi.update(id, data);
+        },
         onMutate: async ({ id, data }) => {
             // 1. Cancel outgoing queries
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
@@ -352,9 +371,16 @@ export function useUpdateReportMutation() {
  */
 export function useDeleteReportMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: (id: string) => reportsApi.delete(id),
+        mutationFn: async (id: string) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return reportsApi.delete(id);
+        },
         onMutate: async (id) => {
             // 1. Cancel outgoing queries for reports and stats
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
@@ -434,9 +460,16 @@ export function useDeleteReportMutation() {
  */
 export function useToggleFavoriteMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: (reportId: string) => reportsApi.toggleFavorite(reportId),
+        mutationFn: async (reportId: string) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return reportsApi.toggleFavorite(reportId);
+        },
         onMutate: async (reportId) => {
             // 1. Cancel outgoing refetches (so they don't overwrite our optimistic update)
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
@@ -474,10 +507,16 @@ export function useToggleFavoriteMutation() {
  */
 export function useFlagReportMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ reportId, reason }: { reportId: string; reason?: string }) =>
-            reportsApi.flag(reportId, reason),
+        mutationFn: async ({ reportId, reason }: { reportId: string; reason?: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return reportsApi.flag(reportId, reason);
+        },
         onMutate: async ({ reportId }) => {
             // Cancel outgoing refetches
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })

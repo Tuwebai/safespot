@@ -4,7 +4,10 @@ import { commentsApi, type CreateCommentData, type Comment } from '@/lib/api'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { commentsCache } from '@/lib/cache-helpers'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
-import { getAnonymousIdSafe } from '@/lib/identity'
+// ✅ PHASE 2: Auth Guard for Mutations
+import { useAuthGuard } from '@/hooks/useAuthGuard'
+// 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
+import { resolveCreator } from '@/lib/auth/resolveCreator'
 
 /**
  * Fetch a single comment from the canonical cache
@@ -70,9 +73,16 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
  */
 export function useCreateCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: (data: CreateCommentData) => commentsApi.create(data),
+        mutationFn: async (data: CreateCommentData) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.create(data);
+        },
         onMutate: async (newCommentData) => {
             const listKey = queryKeys.comments.byReport(newCommentData.report_id)
             const reportKey = queryKeys.reports.detail(newCommentData.report_id)
@@ -84,14 +94,16 @@ export function useCreateCommentMutation() {
             // Snapshot previous values
             const previousComments = queryClient.getQueryData<any>(listKey)
             const previousReport = queryClient.getQueryData<any>(reportKey)
-            const userProfile = queryClient.getQueryData<any>(queryKeys.user.profile)
+
+            // 🔵 ROBUSTNESS FIX: Resolve creator correctly
+            const creator = resolveCreator();
 
             // Create temporary optimistic comment
             const optimisticComment: Comment = {
                 id: `temp-${Date.now()}`,
                 report_id: newCommentData.report_id,
                 content: newCommentData.content,
-                anonymous_id: userProfile?.anonymous_id || getAnonymousIdSafe() || '',
+                anonymous_id: creator.creator_id || '', // 🔵 FIX: Use correct creator
                 upvotes_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -100,14 +112,12 @@ export function useCreateCommentMutation() {
                 is_optimistic: true,
                 parent_id: newCommentData.parent_id,
                 is_thread: newCommentData.is_thread,
-                alias: userProfile?.alias || getAnonymousIdSafe()?.slice(0, 8) || 'Tú',  // Robust fallback: alias > partial ID > 'Tú'
-                avatar_url: userProfile?.avatar_url || null,
+                alias: creator.displayAlias, // 🔵 FIX: Use resolved alias
+                avatar_url: undefined, // 🔵 FIX: Will be filled by backend
                 // Add required fields with defaults to satisfy type
                 is_highlighted: false,
                 is_pinned: false,
-                is_author: previousReport?.anonymous_id && userProfile?.anonymous_id
-                    ? previousReport.anonymous_id === userProfile.anonymous_id
-                    : false,
+                is_author: false, // 🔵 FIX: Backend will determine this
                 is_local: false
             }
 
@@ -158,10 +168,16 @@ export function useCreateCommentMutation() {
  */
 export function useUpdateCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id, content }: { id: string; content: string }) =>
-            commentsApi.update(id, content),
+        mutationFn: async ({ id, content }: { id: string; content: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.update(id, content);
+        },
         onMutate: async ({ id, content }) => {
             await queryClient.cancelQueries({ queryKey: ['comments'] })
             const previousComment = queryClient.getQueryData(queryKeys.comments.detail(id))
@@ -192,10 +208,16 @@ export function useUpdateCommentMutation() {
  */
 export function useDeleteCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id }: { id: string; reportId: string }) =>
-            commentsApi.delete(id),
+        mutationFn: async ({ id }: { id: string; reportId: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.delete(id);
+        },
         onMutate: async ({ id, reportId }) => {
             const listKey = queryKeys.comments.byReport(reportId)
             const reportKey = queryKeys.reports.detail(reportId)
@@ -233,10 +255,16 @@ export function useDeleteCommentMutation() {
  */
 export function useToggleLikeCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id, isLiked }: { id: string; isLiked: boolean; reportId?: string }) =>
-            isLiked ? commentsApi.unlike(id) : commentsApi.like(id),
+        mutationFn: async ({ id, isLiked }: { id: string; isLiked: boolean; reportId?: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return isLiked ? commentsApi.unlike(id) : commentsApi.like(id);
+        },
         onMutate: async ({ id, isLiked }) => {
             await queryClient.cancelQueries({ queryKey: queryKeys.comments.detail(id) })
             const previousComment = queryClient.getQueryData<Comment>(queryKeys.comments.detail(id))
@@ -266,10 +294,16 @@ export function useToggleLikeCommentMutation() {
  */
 export function useFlagCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-            commentsApi.flag(id, reason),
+        mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.flag(id, reason);
+        },
         onMutate: async ({ id }) => {
             await queryClient.cancelQueries({ queryKey: queryKeys.comments.detail(id) })
             const previousComment = queryClient.getQueryData(queryKeys.comments.detail(id))
@@ -291,9 +325,16 @@ export function useFlagCommentMutation() {
  */
 export function usePinCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id }: { id: string; reportId: string }) => commentsApi.pin(id),
+        mutationFn: async ({ id }: { id: string; reportId: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.pin(id);
+        },
         onMutate: async ({ id }) => {
             commentsCache.patch(queryClient, id, { is_pinned: true })
         },
@@ -308,9 +349,16 @@ export function usePinCommentMutation() {
  */
 export function useUnpinCommentMutation() {
     const queryClient = useQueryClient()
+    const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
 
     return useMutation({
-        mutationFn: ({ id }: { id: string; reportId: string }) => commentsApi.unpin(id),
+        mutationFn: async ({ id }: { id: string; reportId: string }) => {
+            // ✅ AUTH GUARD: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return commentsApi.unpin(id);
+        },
         onMutate: async ({ id }) => {
             commentsCache.patch(queryClient, id, { is_pinned: false })
         },

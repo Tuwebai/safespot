@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { RippleButton } from '@/components/ui/RippleButton'
 import { MapPin, Shield, Users, Eye, TrendingUp, CheckCircle } from 'lucide-react'
@@ -9,12 +9,13 @@ import { cn } from '@/lib/utils'
 import { useGlobalStatsQuery, useCategoryStatsQuery } from '@/hooks/queries'
 import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { SEO } from '@/components/SEO'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 // ============================================
 // MEMOIZED SUB-COMPONENTS
 // ============================================
 
-const HeroSection = memo(() => (
+const HeroSection = memo(({ onCreateReport }: { onCreateReport: () => void }) => (
   <section className="relative bg-gradient-to-br from-dark-bg via-dark-card to-dark-bg py-12 md:py-24 lg:py-32">
     <div
       className="absolute inset-0 opacity-20"
@@ -32,16 +33,16 @@ const HeroSection = memo(() => (
           SafeSpot es la plataforma colaborativa que te ayuda a reportar robos y recuperar objetos robados junto con tu comunidad.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link to="/crear-reporte" className="w-full sm:w-auto">
-            <RippleButton
-              variant="neon"
-              className="w-full sm:px-8 py-6 text-lg h-auto neon-glow"
-              rippleColor="rgba(57, 255, 20, 0.6)"
-            >
-              <MapPin className="mr-2 h-5 w-5" />
-              Crear Reporte
-            </RippleButton>
-          </Link>
+          {/* 🛡️ PRE-AUTH GUARD: Button instead of Link */}
+          <RippleButton
+            onClick={onCreateReport}
+            variant="neon"
+            className="w-full sm:w-auto sm:px-8 py-6 text-lg h-auto neon-glow"
+            rippleColor="rgba(57, 255, 20, 0.6)"
+          >
+            <MapPin className="mr-2 h-5 w-5" />
+            Crear Reporte
+          </RippleButton>
           <Link to="/explorar" className="w-full sm:w-auto">
             <RippleButton
               variant="outline"
@@ -160,6 +161,15 @@ const CategoryCard = memo(({ name, color, count }: { name: string, color: string
 
 export function Home() {
   useGlobalFeed()
+  const navigate = useNavigate()
+  const { checkAuth } = useAuthGuard()
+
+  // 🛡️ PRE-AUTH GUARD: Check auth BEFORE navigating to form
+  const handleCreateReport = () => {
+    if (!checkAuth()) return;
+    navigate('/crear-reporte');
+  };
+
   // ... hooks unchanged ...
   const { data: stats, isLoading: statsLoading } = useGlobalStatsQuery()
   const { data: categoryStats, isLoading: categoryLoading } = useCategoryStatsQuery()
@@ -212,7 +222,7 @@ export function Home() {
         type="website"
       />
 
-      <HeroSection />
+      <HeroSection onCreateReport={handleCreateReport} />
 
       {/* Statistics Section */}
       <section className="bg-dark-card py-12 md:py-16">

@@ -1,8 +1,17 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Share2, Zap, Shield, Search, Users, Smartphone, MapPin, Bike, Smartphone as PhoneIcon, PenTool, Car, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function ComoFuncionaPage() {
+    const navigate = useNavigate()
+    const { checkAuth } = useAuthGuard()
+
+    // 🛡️ PRE-AUTH GUARD
+    const handleCreateReport = () => {
+        if (!checkAuth()) return;
+        navigate('/crear-reporte');
+    };
     return (
         <div className="min-h-screen bg-zinc-950 text-white font-sans selection:bg-neon-green/30">
             {/* Sticky Header */}
@@ -191,11 +200,9 @@ export default function ComoFuncionaPage() {
                             Cada usuario nuevo hace que la red sea exponencialmente más segura. No necesitas ser un héroe, solo estar presente.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <Link to="/crear-reporte">
-                                <Button className="w-full sm:w-auto bg-neon-green text-black hover:bg-neon-green/90 font-bold px-8 py-6 rounded-full text-lg shadow-lg shadow-neon-green/20">
-                                    Crear un Reporte
-                                </Button>
-                            </Link>
+                            <Button onClick={handleCreateReport} className="w-full sm:w-auto bg-neon-green text-black hover:bg-neon-green/90 font-bold px-8 py-6 rounded-full text-lg shadow-lg shadow-neon-green/20">
+                                Crear un Reporte
+                            </Button>
                             <Link to="/register">
                                 <Button variant="outline" className="w-full sm:w-auto border-white/20 text-white hover:bg-white/10 px-8 py-6 rounded-full text-lg">
                                     Unirse a la Comunidad

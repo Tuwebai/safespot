@@ -6,7 +6,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Eye, Database, Lock, Shield, Server, CheckCircle, FileKey, UserX } from 'lucide-react';
+import { ArrowLeft, Eye, Database, Lock, Shield, Server, FileKey, UserX } from 'lucide-react';
 
 export default function PrivacidadPage() {
     return (
@@ -43,34 +43,33 @@ export default function PrivacidadPage() {
 
                 <div className="space-y-16">
 
-                    {/* 1. Architecture */}
+                    {/* 1. Architecture - UPDATED FOR HYBRID MODEL */}
                     <section className="relative group">
                         <div className="absolute -inset-1 bg-gradient-to-r from-neon-green/20 to-blue-500/20 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
                         <div className="relative bg-zinc-900 border border-white/10 rounded-2xl p-8 md:p-10">
                             <h3 className="text-2xl font-bold mb-6 flex items-center gap-3">
                                 <UserX className="h-7 w-7 text-neon-green" />
-                                1. Anonimato por Diseño
+                                1. Modelo Híbrido de Privacidad
                             </h3>
                             <div className="grid md:grid-cols-2 gap-8">
                                 <div>
-                                    <p className="text-zinc-400 mb-4 leading-relaxed">
-                                        No te pedimos registrarte para protegerte. Generamos una identificación criptográfica única en tu dispositivo:
+                                    <h4 className="text-white font-semibold mb-2">Modo Invitado (Solo Lectura)</h4>
+                                    <p className="text-zinc-400 mb-4 leading-relaxed text-sm">
+                                        Puedes explorar el mapa y las alertas sin revelar tu identidad. Generamos un <strong>UUIDv4 Efímero</strong> en tu dispositivo para mantener tu sesión sin rastreo personal.
                                     </p>
-                                    <ul className="space-y-3">
-                                        <li className="flex items-start gap-3">
-                                            <CheckCircle className="h-5 w-5 text-neon-green shrink-0 mt-0.5" />
-                                            <span className="text-zinc-300 text-sm"><strong>UUIDv4 Efímero:</strong> Un código aleatorio que no se vincula a tu persona física.</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <CheckCircle className="h-5 w-5 text-neon-green shrink-0 mt-0.5" />
-                                            <span className="text-zinc-300 text-sm"><strong>Sin Rastreo Cruzado:</strong> No usamos cookies de terceros ni pixeles de seguimiento.</span>
-                                        </li>
-                                    </ul>
+
+                                    <h4 className="text-white font-semibold mb-2 mt-6">Modo Colaborador (Creación)</h4>
+                                    <p className="text-zinc-400 mb-4 leading-relaxed text-sm">
+                                        Para crear reportes o comentar, requerimos <strong>autenticación segura</strong>. Esto garantiza la integridad de los datos y evita el spam, manteniendo la calidad de la red.
+                                    </p>
                                 </div>
                                 <div className="border-l border-white/10 pl-8 hidden md:block">
                                     <p className="text-sm font-mono text-zinc-500 mb-2">DB SECURITY POLICY</p>
+                                    <p className="text-zinc-300 text-sm mb-4">
+                                        Implementamos <strong>RLS (Row Level Security)</strong> en PostgreSQL. Tus datos privados (email de registro) son visibles SOlO para ti.
+                                    </p>
                                     <p className="text-zinc-300 text-sm">
-                                        Implementamos <strong>RLS (Row Level Security)</strong> en PostgreSQL. Esto asegura que, a nivel de base de datos, solo tu UUID puede editar o borrar tus propios reportes. Ni siquiera un error en la aplicación podría exponer tus acciones privadas.
+                                        Públicamente, solo se muestra tu <strong>Alias</strong> (si configuras uno) o tu avatar. Tu identidad real permanece protegida.
                                     </p>
                                 </div>
                             </div>
@@ -109,11 +108,11 @@ export default function PrivacidadPage() {
                     <section>
                         <h3 className="text-2xl font-bold mb-8 flex items-center gap-3">
                             <Eye className="h-6 w-6 text-indigo-400" />
-                            3. Integración con Google (Opcional)
+                            3. Gestión de Cuenta y Autenticación
                         </h3>
                         <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-2xl p-8">
                             <p className="text-zinc-200 mb-4 font-medium">
-                                Si eliges conectar tu cuenta para guardar progreso (Badges/Reputación):
+                                Para interactuar (Crear Reportes, Comentar, Votar), utilizas una cuenta segura:
                             </p>
                             <ul className="space-y-4">
                                 <li className="flex gap-4">
@@ -121,8 +120,8 @@ export default function PrivacidadPage() {
                                         <span className="text-xs font-bold text-indigo-400">1</span>
                                     </div>
                                     <div>
-                                        <strong className="block text-white text-sm">Acceso Limitado</strong>
-                                        <span className="text-zinc-400 text-sm">Solo leemos tu email (identificación), nombre y foto (perfil público).</span>
+                                        <strong className="block text-white text-sm">Datos Mínimos Necesarios</strong>
+                                        <span className="text-zinc-400 text-sm">Al iniciar sesión con Google/Email, solo almacenamos tu identificador único y tu email para recuperación. No leemos contactos ni historial.</span>
                                     </div>
                                 </li>
                                 <li className="flex gap-4">
@@ -130,8 +129,8 @@ export default function PrivacidadPage() {
                                         <span className="text-xs font-bold text-indigo-400">2</span>
                                     </div>
                                     <div>
-                                        <strong className="block text-white text-sm">Política de No-Transferencia</strong>
-                                        <span className="text-zinc-400 text-sm">Cumplimos estrictamente la <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 underline hover:text-indigo-200">Google API User Data Policy</a>. Jamás vendemos, transferimos ni usamos tus datos para publicidad.</span>
+                                        <strong className="block text-white text-sm">Política de No-Venta de Datos</strong>
+                                        <span className="text-zinc-400 text-sm">Tus datos de contacto NUNCA se venden a terceros ni se usan para publicidad. Solo sirven para validar tu reputación en la comunidad.</span>
                                     </div>
                                 </li>
                             </ul>

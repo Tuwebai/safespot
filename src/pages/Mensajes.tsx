@@ -21,6 +21,8 @@ import { ChatContextMenu } from '../components/chat/ChatContextMenu';
 import useLongPress from '../hooks/useLongPress';
 import { ChevronDown, Pin } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
+// 🔴 CRITICAL FIX: Auth guard for chat creation
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -134,6 +136,7 @@ const Mensajes: React.FC = () => {
     const { data: rooms, isLoading } = useChatRooms();
     const anonymousId = useAnonymousId();
     const [searchTerm, setSearchTerm] = useState('');
+    const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
 
 
     // New Chat State
@@ -230,6 +233,12 @@ const Mensajes: React.FC = () => {
                 navigate(`/mensajes/${existingRoom.id}`, { replace: true });
             } else {
                 // Not found. Create it.
+                // 🔴 CRITICAL FIX: Block anonymous users
+                if (!checkAuth()) {
+                    navigate('/mensajes', { replace: true });
+                    return;
+                }
+
                 try {
                     const newRoom = await chatsApi.createRoom({ recipientId: startChatUserId });
                     // Invalidate to refresh sidebar
@@ -249,7 +258,13 @@ const Mensajes: React.FC = () => {
 
 
     const createChatMutation = useMutation({
-        mutationFn: (recipientId: string) => chatsApi.createRoom({ recipientId }),
+        mutationFn: async (recipientId: string) => {
+            // 🔴 CRITICAL FIX: Block anonymous users
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return chatsApi.createRoom({ recipientId });
+        },
         onSuccess: (newRoom) => {
             if (anonymousId) {
                 queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });

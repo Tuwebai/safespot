@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { useToast } from '@/components/ui/toast'
 import { handleError } from '@/lib/errorHandler'
 import { TrendingUp, Calendar, FileText, ThumbsUp, Bell } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar'
@@ -29,11 +29,20 @@ import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { LoginModal } from '@/components/auth/LoginModal'
 import { useAuthStore } from '@/store/authStore'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 
 export function Perfil() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const { } = useTheme()
+  const navigate = useNavigate()
+  const { checkAuth } = useAuthGuard()
+
+  // 🛡️ PRE-AUTH GUARD: Check auth BEFORE navigating to form
+  const handleCreateReport = () => {
+    if (!checkAuth()) return;
+    navigate('/crear-reporte');
+  };
 
   // Use React Query for real-time gamification data
   const {
@@ -416,9 +425,7 @@ export function Perfil() {
                     <p className="text-muted-foreground mb-4">
                       Aún no has creado ningún reporte
                     </p>
-                    <Link to="/crear-reporte">
-                      <Button variant="neon">Crear Primer Reporte</Button>
-                    </Link>
+                    <Button onClick={handleCreateReport} variant="neon">Crear Primer Reporte</Button>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -515,11 +522,9 @@ export function Perfil() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Reporta problemas en tu ciudad
                   </p>
-                  <Link to="/crear-reporte">
-                    <Button variant="neon" className="w-full">
-                      Crear Reporte
-                    </Button>
-                  </Link>
+                  <Button onClick={handleCreateReport} variant="neon" className="w-full">
+                    Crear Reporte
+                  </Button>
                 </div>
               </CardContent>
             </Card>

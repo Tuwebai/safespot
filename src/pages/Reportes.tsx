@@ -3,7 +3,8 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 
 // import { generateSEOTags } from '@/lib/seo' // Remove old one if exists or unused
 import { SEO } from '@/components/SEO'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 import { reportsApi } from '@/lib/api'
@@ -50,6 +51,14 @@ export function Reportes() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { checkAuth } = useAuthGuard()
+
+  // 🛡️ PRE-AUTH GUARD: Check auth BEFORE navigating to form
+  const handleCreateReport = () => {
+    if (!checkAuth()) return;
+    navigate('/crear-reporte');
+  };
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('')
@@ -652,11 +661,9 @@ export function Reportes() {
           <h2 className="text-xl sm:text-2xl font-semibold text-foreground">
             Reportes ({reports.length})
           </h2>
-          <Link to="/crear-reporte" className="w-full sm:w-auto">
-            <Button variant="neon" className="w-full">
-              Crear Nuevo Reporte
-            </Button>
-          </Link>
+          <Button onClick={handleCreateReport} variant="neon" className="w-full sm:w-auto">
+            Crear Nuevo Reporte
+          </Button>
         </div>
 
         {

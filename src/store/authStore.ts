@@ -9,6 +9,7 @@ interface User {
     anonymous_id: string; // The ID linked to this account
     provider?: string; // 'google' | 'email'
     avatar_url?: string;
+    alias?: string; // 🔵 FIX #11: Display name for UX
 }
 
 interface AuthState {
