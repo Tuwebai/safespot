@@ -212,7 +212,7 @@ export function useCreateReportMutation() {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
 
-                // Nullable fields (use null, not empty string or undefined)
+                // Nullable fields (use null, not undefined)
                 zone: newReportData.zone || null,
                 address: newReportData.address || null,
                 latitude: newReportData.latitude ?? null,
@@ -224,19 +224,21 @@ export function useCreateReportMutation() {
                 priority_zone: null,
                 distance_meters: null,
 
+                // Optional fields (schema defines as string | undefined)
+                province: undefined,
+                locality: undefined,
+                department: undefined,
+
                 // Optional fields
                 threads_count: 0,
                 image_urls: [],
                 is_favorite: false,
                 is_flagged: false,
                 flags_count: 0,
-                province: undefined,
-                locality: undefined,
-                department: undefined,
-                _isOptimistic: true // Marker for UI
-            } as any
+            }
 
             // 5. STORE IMMEDIATELY (0ms UI Update)
+            // ✅ CRITICAL: Normalize BEFORE inserting into cache
             reportsCache.prepend(queryClient, optimisticReport)
 
             // 6. Update Stats Optimistically
