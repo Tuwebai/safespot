@@ -40,3 +40,33 @@ export const getAvatarUrl = (seed: string | null | undefined, forceShow: boolean
 
     return `${baseUrl}?${params.toString()}`;
 };
+
+/**
+ * ENTERPRISE RUNTIME SAFETY: Avatar Fallback Generator
+ * 
+ * Generates a 2-character uppercase fallback for avatar display.
+ * Prevents crashes from undefined/null/empty strings.
+ * 
+ * RULE #1: Defensive Access
+ * NEVER access string methods (.substring, .slice, .toUpperCase) without validation.
+ * 
+ * @param value - The string to extract fallback from (typically anonymous_id or alias)
+ * @returns Always returns a valid 2-character string, never undefined
+ * 
+ * @example
+ * getAvatarFallback('user123')     // 'US'
+ * getAvatarFallback('a')           // '??'
+ * getAvatarFallback(undefined)     // '??'
+ * getAvatarFallback(null)          // '??'
+ * getAvatarFallback('')            // '??'
+ */
+export function getAvatarFallback(value: string | null | undefined): string {
+    // Defensive validation: ensure value exists and has sufficient length
+    if (!value || value.length < 2) {
+        return '??';
+    }
+
+    // Safe extraction and transformation
+    return value.substring(0, 2).toUpperCase();
+}
+

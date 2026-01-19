@@ -17,7 +17,7 @@ import useLongPress from '../../hooks/useLongPress';
 
 
 import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
-import { getAvatarUrl } from '../../lib/avatar';
+import { getAvatarUrl, getAvatarFallback } from '../../lib/avatar';
 import { useAnonymousId } from '../../hooks/useAnonymousId';
 import { isOwnMessage } from '../../lib/chatHelpers';
 import { chatBroadcast } from '../../lib/chatBroadcast';
@@ -770,7 +770,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             <Avatar className="w-9 h-9 border border-border">
                                 <AvatarImage src={otherParticipant.avatar || getAvatarUrl(otherParticipant.alias)} />
                                 <AvatarFallback className="text-[10px] font-bold">
-                                    {otherParticipant.alias?.substring(0, 2).toUpperCase()}
+                                    {getAvatarFallback(otherParticipant.alias)}
                                 </AvatarFallback>
                             </Avatar>
                             {presence?.status === 'online' && (

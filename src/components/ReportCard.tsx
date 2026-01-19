@@ -1,4 +1,3 @@
-
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,10 +13,10 @@ import { getAvatarUrl } from '@/lib/avatar'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
-import type { Report } from '@/lib/schemas'
+import type { NormalizedReport } from '@/lib/normalizeReport'
 
 // HELPER FUNCTIONS (Moved from Reportes.tsx)
-const getStatusColor = (status: Report['status']) => {
+const getStatusColor = (status: NormalizedReport['status']) => {
     switch (status) {
         case 'pendiente':
             return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
@@ -32,14 +31,14 @@ const getStatusColor = (status: Report['status']) => {
     }
 }
 
-const STATUS_LABELS: Record<Report['status'], string> = {
+const STATUS_LABELS: Record<NormalizedReport['status'], string> = {
     'pendiente': 'Buscando',
     'en_proceso': 'En Proceso',
     'resuelto': 'Recuperado',
     'cerrado': 'Expirado'
 }
 
-const getStatusLabel = (status: Report['status']) => STATUS_LABELS[status] || status
+const getStatusLabel = (status: NormalizedReport['status']) => STATUS_LABELS[status] || status
 
 const CATEGORY_COLORS: Record<string, string> = {
     'Robo de Bicicleta': 'bg-red-500',
@@ -51,17 +50,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 const getCategoryColor = (category: string) => CATEGORY_COLORS[category] || 'bg-gray-500'
-
-const formatDate = (dateString: string) => {
-    try {
-        const date = new Date(dateString)
-        return date.toLocaleDateString('es-AR', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric'
-        })
-    } catch (e) { return '' }
-}
 
 interface ReportCardProps {
     reportId: string
@@ -84,8 +72,9 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
     const isOwner = report?.anonymous_id === currentAnonymousId
     const isFlagged = report?.is_flagged ?? false
 
-    if (isLoading) return <ReportCardSkeleton /> // Or a minimal placeholder
-    if (!report) return null // Should not happen if ID is valid
+    // SSOT Resilience: Show skeleton if loading OR if report is not yet available in cache
+    // This prevents "ghost lists" where IDs exist but entities are still fetching
+    if (isLoading || !report) return <ReportCardSkeleton />
 
     return (
         <SmartLink
@@ -172,14 +161,12 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                         alt="Avatar"
                                     />
                                     <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
-                                        {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                        {report.avatarFallback}
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex flex-col">
-                                    {report.alias && (
-                                        <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">@{report.alias}</span>
-                                    )}
-                                    <span className="text-xs text-foreground/60">{formatDate(report.created_at)}</span>
+                                    <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">{report.displayAuthor}</span>
+                                    <span className="text-xs text-foreground/60">{report.formattedDate}</span>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">

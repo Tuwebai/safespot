@@ -1,12 +1,3 @@
-/**
- * React Query hooks for Reports
- * 
- * Provides cached, deduplicated data fetching for:
- * - Report lists (with filters)
- * - Single report details
- * - Mutations for report CRUD
- */
-
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 
 
@@ -16,6 +7,7 @@ import { reportsApi, type ReportFilters, type CreateReportData } from '@/lib/api
 import { type Report } from '@/lib/schemas'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
+import { normalizeReportForUI, type NormalizedReport } from '@/lib/normalizeReport'
 
 // Enterprise Data Freshness SLA:
 // - UI may show data up to 1 minute old (staleTime).
@@ -39,13 +31,13 @@ import { reportsCache } from '@/lib/cache-helpers'
  * Hook to consume a single normalized report by ID.
  * This is the preferred way for components to read report data.
  * @param id The report ID
- * @returns The report object (live from cache)
+ * @returns The normalized report object (live from cache)
  */
 export function useReport(id: string) {
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()  // Required for Auth context but NOT for data key of public entities
 
-    return useQuery({
+    return useQuery<NormalizedReport>({
         // CRITICAL FIX: Match standard SSOT key (no anonymousId in key)
         queryKey: queryKeys.reports.detail(id),
         queryFn: async () => {
@@ -56,10 +48,11 @@ export function useReport(id: string) {
                 throw new Error(`Report ${id} returned undefined from API`)
             }
 
-            // ENTERPRISE NORMALIZATION: Store via helper to trigger side-effects (persistence, list updates)
+            // ENTERPRISE NORMALIZATION: Normalize for UI and store
+            const normalized = normalizeReportForUI(report)
             reportsCache.store(queryClient, [report])
 
-            return report
+            return normalized
         },
         enabled: !!id && !!anonymousId,
         staleTime: Infinity,
@@ -76,46 +69,37 @@ export function useReportsQuery(filters?: ReportFilters) {
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()  // ✅ SSOT for identity
 
-    return useQuery<string[]>({
+    return useQuery<Report[], Error, string[]>({
         queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
         queryFn: async () => {
-            const data = await reportsApi.getAll(filters)
-
-            // SIDE EFFECT: Normalize data into canonical cache
-            const ids = reportsCache.store(queryClient, data)
-
-            return ids
+            // Enterprise: Fetch raw entities. Do NOT normalize here.
+            // Normalization must happen in 'select' to guarantee synchronous availability for rendering.
+            return await reportsApi.getAll(filters)
         },
         enabled: !!anonymousId,  // ✅ CRITICAL: Never execute with null ID
         // ENTERPRISE: No initialData from localStorage.
         // We trust React Query cache + Persistence (gcTime) ONLY.
-        // This avoids hydration mismatches and stale "empty" states.
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         retry: 1,
         // SAFETY: Firewall against cache corruption.
-        select: (data: any) => {
+        select: (data) => {
             // CRITICAL FIX: Never return [] for invalid data.
-            // If the backend sends trash, we want to FAIL (keep old data), not show 0.
             if (!Array.isArray(data)) {
                 const validationError = new Error('SERVER_CONTRACT_VIOLATION: Expected array of reports')
-                // STAFF-LEVEL: Silent health check. Log, but allow React Query to handle the error state.
-                // This alerts us to backend regressions without crashing the UI if placeholderData exists.
                 import('@sentry/react').then(({ captureException }) => {
                     captureException(validationError, {
                         extra: { context: 'useReportsQuery:select', received: typeof data }
                     })
                 }).catch(() => console.error(validationError))
-
-                // Throwing here triggers isError: true and keeps previousData
                 throw validationError
             }
-            return data.map(item => {
-                if (typeof item === 'object' && item !== null && 'id' in item) {
-                    return item.id
-                }
-                return item
-            })
+
+            // SYNCHRONOUS NORMALIZATION (The Fix)
+            // By storing here, we guarantee that when 'ids' are returned to the UI,
+            // the entities are ALREADY in the 'detail' cache.
+            // This prevents the "Ghost List" race condition.
+            return reportsCache.store(queryClient, data)
         },
         // ENTERPRISE: CONTINUITY IS KING
         placeholderData: (previousData) => previousData,
@@ -157,14 +141,19 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()
 
-    return useQuery({
+    return useQuery<NormalizedReport>({
         queryKey: queryKeys.reports.detail(reportId ?? ''), // ✅ Match SSOT Key
         queryFn: async () => {
             if (!reportId) throw new Error("No ID")
             const report = await reportsApi.getById(reportId)
             if (!report) throw new Error("Not found")
+
+            // ✅ CRITICAL: Normalize BEFORE storing
+            const normalized = normalizeReportForUI(report)
             reportsCache.store(queryClient, [report])
-            return report
+
+            // ✅ Return normalized report from cache
+            return normalized
         },
         enabled: !!reportId && enabled && !!anonymousId,
         staleTime: Infinity,
@@ -185,6 +174,7 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
  */
 export function useCreateReportMutation() {
     const queryClient = useQueryClient()
+    const anonymousId = useAnonymousId() // ✅ Get identity for complete optimistic report
 
     return useMutation({
         mutationFn: (data: CreateReportData) => reportsApi.create(data),
@@ -208,26 +198,41 @@ export function useCreateReportMutation() {
             const reportId = newReportData.id!
 
             // 4. Create Optimistic Report (Final ID, no Temp)
+            // ✅ ENTERPRISE FIX: Complete entity with ALL required fields matching schema
             const optimisticReport: Report = {
+                // Required fields
                 id: reportId,
+                anonymous_id: anonymousId || '', // ✅ CRITICAL: Use real identity
                 title: newReportData.title,
                 description: newReportData.description,
                 category: newReportData.category,
-                zone: newReportData.zone || '',
-                address: newReportData.address || '',
-                latitude: newReportData.latitude,
-                longitude: newReportData.longitude,
                 status: newReportData.status || 'pendiente',
-                incident_date: newReportData.incident_date,
+                upvotes_count: 0,
+                comments_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                image_urls: [],
-                comments_count: 0,
+
+                // Nullable fields (use null, not empty string or undefined)
+                zone: newReportData.zone || null,
+                address: newReportData.address || null,
+                latitude: newReportData.latitude ?? null,
+                longitude: newReportData.longitude ?? null,
+                last_edited_at: null,
+                incident_date: newReportData.incident_date ?? null,
+                avatar_url: null,
+                alias: null,
+                priority_zone: null,
+                distance_meters: null,
+
+                // Optional fields
                 threads_count: 0,
+                image_urls: [],
                 is_favorite: false,
                 is_flagged: false,
-                anonymous_id: '',
-                avatar_url: null,
+                flags_count: 0,
+                province: undefined,
+                locality: undefined,
+                department: undefined,
                 _isOptimistic: true // Marker for UI
             } as any
 

@@ -70,10 +70,19 @@ export async function prefetchReport(id: string): Promise<Report | null> {
             })
             return report
         })
-        .catch(error => {
-            // Suppress 404 errors (report not found) to avoid console noise
-            if (error?.response?.status !== 404 && error?.message?.indexOf('404') === -1) {
-                console.warn(`[prefetch] Failed to prefetch report ${id}:`, error.message)
+        .catch((error: any) => {
+            // Enterprise: Suppress 404 "Not Found" as valid state (e.g. optimistic or deleted)
+            const isNotFound =
+                error?.status === 404 ||
+                error?.statusCode === 404 ||
+                error?.response?.status === 404 ||
+                (typeof error?.message === 'string' && error.message.includes('404'));
+
+            if (!isNotFound) {
+                // Only log unexpected errors
+                if (import.meta.env.DEV) {
+                    console.debug(`[prefetch] Skipped report ${id}:`, error?.message || error)
+                }
             }
             return null
         })

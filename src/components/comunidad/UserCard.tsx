@@ -7,6 +7,7 @@ import { usersApi, UserProfile } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { getAvatarFallback } from '@/lib/avatar';
 
 interface UserCardProps {
     user: UserProfile;
@@ -85,7 +86,7 @@ export function UserCard({ user }: UserCardProps) {
                         referrerPolicy="no-referrer" // Important for Google Images
                     />
                     <AvatarFallback className="bg-muted text-foreground/50">
-                        {user.alias ? user.alias.substring(0, 2).toUpperCase() : 'AN'}
+                        {getAvatarFallback(user.alias)}
                     </AvatarFallback>
                 </Avatar>
 

@@ -9,7 +9,7 @@ import { Search, MessageSquare, ArrowLeft, Camera, Plus, X, User, Archive } from
 import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
 import { useAnonymousId } from '../hooks/useAnonymousId';
 import { ChatRoom, UserProfile, chatsApi, usersApi } from '../lib/api';
-import { getAvatarUrl } from '../lib/avatar';
+import { getAvatarUrl, getAvatarFallback } from '../lib/avatar';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/Avatar';
@@ -54,7 +54,7 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                     <Avatar className="w-12 h-12 border border-border mt-1">
                         <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
                         <AvatarFallback className="font-bold text-xs uppercase">
-                            {room.other_participant_alias?.substring(0, 2) || '??'}
+                            {getAvatarFallback(room.other_participant_alias)}
                         </AvatarFallback>
                     </Avatar>
 
@@ -397,7 +397,7 @@ const Mensajes: React.FC = () => {
                                                         <Avatar className="w-10 h-10 ring-1 ring-border">
                                                             <AvatarImage src={user.avatar_url || getAvatarUrl(user.anonymous_id)} />
                                                             <AvatarFallback className="text-[10px] font-bold">
-                                                                {user.alias?.substring(0, 2).toUpperCase()}
+                                                                {getAvatarFallback(user.alias)}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                         <div className="flex-1 min-w-0">

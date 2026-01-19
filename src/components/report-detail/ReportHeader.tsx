@@ -1,12 +1,11 @@
 import { memo } from 'react'
-// Force IDE refresh
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { MapPin } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
-import type { Report } from '@/lib/schemas'
+import type { NormalizedReport } from '@/lib/normalizeReport'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAvatarUrl } from '@/lib/avatar'
 
@@ -15,14 +14,14 @@ import { getAvatarUrl } from '@/lib/avatar'
 // ============================================
 
 interface ReportHeaderProps {
-    report: Report
+    report: NormalizedReport
 }
 
 // ============================================
 // HELPERS
 // ============================================
 
-function getStatusColor(status: Report['status']): string {
+function getStatusColor(status: NormalizedReport['status']): string {
     switch (status) {
         case 'pendiente':
             return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
@@ -37,8 +36,8 @@ function getStatusColor(status: Report['status']): string {
     }
 }
 
-function getStatusLabel(status: Report['status']): string {
-    const labelMap: Record<Report['status'], string> = {
+function getStatusLabel(status: NormalizedReport['status']): string {
+    const labelMap: Record<NormalizedReport['status'], string> = {
         'pendiente': 'Activo',
         'en_proceso': 'En Proceso',
         'resuelto': 'Recuperado',
@@ -65,7 +64,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
 
             <div className="flex items-center text-foreground/50 text-sm md:text-base bg-muted w-fit px-3 py-1.5 rounded-full border border-border/30">
                 <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
-                <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
             </div>
 
             <PrefetchLink
@@ -80,18 +79,14 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                             alt="Avatar"
                         />
                         <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
-                            {report.anonymous_id.substring(0, 2).toUpperCase()}
+                            {report.avatarFallback}
                         </AvatarFallback>
                     </Avatar>
                     <div className="absolute inset-0 bg-neon-green/10 rounded-full opacity-0 group-hover/author:opacity-100 blur-[2px] transition-opacity" />
                 </div>
                 <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground/90 leading-none group-hover/author:text-white transition-colors">
-                        {report.alias ? (
-                            <span className="text-neon-green">@{report.alias}</span>
-                        ) : (
-                            `Usuario ${report.anonymous_id.substring(0, 6)}`
-                        )}
+                        {report.displayAuthor}
                     </span>
                     <span className="text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })}

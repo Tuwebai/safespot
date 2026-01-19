@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useReportDetailQuery } from '@/hooks/queries/useReportsQuery'
 import { queryKeys } from '@/lib/queryKeys'
-import type { Report } from '@/lib/schemas'
+import type { NormalizedReport } from '@/lib/normalizeReport'
 
 // ============================================
 // TYPES
@@ -13,12 +13,12 @@ interface UseReportDetailProps {
 }
 
 interface UseReportDetailReturn {
-    report: Report | null
+    report: NormalizedReport | null
     loading: boolean
     error: string | null
     isDeleted: boolean
     isFavorite: boolean
-    updateReport: (updated: Report) => void
+    updateReport: (updated: NormalizedReport) => void
     markAsDeleted: () => void
     refetch: () => Promise<void>
 }
@@ -49,7 +49,7 @@ export function useReportDetail({ reportId }: UseReportDetailProps): UseReportDe
 
     // Optimized for 0ms lag: Just provides a bridge to the cache if needed
     // though most components should use the mutations directly.
-    const updateReport = useCallback((updated: Report) => {
+    const updateReport = useCallback((updated: NormalizedReport) => {
         if (!reportId) return
         queryClient.setQueryData(queryKeys.reports.detail(reportId), updated)
     }, [reportId, queryClient])

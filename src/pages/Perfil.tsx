@@ -13,7 +13,7 @@ import { TrendingUp, Calendar, FileText, ThumbsUp, Bell } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PrefetchLink } from '@/components/PrefetchLink'
 import { getAnonymousIdSafe } from '@/lib/identity'
-import { getAvatarUrl } from '@/lib/avatar'
+import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar'
 import type { UserProfile } from '@/lib/api'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 // import { NotificationSettingsSection } from '@/components/NotificationSettingsSection' // Moved to SettingsPage
@@ -208,7 +208,7 @@ export function Perfil() {
                         className="object-cover"
                       />
                       <AvatarFallback className="bg-neon-green/10 text-neon-green text-3xl font-bold flex items-center justify-center">
-                        {anonymousId.substring(0, 2).toUpperCase()}
+                        {getAvatarFallback(anonymousId)}
                       </AvatarFallback>
                     </Avatar>
 

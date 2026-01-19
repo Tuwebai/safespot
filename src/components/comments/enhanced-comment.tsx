@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/toast'
 import { Link, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import { getAvatarUrl } from '@/lib/avatar'
+import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar'
 import {
   MessageCircle,
   ThumbsUp,
@@ -271,7 +271,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                 isOwner && "ring-2 ring-neon-green/20"
               )}>
                 <AvatarImage src={comment.avatar_url || getAvatarUrl(comment.anonymous_id)} />
-                <AvatarFallback>{comment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
+                <AvatarFallback>{getAvatarFallback(comment.alias)}</AvatarFallback>
               </Avatar>
             </Link>
 

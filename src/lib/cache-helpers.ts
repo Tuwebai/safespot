@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from './queryKeys';
 import type { Report } from './schemas';
 import type { Comment } from './api';
+import { normalizeReportForUI } from './normalizeReport';
 
 /**
  * CACHE HELPERS (SSOT Architecture)
@@ -11,6 +12,7 @@ import type { Comment } from './api';
  * 1. Data lives in exactly one place: ['reports', 'detail', id]
  * 2. Lists only contain IDs
  * 3. Updates are propagated consistently
+ * 4. ALL reports are normalized for UI before storage
  */
 
 // ============================================
@@ -23,14 +25,17 @@ export const reportsCache = {
      * @returns Array of IDs to be stored in the list cache.
      */
     store: (queryClient: QueryClient, reports: Report[]): string[] => {
-        reports.forEach(report => {
+        // ✅ ENTERPRISE: Normalize ALL reports for UI before storing
+        const normalizedReports = reports.map(normalizeReportForUI);
+
+        normalizedReports.forEach(report => {
             queryClient.setQueryData(
                 queryKeys.reports.detail(report.id),
                 report
             );
         });
 
-        reports.forEach(report => {
+        normalizedReports.forEach(report => {
             queryClient.setQueryData(
                 queryKeys.reports.detail(report.id),
                 report
@@ -38,13 +43,11 @@ export const reportsCache = {
         });
 
         // SIDE EFFECT: Persist default view
-        // Assuming 'data' in the instruction refers to 'reports'
-        // Omitting 'if (isDefaultQuery)' as 'isDefaultQuery' is not defined in this context
         try {
-            localStorage.setItem('safespot_reports_all_v2', JSON.stringify(reports))
+            localStorage.setItem('safespot_reports_all_v2', JSON.stringify(normalizedReports))
         } catch (e) { }
 
-        return reports.map(r => r.id);
+        return normalizedReports.map(r => r.id);
     },
 
     /**
@@ -121,8 +124,11 @@ export const reportsCache = {
      * Add a report ID to the TOP of the lists (New Report)
      */
     prepend: (queryClient: QueryClient, newReport: Report) => {
+        // ✅ ENTERPRISE: Normalize for UI before storing
+        const normalizedReport = normalizeReportForUI(newReport);
+
         // 1. Store Canonical
-        queryClient.setQueryData(queryKeys.reports.detail(newReport.id), newReport);
+        queryClient.setQueryData(queryKeys.reports.detail(normalizedReport.id), normalizedReport);
 
         // 2. Update ALL matching lists (Default, Explorar, categories, etc.)
         // Using setQueriesData with the base key will catch everything.
@@ -132,7 +138,7 @@ export const reportsCache = {
             (old) => {
                 if (!old) return old;
                 const sanitizedOld = Array.isArray(old) ? old.filter(item => typeof item === 'string') : [];
-                return [newReport.id, ...sanitizedOld.filter(id => id !== newReport.id)];
+                return [normalizedReport.id, ...sanitizedOld.filter(id => id !== normalizedReport.id)];
             }
         );
 
@@ -140,7 +146,7 @@ export const reportsCache = {
         const defaultKey = queryKeys.reports.list();
         const existingDefault = queryClient.getQueryData(defaultKey);
         if (!existingDefault) {
-            queryClient.setQueryData(defaultKey, [newReport.id]);
+            queryClient.setQueryData(defaultKey, [normalizedReport.id]);
         }
     }
 };

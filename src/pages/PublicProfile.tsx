@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useNavigate, useParams } from 'react-router-dom';
-import { getAvatarUrl } from '@/lib/avatar';
+import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
 import { usersApi } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
@@ -229,7 +229,7 @@ export function PublicProfile() {
                         <Avatar className="h-32 w-32 border-4 border-zinc-950 shadow-2xl relative z-10 ring-2 ring-white/10 ring-offset-2 ring-offset-zinc-950 group-hover:ring-neon-green transition-all duration-300">
                             <AvatarImage src={profile.avatar_url || getAvatarUrl(profile.anonymous_id)} className="object-cover" />
                             <AvatarFallback className="bg-muted text-neon-green text-3xl font-bold font-mono border border-neon-green/20">
-                                {profile.alias?.substring(0, 2).toUpperCase() || '??'}
+                                {getAvatarFallback(profile.alias)}
                             </AvatarFallback>
                         </Avatar>
                         <div className="absolute -bottom-2 -right-2 bg-card border border-neon-green text-neon-green text-xs font-bold px-2 py-0.5 rounded-full z-20">

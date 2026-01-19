@@ -1,7 +1,7 @@
 import { Marker, Popup } from 'react-leaflet'
 import { getMarkerIcon } from '@/lib/map-utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import { getAvatarUrl } from '@/lib/avatar'
+import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { type Report } from '@/lib/schemas'
 
@@ -50,7 +50,7 @@ export function SafeSpotMapMarker({ report }: SafeSpotMapMarkerProps) {
                                 alt="Avatar"
                             />
                             <AvatarFallback className="bg-dark-bg text-[8px] text-gray-400 flex items-center justify-center">
-                                {report.anonymous_id.substring(0, 2).toUpperCase()}
+                                {getAvatarFallback(report.anonymous_id)}
                             </AvatarFallback>
                         </Avatar>
                         <span>{new Date(report.created_at).toLocaleDateString()}</span>

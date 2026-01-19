@@ -10,8 +10,9 @@ export const playNotificationSound = () => {
     try {
         const audio = new Audio(POP_SOUND);
         audio.volume = 0.5;
-        audio.play().catch(console.error); // Ignore autoplay blocking errors
+        // Best effort: Silent fail if interaction or codec is missing
+        audio.play().catch(() => { });
     } catch (e) {
-        console.warn('Failed to play notification sound', e);
+        // Silently ignore construction errors (e.g. non-DOM env)
     }
 };
