@@ -1,8 +1,9 @@
 import { QueryClient } from '@tanstack/react-query';
-import { queryKeys } from './queryKeys';
-import type { Report } from './schemas';
-import type { Comment } from './api';
-import { normalizeReportForUI } from './normalizeReport';
+import { queryKeys } from '@/lib/queryKeys';
+import type { Report } from '@/lib/schemas';
+import type { Comment } from '@/lib/api';
+import type { NormalizedReport } from '@/lib/normalizeReport';
+import { normalizeReportForUI } from '@/lib/normalizeReport';
 
 /**
  * CACHE HELPERS (SSOT Architecture)
@@ -46,30 +47,54 @@ export const reportsCache = {
 
     /**
      * Update a report EVERYWHERE (Canonical + Derived State)
+     * ✅ RULE #14 FIX: Re-normalizes when patch affects derived fields
      */
     patch: (queryClient: QueryClient, reportId: string, patch: Partial<Report> | ((old: Report) => Partial<Report>)) => {
-        queryClient.setQueryData<Report>(
+        queryClient.setQueryData<NormalizedReport>(
             queryKeys.reports.detail(reportId),
             (old) => {
                 if (!old) return undefined;
-                const updates = typeof patch === 'function' ? patch(old) : (patch as any);
+                const updates = typeof patch === 'function' ? patch(old as Report) : patch;
 
                 // ATOMIC DELTA LOGIC
                 // If the patch contains delta fields, apply them instead of overwriting
-                if (updates.comments_count_delta !== undefined) {
-                    const delta = updates.comments_count_delta;
+                if ('comments_count_delta' in updates && updates.comments_count_delta !== undefined) {
+                    const delta = updates.comments_count_delta as number;
                     const { comments_count_delta, ...rest } = updates;
-                    return {
+                    const updated = {
                         ...old,
                         ...rest,
                         comments_count: Math.max(0, (old.comments_count || 0) + delta)
                     };
+
+                    // ✅ Re-normalize if patch affects derived fields
+                    if (
+                        'alias' in rest ||
+                        'anonymous_id' in rest ||
+                        'created_at' in rest
+                    ) {
+                        return normalizeReportForUI(updated as Report);
+                    }
+
+                    return updated as NormalizedReport;
                 }
 
-                return { ...old, ...updates };
+                const updated = { ...old, ...updates };
+
+                // ✅ Re-normalize if patch affects derived fields
+                if (
+                    'alias' in updates ||
+                    'anonymous_id' in updates ||
+                    'created_at' in updates
+                ) {
+                    return normalizeReportForUI(updated as Report);
+                }
+
+                return updated as NormalizedReport;
             }
         );
     },
+
 
     /**
      * Remove a report from EVERYWHERE
@@ -180,7 +205,7 @@ export const commentsCache = {
     patch: (queryClient: QueryClient, commentId: string, patch: Partial<Comment> | ((old: Comment) => Partial<Comment>)) => {
         queryClient.setQueryData<Comment>(
             queryKeys.comments.detail(commentId),
-            (old) => {
+            (old: Comment | undefined) => {
                 if (!old) return undefined;
                 const updates = typeof patch === 'function' ? patch(old) : patch;
                 return { ...old, ...updates };
@@ -194,7 +219,7 @@ export const commentsCache = {
     applyLikeDelta: (queryClient: QueryClient, commentId: string, delta: number) => {
         queryClient.setQueryData<Comment>(
             queryKeys.comments.detail(commentId),
-            (old) => {
+            (old: Comment | undefined) => {
                 if (!old) return undefined;
                 return {
                     ...old,
