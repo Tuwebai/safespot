@@ -29,9 +29,9 @@ export const queryClient = new QueryClient({
             refetchOnMount: 'always', // ✅ CRITICAL: Always check server on component mount
 
             // 3. Network Behavior - RETRY LOGIC (Unified)
-            // ✅ ENTERPRISE FIX: No retries. Fail fast so UI can show error state.
-            // Infinite retry = Infinite skeleton.
-            retry: false,
+            // ✅ PRODUCTION FIX: Retry transient errors (DNS, packet loss, TLS handshake)
+            // 3 retries with exponential backoff: 1s, 2s, 4s (~7s total before final error)
+            retry: 3,
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential Backoff
             networkMode: 'online',
         },

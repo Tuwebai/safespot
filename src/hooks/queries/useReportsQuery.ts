@@ -86,7 +86,7 @@ export function useReportsQuery(filters?: ReportFilters) {
         staleTime: 30 * 1000,
         refetchOnWindowFocus: true, // ✅ Re-check on focus
         refetchOnMount: 'always',   // ✅ CRITICAL: Force check on mount (fixes idle staleness)
-        retry: 1,
+        // ✅ PRODUCTION FIX: Use global retry config (retry: 3) for consistency
         // SAFETY: Firewall against cache corruption.
         select: (data) => {
             // CRITICAL FIX: Never return [] for invalid data.
