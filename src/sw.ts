@@ -194,14 +194,36 @@ registerRoute(
 // ❌ INVARIANT: SW must NEVER cache dynamic API responses.
 // React Query is the Single Source of Truth for server state.
 // We use NetworkOnly to ensure we always get fresh data or fail.
+// C. API Calls: ENTERPRISE SAFETY FIX (Phase 2)
+// ❌ INVARIANT: SW must NEVER hang indefinitely.
+// We implement a "NetworkOnly with Timeout" strategy.
+// If the network is slow/hanging (>10s), we fail fast so the Client (React Query)
+// can handle the error (show retry button, offline mode, etc).
 registerRoute(
     ({ url, request }) => url.pathname.startsWith('/api/') && request.method === 'GET',
-    new NetworkOnly({
-        plugins: [
-            // Optional: Add BackgroundSync if we want to queue failed GETs? 
-            // No, usually only for mutations. GETs should fail so UI shows error/retry.
-        ]
-    })
+    async ({ request }) => {
+        // 1. Create a timeout promise (10s)
+        const timeoutPromise = new Promise<Response>((_, reject) =>
+            setTimeout(() => reject(new Error('SW_API_TIMEOUT')), 10000)
+        );
+
+        // 2. Race Network vs Timeout
+        try {
+            const response = await Promise.race([
+                fetch(request),
+                timeoutPromise
+            ]);
+            return response;
+        } catch (error) {
+            // Failure = Return 504 (Gateway Timeout) or 503 (Service Unavailable)
+            // This ensures React Query receives an error and stops "Loading..."
+            console.warn('[SW] API Request Failed or Timed Out:', request.url);
+            return new Response(JSON.stringify({ error: 'Network Timeout' }), {
+                status: 504,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
 );
 
 // D. Mutations: NetworkOnly with BackgroundSync

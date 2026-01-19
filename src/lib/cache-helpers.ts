@@ -37,10 +37,9 @@ export const reportsCache = {
             );
         });
 
-        // SIDE EFFECT: Persist default view
-        try {
-            localStorage.setItem('safespot_reports_all_v2', JSON.stringify(normalizedReports))
-        } catch (e) { }
+        // SIDE EFFECT REMOVED: No persistir en localStorage manualmente.
+        // Confiamos en React Query gcTime y refetchOnMount para la persistencia y frescura.
+        // localStorage.setItem('safespot_reports_all_v2', ...) -> ELIMINADO POR RIESGO DE CORRUPCIÓN
 
         return normalizedReports.map(r => r.id);
     },

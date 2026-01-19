@@ -51,7 +51,8 @@ function getHeaders(requestId?: string): HeadersInit {
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
-  timeout = 45000,
+  // ✅ ENTERPRISE FIX: 15s Timeout to prevent infinite loading (Default was 45s)
+  timeout = 15000,
   schema?: ZodSchema<T>
 ): Promise<T> {
 

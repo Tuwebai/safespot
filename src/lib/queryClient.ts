@@ -20,22 +20,18 @@ export const queryClient = new QueryClient({
             // "Source of Truth" is ALWAYS the server.
 
             // 1. Data Validity
-            staleTime: 60000, // ENTERPRISE: 1 min valid data (Evita refetch storms)
-            gcTime: 1000 * 60 * 10, // ENTERPRISE: 10 min persistence (Navegación instantánea al volver)
+            staleTime: 60 * 1000, // ENTERPRISE: 1 min valid data
+            gcTime: 5 * 60 * 1000, // ENTERPRISE: 5 min persistence (Reduced to prevent ghost types)
 
             // 2. Refetch Triggers (Aggressive background updates)
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
-            refetchOnMount: true,
+            refetchOnMount: 'always', // ✅ CRITICAL: Always check server on component mount
 
             // 3. Network Behavior - RETRY LOGIC (Unified)
-            retry: (failureCount, error: any) => {
-                // FAIL FAST on 4xx Client Errors (except 408/429)
-                if (error?.status >= 400 && error?.status < 500) {
-                    return false
-                }
-                return failureCount < 2
-            },
+            // ✅ ENTERPRISE FIX: No retries. Fail fast so UI can show error state.
+            // Infinite retry = Infinite skeleton.
+            retry: false,
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential Backoff
             networkMode: 'online',
         },

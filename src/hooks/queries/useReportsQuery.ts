@@ -82,7 +82,8 @@ export function useReportsQuery(filters?: ReportFilters) {
         // ENTERPRISE: No initialData from localStorage.
         // We trust React Query cache + Persistence (gcTime) ONLY.
         staleTime: 30 * 1000,
-        refetchOnWindowFocus: false,
+        refetchOnWindowFocus: true, // ✅ Re-check on focus
+        refetchOnMount: 'always',   // ✅ CRITICAL: Force check on mount (fixes idle staleness)
         retry: 1,
         // SAFETY: Firewall against cache corruption.
         select: (data) => {

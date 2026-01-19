@@ -6,8 +6,59 @@ import App from './App.tsx'
 import './index.css'
 import { BootstrapErrorBoundary } from './components/BootstrapErrorBoundary'
 import { IdentityInitializer } from './components/IdentityInitializer'
-
 import { HelmetProvider } from 'react-helmet-async'
+
+// ============================================
+// ENTERPRISE SECURE BOOT (CACHE HYGIENE)
+// ============================================
+
+// Aumentar esta versión fuerza un "Hard Reset" en todos los clientes
+// Útil para romper loops infinitos, estructuras de datos corruptas o bugs de skeleton.
+const CACHE_SCHEMA_VERSION = 'safespot_v2_secure_boot_1.0';
+
+(function secureBoot() {
+  try {
+    const currentVersion = localStorage.getItem('CACHE_SCHEMA_VERSION');
+
+    if (currentVersion !== CACHE_SCHEMA_VERSION) {
+      console.warn(`[SecureBoot] ⚠️ Detectado cambio de versión (${currentVersion} -> ${CACHE_SCHEMA_VERSION}). Ejecutando limpieza profunda...`);
+
+      // 1. Nuke LocalStorage (excepto claves críticas si las hubiera, hoy borramos todo para seguridad)
+      localStorage.clear();
+
+      // 2. Nuke SessionStorage
+      sessionStorage.clear();
+
+      // 3. Marcar nueva versión
+      localStorage.setItem('CACHE_SCHEMA_VERSION', CACHE_SCHEMA_VERSION);
+
+      // 4. Purgar Service Workers Antiguos (Zombie Killer)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+          for (const registration of registrations) {
+            console.log('[SecureBoot] 💀 Desregistrando SW zombie:', registration);
+            registration.unregister();
+          }
+          // Forzar recarga para asegurar que el nuevo SW tome control limpio
+          // Solo si acabamos de desregistrar algo, para evitar loops si no había nada
+          if (registrations.length > 0) {
+            console.log('[SecureBoot] 🔄 Recargando para aplicar cambios limpios...');
+            window.location.reload();
+          }
+        });
+      }
+
+      console.log('[SecureBoot] ✅ Limpieza completada. Sistema listo.');
+    } else {
+      console.log(`[SecureBoot] ✅ Sistema verificado (v: ${CACHE_SCHEMA_VERSION})`);
+    }
+  } catch (e) {
+    console.error('[SecureBoot] ❌ Error crítico durante el inicio:', e);
+    // Fallback: Si falla el boot, intentamos seguir, pero logueamos fuerte.
+  }
+})();
+
+// Enterprise Protocol: Observability
 
 // Enterprise Protocol: Observability
 import { initSentry } from './lib/sentry'
