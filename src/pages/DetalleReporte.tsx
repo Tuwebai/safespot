@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 // import { Helmet } from 'react-helmet-async'
 // import { generateSEOTags } from '@/lib/seo' 
 import { generateReportStructuredData } from '@/lib/seo'
+import { normalizeReportForUI } from '@/lib/normalizeReport'
+import type { Report } from '@/lib/schemas'
 import { SEO } from '@/components/SEO'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -77,7 +79,7 @@ export function DetalleReporte() {
 
   const editor = useReportEditor({
     report: initialReport,
-    onReportUpdate: updateReport,
+    onReportUpdate: (updated: Report) => updateReport(normalizeReportForUI(updated)),
   })
 
   const flagManager = useFlagManager({
