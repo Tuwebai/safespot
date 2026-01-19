@@ -31,6 +31,7 @@ import { reportsCache } from '@/lib/cache-helpers'
  * Get a single report by ID from cache (SSOT)
  * ✅ HIGH #13 FIX: Returns NormalizedReport for type safety
  * ✅ CRITICAL FIX: Defines queryFn to prevent "No queryFn" error
+ * ✅ CRITICAL #14 FIX: Stores ONLY normalized entities in cache
  */
 export function useReport(id: string) {
     const queryClient = useQueryClient()
@@ -46,12 +47,13 @@ export function useReport(id: string) {
                 throw new Error(`Report ${id} not found`)
             }
 
-            // ✅ CRITICAL: Normalize BEFORE storing
+            // ✅ CRITICAL: Normalize ONCE
             const normalized = normalizeReportForUI(report)
 
-            // ✅ Store normalized entity in cache
+            // ✅ CRITICAL #14: Store ONLY normalized entity in cache
             queryClient.setQueryData(queryKeys.reports.detail(id), normalized)
 
+            // ✅ Return exactly what was stored
             return normalized
         },
 
