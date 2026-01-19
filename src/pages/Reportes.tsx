@@ -662,8 +662,9 @@ export function Reportes() {
         {
           (isLoading && reports.length === 0) ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <ReportCardSkeleton key={i} />
+              {/* ✅ ENTERPRISE FIX: Stable keys for skeletons */}
+              {['sk-1', 'sk-2', 'sk-3', 'sk-4', 'sk-5', 'sk-6'].map((key) => (
+                <ReportCardSkeleton key={key} />
               ))}
             </div>
           ) : (error && reports.length === 0) ? (

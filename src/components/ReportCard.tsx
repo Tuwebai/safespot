@@ -11,7 +11,6 @@ import { SmartLink } from '@/components/SmartLink'
 import { useReport } from '@/hooks/queries/useReportsQuery'
 import { getAvatarUrl } from '@/lib/avatar'
 import { getAnonymousIdSafe } from '@/lib/identity'
-import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
 import type { NormalizedReport } from '@/lib/normalizeReport'
 
@@ -65,16 +64,24 @@ interface ReportCardProps {
  */
 export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = false }: ReportCardProps) {
     // SUBSCRIBED TO SSOT
-    const { data: report, isLoading } = useReport(reportId)
+    const { data: report } = useReport(reportId)
 
     // Derived state
     const currentAnonymousId = getAnonymousIdSafe()
     const isOwner = report?.anonymous_id === currentAnonymousId
     const isFlagged = report?.is_flagged ?? false
 
-    // SSOT Resilience: Show skeleton if loading OR if report is not yet available in cache
-    // This prevents "ghost lists" where IDs exist but entities are still fetching
-    if (isLoading || !report) return <ReportCardSkeleton />
+    // 🚨 ENTERPRISE ASSERTION: Detect SSOT violations
+    // If reportId is in the list, the entity MUST be in cache
+    // This is guaranteed by useReportsQuery.select calling reportsCache.store()
+    if (!report) {
+        console.error(
+            `[ReportCard] SSOT Violation: Report ID "${reportId}" rendered but entity not found in cache. ` +
+            `This indicates a cache consistency bug. The entity should have been stored before the ID was returned.`
+        )
+        // ✅ NO skeleton, NO fallback - make the bug visible in dev
+        return null
+    }
 
     return (
         <SmartLink

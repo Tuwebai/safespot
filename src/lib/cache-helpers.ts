@@ -79,11 +79,18 @@ export const reportsCache = {
 
     /**
      * Remove a report from EVERYWHERE
+     * ✅ ENTERPRISE FIX: Uses prefix match to remove from ALL list queries
+     * regardless of active filters (category, status, zone, etc.)
      */
     remove: (queryClient: QueryClient, reportId: string) => {
+        // 1. Remove detail cache
         queryClient.removeQueries({ queryKey: queryKeys.reports.detail(reportId) });
+
+        // 2. Remove from ALL list queries (with or without filters)
+        // ✅ CRITICAL: exact: false enables prefix matching
+        // Matches: ['reports', 'list'], ['reports', 'list', filters], etc.
         queryClient.setQueriesData<string[]>(
-            { queryKey: ['reports', 'list'] },
+            { queryKey: ['reports', 'list'], exact: false },
             (oldIds) => oldIds ? oldIds.filter(id => id !== reportId) : []
         );
     },
@@ -122,6 +129,8 @@ export const reportsCache = {
 
     /**
      * Add a report ID to the TOP of the lists (New Report)
+     * ✅ ENTERPRISE FIX: Uses prefix match to prepend to ALL list queries
+     * regardless of active filters (category, status, zone, etc.)
      */
     prepend: (queryClient: QueryClient, newReport: Report) => {
         // ✅ ENTERPRISE: Normalize for UI before storing
@@ -130,11 +139,11 @@ export const reportsCache = {
         // 1. Store Canonical
         queryClient.setQueryData(queryKeys.reports.detail(normalizedReport.id), normalizedReport);
 
-        // 2. Update ALL matching lists (Default, Explorar, categories, etc.)
-        // Using setQueriesData with the base key will catch everything.
-        // It's idempotent, so it handles the default list even if already initialized.
+        // 2. Update ALL matching lists (with or without filters)
+        // ✅ CRITICAL: exact: false enables prefix matching
+        // Matches: ['reports', 'list'], ['reports', 'list', filters], etc.
         queryClient.setQueriesData<string[]>(
-            { queryKey: ['reports', 'list'] },
+            { queryKey: ['reports', 'list'], exact: false },
             (old) => {
                 if (!old) return old;
                 const sanitizedOld = Array.isArray(old) ? old.filter(item => typeof item === 'string') : [];

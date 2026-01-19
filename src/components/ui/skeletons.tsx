@@ -1,4 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card'
+import { useMemo } from 'react'
 
 /**
  * Enhanced Skeleton Screens with realistic structure and smooth shimmer
@@ -160,10 +161,16 @@ export function ListItemSkeleton() {
 
 // Grid of report cards (for Reportes page)
 export function ReportGridSkeleton({ count = 6 }: { count?: number }) {
+    // ✅ ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
+    const skeletonKeys = useMemo(
+        () => Array.from({ length: count }, (_, i) => `report-skeleton-${i}`),
+        [count]
+    );
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: count }).map((_, i) => (
-                <ReportCardSkeleton key={i} />
+            {skeletonKeys.map((key) => (
+                <ReportCardSkeleton key={key} />
             ))}
         </div>
     )
@@ -171,27 +178,37 @@ export function ReportGridSkeleton({ count = 6 }: { count?: number }) {
 
 // List of comments (for DetalleReporte page)
 export function CommentsListSkeleton({ count = 3 }: { count?: number }) {
+    // ✅ ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
+    const skeletonKeys = useMemo(
+        () => Array.from({ length: count }, (_, i) => `comment-skeleton-${i}`),
+        [count]
+    );
+
     return (
         <div className="space-y-4">
-            {Array.from({ length: count }).map((_, i) => (
-                <CommentSkeleton key={i} />
+            {skeletonKeys.map((key) => (
+                <CommentSkeleton key={key} />
             ))}
         </div>
     )
 }
 export function RichTextEditorSkeleton() {
+    // ✅ ENTERPRISE FIX: Stable keys for fixed-size arrays
+    const toolbarKeys = ['toolbar-1', 'toolbar-2', 'toolbar-3', 'toolbar-4', 'toolbar-5', 'toolbar-6'];
+    const actionsKeys = ['action-1', 'action-2', 'action-3'];
+
     return (
         <div className="space-y-3 animate-in fade-in duration-200">
             {/* Toolbar skeleton */}
             <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-dark-bg/50 rounded-lg border border-dark-border/50">
                 <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5, 6].map(i => (
-                        <div key={i} className={`h-8 w-8 ${shimmerClass}`} />
+                    {toolbarKeys.map(key => (
+                        <div key={key} className={`h-8 w-8 ${shimmerClass}`} />
                     ))}
                 </div>
                 <div className="flex items-center gap-1 border-l border-dark-border/30 pl-2">
-                    {[1, 2, 3].map(i => (
-                        <div key={i} className={`h-8 w-8 ${shimmerClass}`} />
+                    {actionsKeys.map(key => (
+                        <div key={key} className={`h-8 w-8 ${shimmerClass}`} />
                     ))}
                 </div>
             </div>

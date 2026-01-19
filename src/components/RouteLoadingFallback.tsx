@@ -7,6 +7,10 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
+// ✅ ENTERPRISE FIX: Stable keys for fixed-size arrays
+const ROUTE_SKELETON_KEYS = ['route-card-1', 'route-card-2', 'route-card-3'];
+const DETAIL_SKELETON_KEYS = ['detail-stat-1', 'detail-stat-2', 'detail-stat-3', 'detail-stat-4'];
+
 export function RouteLoadingFallback() {
     return (
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 animate-pulse">
@@ -18,8 +22,8 @@ export function RouteLoadingFallback() {
 
             {/* Content grid skeleton */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3].map((i) => (
-                    <Card key={i} className="bg-card border-border">
+                {ROUTE_SKELETON_KEYS.map((key) => (
+                    <Card key={key} className="bg-card border-border">
                         <CardHeader>
                             <Skeleton height={24} width="80%" className="mb-2" />
                             <Skeleton height={16} width="60%" />
@@ -79,8 +83,8 @@ export function DetailLoadingFallback() {
 
             {/* Meta grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                {[1, 2, 3, 4].map((i) => (
-                    <Card key={i} className="bg-card border-border">
+                {DETAIL_SKELETON_KEYS.map((key) => (
+                    <Card key={key} className="bg-card border-border">
                         <CardContent className="p-4 text-center">
                             <Skeleton height={32} width={48} className="mx-auto mb-2" />
                             <Skeleton height={14} width={60} className="mx-auto" />
