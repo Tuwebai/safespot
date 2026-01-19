@@ -37,16 +37,23 @@ export function normalizeReportForUI(report: Report): NormalizedReport {
 
 /**
  * Format date for display
+ * ✅ MEDIUM #12 FIX: Visible fallback for invalid dates
  */
 function formatDate(dateString: string): string {
     try {
         const date = new Date(dateString)
+
+        // ✅ Explicit validation
+        if (isNaN(date.getTime())) {
+            return 'Fecha inválida'
+        }
+
         return date.toLocaleDateString('es-AR', {
             day: 'numeric',
             month: 'short',
             year: 'numeric'
         })
     } catch (e) {
-        return ''
+        return 'Fecha inválida'
     }
 }

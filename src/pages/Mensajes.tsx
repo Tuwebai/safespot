@@ -147,7 +147,8 @@ const Mensajes: React.FC = () => {
 
     // Modificar filtro para incluir búsqueda, archivados y ordenamiento
     const filteredRooms = useMemo(() => {
-        if (!rooms) return [];
+        // ✅ MEDIUM #10 FIX: Defensive array validation
+        if (!rooms || !Array.isArray(rooms)) return [];
         let result = rooms;
 
         // 1. Filtrar por vista (Archivados vs Inbox)

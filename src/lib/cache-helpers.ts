@@ -28,13 +28,7 @@ export const reportsCache = {
         // ✅ ENTERPRISE: Normalize ALL reports for UI before storing
         const normalizedReports = reports.map(normalizeReportForUI);
 
-        normalizedReports.forEach(report => {
-            queryClient.setQueryData(
-                queryKeys.reports.detail(report.id),
-                report
-            );
-        });
-
+        // ✅ Store in canonical cache (single iteration)
         normalizedReports.forEach(report => {
             queryClient.setQueryData(
                 queryKeys.reports.detail(report.id),

@@ -70,7 +70,6 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
             <PrefetchLink
                 to={`/usuario/${report.alias || report.anonymous_id}`}
                 prefetchRoute="PublicProfile"
-                className="flex items-center gap-3 pt-2 w-fit group/author"
             >
                 <div className="relative">
                     <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">

@@ -156,7 +156,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
 
                         <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
                             <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                            <span className="truncate">{report.address || report.zone || 'Ubicación no especificada'}</span>
+                            <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
                         </div>
 
                         {/*  FOOTER META */}

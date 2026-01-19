@@ -28,35 +28,35 @@ import { reportsCache } from '@/lib/cache-helpers'
 // ============================================
 
 /**
- * Hook to consume a single normalized report by ID.
- * This is the preferred way for components to read report data.
- * @param id The report ID
- * @returns The normalized report object (live from cache)
+ * Get a single report by ID from cache (SSOT)
+ * ✅ HIGH #13 FIX: Returns NormalizedReport for type safety
+ * ✅ CRITICAL FIX: Defines queryFn to prevent "No queryFn" error
  */
 export function useReport(id: string) {
     const queryClient = useQueryClient()
-    const anonymousId = useAnonymousId()  // Required for Auth context but NOT for data key of public entities
 
     return useQuery<NormalizedReport>({
-        // CRITICAL FIX: Match standard SSOT key (no anonymousId in key)
         queryKey: queryKeys.reports.detail(id),
+
         queryFn: async () => {
+            // Fetch from API
             const report = await reportsApi.getById(id)
 
-            // CRITICAL CHECK: Contract Violation
             if (!report) {
-                throw new Error(`Report ${id} returned undefined from API`)
+                throw new Error(`Report ${id} not found`)
             }
 
-            // ENTERPRISE NORMALIZATION: Normalize for UI and store
+            // ✅ CRITICAL: Normalize BEFORE storing
             const normalized = normalizeReportForUI(report)
-            reportsCache.store(queryClient, [report])
+
+            // ✅ Store normalized entity in cache
+            queryClient.setQueryData(queryKeys.reports.detail(id), normalized)
 
             return normalized
         },
-        enabled: !!id && !!anonymousId,
-        staleTime: Infinity,
-        refetchOnWindowFocus: false,
+
+        enabled: !!id,
+        staleTime: 5 * 60 * 1000, // 5 minutes
     })
 }
 
@@ -102,7 +102,8 @@ export function useReportsQuery(filters?: ReportFilters) {
             return reportsCache.store(queryClient, data)
         },
         // ENTERPRISE: CONTINUITY IS KING
-        placeholderData: (previousData) => previousData,
+        // ✅ MEDIUM #9 FIX: Guarantee valid return (never undefined)
+        placeholderData: (previousData) => previousData ?? [],
     })
 }
 
