@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useReportDetailQuery } from '../../hooks/queries/useReportsQuery';
-import { MiniMapPreview } from '../location/MiniMapPreview';
+import { LazyMiniMapPreview as MiniMapPreview } from '../location/LazyMiniMapPreview';
 
 import { Badge } from '../ui/badge';
 import { ChevronDown, ChevronUp, MapPin, Calendar, Info } from 'lucide-react';

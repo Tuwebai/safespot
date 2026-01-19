@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Image as ImageIcon, MapPin } from 'lucide-react'
 import { OptimizedImage } from '@/components/OptimizedImage'
-import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
+import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/LazyReportMapFallback'
 
 // ============================================
 // TYPES

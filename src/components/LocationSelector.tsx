@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { MapPin, Search, AlertCircle, X } from 'lucide-react'
 import { useLocationSearch } from '@/hooks/useLocationSearch'
-import { MiniMapPreview } from './location/MiniMapPreview'
+import { LazyMiniMapPreview as MiniMapPreview } from './location/LazyMiniMapPreview'
 
 export interface LocationData {
   location_name: string

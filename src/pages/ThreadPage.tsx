@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useCallback } from 'react'
+import { useMemo, useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,10 @@ import { useReportDetail } from '@/hooks/useReportDetail'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
-
-import { ReplyModal } from '@/components/comments/ReplyModal'
 import { useConfirm } from '@/components/ui/confirmation-manager'
+
+// ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
+const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
 
 export function ThreadPage() {
 
@@ -263,16 +264,20 @@ export function ThreadPage() {
                     </div>
                 </div>
 
-                {/* Reply Modal (Twitter-style) */}
-                <ReplyModal
-                    isOpen={!!replyingTo}
-                    onClose={cancelReply}
-                    parentComment={parentCommentToReply}
-                    replyText={replyText}
-                    onReplyTextChange={setReplyText}
-                    onReplySubmit={submitReply}
-                    submitting={submitting === 'reply'}
-                />
+                {/* Reply Modal (Twitter-style) - Lazy loaded */}
+                {replyingTo && (
+                    <Suspense fallback={null}>
+                        <ReplyModal
+                            isOpen={!!replyingTo}
+                            onClose={cancelReply}
+                            parentComment={parentCommentToReply}
+                            replyText={replyText}
+                            onReplyTextChange={setReplyText}
+                            onReplySubmit={submitReply}
+                            submitting={submitting === 'reply'}
+                        />
+                    </Suspense>
+                )}
             </div>
         </ErrorBoundary>
     )

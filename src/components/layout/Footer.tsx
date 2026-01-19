@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom'
 import { MapPin, Github, Twitter, Mail, ShieldCheck, Heart } from 'lucide-react'
-import { useState } from 'react'
-import { ContactModal } from '@/components/contact/ContactModal'
+import { useState, lazy, Suspense } from 'react'
 import { StatusIndicator } from './StatusIndicator'
 import { useNavigate } from 'react-router-dom'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { InstallAppButton } from './InstallAppButton'
+
+// ✅ PERFORMANCE FIX: Lazy load ContactModal (5 KB gzip) - Footer is on ALL pages
+const ContactModal = lazy(() => import('@/components/contact/ContactModal').then(m => ({ default: m.ContactModal })))
 
 export function Footer() {
   const [isContactOpen, setIsContactOpen] = useState(false);
@@ -22,7 +24,12 @@ export function Footer() {
 
   return (
     <>
-      <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
+      {/* ContactModal - Lazy loaded */}
+      {isContactOpen && (
+        <Suspense fallback={null}>
+          <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Enterprise Gradient Border Top */}
       <footer className="relative bg-dark-card pt-16 pb-8 border-t border-dark-border z-10">

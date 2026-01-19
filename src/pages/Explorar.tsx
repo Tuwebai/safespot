@@ -11,6 +11,7 @@ import { List } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EmptyState } from '@/components/ui/empty-state'
 import { reportsCache } from '@/lib/cache-helpers'
+import { initializeLeafletIcons } from '@/lib/leaflet-setup'
 
 // CRITICAL: Lazy load map component to prevent SSR/build-time execution of Leaflet
 const SafeSpotMap = lazy(() => import('@/components/map/SafeSpotMap').then(m => ({ default: m.SafeSpotMap })))
@@ -37,6 +38,12 @@ export function Explorar() {
   const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
 
   const [boundsSearchEnabled, setBoundsSearchEnabled] = useState(false)
+
+  // ✅ PERFORMANCE FIX: Initialize Leaflet icons only when map component loads
+  // This prevents loading Leaflet in the main bundle
+  useEffect(() => {
+    initializeLeafletIcons()
+  }, [])
 
   // Sync URL -> Store
   useEffect(() => {

@@ -6,10 +6,9 @@ import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { ConfirmationProvider } from '@/components/ui/confirmation-manager'
 import { lazyRetry } from '@/lib/lazyRetry'
 import { useQueryClient } from '@tanstack/react-query'
-import { initializeLeafletIcons } from '@/lib/leaflet-setup'
 
-// CRITICAL: Initialize Leaflet icons globally to prevent "iconUrl not set" errors
-initializeLeafletIcons();
+// ✅ PERFORMANCE FIX: Leaflet icons initialization moved to Explorar.tsx
+// This prevents loading Leaflet library (~200KB) in the main bundle
 
 
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
@@ -17,8 +16,9 @@ const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home
 const Reportes = lazyRetry(() => import('@/pages/Reportes').then(m => ({ default: m.Reportes })), 'Reportes')
 const CrearReporte = lazyRetry(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })), 'CrearReporte')
 const DetalleReporte = lazyRetry(() => import('@/pages/DetalleReporte').then(m => ({ default: m.DetalleReporte })), 'DetalleReporte')
-// Explorar convertido a import estático para corregir error de Hooks/Context
-import { Explorar } from '@/pages/Explorar'
+// ✅ PERFORMANCE FIX: Lazy load Explorar to avoid loading Leaflet (200KB) in main bundle
+// Leaflet icons are initialized inside Explorar.tsx when the map component loads
+const Explorar = lazyRetry(() => import('@/pages/Explorar').then(m => ({ default: m.Explorar })), 'Explorar')
 const Gamificacion = lazyRetry(() => import('@/pages/Gamificacion').then(m => ({ default: m.Gamificacion })), 'Gamificacion')
 const Perfil = lazyRetry(() => import('@/pages/Perfil').then(m => ({ default: m.Perfil })), 'Perfil')
 const SettingsPage = lazyRetry(() => import('@/pages/profile/SettingsPage').then(m => ({ default: m.SettingsPage })), 'SettingsPage')

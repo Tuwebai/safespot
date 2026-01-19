@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { usersApi } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -26,8 +26,10 @@ import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { PencilIcon } from 'lucide-react'
 import { queryKeys } from '@/lib/queryKeys'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
-import { LoginModal } from '@/components/auth/LoginModal'
 import { useAuthStore } from '@/store/authStore'
+
+// ✅ PERFORMANCE FIX: Lazy load LoginModal (7 KB gzip) - only loads when user clicks "Guardar Progreso"
+const LoginModal = lazy(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })))
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 
@@ -543,11 +545,16 @@ export function Perfil() {
         }}
       />
 
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        initialMode="register"
-      />
+      {/* LoginModal - Lazy loaded */}
+      {isLoginModalOpen && (
+        <Suspense fallback={null}>
+          <LoginModal
+            isOpen={isLoginModalOpen}
+            onClose={() => setIsLoginModalOpen(false)}
+            initialMode="register"
+          />
+        </Suspense>
+      )}
 
       <ChangePasswordModal
         isOpen={isChangePasswordModalOpen}

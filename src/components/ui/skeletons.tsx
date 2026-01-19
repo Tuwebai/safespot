@@ -224,3 +224,20 @@ export function RichTextEditorSkeleton() {
         </div>
     )
 }
+
+/**
+ * Map skeleton for lazy-loaded map components.
+ * Shows while Leaflet chunk is downloading.
+ */
+export function MapSkeleton({ className }: { className?: string }) {
+    return (
+        <div className={`w-full h-full bg-muted/20 rounded-lg relative overflow-hidden ${className || ''}`}>
+            <div className={`absolute inset-0 ${shimmerClass}`} />
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-xs text-muted-foreground bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-border">
+                    Cargando mapa...
+                </div>
+            </div>
+        </div>
+    )
+}

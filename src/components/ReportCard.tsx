@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { MapPin, Home, Briefcase, GitBranch, MessageCircle, Flag } from 'lucide-react'
 import { OptimizedImage } from '@/components/OptimizedImage'
-import { ReportMapFallback } from '@/components/ui/ReportMapFallback'
+import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/LazyReportMapFallback'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { AnimatedCard } from '@/components/ui/animated'
 import { SmartLink } from '@/components/SmartLink'

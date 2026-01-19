@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
@@ -10,12 +10,14 @@ import { MessageCircle } from 'lucide-react'
 import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
-import { ReplyModal } from '@/components/comments/ReplyModal'
 import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
 import { useConfirm } from '@/components/ui/confirmation-manager'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
+
+// ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
+const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
 
 // ============================================
 // TYPES
@@ -435,17 +437,21 @@ export function CommentsSection({
                 submitting={isSubmittingSighting}
             />
 
-            {/* Reply Modal (Twitter-style) */}
-            <ReplyModal
-                isOpen={!!replyingTo}
-                onClose={cancelReply}
-                parentComment={parentCommentToReply}
-                replyText={replyText}
-                onReplyTextChange={setReplyText}
-                onReplySubmit={submitReply}
-                submitting={submitting === 'reply'}
-                prioritizedUsers={participants}
-            />
+            {/* Reply Modal (Twitter-style) - Lazy loaded */}
+            {replyingTo && (
+                <Suspense fallback={null}>
+                    <ReplyModal
+                        isOpen={!!replyingTo}
+                        onClose={cancelReply}
+                        parentComment={parentCommentToReply}
+                        replyText={replyText}
+                        onReplyTextChange={setReplyText}
+                        onReplySubmit={submitReply}
+                        submitting={submitting === 'reply'}
+                        prioritizedUsers={participants}
+                    />
+                </Suspense>
+            )}
         </div>
     )
 }
