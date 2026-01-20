@@ -2,18 +2,66 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
+import fs from 'node:fs'
+import path from 'node:path'
 import packageJson from './package.json'
+
+// Generate a unique build hash (shortened timestamp + version or git hash if available)
+const buildHash = Math.random().toString(36).substring(2, 9);
+const buildTime = new Date().toISOString();
 
 // https://vitejs.dev/config/
 export default defineConfig({
   define: {
+    // 1. STANDARD IMPORTS
     'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
-    // CRITICAL: Inject unique version per build (SemVer + Timestamp)
-    // This guarantees that every new build is treated as a fresh SW version
-    '__SW_VERSION__': JSON.stringify(`${packageJson.version}_${Date.now()}`),
+
+    // 2. ENTERPRISE VERSIONING (SSOT)
+    'import.meta.env.APP_VERSION': JSON.stringify(packageJson.version),
+    'import.meta.env.APP_BUILD_HASH': JSON.stringify(buildHash),
+    'import.meta.env.APP_BUILD_TIME': JSON.stringify(buildTime),
+
+    // 3. SERVICE WORKER INJECTION
+    '__SW_VERSION__': JSON.stringify(`${packageJson.version}_${buildHash}`),
   },
   plugins: [
     react(),
+    {
+      name: 'generate-version-json',
+      // Serve virtual version.json in DEV
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/version.json' || req.url?.startsWith('/version.json?')) {
+            const versionInfo = {
+              version: packageJson.version,
+              buildHash: 'dev_' + Date.now().toString().slice(-6),
+              buildTime: new Date().toISOString(),
+              severity: 'minor' // Default dev severity
+            };
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(versionInfo));
+            return;
+          }
+          next();
+        });
+      },
+      closeBundle() {
+        // Generate version.json for client-side polling
+        const versionInfo = {
+          version: packageJson.version,
+          buildHash: buildHash,
+          buildTime: buildTime,
+          severity: process.env.VITE_APP_VERSION_SEVERITY || 'minor'
+        };
+        const outputPath = path.resolve(__dirname, 'dist', 'version.json');
+
+        // Ensure dist exists (it should after build)
+        if (fs.existsSync(path.resolve(__dirname, 'dist'))) {
+          fs.writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2));
+          console.log(`[Vite] Generated version.json: v${versionInfo.version} (${versionInfo.buildHash})`);
+        }
+      }
+    },
     VitePWA({
       strategies: 'injectManifest', // Use custom SW
       srcDir: 'src',

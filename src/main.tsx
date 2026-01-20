@@ -7,6 +7,14 @@ import './index.css'
 import { BootstrapErrorBoundary } from './components/BootstrapErrorBoundary'
 import { IdentityInitializer } from './components/IdentityInitializer'
 import { HelmetProvider } from 'react-helmet-async'
+import { AppVersion } from './lib/version'
+
+// ✅ ENTERPRISE LOGGING: Identity
+console.info(
+  `%cSafeSpot v${AppVersion.version}%c\nBuild: ${AppVersion.buildHash} | ${AppVersion.buildTime}`,
+  'background: #00ff88; color: #000; padding: 4px; font-weight: bold; border-radius: 4px;',
+  'color: #94a3b8; margin-left: 5px;'
+);
 
 // ============================================
 // ENTERPRISE SECURE BOOT (CACHE HYGIENE)

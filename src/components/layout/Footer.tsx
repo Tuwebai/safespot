@@ -5,6 +5,7 @@ import { StatusIndicator } from './StatusIndicator'
 import { useNavigate } from 'react-router-dom'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { InstallAppButton } from './InstallAppButton'
+import { AppVersion, APP_VERSION_DISPLAY } from '@/lib/version';
 
 // ✅ PERFORMANCE FIX: Lazy load ContactModal (5 KB gzip) - Footer is on ALL pages
 const ContactModal = lazy(() => import('@/components/contact/ContactModal').then(m => ({ default: m.ContactModal })))
@@ -124,9 +125,9 @@ export function Footer() {
             <div className="flex items-center gap-2">
               <span>&copy; {currentYear} SafeSpot Platform</span>
               <span className="hidden md:inline mx-2">&middot;</span>
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-xs">
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-xs font-mono" title={`Build Time: ${AppVersion.buildTime}`}>
                 <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                <span>v2.4.0-pro</span>
+                <span>{APP_VERSION_DISPLAY}</span>
               </span>
             </div>
 

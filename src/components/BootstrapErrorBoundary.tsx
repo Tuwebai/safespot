@@ -41,6 +41,29 @@ export class BootstrapErrorBoundary extends Component<Props, State> {
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
         console.error('[BootstrapErrorBoundary] Catastrophic error:', error, errorInfo);
 
+        // ✅ ENTERPRISE FIX: Auto-Recover from ChunkLoadError
+        // This happens when a new version is deployed and the old lazy-loaded chunks are 404.
+        const isChunkError = error.message && (
+            error.message.includes('ChunkLoadError') ||
+            error.message.includes('Failed to fetch dynamically imported module') ||
+            error.message.includes('Importing a module script failed')
+        );
+
+        if (isChunkError) {
+            const RELOAD_KEY = '__app_chunk_reload_count';
+            const MAX_RELOADS = 1;
+
+            const reloadCount = parseInt(sessionStorage.getItem(RELOAD_KEY) || '0', 10);
+
+            if (reloadCount < MAX_RELOADS) {
+                console.warn('[BootstrapErrorBoundary] ChunkLoadError detected. Attempting auto-recovery...');
+                sessionStorage.setItem(RELOAD_KEY, (reloadCount + 1).toString());
+                // Hard reload to fetch fresh index.html and new chunks
+                window.location.reload();
+                return;
+            }
+        }
+
         this.setState({
             error,
             errorInfo,

@@ -1,9 +1,9 @@
-
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/toast';
 import { playNotificationSound } from '../lib/sound';
+import { useAppVersionGuard } from '@/hooks/useAppVersionGuard';
 
 /**
  * ServiceWorkerController
@@ -15,8 +15,11 @@ import { playNotificationSound } from '../lib/sound';
  */
 export function ServiceWorkerController() {
     const navigate = useNavigate();
-    const queryClient = useQueryClient();  // ✅ For SW update handling
+    const queryClient = useQueryClient();
     const toast = useToast();
+
+    // ✅ ENTERPRISE: Active Version Guard
+    useAppVersionGuard();
 
     // ✅ ENTERPRISE: Auth Sync to Service Worker (IDB)
     useEffect(() => {
@@ -29,7 +32,6 @@ export function ServiceWorkerController() {
                     const token = parsed.state?.token;
 
                     if (token) {
-                        console.log('[ServiceWorkerController] Syncing Auth Token to SW');
                         navigator.serviceWorker.controller.postMessage({
                             type: 'SYNC_AUTH',
                             token: token
@@ -72,22 +74,11 @@ export function ServiceWorkerController() {
                 playNotificationSound();
 
                 // 2. Check if we are already in the chat
-                // URL usually looks like /mensajes/:roomId
-                // pathname looks like /mensajes/:roomId
                 const currentPath = window.location.pathname;
 
                 // If we are NOT in the target chat, show toast
                 if (targetUrl && currentPath !== targetUrl) {
-                    // Adapter for Custom Toast System (Simple API)
-                    // Since we cannot pass actions/title, we append the intent to the message
                     toast.info(`💬 ${payload.title}: ${payload.body}`, 4000);
-
-                    // We can't attach an onClick to the simple toast, 
-                    // but the user can click the notification in the system tray if background.
-                    // For in-app, we rely on the sound and visual cue.
-                    // Ideally, we upgrade the Toast system later to support actions.
-                } else {
-                    console.log('[SW-Controller] Muted toast (already in chat)');
                 }
             }
 
@@ -100,18 +91,13 @@ export function ServiceWorkerController() {
             if (type === 'SW_UPDATED') {
                 console.log('[ServiceWorkerController] SW updated, invalidating queries');
                 // ✅ ENTERPRISE: Soft Update UX - Notify user
-                toast.info('Nueva versión disponible. Por favor recarga la página para aplicar cambios.', Infinity);
+                toast.info('Nueva versión disponible. Por favor recarga la página para aplicar cambios.', 10000);
                 queryClient.invalidateQueries();  // Refetch all with new SW
             }
 
             // ✅ ENTERPRISE RULE: INVALID PAYLOAD FALLBACK
-            // If SW detects malformed Push (e.g. missing roomId in mark-read),
-            // it commands us to reconcile state manually.
             if (type === 'INVALID_PAYLOAD_DETECTED') {
                 console.error('[ServiceWorkerController] ⚠️ Malformed Push detected, forcing State Reconciliation', event.data);
-
-                // Force global re-fetch to ensure UI is consistent
-                // Use a small debounce/delay if needed, but here instant is safer
                 queryClient.invalidateQueries();
             }
 
@@ -127,7 +113,7 @@ export function ServiceWorkerController() {
         return () => {
             navigator.serviceWorker.removeEventListener('message', handleMessage);
         };
-    }, [navigate]);
+    }, [navigate, toast, queryClient]);
 
     return null;
 }

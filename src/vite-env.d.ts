@@ -2,7 +2,10 @@
 
 
 interface ImportMetaEnv {
-    readonly PACKAGE_VERSION: string
+    readonly PACKAGE_VERSION: string;
+    readonly APP_VERSION: string;
+    readonly APP_BUILD_HASH: string;
+    readonly APP_BUILD_TIME: string;
 }
 
 interface ImportMeta {
