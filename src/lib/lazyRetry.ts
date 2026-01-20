@@ -1,16 +1,16 @@
-import { lazy, ComponentType } from 'react';
-
 /**
- * Enterprise Lazy Import with Smart Retry Strategy
+ * Enterprise Lazy Import with Deterministic ChunkLoadError Recovery
  * 
  * Objectives:
- * 1. Eliminate transient 500/Network errors via exponential backoff.
- * 2. Handle "ChunkLoadError" (Version Mismatch) by refreshing the page automatically (once).
- * 3. Provide clear logging for debugging without spamming Sentry.
+ * 1. If chunk fails to load (version mismatch), force hard reload immediately
+ * 2. NO sessionStorage (prevents loops if reload fails)
+ * 3. NO retries for ChunkLoadError (if chunk doesn't exist, retrying is pointless)
+ * 4. Use location.replace() for better history handling
  */
 
-// Helper: Wait promise
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+import { lazy, ComponentType } from 'react';
+import * as Sentry from '@sentry/react';
+import { AppVersion } from './version';
 
 // Helper: Check if error is likely a version mismatch (404 on chunk)
 const isChunkLoadError = (error: any): boolean => {
@@ -18,58 +18,84 @@ const isChunkLoadError = (error: any): boolean => {
     return (
         error?.name === 'ChunkLoadError' ||
         message.includes('Loading chunk') ||
-        message.includes('undefined') ||
-        message.includes('missing') ||
-        message.includes('Failed to fetch')
+        message.includes('Failed to fetch dynamically imported module')
     );
 };
 
 export function lazyRetry<T extends ComponentType<any>>(
     factory: () => Promise<{ default: T }>,
-    name: string = 'Component',
-    retries = 3,
-    baseDelay = 500
+    name: string = 'Component'
 ) {
     return lazy(async () => {
-        let lastError: any;
+        try {
+            return await factory();
+        } catch (error: any) {
+            // CRITICAL: ChunkLoadError means HTML is out of sync with server chunks
+            // Only solution: hard reload to get fresh HTML
+            if (isChunkLoadError(error)) {
+                console.error(
+                    `[LazyRetry] ChunkLoadError for ${name}. HTML/chunks mismatch detected. Forcing hard reload...`,
+                    error
+                );
 
-        for (let i = 0; i < retries; i++) {
-            try {
-                // Attempt load
-                return await factory();
-            } catch (error: any) {
-                lastError = error;
+                // ? OBSERVABILITY: Track chunk load error recovery
 
-                // CRITICAL: If it's a version mismatch (prod deployment), 
-                // force reload immediately on first failure to sync with new assets.
-                // We use sessionStorage to prevent infinite loops.
-                if (isChunkLoadError(error)) {
-                    const storageKey = `retry_reload_${name}`;
-                    const hasReloaded = sessionStorage.getItem(storageKey);
 
-                    if (!hasReloaded) {
-                        console.warn(`[LazyRetry] Version mismatch detected for ${name}. Reloading...`);
-                        sessionStorage.setItem(storageKey, 'true');
-                        window.location.reload();
-                        return new Promise(() => { }); // Never resolve, wait for reload
-                    } else {
-                        // Cleanup for next successful session
-                        sessionStorage.removeItem(storageKey);
-                    }
+                if (AppVersion.environment === 'production') {
+
+
+                    Sentry.captureException(error, {
+
+
+                        level: 'warning',
+
+
+                        tags: {
+
+
+                            recovery: 'auto_reload',
+
+
+                            chunkName: name
+
+
+                        },
+
+
+                        extra: {
+
+
+                            deployId: AppVersion.deployId,
+
+
+                            userAgent: navigator.userAgent
+
+
+                        }
+
+
+                    });
+
+
                 }
 
-                // If it's not a hard chunk error (e.g. 500 or timeout), wait and retry
-                const delay = baseDelay * Math.pow(2, i); // 500, 1000, 2000
-                console.warn(`[LazyRetry] Connection failed for ${name}. Retrying in ${delay}ms... (${retries - 1 - i} attempts left)`);
-                await wait(delay);
+
+                
+
+
+                // Give 100ms for error to be logged/sent to Sentry
+                setTimeout(() => {
+                    // ENTERPRISE: Use location.replace() to prevent back button issues
+                    window.location.replace(window.location.href);
+                }, 100);
+
+                // Suspend indefinitely (reload will interrupt)
+                return new Promise<{ default: T }>(() => { });
             }
+
+            // Other errors: propagate to ErrorBoundary
+            console.error(`[LazyRetry] Failed to load ${name}:`, error);
+            throw error;
         }
-
-        // Final failure handling
-        console.error(`[LazyRetry] FATAL: Failed to load ${name} after ${retries} attempts.`, lastError);
-
-        // Propagate to ErrorBoundary
-        throw lastError;
     });
 }
-

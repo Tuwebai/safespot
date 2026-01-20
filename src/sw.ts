@@ -2,7 +2,7 @@
 // @ts-ignore - Silence Workbox logs
 self.__WB_DISABLE_DEV_LOGS = true;
 
-import { cleanupOutdatedCaches, precacheAndRoute, matchPrecache } from 'workbox-precaching';
+import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
@@ -67,10 +67,10 @@ console.log(`[SW] Initializing Version: ${SW_VERSION}`);
 // SW LIFECYCLE
 // ============================================
 
-self.addEventListener('install', (event) => {
-    console.log(`[SW] v${SW_VERSION} Installed`);
-    // Force immediate activation
-    event.waitUntil(self.skipWaiting());
+self.addEventListener('install', (_event) => {
+    console.log(`[SW] v${SW_VERSION} Installing...`);
+    // ❌ NO skipWaiting() here - client controls activation
+    // This prevents race conditions between install and activate
 });
 
 self.addEventListener('activate', (event) => {
@@ -164,28 +164,31 @@ registerRoute(
 );
 
 // 4. NAVIGATION: NetworkFirst -> Fallback Index
-// CRITICAL: This is where "Infinite Skeleton" usually lives if Index is stale.
+// CRITICAL FIX: NEVER cache HTML - always fetch from network
+// This prevents users from being trapped with stale HTML referencing deleted chunks
 const navigationHandler = async (params: { request: Request }) => {
     try {
-        // Try Network with strict timeout
-        // We want the SERVER's version of the app shell (likely heavily cached by CDN, but validated)
-        const response = await fetch(params.request);
+        // ✅ ENTERPRISE FIX: Force bypass browser cache
+        const response = await fetch(params.request, {
+            cache: 'no-store', // Bypass browser HTTP cache
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+        });
+
         if (response && response.ok) {
             return response;
         }
     } catch (error) {
         // Network failed (Offline)
+        console.warn('[SW] Navigation request failed, serving offline page:', error);
     }
 
-    // Fallback: Cache
-    // We only serve cached index.html if we are truly offline or network failed
-    const cachedResponse = await matchPrecache('/index.html');
-    if (cachedResponse) return cachedResponse;
-
-    // Last Resort: OFFLINE PAGE
-    // Instead of a broken shell, we return a minimal HTML saying "Offline"
+    // Fallback ONLY if truly offline
+    // We prefer to show offline page rather than stale HTML
     return new Response(
-        '<!DOCTYPE html><html><body style="background:#020617;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><h1>Sin Conexión</h1><p>Verifica tu internet.</p></body></html>',
+        '<!DOCTYPE html><html><body style="background:#020617;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><h1>Sin Conexión</h1><p>Verifica tu internet y recarga la página.</p></body></html>',
         { headers: { 'Content-Type': 'text/html' } }
     );
 };

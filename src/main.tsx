@@ -1,17 +1,17 @@
-import React from 'react'
+import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from './lib/queryClient'
 import App from './App.tsx'
 import './index.css'
-import { BootstrapErrorBoundary } from './components/BootstrapErrorBoundary'
-import { IdentityInitializer } from './components/IdentityInitializer'
-import { HelmetProvider } from 'react-helmet-async'
+
+// ✅ ENTERPRISE: Sentry (Production Only)
+import { initSentry } from './lib/sentry'
+initSentry()
+
 import { AppVersion } from './lib/version'
 
 // ✅ ENTERPRISE LOGGING: Identity
 console.info(
-  `%cSafeSpot v${AppVersion.version}%c\nBuild: ${AppVersion.buildHash} | ${AppVersion.buildTime}`,
+  `%cSafeSpot v${AppVersion.appVersion}%c\nDeploy: ${AppVersion.deployId.substring(0, 19)} | Build: ${AppVersion.buildHash}`,
   'background: #00ff88; color: #000; padding: 4px; font-weight: bold; border-radius: 4px;',
   'color: #94a3b8; margin-left: 5px;'
 );
@@ -19,171 +19,89 @@ console.info(
 // ============================================
 // ENTERPRISE SECURE BOOT (CACHE HYGIENE)
 // ============================================
+// CRITICAL: This runs BEFORE React mounts to ensure clean state
+// Prevents stale data from corrupting the app on schema changes
 
-// Aumentar esta versión fuerza un "Hard Reset" en todos los clientes
-// Útil para romper loops infinitos, estructuras de datos corruptas o bugs de skeleton.
-const CACHE_SCHEMA_VERSION = 'safespot_v2_secure_boot_1.0';
+const CACHE_SCHEMA_VERSION = '2.0'; // Increment to force global cache clear
+const CACHE_VERSION_KEY = 'ss_cache_schema_version';
 
-(function secureBoot() {
-  try {
-    const currentVersion = localStorage.getItem('CACHE_SCHEMA_VERSION');
+(async function secureBoot() {
+  const storedVersion = localStorage.getItem(CACHE_VERSION_KEY);
 
-    if (currentVersion !== CACHE_SCHEMA_VERSION) {
-      console.warn(`[SecureBoot] ⚠️ Detectado cambio de versión (${currentVersion} -> ${CACHE_SCHEMA_VERSION}). Ejecutando limpieza profunda...`);
+  if (storedVersion !== CACHE_SCHEMA_VERSION) {
+    console.warn(
+      `[SecureBoot] Schema mismatch detected: ${storedVersion} → ${CACHE_SCHEMA_VERSION}. Clearing all caches...`
+    );
 
-      // ✅ ENTERPRISE FIX #3: PRESERVAR identidad ANTES de limpiar
-      // BUG ANTERIOR: localStorage.clear() borraba TODO, incluyendo identidad
-      // CONSECUENCIA: Usuarios perdían acceso a sus propios reportes (anonymous_id cambiaba)
-      // FIX: Preservar claves críticas selectivamente
-
-      const keysToPreserve = [
-        'safespot_anonymous_id',  // Identidad principal
-        'ss_identity_backup',      // Backup de identidad
-      ];
-
-      // 1. Backup de valores críticos
-      const preserved: Record<string, string | null> = {};
-      keysToPreserve.forEach(key => {
-        preserved[key] = localStorage.getItem(key);
-      });
-
-      // 2. Limpieza completa
-      localStorage.clear();
-
-      // 3. RESTAURAR valores críticos
-      Object.entries(preserved).forEach(([key, value]) => {
-        if (value) {
-          localStorage.setItem(key, value);
-          console.log(`[SecureBoot] ✅ ${key} preservado`);
-        }
-      });
-
-      // 4. SessionStorage se limpia (es temporal por diseño)
-      sessionStorage.clear();
-
-      // 5. Marcar nueva versión
-      localStorage.setItem('CACHE_SCHEMA_VERSION', CACHE_SCHEMA_VERSION);
-
-      // 6. Purgar Service Workers Antiguos (Zombie Killer)
+    try {
+      // 1. Unregister ALL Service Workers (nuclear option)
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(registrations => {
-          for (const registration of registrations) {
-            console.log('[SecureBoot] 💀 Desregistrando SW zombie:', registration);
-            registration.unregister();
-          }
-          // Forzar recarga solo si había SWs para eliminar
-          if (registrations.length > 0) {
-            console.log('[SecureBoot] 🔄 Recargando para aplicar cambios limpios...');
-            window.location.reload();
-          }
-        });
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+        console.log('[SecureBoot] ✅ Unregistered all Service Workers');
       }
 
-      console.log('[SecureBoot] ✅ Limpieza completada. Sistema listo.');
-    } else {
-      console.log(`[SecureBoot] ✅ Sistema verificado (v: ${CACHE_SCHEMA_VERSION})`);
+      // 2. Clear ALL browser caches (Cache API)
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+        console.log('[SecureBoot] ✅ Cleared all Cache API entries');
+      }
+
+      // 3. Clear localStorage (except auth)
+      const authBackup = localStorage.getItem('auth-storage');
+      localStorage.clear();
+      if (authBackup) {
+        localStorage.setItem('auth-storage', authBackup);
+      }
+      console.log('[SecureBoot] ✅ Cleared localStorage (auth preserved)');
+
+      // 4. Clear sessionStorage
+      sessionStorage.clear();
+      console.log('[SecureBoot] ✅ Cleared sessionStorage');
+
+      // 5. Mark new schema version
+      localStorage.setItem(CACHE_VERSION_KEY, CACHE_SCHEMA_VERSION);
+
+      // 6. Force reload to ensure fresh state
+      console.log('[SecureBoot] 🔄 Reloading to apply clean state...');
+      window.location.reload();
+      return; // Prevent React mount
+    } catch (error) {
+      console.error('[SecureBoot] ❌ Error during cache clear:', error);
+      // Continue anyway (fail-safe)
     }
-  } catch (e) {
-    console.error('[SecureBoot] ❌ Error crítico durante el inicio:', e);
-    // Fallback: Si falla el boot, intentamos seguir, pero logueamos fuerte.
+  } else {
+    console.log(`[SecureBoot] ✅ Schema version OK (${CACHE_SCHEMA_VERSION})`);
   }
 })();
 
-// Enterprise Protocol: Observability
-
-// Enterprise Protocol: Observability
-import { initSentry } from './lib/sentry'
-// Initialize ASAP
-initSentry();
-
 // ============================================
-// SERVICE WORKER REGISTRATION (NON-BLOCKING)
+// REACT MOUNT
 // ============================================
 
-// Register Service Worker OUTSIDE of async block to avoid timing issues
-// This runs independently of React rendering
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(registration => {
-        console.log('[SW] Registered:', registration);
-
-        // CRITICAL FIX: Force update check on every load
-        // This ensures new SW is detected immediately after deploy
-        registration.update();
-
-        // Check for updates every 60 seconds
-        // Ensures users get updates within 1 minute of deploy
-        setInterval(() => {
-          registration.update();
-        }, 60 * 1000);
-      })
-      .catch(error => {
-        console.warn('[SW] Registration failed:', error);
-        // Non-critical - app works without SW
-      });
-  });
-
-  // CRITICAL FIX: Handle Controller Change (Standard SW lifecycle)
-  // This event fires when the new SW takes control (clients.claim())
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    console.log('[SW] Controller changed. Reloading...');
-
-    // PROTECTION: Prevent infinite loops if SW keeps claiming controlling
-    if (sessionStorage.getItem('sw_refreshed_ts')) {
-      const lastRefresh = parseInt(sessionStorage.getItem('sw_refreshed_ts') || '0');
-      if (Date.now() - lastRefresh < 10000) {
-        console.warn('[SW] Loop detected. Aborting reload.');
-        return;
-      }
-    }
-
-    sessionStorage.setItem('sw_refreshed_ts', String(Date.now()));
-    window.location.reload();
-  });
-
-  // Keep FORCE_RELOAD as backup signal
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'FORCE_RELOAD') {
-      // logic handled by controllerchange usually, but keeping as fallback
-      // merely logging here to trace
-      console.log('[SW] Received FORCE_RELOAD signal');
-    }
-  });
-}
-
-
-// ============================================
-// REACT MOUNT (SYNCHRONOUS - PHASE 2)
-// ============================================
-
-/**
- * ENTERPRISE FIX: Synchronous Bootstrap
- * 
- * React mounts IMMEDIATELY without waiting for any async operations.
- * Identity initialization happens in parallel via IdentityInitializer component.
- * 
- * This ensures the app ALWAYS renders, even if:
- * - IndexedDB is corrupted
- * - Storage is disabled
- * - Network is offline
- * - Any subsystem fails
- * 
- * Fail-open architecture: App mounts → Shows UI → Initializes in background
- */
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <BootstrapErrorBoundary>
-      <IdentityInitializer>
-        <HelmetProvider>
-          <QueryClientProvider client={queryClient}>
-            <App />
-          </QueryClientProvider>
-        </HelmetProvider>
-      </IdentityInitializer>
-    </BootstrapErrorBoundary>
-  </React.StrictMode>
-);
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
 
-console.log('[Bootstrap] ✅ React mounted synchronously');
+console.log('[Bootstrap] ✅ React mounted successfully');
 
+// ============================================
+// ENTERPRISE: UPDATE MANAGER
+// ============================================
+// Initialize UpdateManager AFTER React mount to avoid blocking render
+// UpdateManager handles silent deploy-based updates
+
+import { updateManager } from './lib/updateManager';
+
+if ('serviceWorker' in navigator) {
+  // Delay initialization to not block initial render
+  setTimeout(() => {
+    updateManager.init();
+    console.log('[Bootstrap] ✅ UpdateManager initialized');
+  }, 1000);
+}

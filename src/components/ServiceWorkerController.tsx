@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/toast';
 import { playNotificationSound } from '../lib/sound';
-import { useAppVersionGuard } from '@/hooks/useAppVersionGuard';
 
 /**
  * ServiceWorkerController
@@ -12,14 +11,13 @@ import { useAppVersionGuard } from '@/hooks/useAppVersionGuard';
  * and performs actions in the React context (Navigation, Toast, etc.)
  * 
  * @invariant This component MUST be rendered inside a <BrowserRouter>
+ * 
+ * NOTE: useAppVersionGuard removed - silent updates handled by UpdateManager
  */
 export function ServiceWorkerController() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const toast = useToast();
-
-    // ✅ ENTERPRISE: Active Version Guard
-    useAppVersionGuard();
 
     // ✅ ENTERPRISE: Auth Sync to Service Worker (IDB)
     useEffect(() => {

@@ -5,7 +5,9 @@ import { RouteLoadingFallback, DetailLoadingFallback } from '@/components/RouteL
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { ConfirmationProvider } from '@/components/ui/confirmation-manager'
 import { lazyRetry } from '@/lib/lazyRetry'
-import { useQueryClient } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from '@/lib/queryClient'
+import { HelmetProvider } from 'react-helmet-async'
 
 // ✅ PERFORMANCE FIX: Leaflet icons initialization moved to Explorar.tsx
 // This prevents loading Leaflet library (~200KB) in the main bundle
@@ -69,7 +71,6 @@ import { AuthRequiredModal } from '@/components/auth/AuthRequiredModal'
 function App() {
   // SafeSpot Google Client ID (Must be in .env, fallback for dev safety)
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PENDING_CLIENT_ID';
-  const queryClient = useQueryClient();
 
   // ✅ ENTERPRISE FIX: Reconnection Handler
   // Auto-refetch active queries when network returns from offline
@@ -86,113 +87,117 @@ function App() {
 
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [queryClient]);
+  }, []);
 
 
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <BrowserRouter
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        {/* ✅ ENTERPRISE: Auth Guard Provider envuelve toda la app */}
-        <AuthGuardProvider>
-          <ThemeProvider>
-            <ConfirmationProvider>
-              <FirstTimeOnboardingTheme />
-              <SEO />
-              <Layout>
-                <ChunkErrorBoundary>
-                  <Suspense fallback={<RouteLoadingFallback />}>
-                    <AuthToastListener />
-                    <Routes>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/reportes" element={<Reportes />} />
-                      <Route path="/crear-reporte" element={<CrearReporte />} />
-                      <Route
-                        path="/reporte/:id"
-                        element={
-                          <Suspense fallback={<DetailLoadingFallback />}>
-                            <DetalleReporte />
-                          </Suspense>
-                        }
-                      />
-                      <Route path="/explorar" element={<Explorar />} />
-                      <Route path="/gamificacion" element={<Gamificacion />} />
-                      <Route path="/perfil" element={<Perfil />} />
-                      <Route path="/reset-password" element={<ResetPassword />} />
-                      <Route path="/perfil/configuracion" element={<SettingsPage />} />
-                      <Route path="/favoritos" element={<MisFavoritos />} />
-                      <Route path="/comunidad" element={<Comunidad />} />
-                      <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
-                      <Route path="/notificaciones" element={<NotificationsPage />} />
-                      <Route path="/terminos" element={<TerminosPage />} />
-                      <Route path="/privacidad" element={<PrivacidadPage />} />
-                      <Route path="/como-funciona" element={<ComoFuncionaPage />} />
-                      <Route path="/faq" element={<FaqPage />} />
-                      <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
-                      <Route path="/login" element={<AuthPage />} />
-                      <Route path="/register" element={<AuthPage />} />
-                      <Route path="/sobre-nosotros" element={<AboutPage />} />
-                      <Route path="/usuario/:alias" element={<PublicProfile />} />
-                      <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
-                      <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
-                      <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
-                      <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
-                      <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
-                      <Route path="/mensajes/:roomId?" element={<Mensajes />} />
+    <HelmetProvider>
+      <QueryClientProvider client={queryClient}>
+        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
+            {/* ✅ ENTERPRISE: Auth Guard Provider envuelve toda la app */}
+            <AuthGuardProvider>
+              <ThemeProvider>
+                <ConfirmationProvider>
+                  <FirstTimeOnboardingTheme />
+                  <SEO />
+                  <Layout>
+                    <ChunkErrorBoundary>
+                      <Suspense fallback={<RouteLoadingFallback />}>
+                        <AuthToastListener />
+                        <Routes>
+                          <Route path="/" element={<Home />} />
+                          <Route path="/reportes" element={<Reportes />} />
+                          <Route path="/crear-reporte" element={<CrearReporte />} />
+                          <Route
+                            path="/reporte/:id"
+                            element={
+                              <Suspense fallback={<DetailLoadingFallback />}>
+                                <DetalleReporte />
+                              </Suspense>
+                            }
+                          />
+                          <Route path="/explorar" element={<Explorar />} />
+                          <Route path="/gamificacion" element={<Gamificacion />} />
+                          <Route path="/perfil" element={<Perfil />} />
+                          <Route path="/reset-password" element={<ResetPassword />} />
+                          <Route path="/perfil/configuracion" element={<SettingsPage />} />
+                          <Route path="/favoritos" element={<MisFavoritos />} />
+                          <Route path="/comunidad" element={<Comunidad />} />
+                          <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
+                          <Route path="/notificaciones" element={<NotificationsPage />} />
+                          <Route path="/terminos" element={<TerminosPage />} />
+                          <Route path="/privacidad" element={<PrivacidadPage />} />
+                          <Route path="/como-funciona" element={<ComoFuncionaPage />} />
+                          <Route path="/faq" element={<FaqPage />} />
+                          <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
+                          <Route path="/login" element={<AuthPage />} />
+                          <Route path="/register" element={<AuthPage />} />
+                          <Route path="/sobre-nosotros" element={<AboutPage />} />
+                          <Route path="/usuario/:alias" element={<PublicProfile />} />
+                          <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
+                          <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
+                          <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                          <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                          <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
+                          <Route path="/mensajes/:roomId?" element={<Mensajes />} />
 
-                      {/* Enterprise Security Pages */}
-                      <Route path="/status" element={<SystemStatus />} />
-                      <Route path="/cookies" element={<CookiesPolicy />} />
+                          {/* Enterprise Security Pages */}
+                          <Route path="/status" element={<SystemStatus />} />
+                          <Route path="/cookies" element={<CookiesPolicy />} />
 
-                      {/* --- ADMIN ROUTES (Protected by Guard) --- */}
-                      {/* 
+                          {/* --- ADMIN ROUTES (Protected by Guard) --- */}
+                          {/* 
                     Ghost Protocol Logic Update: 
                     User requested "/admin" to be the entry. 
                     - If unauthorized -> Show Login Screen (at /admin).
                     - If authorized -> Show Admin Layout (at /admin).
                     We will handle this in a wrapper component. 
                 */}
-                      <Route path="/admin/*" element={
-                        <AdminGuard>
-                          <AdminLayout />
-                        </AdminGuard>
-                      }>
-                        <Route index element={<AdminDashboard />} />
-                        <Route path="reports" element={<AdminReportsPage />} />
-                        <Route path="users" element={<UsersPage />} />
-                        <Route path="moderation" element={<AdminModerationPage />} />
-                        <Route path="tasks" element={<AdminTasksPage />} />
-                        {/* Add other admin sub-routes here */}
-                      </Route>
+                          <Route path="/admin/*" element={
+                            <AdminGuard>
+                              <AdminLayout />
+                            </AdminGuard>
+                          }>
+                            <Route index element={<AdminDashboard />} />
+                            <Route path="reports" element={<AdminReportsPage />} />
+                            <Route path="users" element={<UsersPage />} />
+                            <Route path="moderation" element={<AdminModerationPage />} />
+                            <Route path="tasks" element={<AdminTasksPage />} />
+                            {/* Add other admin sub-routes here */}
+                          </Route>
 
-                    </Routes>
-                  </Suspense>
-                </ChunkErrorBoundary >
-              </Layout >
-            </ConfirmationProvider>
-          </ThemeProvider >
+                        </Routes>
+                      </Suspense>
+                    </ChunkErrorBoundary >
+                  </Layout >
+                </ConfirmationProvider>
+              </ThemeProvider >
 
-          {/* ✅ ENTERPRISE: Modal global - UNA SOLA INSTANCIA */}
-          <GlobalAuthModal />
-        </AuthGuardProvider>
-      </BrowserRouter >
-    </GoogleOAuthProvider >
-  )
+              {/* ✅ ENTERPRISE: Modal global - UNA SOLA INSTANCIA */}
+              <GlobalAuthModal />
+            </AuthGuardProvider>
+          </BrowserRouter >
+        </GoogleOAuthProvider>
+      </QueryClientProvider>
+    </HelmetProvider>
+      )
 }
 
 
-/**
- * Helper component para montar el modal global
- * Lee el estado del AuthGuardContext
- */
-function GlobalAuthModal() {
-  const { isModalOpen, closeModal } = useAuthGuardContext();
-  return <AuthRequiredModal isOpen={isModalOpen} onClose={closeModal} />;
+      /**
+       * Helper component para montar el modal global
+       * Lee el estado del AuthGuardContext
+       */
+      function GlobalAuthModal() {
+  const {isModalOpen, closeModal} = useAuthGuardContext();
+      return <AuthRequiredModal isOpen={isModalOpen} onClose={closeModal} />;
 }
 
-export default App
+      export default App

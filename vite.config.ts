@@ -16,10 +16,10 @@ export default defineConfig({
     // 1. STANDARD IMPORTS
     'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
 
-    // 2. ENTERPRISE VERSIONING (SSOT)
+    // 2. ENTERPRISE VERSIONING (SSOT: deployId)
     'import.meta.env.APP_VERSION': JSON.stringify(packageJson.version),
     'import.meta.env.APP_BUILD_HASH': JSON.stringify(buildHash),
-    'import.meta.env.APP_BUILD_TIME': JSON.stringify(buildTime),
+    'import.meta.env.APP_DEPLOY_ID': JSON.stringify(buildTime), // ISO timestamp as deployId
 
     // 3. SERVICE WORKER INJECTION
     '__SW_VERSION__': JSON.stringify(`${packageJson.version}_${buildHash}`),
@@ -33,10 +33,10 @@ export default defineConfig({
         server.middlewares.use((req, res, next) => {
           if (req.url === '/version.json' || req.url?.startsWith('/version.json?')) {
             const versionInfo = {
-              version: packageJson.version,
-              buildHash: 'dev_' + Date.now().toString().slice(-6),
-              buildTime: new Date().toISOString(),
-              severity: 'minor' // Default dev severity
+              deployId: new Date().toISOString(),
+              appVersion: packageJson.version,
+              environment: 'development',
+              buildHash: 'dev_' + Date.now().toString().slice(-6)
             };
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(versionInfo));
@@ -46,19 +46,19 @@ export default defineConfig({
         });
       },
       closeBundle() {
-        // Generate version.json for client-side polling
+        // Generate version.json for client-side deploy tracking
         const versionInfo = {
-          version: packageJson.version,
-          buildHash: buildHash,
-          buildTime: buildTime,
-          severity: process.env.VITE_APP_VERSION_SEVERITY || 'minor'
+          deployId: buildTime, // ISO timestamp as SSOT
+          appVersion: packageJson.version,
+          environment: 'production',
+          buildHash: buildHash // Optional, for debugging
         };
         const outputPath = path.resolve(__dirname, 'dist', 'version.json');
 
         // Ensure dist exists (it should after build)
         if (fs.existsSync(path.resolve(__dirname, 'dist'))) {
           fs.writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2));
-          console.log(`[Vite] Generated version.json: v${versionInfo.version} (${versionInfo.buildHash})`);
+          console.log(`[Vite] Generated version.json: deployId=${versionInfo.deployId}`);
         }
       }
     },
