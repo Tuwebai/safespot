@@ -8,6 +8,7 @@ import { useAnonymousId } from '@/hooks/useAnonymousId'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 // 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
 import { resolveCreator } from '@/lib/auth/resolveCreator'
+import { getAvatarUrl } from '@/lib/avatar'
 
 /**
  * Fetch a single comment from the canonical cache
@@ -36,7 +37,8 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
 
             // Normalize and Store in SSOT
             if (Array.isArray(data)) {
-                commentsCache.store(queryClient, data)
+                // Should not happen with new Adapter but handling just in case logic changes
+                commentsCache.store(queryClient, data as any)
                 return data.map(c => c.id)
             } else {
                 commentsCache.store(queryClient, data.comments)
@@ -98,26 +100,33 @@ export function useCreateCommentMutation() {
             // 🔵 ROBUSTNESS FIX: Resolve creator correctly
             const creator = resolveCreator();
 
-            // Create temporary optimistic comment
+            // Create temporary optimistic comment - STRICT MODEL 0ms
             const optimisticComment: Comment = {
                 id: `temp-${Date.now()}`,
                 report_id: newCommentData.report_id,
                 content: newCommentData.content,
-                anonymous_id: creator.creator_id || '', // 🔵 FIX: Use correct creator
                 upvotes_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                parent_id: newCommentData.parent_id,
+                is_thread: newCommentData.is_thread,
+
+                // ✅ STRICT SSOT IDENTITY
+                author: {
+                    id: creator.creator_id || '',
+                    alias: creator.displayAlias || 'Anónimo',
+                    avatarUrl: getAvatarUrl(creator.creator_id || ''),
+                    isAuthor: true // Contextually true for own comment
+                },
+
+                // Interaction state
                 liked_by_me: false,
                 is_flagged: false,
                 is_optimistic: true,
-                parent_id: newCommentData.parent_id,
-                is_thread: newCommentData.is_thread,
-                alias: creator.displayAlias, // 🔵 FIX: Use resolved alias
-                avatar_url: undefined, // 🔵 FIX: Will be filled by backend
-                // Add required fields with defaults to satisfy type
+
+                // Defaults
                 is_highlighted: false,
                 is_pinned: false,
-                is_author: false, // 🔵 FIX: Backend will determine this
                 is_local: false
             }
 
@@ -271,6 +280,9 @@ export function useToggleLikeCommentMutation() {
 
             // USE HELPER: Atomic Delta
             if (previousComment) {
+                // Strict Note: patch accepts Partial<Comment> but our patch helper needs to handle deeply nested usage?
+                // commentsCache.patch merges at top level. 'author' is top level object.
+                // We are not mocking author here so it's fine.
                 commentsCache.patch(queryClient, id, { liked_by_me: !isLiked })
                 commentsCache.applyLikeDelta(queryClient, id, isLiked ? -1 : 1)
             }

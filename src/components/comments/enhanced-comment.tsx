@@ -7,7 +7,8 @@ import { useToast } from '@/components/ui/toast'
 import { Link, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar'
+import { getAvatarFallback } from '@/lib/avatar'
+import { isRealUser } from '@/lib/adapters' // ✅ Centralized Helper
 import {
   MessageCircle,
   ThumbsUp,
@@ -44,12 +45,14 @@ interface EnhancedCommentProps {
   isExpanded?: boolean
   isThreadView?: boolean
   canPin?: boolean
+  activeMenuId?: string | null
+  onMenuOpen?: (id: string | null) => void
 }
 
 export const EnhancedComment = memo(function EnhancedComment({
   comment,
   replies = [],
-  isOwner = false,
+  isOwner = false, // This comes from parent calculation (permissions.ts checks author.id)
   isMod = false,
   onReply,
   onEdit,
@@ -66,7 +69,7 @@ export const EnhancedComment = memo(function EnhancedComment({
   isThreadView = false,
   activeMenuId = null,
   onMenuOpen,
-}: EnhancedCommentProps & { activeMenuId?: string | null; onMenuOpen?: (id: string | null) => void }) {
+}: EnhancedCommentProps) {
   const navigate = useNavigate()
   const toast = useToast()
   // Use props if available, otherwise fall back to local state (though we intend to use props)
@@ -114,8 +117,6 @@ export const EnhancedComment = memo(function EnhancedComment({
       minute: '2-digit'
     })
   }
-
-
 
   const getThreadTypeColor = (type?: string) => {
     switch (type) {
@@ -209,18 +210,14 @@ export const EnhancedComment = memo(function EnhancedComment({
   const isThread = comment.is_thread === true
 
   // Adjust visual styling based on depth
-
   const cardPadding = 'p-4 sm:p-5'
   const textOpacity = depth > 0 ? 'opacity-95' : 'opacity-100'
 
   const isEdited = useMemo(() => {
     // Si tenemos last_edited_at del servidor (manejado por trigger de contenido), lo usamos
     if (comment.last_edited_at) {
-      // Comparar timestamps para estar seguros, aunque la presencia de last_edited_at debería ser suficiente
-      // si el backend lo gestiona bien (solo en edits)
       return true
     }
-
     return false
   }, [comment.last_edited_at])
 
@@ -233,6 +230,10 @@ export const EnhancedComment = memo(function EnhancedComment({
       navigate(`/reporte/${comment.report_id}/hilo/${comment.id}`)
     }
   }
+
+  // ✅ IDENTITY SSOT: Access via author object
+  const { author } = comment;
+  const isReal = isRealUser(author);
 
   return (
     <Card
@@ -262,7 +263,7 @@ export const EnhancedComment = memo(function EnhancedComment({
           <div className="flex items-start gap-3 flex-1">
             {/* Avatar linkeable */}
             <Link
-              to={`/usuario/${comment.alias || 'anonimo'}`}
+              to={`/usuario/${author.alias || 'anonimo'}`}
               className="cursor-pointer z-10"
               onClick={(e) => e.stopPropagation()}
             >
@@ -270,8 +271,8 @@ export const EnhancedComment = memo(function EnhancedComment({
                 "h-8 w-8 sm:h-10 sm:w-10 border border-border group-hover:border-neon-green/40 transition-colors",
                 isOwner && "ring-2 ring-neon-green/20"
               )}>
-                <AvatarImage src={comment.avatar_url || getAvatarUrl(comment.anonymous_id)} />
-                <AvatarFallback>{getAvatarFallback(comment.alias)}</AvatarFallback>
+                <AvatarImage src={author.avatarUrl} />
+                <AvatarFallback>{getAvatarFallback(author.alias)}</AvatarFallback>
               </Avatar>
             </Link>
 
@@ -280,26 +281,28 @@ export const EnhancedComment = memo(function EnhancedComment({
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 {/* Alias linkeable */}
                 <Link
-                  to={`/usuario/${comment.alias || 'anonimo'}`}
+                  to={`/usuario/${author.alias || 'anonimo'}`}
                   className="hover:underline z-10"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <span className={cn(
                     "font-semibold text-sm sm:text-base cursor-pointer",
-                    isOwner ? "text-neon-green" : "text-foreground"
+                    // ✅ VISUAL LOGIC: Green if Real User
+                    isReal ? "text-neon-green" : "text-foreground"
                   )}>
-                    @{comment.alias || 'Usuario Anónimo'}
+                    @{author.alias}
                   </span>
                 </Link>
 
                 {/* Contextual Role Badges */}
-                {comment.is_author && (
+                {/* isAuthor now comes from Author object context if set, OR we check derived prop */}
+                {(author.isAuthor || comment.is_author) && (
                   <Badge className="bg-neon-green/10 text-neon-green border-neon-green/30 px-1.5 py-0 h-5 text-[10px] font-black tracking-tighter shadow-[0_0_10px_rgba(57,255,20,0.1)]">
                     AUTOR
                   </Badge>
                 )}
 
-                {comment.is_local && !comment.is_author && (
+                {comment.is_local && !author.isAuthor && (
                   <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 px-1.5 py-0 h-5 text-[10px] font-black tracking-tighter shadow-[0_0_10px_rgba(34,211,238,0.1)]">
                     VECINO LOCAL
                   </Badge>
@@ -404,7 +407,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                     <button
                       onClick={() => {
                         if (!comment.is_flagged) {
-                          onFlag?.(comment.id, comment.is_flagged || false, comment.anonymous_id)
+                          onFlag?.(comment.id, comment.is_flagged || false, author.id)
                           closeMenu()
                         }
                       }}

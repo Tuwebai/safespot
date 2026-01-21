@@ -186,6 +186,57 @@ async function testConnection() {
       -- Index for fast starred message lookups
       CREATE INDEX IF NOT EXISTS idx_starred_messages_user ON starred_messages(user_id);
       CREATE INDEX IF NOT EXISTS idx_starred_messages_message ON starred_messages(message_id);
+
+      -- ============================================
+      -- 13. SAFESCORE & USER ZONES (Architecture Fix)
+      -- ============================================
+
+      -- 13a. Zone Safety Scores (SSOT)
+      CREATE TABLE IF NOT EXISTS zone_safety_scores (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        zone_id VARCHAR(255) NOT NULL,
+        score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100),
+        report_count INTEGER DEFAULT 0,
+        last_calculated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        algorithm_version VARCHAR(10) DEFAULT 'v1',
+        breakdown JSONB DEFAULT '{}',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(zone_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_scores_zone ON zone_safety_scores(zone_id);
+
+      -- 13b. User Zones (Location Context)
+      CREATE TABLE IF NOT EXISTS user_zones (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        anonymous_id UUID NOT NULL,
+        type VARCHAR(50) DEFAULT 'current',
+        lat DOUBLE PRECISION NOT NULL,
+        lng DOUBLE PRECISION NOT NULL,
+        radius_meters INTEGER DEFAULT 1000,
+        label VARCHAR(255),
+        zone_id VARCHAR(255),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(anonymous_id, type),
+        CONSTRAINT fk_user_zones_user FOREIGN KEY (anonymous_id) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_zones_user ON user_zones(anonymous_id);
+      
+      -- MIGRATION FIX: Ensure columns exist if table already existed
+      DO $$
+      BEGIN
+          ALTER TABLE user_zones ADD COLUMN IF NOT EXISTS zone_id VARCHAR(255);
+          ALTER TABLE user_zones ADD COLUMN IF NOT EXISTS label VARCHAR(255);
+          
+          -- Update Type Constraint to include 'current'
+          BEGIN
+            ALTER TABLE user_zones DROP CONSTRAINT IF EXISTS user_zones_type_check;
+            ALTER TABLE user_zones ADD CONSTRAINT user_zones_type_check CHECK (type IN ('home', 'work', 'school', 'other', 'current'));
+          EXCEPTION 
+            WHEN others THEN NULL; -- Ignore if fails, we tried best effort
+          END;
+      EXCEPTION
+          WHEN duplicate_column THEN NULL;
+      END $$;
     `;
 
     // Only run the long script if we successfully connected

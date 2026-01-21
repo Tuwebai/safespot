@@ -30,6 +30,7 @@ import gamificationRouter from './routes/gamification.js';
 import userZonesRouter from './routes/userZones.js';
 import testRouter from './routes/test.js';
 import geocodeRouter from './routes/geocode.js';
+import safeScoreRouter from './routes/safeScore.js';
 import pushRouter from './routes/push.js';
 import sitemapRouter from './routes/sitemap.js';
 import seoRouter from './routes/seo.js';
@@ -266,6 +267,7 @@ app.use('/api/badges', badgesRouter);
 app.use('/api/gamification', gamificationRouter);
 app.use('/api/test', testRouter);
 app.use('/api/geocode', geocodeRouter);
+app.use('/api/safe-score', safeScoreRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/contact', contactRouter); // Register Contact Route

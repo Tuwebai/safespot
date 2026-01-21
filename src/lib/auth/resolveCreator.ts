@@ -30,8 +30,13 @@ export function resolveCreator(): CreatorInfo {
 
     // CASO 1: Usuario autenticado
     if (auth.token && auth.user?.auth_id) {
+        // 🔵 UX FIX: Always use Device ID (anonymous_id) for Creator ID
+        // The Renderer (CommentsSection) uses Validated Device ID to check isOwner.
+        // If we return auth_id here, isOwner becomes false until server refresh, causing Grey -> Green flicker.
+        const deviceId = localStorage.getItem('safespot_anonymous_id'); // L1_KEY manual read
+
         return {
-            creator_id: auth.user.auth_id,
+            creator_id: deviceId || auth.user.auth_id, // Fallback to auth_id if LS empty (rare)
             creator_type: 'user',
             displayAlias: auth.user.alias || 'Usuario'
         };

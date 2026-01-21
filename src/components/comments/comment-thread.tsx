@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { EnhancedComment } from './enhanced-comment'
 import { CornerDownRight } from 'lucide-react'
+import { isOwner as isOwnerPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import type { Comment } from '@/lib/api'
 
@@ -53,7 +54,7 @@ export const CommentThread = memo(function CommentThread({
     onLikeChange,
     onPin,
     onUnpin,
-    isOwner = false,
+    isOwner: _ignoredIsOwner = false, // Ignore passed prop, calculate locally (SSOT)
     isMod = false,
     replyingTo = null,
     replyText = '',
@@ -73,6 +74,9 @@ export const CommentThread = memo(function CommentThread({
     canPin = false,
     isLastChild = false,
 }: CommentThreadProps) {
+    // ✅ SSOT: Calculate ownership internally for this specific comment node
+    const isOwner = isOwnerPermission(comment);
+
     // Find direct replies to this comment and sort them chronologically (oldest first)
     const replies = allComments
         .filter(c => c.parent_id === comment.id)
@@ -87,7 +91,6 @@ export const CommentThread = memo(function CommentThread({
     const [isExpanded, setIsExpanded] = useState(initialExpanded)
 
     // Check if we should auto-expand because a child is highlighted
-    // We can read from URL here or pass a prop. Reading URL is cheaper than prop drilling deep trees.
     const searchParams = new URLSearchParams(window.location.search)
     const highlightId = searchParams.get('highlight_comment')
     const hasHighlightedChild = highlightId ? replies.some(r => r.id === highlightId) : false
@@ -218,7 +221,7 @@ export const CommentThread = memo(function CommentThread({
                                 onLikeChange={onLikeChange}
                                 onPin={onPin}
                                 onUnpin={onUnpin}
-                                isOwner={isOwner}
+                                // isOwner={isOwner} // REMOVED: Do not propagate parent ownership!
                                 isMod={isMod}
                                 replyingTo={replyingTo}
                                 replyText={replyText}

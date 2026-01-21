@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { notificationsApi, NotificationSettings, geocodeApi, usersApi } from '@/lib/api';
+import { notificationsApi, NotificationSettings, geocodeApi, userZonesApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -162,13 +162,9 @@ export function NotificationSettingsSection() {
         };
 
         const saveLocation = async (lat: number, lng: number, formattedName: string, city?: string, prov?: string) => {
-            // 2. Save location to User Profile (SSOT) - Enterprise Decoupling
-            await usersApi.updateLocation({
-                city: city || '',
-                province: prov || '',
-                lat,
-                lng
-            });
+            // 2. Save location to User Zones (SSOT) - Enterprise Fix
+            // This ensures "Tu Zona" card updates immediately
+            await userZonesApi.updateCurrent(lat, lng, formattedName);
 
             // 3. Sync with Push Service (still needed for geo-push if we use it)
             updateServiceLocation(lat, lng);

@@ -1,7 +1,8 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Edit, Trash2, Flag, Save, X, FileText, MoreVertical, Heart } from 'lucide-react'
-import { getAnonymousIdSafe } from '@/lib/identity'
+// ✅ SSOT: Centralized permissions (Replaced getAnonymousIdSafe)
+import { isOwner as isOwnerPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/schemas'
 import { ShareButton } from '@/components/ShareButton'
@@ -43,8 +44,10 @@ export const ReportActions = memo(function ReportActions({
 }: ReportActionsProps) {
     const [showMenu, setShowMenu] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
-    const currentAnonymousId = getAnonymousIdSafe()
-    const isOwner = report.anonymous_id === currentAnonymousId
+
+    // ✅ PERMISSIONS FIX
+    const isOwner = isOwnerPermission(report);
+
     const isFlagged = report.is_flagged ?? false
 
     // Close menu when clicking outside

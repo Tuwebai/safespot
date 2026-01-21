@@ -31,10 +31,15 @@ import { searchAddresses, type AddressSuggestion } from '@/services/georefClient
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
 
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
-import { useWindowVirtualizer } from '@tanstack/react-virtual'
-import { ReportCard } from '@/components/ReportCard'
+
 import { EmptyState } from '@/components/ui/empty-state'
 import { reportsCache } from '@/lib/cache-helpers'
+
+// Nuevos componentes del rediseño
+import { UserZoneCard } from '@/components/reportes/UserZoneCard'
+import { QuickFilters, type QuickFilterType } from '@/components/reportes/QuickFilters'
+import { HighlightedReportCard } from '@/components/reportes/HighlightedReportCard'
+import { CompactReportCard } from '@/components/reportes/CompactReportCard'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -77,6 +82,9 @@ export function Reportes() {
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([])
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number, lng: number, label: string } | null>(null)
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false)
+
+  // Quick Filters State (nuevo)
+  const [quickFilter, setQuickFilter] = useState<QuickFilterType>('all')
 
   const debouncedAddressQuery = useDebounce(addressQuery, 500)
 
@@ -125,16 +133,36 @@ export function Reportes() {
   // Build filters object (memoized to prevent unnecessary query refetches)
   const filters = useMemo<ReportFilters | undefined>(() => {
     const f: ReportFilters = {}
-    if (selectedCategory !== 'all') f.category = selectedCategory
+
+    // Quick Filters Logic (nuevo)
+    if (quickFilter === 'urgent') {
+      // Reportes de últimas 24h
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      f.startDate = yesterday.toISOString().split('T')[0]
+    } else if (quickFilter === 'robos') {
+      // Todas las categorías de robo
+      f.category = 'Robo de Bicicleta' // TODO: Ajustar según categorías reales
+    } else if (quickFilter === 'infraestructura') {
+      f.category = 'Infraestructura' // TODO: Ajustar según categorías reales
+    } else if (quickFilter === 'mi_zona' && selectedLocation) {
+      // Usar ubicación seleccionada
+      f.lat = selectedLocation.lat
+      f.lng = selectedLocation.lng
+      f.radius = 2000
+    }
+
+    // Filtros avanzados (solo si no están en conflicto con quick filters)
+    if (selectedCategory !== 'all' && quickFilter === 'all') f.category = selectedCategory
     if (selectedStatus !== 'all') f.status = selectedStatus
     if (debouncedSearchTerm.trim()) f.search = debouncedSearchTerm.trim()
 
     // Advanced Filters
-    if (startDate) f.startDate = startDate
+    if (startDate && quickFilter !== 'urgent') f.startDate = startDate
     if (endDate) f.endDate = endDate
     if (sortBy !== 'recent') f.sortBy = sortBy
 
-    if (selectedLocation) {
+    if (selectedLocation && quickFilter !== 'mi_zona') {
       f.lat = selectedLocation.lat
       f.lng = selectedLocation.lng
       f.radius = 2000 // 2km radius hardcoded for now, could be dynamic
@@ -143,7 +171,7 @@ export function Reportes() {
     if (followedOnly) f.followed_only = true
 
     return Object.keys(f).length > 0 ? f : undefined
-  }, [selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly])
+  }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading, error: queryError, refetch } = useReportsQuery(filters)
@@ -256,42 +284,21 @@ export function Reportes() {
 
 
 
-  const parentRef = useRef<HTMLDivElement>(null)
+  // Algoritmo de selección de reporte destacado (nuevo)
+  const highlightedReportId = useMemo(() => {
+    if (reports.length === 0) return null
+    // Algoritmo simple: el primer reporte (ya viene ordenado por relevancia)
+    // TODO: Implementar algoritmo más sofisticado basado en:
+    // - Urgencia (created_at < 2 horas)
+    // - SafeScore (cuando esté implementado)
+    // - Engagement (views + comments + upvotes)
+    return reports[0]
+  }, [reports])
 
-  const [columns, setColumns] = useState(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
-  const [scrollMargin, setScrollMargin] = useState(0)
-
-  useEffect(() => {
-    const handleLayoutUpdate = () => {
-      setColumns(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1)
-      if (parentRef.current) {
-        // Usar scrollMargin=0 ya que el contenedor está al inicio de la página o manejado por el flujo natural
-        setScrollMargin(parentRef.current.offsetTop)
-      }
-    }
-
-    // Calcular inicial
-    handleLayoutUpdate()
-
-    // Observar cambios de tamaño
-    window.addEventListener('resize', handleLayoutUpdate)
-
-    // Pequeño delay para asegurar que el DOM se ha asentado tras renderizados (especialmente filtros)
-    const timeout = setTimeout(handleLayoutUpdate, 100)
-
-    return () => {
-      window.removeEventListener('resize', handleLayoutUpdate)
-      clearTimeout(timeout)
-    }
-  }, [showAdvancedFilters, reports.length])
-
-  // Virtualizer setup using window scroll
-  const rowVirtualizer = useWindowVirtualizer({
-    count: Math.ceil(reports.length / columns),
-    estimateSize: () => 480, // Ajustado para incluir padding y gap
-    overscan: 5,
-    scrollMargin,
-  })
+  const feedReports = useMemo(() => {
+    if (!highlightedReportId) return reports
+    return reports.slice(1) // Excluir el destacado del feed
+  }, [reports, highlightedReportId])
 
 
   return (
@@ -309,6 +316,16 @@ export function Reportes() {
           Explora y filtra todos los reportes de la comunidad
         </p>
       </div>
+
+      {/* Tu Zona */}
+      {/* Tu Zona (Backend Driven) */}
+      <UserZoneCard />
+
+      {/* Filtros Rápidos */}
+      <QuickFilters
+        activeFilter={quickFilter}
+        onFilterChange={setQuickFilter}
+      />
 
       {/* Filtros - Hidden on mobile, shown in bottom sheet */}
       <Card className="mb-8 bg-card border-border hidden md:block">
@@ -666,6 +683,16 @@ export function Reportes() {
           </Button>
         </div>
 
+        {/* Reporte Destacado (Hero) */}
+        {highlightedReportId && !isLoading && !error && (
+          <HighlightedReportCard reportId={highlightedReportId} />
+        )}
+
+        {/* Separator similar to Footer (Exact Replica) */}
+        {highlightedReportId && !isLoading && !error && reports.length > 1 && (
+          <div className="w-full border-t border-white/5 my-8" />
+        )}
+
         {
           (isLoading && reports.length === 0) ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -708,55 +735,21 @@ export function Reportes() {
             </div>
           ) : (
             <div className="flex flex-col">
-              <div
-                ref={parentRef}
-                className="w-full relative"
-                style={{ minHeight: '600px' }}
-              >
-                <div
-                  style={{
-                    height: `${rowVirtualizer.getTotalSize()}px`,
-                    width: '100%',
-                    position: 'relative',
-                  }}
-                >
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    // reports is now string[] (IDs)
-                    const startIndex = virtualRow.index * columns
-                    const rowItems = reports.slice(startIndex, startIndex + columns)
-
-                    return (
-                      <div
-                        key={virtualRow.key}
-                        data-index={virtualRow.index}
-                        ref={(el) => {
-                          if (el) {
-                            // Defer to avoid flushSync during render
-                            requestAnimationFrame(() => rowVirtualizer.measureElement(el))
-                          }
-                        }}
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          transform: `translateY(${virtualRow.start}px)`,
-                        }}
-                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8"
-                      >
-                        {rowItems.map((reportId: string) => (
-                          <ReportCard
-                            key={reportId}
-                            reportId={reportId}
-                            onToggleFavorite={(newState) => handleFavoriteUpdate(reportId, newState)}
-                            onFlag={(e) => handleFlag(e, reportId)}
-                            isFlagging={flaggingReports.has(reportId)}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
+              {/* 
+                  Refactor Enterprise: Eliminada virtualización ('react-virtual') por problemas críticos de offset absoluto.
+                  SSOT Layout: Usamos CSS Grid nativo.
+               */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-fr">
+                {feedReports.map((reportId) => (
+                  <div key={reportId} className="h-full">
+                    <CompactReportCard
+                      reportId={reportId}
+                      onToggleFavorite={(newState) => handleFavoriteUpdate(reportId, newState)}
+                      onFlag={(e) => handleFlag(e, reportId)}
+                      isFlagging={flaggingReports.has(reportId)}
+                    />
+                  </div>
+                ))}
               </div>
 
               {/* Espacio extra para que la barra de navegación móvil no tape nada */}

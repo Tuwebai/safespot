@@ -37,10 +37,6 @@ export const reportsCache = {
             );
         });
 
-        // SIDE EFFECT REMOVED: No persistir en localStorage manualmente.
-        // Confiamos en React Query gcTime y refetchOnMount para la persistencia y frescura.
-        // localStorage.setItem('safespot_reports_all_v2', ...) -> ELIMINADO POR RIESGO DE CORRUPCIÓN
-
         return normalizedReports.map(r => r.id);
     },
 
@@ -56,7 +52,6 @@ export const reportsCache = {
                 const updates = typeof patch === 'function' ? patch(old as Report) : patch;
 
                 // ATOMIC DELTA LOGIC
-                // If the patch contains delta fields, apply them instead of overwriting
                 if ('comments_count_delta' in updates && updates.comments_count_delta !== undefined) {
                     const delta = updates.comments_count_delta as number;
                     const { comments_count_delta, ...rest } = updates;
@@ -66,26 +61,15 @@ export const reportsCache = {
                         comments_count: Math.max(0, (old.comments_count || 0) + delta)
                     };
 
-                    // ✅ Re-normalize if patch affects derived fields
-                    if (
-                        'alias' in rest ||
-                        'anonymous_id' in rest ||
-                        'created_at' in rest
-                    ) {
+                    if ('alias' in rest || 'anonymous_id' in rest || 'created_at' in rest) {
                         return normalizeReportForUI(updated as Report);
                     }
-
                     return updated as NormalizedReport;
                 }
 
                 const updated = { ...old, ...updates };
 
-                // ✅ Re-normalize if patch affects derived fields
-                if (
-                    'alias' in updates ||
-                    'anonymous_id' in updates ||
-                    'created_at' in updates
-                ) {
+                if ('alias' in updates || 'anonymous_id' in updates || 'created_at' in updates) {
                     return normalizeReportForUI(updated as Report);
                 }
 
@@ -94,19 +78,15 @@ export const reportsCache = {
         );
     },
 
-
     /**
      * Remove a report from EVERYWHERE
      * ✅ ENTERPRISE FIX: Uses prefix match to remove from ALL list queries
-     * regardless of active filters (category, status, zone, etc.)
      */
     remove: (queryClient: QueryClient, reportId: string) => {
         // 1. Remove detail cache
         queryClient.removeQueries({ queryKey: queryKeys.reports.detail(reportId) });
 
         // 2. Remove from ALL list queries (with or without filters)
-        // ✅ CRITICAL: exact: false enables prefix matching
-        // Matches: ['reports', 'list'], ['reports', 'list', filters], etc.
         queryClient.setQueriesData<string[]>(
             { queryKey: ['reports', 'list'], exact: false },
             (oldIds) => oldIds ? oldIds.filter(id => id !== reportId) : []
@@ -148,7 +128,7 @@ export const reportsCache = {
     /**
      * Add a report ID to the TOP of the lists (New Report)
      * ✅ ENTERPRISE FIX: Uses prefix match to prepend to ALL list queries
-     * regardless of active filters (category, status, zone, etc.)
+     * ✅ STRICT DEDUPLICATION: Ensures no unique key warnings
      */
     prepend: (queryClient: QueryClient, newReport: Report) => {
         // ✅ ENTERPRISE: Normalize for UI before storing
@@ -158,23 +138,52 @@ export const reportsCache = {
         queryClient.setQueryData(queryKeys.reports.detail(normalizedReport.id), normalizedReport);
 
         // 2. Update ALL matching lists (with or without filters)
-        // ✅ CRITICAL: exact: false enables prefix matching
-        // Matches: ['reports', 'list'], ['reports', 'list', filters], etc.
         queryClient.setQueriesData<string[]>(
             { queryKey: ['reports', 'list'], exact: false },
             (old) => {
-                if (!old) return old;
-                const sanitizedOld = Array.isArray(old) ? old.filter(item => typeof item === 'string') : [];
-                return [normalizedReport.id, ...sanitizedOld.filter(id => id !== normalizedReport.id)];
+                const list = Array.isArray(old) ? old.filter(item => typeof item === 'string') : [];
+
+                // Strict Deduplication using Set
+                // Filter out the new ID if it already exists to move it to top
+                const uniqueOld = list.filter(id => id !== normalizedReport.id);
+
+                return [normalizedReport.id, ...uniqueOld];
             }
         );
 
-        // 3. Explicitly initialize default list if it doesn't exist (to ensure it appears on first load)
+        // 3. Explicitly initialize default list if it doesn't exist
         const defaultKey = queryKeys.reports.list();
         const existingDefault = queryClient.getQueryData(defaultKey);
         if (!existingDefault) {
             queryClient.setQueryData(defaultKey, [normalizedReport.id]);
         }
+    },
+
+    /**
+     * Swap a temporary ID with a real Server ID (Reconciliation)
+     * Critical for preventing "Ghost Items" and unique key warnings when Server ignores Client ID.
+     */
+    swapId: (queryClient: QueryClient, oldId: string, newId: string) => {
+        if (oldId === newId) return; // No op
+
+        // 1. Move Detail Data (Preserve optimistic state but update ID)
+        const oldData = queryClient.getQueryData<NormalizedReport>(queryKeys.reports.detail(oldId));
+        if (oldData) {
+            const newData = { ...oldData, id: newId };
+            queryClient.setQueryData(queryKeys.reports.detail(newId), newData);
+            queryClient.removeQueries({ queryKey: queryKeys.reports.detail(oldId) });
+        }
+
+        // 2. Swap ID in ALL lists
+        queryClient.setQueriesData<string[]>(
+            { queryKey: ['reports', 'list'], exact: false },
+            (oldList) => {
+                if (!Array.isArray(oldList)) return oldList;
+
+                // Map old -> new
+                return oldList.map(id => id === oldId ? newId : id);
+            }
+        );
     }
 };
 
@@ -305,7 +314,7 @@ export const commentsCache = {
                     const exists = sanitizedList.includes(newComment.id);
                     if (exists) return sanitizedList; // Already counted, skip
 
-                    // SIDE EFFECT: Increment report counter (Enterprise Idempotency)
+                    // SIDE EFFECT: Increment report counter
                     reportsCache.applyCommentDelta(queryClient, newComment.report_id, 1);
                     return [newComment.id, ...sanitizedList];
                 }
@@ -369,19 +378,6 @@ export const statsCache = {
         if (status === 'resuelto') {
             statsCache.applyDelta(queryClient, 'resolved_reports', -1);
         }
-
-        // 2. Update Category Breakdown
-        // HISTORICAL TOTALS: We do NOT decrement category stats on deletion
-        // per user requirement: "conteo total histórico"
-        /*
-        queryClient.setQueryData(queryKeys.stats.categories, (old: any) => {
-            if (!old) return old;
-            return {
-                ...old,
-                [category]: Math.max(0, (old[category] || 0) - 1)
-            };
-        });
-        */
     },
 
     /**

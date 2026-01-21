@@ -4,6 +4,7 @@ import { validate } from '../utils/validateMiddleware.js';
 import { userZoneSchema } from '../utils/schemas.js';
 import { DB } from '../utils/db.js';
 import { logError } from '../utils/logger.js';
+import { UserZoneService } from '../services/userZoneService.js';
 
 const router = express.Router();
 
@@ -14,13 +15,8 @@ const router = express.Router();
 router.get('/', requireAnonymousId, async (req, res) => {
     try {
         const anonymousId = req.anonymousId;
-        const db = DB.withContext(anonymousId);
-
-        const zones = await db.select('user_zones', {
-            where: { anonymous_id: anonymousId },
-            orderBy: [{ column: 'created_at', direction: 'desc' }]
-        });
-
+        // Use Service Layer with Lazy Migration & Enrichment
+        const zones = await UserZoneService.getUserZones(anonymousId);
         res.json({ success: true, data: zones });
     } catch (error) {
         logError(error, req);
@@ -92,6 +88,32 @@ router.delete('/:type', requireAnonymousId, async (req, res) => {
     } catch (error) {
         logError(error, req);
         res.status(500).json({ error: 'Failed to delete zone' });
+    }
+});
+
+/**
+ * POST /api/user-zones/current
+ * Endpoint autoritativo para "Tu Zona" (Geolocalización Automática)
+ * Actualiza la ubicación actual, resuelve la zona y devuelve el SafeScore.
+ */
+router.post('/current', requireAnonymousId, async (req, res) => {
+    try {
+        const anonymousId = req.anonymousId;
+        const { lat, lng, label } = req.body;
+
+        if (!lat || !lng) {
+            return res.status(400).json({ error: 'Lat/Lng required' });
+        }
+
+        const result = await UserZoneService.updateCurrentZone(anonymousId, lat, lng, label);
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        logError(error, req);
+        res.status(500).json({ error: 'Failed to update current zone' });
     }
 });
 

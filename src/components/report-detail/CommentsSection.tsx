@@ -15,6 +15,7 @@ import { useConfirm } from '@/components/ui/confirmation-manager'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
+import { isOwner } from '@/lib/permissions'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
 const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
@@ -324,7 +325,7 @@ export function CommentsSection({
                         <>
                             <div className="space-y-4">
                                 {topLevelComments.map((comment) => {
-                                    const isCommentOwner = comment.anonymous_id === currentAnonymousId
+                                    const isCommentOwner = isOwner(comment)
 
                                     return (
                                         <div key={comment.id} className="pb-4">
@@ -401,7 +402,7 @@ export function CommentsSection({
                     onLikeChange={handleLikeChange}
                     isOwner={(commentId) => {
                         const comment = comments.find(c => c.id === commentId)
-                        return comment ? comment.anonymous_id === currentAnonymousId : false
+                        return isOwner(comment)
                     }}
                     isMod={currentAnonymousId === reportOwnerId} // "Report Owner" logic
                     onPin={pinComment}
