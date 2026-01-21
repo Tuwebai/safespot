@@ -1,0 +1,933 @@
+# SafeSpot — Features Únicas & Rediseño Profesional
+
+> **Documento estratégico** para elevar SafeSpot de MVP funcional a **producto enterprise-grade** con diferenciación competitiva real.
+
+---
+
+## 📋 Tabla de Contenidos
+
+1. [Features Únicas Propuestas](#-features-únicas-propuestas)
+2. [Rediseño de Páginas Básicas](#-rediseño-de-páginas-básicas)
+3. [Principios de Diseño Enterprise](#-principios-de-diseño-enterprise)
+4. [Roadmap de Implementación](#-roadmap-de-implementación)
+
+---
+
+## 🚀 Features Únicas Propuestas
+
+### 1. **SafeScore™ — Sistema de Confiabilidad Comunitaria**
+
+#### Concepto
+Un algoritmo propietario que calcula la **credibilidad** de cada reporte basándose en múltiples señales:
+- Historial del reportero (nivel, reportes previos verificados)
+- Velocidad de upvotes en las primeras 24h
+- Correlación geográfica (reportes similares en la misma zona)
+- Engagement de usuarios verificados vs. anónimos
+- Tiempo de respuesta de autoridades (si aplica)
+
+#### Implementación Visual
+```
+┌─────────────────────────────────────┐
+│ 🛡️ SafeScore: 87/100               │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ ✓ Verificado por 12 usuarios        │
+│ ✓ Zona con alta actividad reciente  │
+│ ⚠ Esperando confirmación oficial    │
+└─────────────────────────────────────┘
+```
+
+#### Diferenciación
+- **Único en el mercado**: Ninguna app de reportes ciudadanos tiene scoring algorítmico visible.
+- **Transparencia**: Muestra *por qué* un reporte es confiable.
+- **Gamificación inteligente**: Incentiva reportes de calidad.
+
+---
+
+### 2. **Modo "Patrulla Virtual" — Monitoreo Activo de Zonas**
+
+#### Concepto
+Los usuarios pueden "patrullar" una zona específica (su barrio, ruta al trabajo, escuela de sus hijos) y recibir:
+- **Alertas instantáneas** de reportes nuevos en esa área
+- **Resumen diario** de actividad (tipo newsletter)
+- **Mapa de calor** de incidentes históricos
+- **Comparativa semanal** (esta semana vs. semana pasada)
+
+#### UI Propuesta
+```tsx
+// Componente: ZonePatrolCard
+┌──────────────────────────────────────────┐
+│ 📍 Patrullando: Palermo, CABA           │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ 🔔 3 reportes nuevos hoy                │
+│ 📊 -15% vs. semana pasada               │
+│                                          │
+│ [Ver Mapa de Calor] [Configurar Alertas]│
+└──────────────────────────────────────────┘
+```
+
+#### Valor Agregado
+- **Proactividad**: No esperas a que pase algo, estás informado.
+- **Personalización extrema**: Cada usuario tiene su "zona de interés".
+- **Engagement recurrente**: Razón para volver a la app diariamente.
+
+---
+
+### 3. **"Testigos Anónimos" — Sistema de Corroboración**
+
+#### Concepto
+Cuando un usuario reporta un incidente, la app envía una **notificación push geolocalizada** a otros usuarios que estuvieron en la zona en ese momento (según GPS histórico):
+
+> "¿Estuviste en Av. Corrientes y Callao hace 15 minutos? Un usuario reportó un robo. ¿Puedes confirmar?"
+
+#### Mecánica
+- **Anónimo total**: Ni el reportero ni los testigos se conocen.
+- **Validación rápida**: Botones "Sí, lo vi" / "No, no pasó nada" / "No estaba ahí".
+- **Boost de SafeScore**: Reportes corroborados suben automáticamente.
+
+#### Impacto
+- **Veracidad**: Reduce reportes falsos drásticamente.
+- **Viralidad**: Usuarios se sienten parte de una red de seguridad real.
+- **Diferenciación**: Ninguna app de seguridad tiene esto.
+
+---
+
+### 4. **"SafeRoute" — Navegación con Contexto de Seguridad**
+
+#### Concepto
+Integración con mapas (Google Maps / Waze) que sugiere rutas alternativas basadas en:
+- Reportes recientes en tiempo real
+- Historial de incidentes por horario
+- Iluminación de calles (datos municipales)
+- Presencia policial (si hay integración oficial)
+
+#### UI
+```
+┌────────────────────────────────────────┐
+│ 🗺️ Ruta Sugerida: +5 min, más segura │
+│                                        │
+│ ⚠️ Ruta habitual: 2 robos reportados  │
+│    en las últimas 3 horas             │
+│                                        │
+│ [Usar Ruta Segura] [Ignorar]          │
+└────────────────────────────────────────┘
+```
+
+#### Monetización Potencial
+- **Freemium**: Ruta básica gratis, análisis predictivo en plan premium.
+- **Alianzas**: Integración con apps de movilidad (Uber, Cabify, etc.).
+
+---
+
+### 5. **"Reportes Colaborativos" — Hilos Multi-Usuario**
+
+#### Concepto
+Permitir que múltiples usuarios contribuyan a un mismo reporte en tiempo real:
+- **Fotos adicionales** desde diferentes ángulos
+- **Actualizaciones de estado** ("La policía ya llegó", "El semáforo sigue roto")
+- **Edición colaborativa** de la descripción (tipo Wikipedia)
+
+#### Ejemplo de Flujo
+1. Usuario A reporta: "Semáforo roto en Av. Libertador"
+2. Usuario B (a 2 cuadras) recibe notificación: "¿Puedes agregar una foto?"
+3. Usuario C actualiza: "Municipio ya está trabajando"
+4. El reporte evoluciona en tiempo real.
+
+#### Beneficio
+- **Información completa**: No depende de un solo usuario.
+- **Engagement**: Usuarios sienten que colaboran, no solo consumen.
+
+---
+
+### 6. **"SafeSpot Insights" — Dashboard Predictivo**
+
+#### Concepto
+Panel analítico con **Machine Learning** que muestra:
+- **Predicción de incidentes** por zona y horario
+- **Tendencias emergentes** ("Aumento de robos en bicicleta en Palermo")
+- **Comparativas entre barrios**
+- **Recomendaciones personalizadas** ("Evita Av. X después de las 22h")
+
+#### Visualización
+```
+┌──────────────────────────────────────────┐
+│ 📊 Insights de tu zona                   │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ 🔴 Riesgo Alto: Vie-Sáb 23h-02h         │
+│ 🟡 Riesgo Medio: Lun-Jue 18h-20h        │
+│ 🟢 Riesgo Bajo: Mañanas (06h-12h)       │
+│                                          │
+│ 💡 Recomendación: Usa transporte público│
+│    en lugar de caminar después de 22h   │
+└──────────────────────────────────────────┘
+```
+
+#### Diferenciación
+- **Proactividad extrema**: No solo reportas, te anticipas.
+- **Valor percibido**: Justifica un modelo premium.
+
+---
+
+### 7. **"Modo Emergencia" — Botón de Pánico Inteligente**
+
+#### Concepto
+Un botón físico (o gesto, ej: agitar el teléfono 3 veces) que:
+1. **Graba audio/video** automáticamente (en segundo plano)
+2. **Envía ubicación en tiempo real** a contactos de confianza
+3. **Crea un reporte automático** con máxima prioridad
+4. **Notifica a usuarios cercanos** (opcional, configurable)
+
+#### Privacidad
+- **Encriptación end-to-end** del audio/video.
+- **Auto-destrucción** si el usuario cancela en 30 segundos.
+- **Sin almacenamiento en servidor** (solo hash de verificación).
+
+#### Impacto Social
+- **Herramienta de protección real**, no solo informativa.
+- **Viralidad orgánica**: "Esta app me salvó" → testimonios reales.
+
+---
+
+### 8. **"SafeSpot Verified" — Programa de Usuarios Verificados**
+
+#### Concepto
+Sistema de verificación opcional (no obligatorio) para usuarios que quieran:
+- **Más credibilidad**: Sus reportes tienen mayor peso en SafeScore.
+- **Acceso a features premium**: Insights, estadísticas avanzadas.
+- **Insignia visible**: Badge "Verificado" en sus reportes.
+
+#### Proceso de Verificación
+- **Nivel 1**: Email + teléfono
+- **Nivel 2**: Documento de identidad (solo hash almacenado)
+- **Nivel 3**: Verificación en persona (eventos comunitarios)
+
+#### Monetización
+- **Freemium**: Verificación básica gratis, niveles avanzados de pago.
+- **Alianzas**: Con ONGs, municipios, fuerzas de seguridad.
+
+---
+
+### 9. **"Reportes Efímeros" — Stories de Seguridad**
+
+#### Concepto
+Inspirado en Instagram Stories, pero para reportes de corta duración:
+- **Duración**: 24 horas
+- **Uso**: Eventos temporales (manifestación, corte de calle, evento masivo)
+- **Formato**: Video corto, foto, texto breve
+- **Interacción**: Reacciones rápidas (👍 "Confirmado", ⚠️ "Cuidado")
+
+#### Diferenciación
+- **Urgencia**: Información que pierde relevancia rápido.
+- **Viralidad**: Formato familiar para usuarios jóvenes.
+
+---
+
+### 10. **"SafeSpot API Pública" — Ecosistema Abierto**
+
+#### Concepto
+Abrir una API pública (con rate limits) para que:
+- **Desarrolladores** creen apps complementarias
+- **Municipios** integren datos en sus sistemas
+- **Medios** accedan a estadísticas en tiempo real
+- **Investigadores** analicen tendencias de seguridad
+
+#### Modelo de Negocio
+- **Tier gratuito**: 1000 requests/día
+- **Tier empresarial**: Acceso ilimitado, soporte prioritario
+- **Tier institucional**: Para gobiernos y ONGs
+
+#### Impacto
+- **Posicionamiento**: SafeSpot como **plataforma**, no solo app.
+- **Network effect**: Más integraciones = más valor.
+
+---
+
+## 🎨 Rediseño de Páginas Básicas
+
+### Principios Generales
+
+Antes de entrar en páginas específicas, establecemos los **pilares de diseño enterprise**:
+
+| Principio | Descripción | Implementación |
+|-----------|-------------|----------------|
+| **Jerarquía Visual Clara** | El usuario sabe qué es importante en <3 segundos | Tipografía escalada, contraste estratégico |
+| **Espaciado Generoso** | Respiración entre elementos | Min. 24px entre secciones, 16px entre items |
+| **Feedback Instantáneo** | Toda acción tiene respuesta visual | Micro-animaciones, toasts, estados de carga |
+| **Consistencia Obsesiva** | Mismo patrón = mismo comportamiento | Design tokens, componentes reutilizables |
+| **Accesibilidad First** | WCAG 2.1 AA como mínimo | Contraste, keyboard navigation, ARIA labels |
+
+---
+
+### 1. **Home — Feed de Reportes**
+
+#### Problemas Actuales
+- ❌ Sobrecarga visual (demasiados reportes sin jerarquía)
+- ❌ Filtros poco visibles
+- ❌ No hay "llamado a la acción" claro
+- ❌ Falta contexto de urgencia
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ SafeSpot                    🔔 (3)  👤 Perfil             │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  🔍 Buscar reportes, zonas, categorías...                 │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ 📍 Tu Zona: Palermo, CABA          [Cambiar]         │ │
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │ │
+│  │ 🔴 3 reportes urgentes hoy  |  📊 Ver Mapa de Calor  │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  ┌─ Filtros Rápidos ────────────────────────────────────┐ │
+│  │ [🔥 Urgentes] [🚨 Robos] [🚧 Infraestructura] [Todos]│ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  ┌─ Reporte Destacado ──────────────────────────────────┐ │
+│  │ 🛡️ SafeScore: 92/100                                 │ │
+│  │ 🚨 Robo a mano armada — Av. Santa Fe 1234            │ │
+│  │ 📍 Palermo • Hace 15 minutos                         │ │
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │ │
+│  │ "Dos personas en moto, armadas..."                   │ │
+│  │                                                       │ │
+│  │ 👁️ 234 vistas  💬 12 comentarios  ⬆️ 89 upvotes     │ │
+│  │ [Ver Detalles] [Marcar como Visto]                   │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  ┌─ Reportes Recientes ─────────────────────────────────┐ │
+│  │ [Lista de cards compactas, max 5 visibles]           │ │
+│  │ [Infinite scroll con skeleton loaders]               │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  [➕ Crear Reporte] ← Botón flotante (FAB)               │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Sección "Tu Zona"**: Personalización inmediata.
+2. **Reporte Destacado**: El más urgente/relevante arriba (algoritmo).
+3. **Filtros Rápidos**: Acceso en 1 tap, no menú oculto.
+4. **SafeScore visible**: Credibilidad a primera vista.
+5. **FAB para crear**: Siempre accesible, no escondido en menú.
+
+---
+
+### 2. **Crear Reporte — Formulario Inteligente**
+
+#### Problemas Actuales
+- ❌ Formulario largo y abrumador
+- ❌ No hay guía contextual
+- ❌ Validaciones solo al final
+- ❌ Falta feedback de progreso
+
+#### Rediseño Propuesto: **Wizard Multi-Paso**
+
+```
+Paso 1/4: ¿Qué pasó?
+┌────────────────────────────────────────┐
+│ Selecciona la categoría:               │
+│                                        │
+│ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
+│ │ 🚨   │ │ 🚧   │ │ 🚗   │ │ 💡   │  │
+│ │ Robo │ │Infra.│ │Tráns.│ │Otro  │  │
+│ └──────┘ └──────┘ └──────┘ └──────┘  │
+│                                        │
+│ [Siguiente →]                          │
+└────────────────────────────────────────┘
+
+Paso 2/4: ¿Dónde?
+┌────────────────────────────────────────┐
+│ 📍 Ubicación detectada:                │
+│ Av. Corrientes 1234, CABA              │
+│                                        │
+│ [✓ Correcto] [✏️ Editar manualmente]  │
+│                                        │
+│ [← Atrás] [Siguiente →]                │
+└────────────────────────────────────────┘
+
+Paso 3/4: Detalles
+┌────────────────────────────────────────┐
+│ Título (obligatorio)                   │
+│ ┌────────────────────────────────────┐ │
+│ │ Ej: "Robo en plena luz del día"    │ │
+│ └────────────────────────────────────┘ │
+│                                        │
+│ Descripción (opcional)                 │
+│ ┌────────────────────────────────────┐ │
+│ │ Cuéntanos qué pasó...              │ │
+│ │                                    │ │
+│ └────────────────────────────────────┘ │
+│                                        │
+│ 📷 Agregar fotos (opcional)            │
+│ [+ Subir imagen]                       │
+│                                        │
+│ [← Atrás] [Siguiente →]                │
+└────────────────────────────────────────┘
+
+Paso 4/4: Confirmar
+┌────────────────────────────────────────┐
+│ Resumen de tu reporte:                 │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ 🚨 Robo                                │
+│ 📍 Av. Corrientes 1234, CABA           │
+│ 📝 "Robo en plena luz del día"         │
+│                                        │
+│ ⚠️ Tu reporte será público y anónimo  │
+│                                        │
+│ [← Editar] [✅ Publicar Reporte]       │
+└────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Progreso visual**: Barra de pasos (1/4, 2/4, etc.).
+2. **Validación en tiempo real**: Errores al escribir, no al final.
+3. **Autocompletado inteligente**: Ubicación GPS automática.
+4. **Confirmación clara**: Resumen antes de publicar.
+5. **Micro-copy útil**: "Ej: Robo en plena luz del día" en placeholders.
+
+---
+
+### 3. **Detalle de Reporte — Vista Completa**
+
+#### Problemas Actuales
+- ❌ Información desorganizada
+- ❌ Comentarios poco visibles
+- ❌ No hay contexto geográfico claro
+- ❌ Falta timeline de actualizaciones
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ ← Volver                              ⋮ Opciones           │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  🛡️ SafeScore: 87/100                                     │
+│  🚨 Robo a mano armada                                     │
+│  📍 Av. Santa Fe 1234, Palermo, CABA                       │
+│  🕐 Hace 2 horas • Reportado por Usuario Nivel 5           │
+│                                                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                            │
+│  📷 [Galería de fotos - carousel]                          │
+│                                                            │
+│  📝 Descripción                                            │
+│  "Dos personas en moto, armadas con pistola, robaron      │
+│   a una mujer en plena calle. Huyeron hacia Av. Callao."  │
+│                                                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                            │
+│  🗺️ Mapa de la zona                                       │
+│  [Mapa interactivo con pin del reporte]                   │
+│  [Mostrar reportes cercanos]                               │
+│                                                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                            │
+│  ⏱️ Timeline de Actualizaciones                            │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ 🔵 Hace 2 horas — Reporte creado                     │ │
+│  │ 🟢 Hace 1 hora — 5 usuarios confirmaron              │ │
+│  │ 🟡 Hace 30 min — Policía notificada                  │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                            │
+│  💬 Comentarios (12)                                       │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ 👤 Usuario Nivel 3 • Hace 1 hora                     │ │
+│  │ "Yo también lo vi, fue muy rápido"                   │ │
+│  │ ⬆️ 5  💬 Responder                                   │ │
+│  ├──────────────────────────────────────────────────────┤ │
+│  │ [Más comentarios...]                                 │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │ Agregar comentario...                              │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                            │
+│  [⬆️ Upvote (89)] [💾 Guardar] [🚩 Reportar]             │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **SafeScore prominente**: Primera métrica visible.
+2. **Timeline de actualizaciones**: Transparencia total.
+3. **Mapa integrado**: Contexto geográfico inmediato.
+4. **Comentarios jerarquizados**: Respuestas anidadas.
+5. **Acciones claras**: Upvote, guardar, reportar siempre visibles.
+
+---
+
+### 4. **Explorar — Vista de Mapa + Lista**
+
+#### Problemas Actuales
+- ❌ Toggle mapa/lista poco intuitivo
+- ❌ Mapa sin clusters (lento con muchos reportes)
+- ❌ No hay filtros geográficos (radio de búsqueda)
+- ❌ Falta leyenda de colores
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Explorar                    [🗺️ Mapa] [📋 Lista]          │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  🔍 Buscar por zona, categoría...                          │
+│                                                            │
+│  ┌─ Filtros ──────────────────────────────────────────┐   │
+│  │ Radio: [1km ▼] Categoría: [Todas ▼] Fecha: [Hoy ▼]│   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Mapa Interactivo ────────────────────────────────────┐│
+│  │                                                        ││
+│  │  [Mapa con clusters de reportes]                      ││
+│  │  🔴 = Urgente  🟡 = Moderado  🟢 = Resuelto           ││
+│  │                                                        ││
+│  │  [Al hacer click en cluster → zoom + lista]           ││
+│  │                                                        ││
+│  └────────────────────────────────────────────────────────┘│
+│                                                            │
+│  📊 Estadísticas de la zona visible                        │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ 🚨 Robos: 12  🚧 Infraestructura: 8  🚗 Tránsito: 5  │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                            │
+│  [🎯 Centrar en mi ubicación]                              │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Clusters inteligentes**: Agrupa reportes cercanos (performance).
+2. **Leyenda de colores**: Urgencia visual inmediata.
+3. **Filtro de radio**: "Mostrar solo reportes a 1km".
+4. **Estadísticas dinámicas**: Cambian según la zona visible.
+5. **Centrar en ubicación**: Botón para volver a GPS actual.
+
+---
+
+### 5. **Perfil — Dashboard Personal**
+
+#### Problemas Actuales
+- ❌ Información estática (no hay insights)
+- ❌ Gamificación poco clara
+- ❌ No hay "próximo objetivo" visible
+- ❌ Falta historial de actividad
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Mi Perfil                                  ⚙️ Configuración│
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌─ Identidad Anónima ────────────────────────────────┐   │
+│  │ 🦸 Usuario #A7F3                                    │   │
+│  │ ⭐ Nivel 5 — Vigilante Comunitario                  │   │
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │   │
+│  │ 450 / 500 XP para Nivel 6                           │   │
+│  │ [Ver Insignias (8)]                                 │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Tu Impacto ───────────────────────────────────────┐   │
+│  │ 📊 Reportes creados: 23                             │   │
+│  │ ✅ Reportes verificados: 18                         │   │
+│  │ 👁️ Vistas totales: 1,234                            │   │
+│  │ ⬆️ Upvotes recibidos: 456                           │   │
+│  │ 💬 Comentarios útiles: 89                           │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Próximo Objetivo ─────────────────────────────────┐   │
+│  │ 🎯 Crea 2 reportes más para desbloquear:           │   │
+│  │    "Insignia de Patrullero Activo"                 │   │
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │   │
+│  │ [Ver Todos los Logros]                              │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Actividad Reciente ───────────────────────────────┐   │
+│  │ 🕐 Hace 2 horas — Comentaste en "Robo en Palermo"  │   │
+│  │ 🕐 Hace 1 día — Creaste "Semáforo roto"            │   │
+│  │ 🕐 Hace 3 días — Recibiste 10 upvotes              │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  [📍 Mis Zonas Patrulladas] [⭐ Mis Favoritos]            │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Barra de progreso XP**: Gamificación visual.
+2. **Próximo objetivo**: Motivación clara.
+3. **Impacto cuantificado**: Números que importan.
+4. **Actividad reciente**: Timeline personal.
+5. **Accesos rápidos**: Zonas patrulladas, favoritos.
+
+---
+
+### 6. **Mensajes — Chat Comunitario**
+
+#### Problemas Actuales
+- ❌ UI genérica (parece WhatsApp básico)
+- ❌ No hay contexto de reportes en chats
+- ❌ Falta indicador de "usuarios activos"
+- ❌ No hay búsqueda de mensajes
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Mensajes                    🔍 Buscar    ➕ Nuevo Chat     │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌─ Chats Activos ────────────────────────────────────┐   │
+│  │ 🟢 Chat Palermo (12 online)                         │   │
+│  │ "Usuario #B3F2: Acabo de ver patrullero..."         │   │
+│  │ Hace 2 min                                           │   │
+│  ├──────────────────────────────────────────────────────┤  │
+│  │ 🟡 Chat Recoleta (3 online)                          │   │
+│  │ "Usuario #C7A1: ¿Alguien sabe si...?"               │   │
+│  │ Hace 15 min                                          │   │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                            │
+│  [Al abrir un chat]                                        │
+│  ┌────────────────────────────────────────────────────────┐│
+│  │ Chat Palermo                          12 usuarios 🟢   ││
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ││
+│  │                                                        ││
+│  │ 📌 Reporte relacionado:                                ││
+│  │ "Robo en Av. Santa Fe 1234" [Ver]                     ││
+│  │                                                        ││
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ││
+│  │                                                        ││
+│  │ Usuario #A7F3 • Hace 5 min                            ││
+│  │ "Acabo de pasar por ahí, ya no hay nadie"            ││
+│  │                                                        ││
+│  │ Usuario #B3F2 • Hace 2 min                            ││
+│  │ "Gracias por el update! 👍"                           ││
+│  │                                                        ││
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ││
+│  │                                                        ││
+│  │ [Escribe un mensaje...]                    [Enviar]   ││
+│  └────────────────────────────────────────────────────────┘│
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Usuarios activos**: Contador en tiempo real.
+2. **Reporte relacionado**: Contexto del chat (si aplica).
+3. **Búsqueda de mensajes**: Filtrar por palabra clave.
+4. **Indicador de lectura**: Doble check (como WhatsApp).
+5. **Reacciones rápidas**: Emojis en mensajes.
+
+---
+
+### 7. **Gamificación — Sistema de Logros**
+
+#### Problemas Actuales
+- ❌ Logros poco claros (no se entiende cómo desbloquear)
+- ❌ No hay "leaderboard" comunitario
+- ❌ Falta feedback visual al desbloquear
+
+#### Rediseño Propuesto
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Logros y Niveles                        🏆 Ranking Global  │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌─ Tu Progreso ──────────────────────────────────────┐   │
+│  │ ⭐ Nivel 5 — Vigilante Comunitario                  │   │
+│  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │   │
+│  │ 450 / 500 XP                                        │   │
+│  │                                                     │   │
+│  │ 💡 Próximo nivel: "Guardián de la Ciudad"          │   │
+│  │    Beneficios: +10% SafeScore, Insignia exclusiva  │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Insignias Desbloqueadas (8/24) ───────────────────┐   │
+│  │ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐               │   │
+│  │ │ 🏅   │ │ 🎖️   │ │ 🥇   │ │ 🔰   │               │   │
+│  │ │Primer│ │ 10   │ │ 100  │ │Veri- │               │   │
+│  │ │Reporte│ │Upvotes│ │Vistas│ │ficado│               │   │
+│  │ └──────┘ └──────┘ └──────┘ └──────┘               │   │
+│  │                                                     │   │
+│  │ [Ver Todas las Insignias]                           │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  ┌─ Ranking de tu Zona (Palermo) ─────────────────────┐   │
+│  │ 🥇 Usuario #F9A2 — Nivel 8 (1,234 XP)              │   │
+│  │ 🥈 Usuario #C3B1 — Nivel 7 (987 XP)                │   │
+│  │ 🥉 Usuario #E5D4 — Nivel 6 (765 XP)                │   │
+│  │ ...                                                 │   │
+│  │ 🔹 Tú (#A7F3) — Nivel 5 (450 XP) — Posición #12    │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  [🌍 Ver Ranking Global]                                   │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Mejoras Clave
+1. **Progreso visual**: Barra de XP clara.
+2. **Beneficios explícitos**: "¿Qué gano con el próximo nivel?".
+3. **Ranking por zona**: Competencia local.
+4. **Insignias con tooltips**: Hover para ver cómo desbloquear.
+5. **Celebración al desbloquear**: Animación + confetti.
+
+---
+
+## 🏛️ Principios de Diseño Enterprise
+
+### 1. **Diseño Atómico Estricto**
+
+```
+Átomos (tokens)
+  ↓
+Moléculas (componentes básicos)
+  ↓
+Organismos (secciones)
+  ↓
+Templates (layouts)
+  ↓
+Páginas (instancias)
+```
+
+**Implementación**:
+- **Tokens**: `colors.ts`, `spacing.ts`, `typography.ts`
+- **Componentes**: `Button`, `Card`, `Badge`, `Input`
+- **Layouts**: `PageLayout`, `DashboardLayout`, `MapLayout`
+
+---
+
+### 2. **Sistema de Espaciado 8px**
+
+| Tamaño | Uso |
+|--------|-----|
+| 4px | Padding interno de badges |
+| 8px | Espaciado entre elementos pequeños |
+| 16px | Espaciado entre items de lista |
+| 24px | Espaciado entre secciones |
+| 32px | Márgenes de página |
+| 48px | Separación de bloques grandes |
+
+---
+
+### 3. **Tipografía Escalada**
+
+```css
+/* Escala tipográfica */
+--text-xs: 0.75rem;   /* 12px - Labels pequeños */
+--text-sm: 0.875rem;  /* 14px - Body secundario */
+--text-base: 1rem;    /* 16px - Body principal */
+--text-lg: 1.125rem;  /* 18px - Subtítulos */
+--text-xl: 1.25rem;   /* 20px - Títulos de sección */
+--text-2xl: 1.5rem;   /* 24px - Títulos de página */
+--text-3xl: 1.875rem; /* 30px - Hero titles */
+```
+
+---
+
+### 4. **Paleta de Colores Expandida**
+
+```css
+/* Colores base (mantener cyberpunk) */
+--neon-green: #00ff88;
+--dark-bg: #0a0a0a;
+--card-bg: #1a1a1a;
+
+/* Colores semánticos */
+--success: #00ff88;
+--warning: #ffaa00;
+--error: #ff3366;
+--info: #00ccff;
+
+/* Colores de estado */
+--urgent: #ff3366;
+--moderate: #ffaa00;
+--resolved: #00ff88;
+
+/* Grises (para jerarquía) */
+--gray-50: #fafafa;
+--gray-100: #f5f5f5;
+--gray-200: #e5e5e5;
+--gray-300: #d4d4d4;
+--gray-400: #a3a3a3;
+--gray-500: #737373;
+--gray-600: #525252;
+--gray-700: #404040;
+--gray-800: #262626;
+--gray-900: #171717;
+```
+
+---
+
+### 5. **Micro-Animaciones Estratégicas**
+
+```css
+/* Transiciones estándar */
+--transition-fast: 150ms ease;
+--transition-base: 250ms ease;
+--transition-slow: 350ms ease;
+
+/* Animaciones de entrada */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Animaciones de feedback */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Animaciones de celebración */
+@keyframes confetti {
+  /* Al desbloquear logros */
+}
+```
+
+**Reglas**:
+- **Hover**: Siempre con transición (150ms).
+- **Loading**: Skeleton screens, no spinners genéricos.
+- **Success**: Checkmark animado + toast.
+- **Error**: Shake + color rojo.
+
+---
+
+### 6. **Accesibilidad (WCAG 2.1 AA)**
+
+| Criterio | Implementación |
+|----------|----------------|
+| **Contraste** | Min. 4.5:1 para texto, 3:1 para UI |
+| **Keyboard Navigation** | Todos los elementos interactivos accesibles con Tab |
+| **ARIA Labels** | Botones sin texto tienen `aria-label` |
+| **Focus Visible** | Outline personalizado (no `outline: none`) |
+| **Alt Text** | Todas las imágenes tienen descripción |
+
+---
+
+### 7. **Responsive Design (Mobile-First)**
+
+```css
+/* Breakpoints */
+--mobile: 320px;
+--tablet: 768px;
+--desktop: 1024px;
+--wide: 1440px;
+
+/* Estrategia */
+1. Diseñar para mobile primero
+2. Agregar complejidad en tablet
+3. Aprovechar espacio en desktop
+```
+
+**Ejemplo**:
+```css
+/* Mobile: Stack vertical */
+.report-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tablet: 2 columnas */
+@media (min-width: 768px) {
+  .report-card {
+    flex-direction: row;
+  }
+}
+
+/* Desktop: 3 columnas */
+@media (min-width: 1024px) {
+  .reports-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+```
+
+---
+
+## 🗺️ Roadmap de Implementación
+
+### Fase 1: **Fundaciones (Semana 1-2)**
+- [ ] Crear sistema de design tokens (`colors.ts`, `spacing.ts`, `typography.ts`)
+- [ ] Refactorizar componentes base (`Button`, `Card`, `Badge`, `Input`)
+- [ ] Implementar sistema de espaciado 8px
+- [ ] Configurar paleta de colores expandida
+- [ ] Crear librería de micro-animaciones
+
+### Fase 2: **Rediseño de Páginas Core (Semana 3-4)**
+- [ ] Home: Implementar sección "Tu Zona" + Reporte Destacado
+- [ ] Crear Reporte: Convertir a wizard multi-paso
+- [ ] Detalle Reporte: Agregar timeline + mapa integrado
+- [ ] Explorar: Implementar clusters en mapa + filtros avanzados
+- [ ] Perfil: Agregar dashboard de impacto + próximo objetivo
+
+### Fase 3: **Features Únicas MVP (Semana 5-6)**
+- [ ] SafeScore™: Algoritmo básico + UI
+- [ ] Modo Patrulla Virtual: CRUD de zonas + alertas
+- [ ] Testigos Anónimos: Sistema de notificaciones geolocalizadas
+- [ ] Reportes Colaborativos: Multi-usuario en tiempo real
+
+### Fase 4: **Features Avanzadas (Semana 7-8)**
+- [ ] SafeRoute: Integración con Google Maps API
+- [ ] SafeSpot Insights: Dashboard predictivo (ML básico)
+- [ ] Modo Emergencia: Botón de pánico + grabación
+- [ ] Reportes Efímeros: Stories de 24h
+
+### Fase 5: **Gamificación & Engagement (Semana 9-10)**
+- [ ] Sistema de niveles revisado
+- [ ] Insignias con criterios claros
+- [ ] Ranking por zona + global
+- [ ] Celebraciones visuales (confetti, animaciones)
+
+### Fase 6: **Ecosistema & API (Semana 11-12)**
+- [ ] SafeSpot Verified: Sistema de verificación
+- [ ] API Pública: Documentación + rate limiting
+- [ ] Webhooks para integraciones
+- [ ] Dashboard para desarrolladores
+
+---
+
+## 📊 Métricas de Éxito
+
+### KPIs de Diseño
+| Métrica | Objetivo | Herramienta |
+|---------|----------|-------------|
+| **Lighthouse Performance** | >85 | Lighthouse CI |
+| **Lighthouse Accessibility** | >95 | Lighthouse CI |
+| **Time to Interactive (TTI)** | <3s | WebPageTest |
+| **First Contentful Paint (FCP)** | <1.5s | Chrome DevTools |
+
+### KPIs de Producto
+| Métrica | Objetivo | Tracking |
+|---------|----------|----------|
+| **DAU (Daily Active Users)** | +30% | Analytics |
+| **Retention (D7)** | >40% | Mixpanel |
+| **Reportes creados/día** | +50% | Backend metrics |
+| **Tiempo promedio en app** | +25% | Analytics |
+| **NPS (Net Promoter Score)** | >50 | Encuestas in-app |
+
+---
+
+## 🎯 Conclusión
+
+Este documento define:
+1. **10 features únicas** que diferencian SafeSpot de cualquier competidor.
+2. **7 rediseños de páginas** con enfoque enterprise y UX profesional.
+3. **Principios de diseño** escalables y mantenibles.
+4. **Roadmap de 12 semanas** para implementación completa.
+
+### Próximos Pasos Inmediatos
+1. **Revisar y aprobar** este documento.
+2. **Priorizar features** según impacto vs. esfuerzo.
+3. **Crear tareas en backlog** (GitHub Issues / Jira).
+4. **Iniciar Fase 1** (Fundaciones) esta semana.
+
+---
+
+**Versión**: 1.0  
+**Fecha**: 2026-01-21  
+**Autor**: Principal Software Architect  
+**Estado**: Pendiente de aprobación
