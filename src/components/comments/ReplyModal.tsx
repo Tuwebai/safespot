@@ -74,13 +74,13 @@ export function ReplyModal({
                                 <div className="absolute left-[19px] top-[40px] bottom-[-20px] w-[2px] bg-border/80" />
 
                                 <Avatar className="h-10 w-10 border border-border z-10">
-                                    <AvatarImage src={parentComment.avatar_url || getAvatarUrl(parentComment.anonymous_id)} />
-                                    <AvatarFallback>{parentComment.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
+                                    <AvatarImage src={parentComment.author.avatarUrl || getAvatarUrl(parentComment.author.id)} />
+                                    <AvatarFallback>{parentComment.author.alias?.substring(0, 2).toUpperCase() || 'AN'}</AvatarFallback>
                                 </Avatar>
 
                                 <div className="flex-1 pt-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <span className="font-bold text-sm text-foreground">@{parentComment.alias || 'Anónimo'}</span>
+                                        <span className="font-bold text-sm text-foreground">@{parentComment.author.alias || 'Anónimo'}</span>
                                         <span className="text-xs text-muted-foreground">• {new Date(parentComment.created_at).toLocaleDateString()}</span>
                                     </div>
                                     <div className="text-sm text-foreground/80 line-clamp-3">
@@ -89,7 +89,7 @@ export function ReplyModal({
                                         {getPlainTextFromTipTap(parentComment.content).length > 150 ? '...' : ''}
                                     </div>
                                     <div className="mt-3 text-xs text-muted-foreground">
-                                        Replying to <span className="text-neon-green">@{parentComment.alias || 'Anónimo'}</span>
+                                        Replying to <span className="text-neon-green">@{parentComment.author.alias || 'Anónimo'}</span>
                                     </div>
                                 </div>
                             </div>

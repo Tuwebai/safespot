@@ -8,7 +8,6 @@ import { useCommentsManager } from '@/hooks/useCommentsManager'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { EnhancedComment } from '@/components/comments/enhanced-comment'
 import { useReportDetail } from '@/hooks/useReportDetail'
-import { getAnonymousIdSafe } from '@/lib/identity'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { useConfirm } from '@/components/ui/confirmation-manager'
@@ -85,12 +84,9 @@ export function ThreadPage() {
         return { focusComment: target, ancestors: list }
     }, [comments, commentId])
 
-    // Find the comment being replied to for the modal
     const parentCommentToReply = useMemo(() =>
         replyingTo ? comments.find(c => c.id === replyingTo) || null : null
         , [replyingTo, comments])
-
-    const currentAnonymousId = getAnonymousIdSafe()
 
     // 4. Handlers
     const handleLikeChange = useCallback((id: string, liked: boolean, _count: number) => {
@@ -144,7 +140,7 @@ export function ThreadPage() {
     return (
         <ErrorBoundary fallbackTitle="Error al cargar el hilo">
             <Helmet>
-                <title>Hilo de @{focusComment.alias || 'Anónimo'} – SafeSpot</title>
+                <title>Hilo de @{focusComment.author.alias || 'Anónimo'} – SafeSpot</title>
             </Helmet>
 
             <div className="min-h-screen bg-background pb-20">
@@ -169,7 +165,6 @@ export function ThreadPage() {
                             <div key={ancestor.id} className="relative pl-0">
                                 <EnhancedComment
                                     comment={ancestor}
-                                    isOwner={ancestor.anonymous_id === currentAnonymousId}
                                     onLikeChange={handleLikeChange}
                                     onEdit={startEdit}
                                     onDelete={handleDelete}
@@ -187,7 +182,6 @@ export function ThreadPage() {
                         <div id="focus-comment" className="relative z-10">
                             <EnhancedComment
                                 comment={focusComment}
-                                isOwner={focusComment.anonymous_id === currentAnonymousId}
                                 isThreadView={true}
                                 onLikeChange={handleLikeChange}
                                 onEdit={startEdit}
@@ -236,7 +230,6 @@ export function ThreadPage() {
                                             onDelete={handleDelete}
                                             onFlag={handleFlag}
                                             onEdit={startEdit}
-                                            isOwner={reply.anonymous_id === currentAnonymousId}
                                             replyingTo={replyingTo}
                                             replyText={replyText}
                                             onReplyTextChange={setReplyText}

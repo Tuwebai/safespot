@@ -870,6 +870,10 @@ export interface ChatMessage {
   reply_to_sender_id?: string;
   sender_alias?: string; // Hydrated
   reactions?: Record<string, string[]>; // emoji -> userIds[]
+  // ✅ FIX: Missing fields from build error
+  is_starred?: boolean;
+  is_edited?: boolean;
+  sender_avatar?: string;
 }
 
 export interface ChatRoom {
@@ -882,9 +886,18 @@ export interface ChatRoom {
   last_message_content?: string;
   last_message_at?: string;
   last_message_sender_id?: string;
+  last_message_type?: string; // ✅ FIX: Added missing field
   unread_count: number;
   is_typing?: boolean; // UI state
-  pinned_message_id?: string;
+  pinned_message_id?: string | null; // ✅ FIX: Allow null
+  // ✅ FIX: Missing fields from build error
+  is_pinned?: boolean;
+  is_manually_unread?: boolean;
+  is_archived?: boolean;
+  report_id?: string;
+  report_title?: string;
+  report_category?: string;
+  type?: 'report' | 'direct' | 'group'; // ✅ FIX: Added type
 }
 
 export const chatsApi = {
@@ -932,6 +945,58 @@ export const chatsApi = {
       method: 'POST',
       body: JSON.stringify({ emoji })
     });
+  },
+  // ✅ FIX: Missing methods from build error
+  notifyTyping: async (roomId: string, isTyping: boolean): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/typing`, {
+      method: 'POST',
+      body: JSON.stringify({ isTyping })
+    });
+  },
+  // Chat Actions
+  pinChat: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'POST' });
+  },
+  unpinChat: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'DELETE' });
+  },
+  archiveChat: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'POST' });
+  },
+  unarchiveChat: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'DELETE' });
+  },
+  markChatUnread: async (roomId: string, unread: boolean): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/unread`, {
+      method: 'PATCH',
+      body: JSON.stringify({ unread })
+    });
+  },
+  deleteChat: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}`, { method: 'DELETE' });
+  },
+
+  // Message Actions
+  pinMessage: async (roomId: string, messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'POST' });
+  },
+  unpinMessage: async (roomId: string, messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'DELETE' });
+  },
+  starMessage: async (roomId: string, messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'POST' });
+  },
+  unstarMessage: async (roomId: string, messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'DELETE' });
+  },
+  editMessage: async (roomId: string, messageId: string, content: string): Promise<ChatMessage> => {
+    return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content })
+    });
+  },
+  deleteMessage: async (roomId: string, messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}`, { method: 'DELETE' });
   }
 };
 
@@ -997,6 +1062,9 @@ export const userZonesApi = {
 // GAMIFICATION API
 // ============================================
 
+// ✅ FIX: Export GamificationBadge (alias for Badge) for compatibility
+export type GamificationBadge = Badge;
+
 export interface Badge {
   id: string;
   code: string; // e.g. 'first_report'
@@ -1006,6 +1074,8 @@ export interface Badge {
   unlocked_at: string | null;
   progress: number; // 0-100
   display_order: number;
+  // ✅ FIX: Missing fields from build error
+  points?: number;
 }
 
 export interface GamificationSummary {
@@ -1015,6 +1085,11 @@ export interface GamificationSummary {
   title: string; // 'Novato', 'Vigilante', etc
   badges_count: number;
   total_badges: number;
+  // ✅ FIX: Missing fields from build error
+  profile?: UserProfile;
+  badges?: Badge[];
+  newBadges?: Badge[];
+  nextAchievement?: any; // Allow loose typing for now
 }
 
 export const gamificationApi = {

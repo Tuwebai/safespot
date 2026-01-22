@@ -100,7 +100,7 @@ export function CompactReportCard({
                 <Card className="group bg-card border-border hover:border-neon-green/50 transition-all duration-300 h-full flex flex-col overflow-hidden shadow-lg">
                     <CardContent className="p-4 flex gap-4">
                         {/* Mapa (Lateral Izquierdo) */}
-                        <div className="flex-shrink-0 w-[100px] h-[100px] rounded-lg overflow-hidden shadow-md">
+                        <div className="flex-shrink-0 w-[84px] h-[84px] sm:w-[100px] sm:h-[100px] rounded-lg overflow-hidden shadow-md">
                             <ReportMapFallback
                                 lat={report.latitude ?? undefined}
                                 lng={report.longitude ?? undefined}

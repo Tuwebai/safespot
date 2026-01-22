@@ -3,7 +3,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { EnhancedComment } from './enhanced-comment'
 import { CornerDownRight } from 'lucide-react'
-import { isOwner as isOwnerPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import type { Comment } from '@/lib/api'
 
@@ -75,7 +74,7 @@ export const CommentThread = memo(function CommentThread({
     isLastChild = false,
 }: CommentThreadProps) {
     // ✅ SSOT: Calculate ownership internally for this specific comment node
-    const isOwner = isOwnerPermission(comment);
+    // const isOwner = isOwnerPermission(comment); // REMOVE UNUSED VAR
 
     // Find direct replies to this comment and sort them chronologically (oldest first)
     const replies = allComments
@@ -128,7 +127,7 @@ export const CommentThread = memo(function CommentThread({
                     <div className="mb-2 text-[10px] sm:text-xs text-foreground/50 flex items-center gap-1 ml-1 uppercase font-bold tracking-tight">
                         <span className="opacity-60">Respondiendo a</span>
                         <span className="text-neon-green/80 group-hover/thread:text-neon-green transition-colors">
-                            @{parentComment.alias || 'Anónimo'}
+                            @{parentComment.author.alias || 'Anónimo'}
                         </span>
                     </div>
                 )}
@@ -139,7 +138,6 @@ export const CommentThread = memo(function CommentThread({
                     repliesCount={replies.length}
                     isExpanded={isExpanded}
                     onToggleReplies={depth > 0 ? () => setIsExpanded(!isExpanded) : undefined}
-                    isOwner={isOwner}
                     isMod={isMod}
                     onReply={onReply}
                     onEdit={onEdit}
@@ -185,7 +183,7 @@ export const CommentThread = memo(function CommentThread({
                                 <CornerDownRight className="h-3 w-3" />
                                 <span>Respondiendo a</span>
                                 <span className="text-neon-green font-medium">
-                                    {comment.alias ? `@${comment.alias}` : `Usuario Anónimo ${comment.anonymous_id.substring(0, 2).toUpperCase()}`}
+                                    {comment.author.alias ? `@${comment.author.alias}` : `Usuario Anónimo ${comment.author.id.substring(0, 2).toUpperCase()}`}
                                 </span>
                             </div>
                             <RichTextEditor

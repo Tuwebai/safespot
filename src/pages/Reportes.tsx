@@ -364,17 +364,17 @@ export function Reportes() {
 
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+    <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
       <SEO
         title="Reportes Recientes"
         description="Explora los últimos reportes de seguridad en tu zona. Mantente informado sobre incidentes y alertas ciudadanas en tiempo real."
       />
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2 text-foreground">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-foreground">
           Lista de Reportes
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm sm:text-base text-muted-foreground">
           Explora y filtra todos los reportes de la comunidad
         </p>
       </div>

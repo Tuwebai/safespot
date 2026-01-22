@@ -22,8 +22,8 @@ const FILTERS = [
  */
 export function QuickFilters({ activeFilter, onFilterChange }: QuickFiltersProps) {
     return (
-        <div className="mb-6">
-            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        <div className="mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex items-center gap-3 overflow-x-auto pb-4 pt-1 px-4 sm:px-1 scrollbar-hide">
                 {FILTERS.map((filter) => {
                     const Icon = filter.icon
                     const isActive = activeFilter === filter.id

@@ -41,10 +41,10 @@ export function HighlightedReportCard({ reportId, initialData }: HighlightedRepo
             className="block no-underline"
         >
             <Card className="group bg-gradient-to-br from-card/90 to-card border-neon-green/30 hover:border-neon-green transition-all duration-300 shadow-xl hover:shadow-[0_0_30px_rgba(33,255,140,0.2)]">
-                <CardContent className="p-6">
-                    <div className="flex flex-col md:flex-row gap-6">
-                        {/* Mapa (Lateral Izquierdo) */}
-                        <div className="flex-shrink-0 w-[120px] h-[120px] rounded-lg overflow-hidden shadow-lg">
+                <CardContent className="p-4 md:p-6">
+                    <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                        {/* Mapa (Arriba en móvil, Izquierda en desktop) */}
+                        <div className="flex-shrink-0 w-full md:w-[140px] h-48 md:h-[140px] rounded-lg overflow-hidden shadow-lg relative z-0">
                             <ReportMapFallback
                                 lat={report.latitude ?? undefined}
                                 lng={report.longitude ?? undefined}

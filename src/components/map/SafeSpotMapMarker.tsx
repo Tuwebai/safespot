@@ -46,11 +46,11 @@ export function SafeSpotMapMarker({ report }: SafeSpotMapMarkerProps) {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                         <Avatar className="h-5 w-5 border border-white/10 shrink-0">
                             <AvatarImage
-                                src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
+                                src={report.author?.avatarUrl || getAvatarUrl(report.author?.id || 'anon')}
                                 alt="Avatar"
                             />
                             <AvatarFallback className="bg-dark-bg text-[8px] text-gray-400 flex items-center justify-center">
-                                {getAvatarFallback(report.anonymous_id)}
+                                {getAvatarFallback(report.author?.alias)}
                             </AvatarFallback>
                         </Avatar>
                         <span>{new Date(report.created_at).toLocaleDateString()}</span>

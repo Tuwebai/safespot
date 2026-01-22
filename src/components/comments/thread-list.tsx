@@ -18,7 +18,6 @@ interface ThreadListProps {
   onLikeChange?: (commentId: string, liked: boolean, newCount: number) => void
   onPin?: (commentId: string) => void
   onUnpin?: (commentId: string) => void
-  isOwner?: (commentId: string) => boolean
   isMod?: boolean
   editingCommentId?: string | null
   editText?: string
@@ -53,7 +52,6 @@ export const ThreadList = memo(function ThreadList({
   onLikeChange,
   onPin,
   onUnpin,
-  isOwner = () => false,
   isMod = false,
   editingCommentId = null,
   editText = '',
@@ -134,7 +132,7 @@ export const ThreadList = memo(function ThreadList({
   // 1. Start with thread roots
   threads.forEach(t => {
     threadRelatedComments.add(t.id)
-    threadParticipants.add(t.anonymous_id)
+    threadParticipants.add(t.author.id)
     const tTime = new Date(t.created_at).getTime()
     if (tTime > lastThreadActivity) lastThreadActivity = tTime
   })
@@ -145,7 +143,7 @@ export const ThreadList = memo(function ThreadList({
     const replies = repliesMap.get(parentId) || []
     replies.forEach(r => {
       threadRelatedComments.add(r.id)
-      threadParticipants.add(r.anonymous_id)
+      threadParticipants.add(r.author.id)
       const rTime = new Date(r.created_at).getTime()
       if (rTime > lastThreadActivity) lastThreadActivity = rTime
 
@@ -269,7 +267,7 @@ export const ThreadList = memo(function ThreadList({
           </Card>
         ) : (
           filteredComments.map((comment) => {
-            const isThreadOwner = isOwner(comment.id)
+            // const isThreadOwner = isOwner(comment.id) // REMOVE UNUSED VAR
 
             return (
               <CommentThread
@@ -284,7 +282,6 @@ export const ThreadList = memo(function ThreadList({
                 onLikeChange={onLikeChange}
                 onPin={onPin}
                 onUnpin={onUnpin}
-                isOwner={isThreadOwner}
                 isMod={isMod}
                 canPin={isMod} // In ThreadList usage context, isMod implies Report Owner permissions
                 replyingTo={replyingTo}
