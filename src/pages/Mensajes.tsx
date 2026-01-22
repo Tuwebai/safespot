@@ -81,7 +81,7 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                         <div className="flex items-center gap-1">
                             {room.is_pinned && <Pin className="w-3 h-3 text-muted-foreground rotate-45" />}
                             <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                {formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es })}
+                                {room.last_message_at ? formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es }) : ''}
                             </span>
                         </div>
                     </div>
@@ -176,7 +176,9 @@ const Mensajes: React.FC = () => {
         // 3. Ordenamiento (Pinned > Date)
         return result.sort((a, b) => {
             if (viewMode === 'inbox' && a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
-            return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+            const dateA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+            const dateB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+            return dateB - dateA;
         });
 
     }, [rooms, searchTerm, viewMode]);
@@ -224,7 +226,7 @@ const Mensajes: React.FC = () => {
 
             // 1. Check if we already have a DM with this user
             const existingRoom = rooms.find(r =>
-                r.type === 'dm' &&
+                r.type === 'direct' &&
                 r.other_participant_id === startChatUserId
             );
 

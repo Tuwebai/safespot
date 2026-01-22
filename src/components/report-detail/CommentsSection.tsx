@@ -400,10 +400,7 @@ export function CommentsSection({
                     onDelete={handleDeleteComment}
                     onFlag={handleFlagComment}
                     onLikeChange={handleLikeChange}
-                    isOwner={(commentId) => {
-                        const comment = comments.find(c => c.id === commentId)
-                        return isOwner(comment)
-                    }}
+                    // isOwner prop removed (handled internally by ThreadList -> CommentThread)
                     isMod={currentUserId === reportOwnerId} // "Report Owner" logic
                     onPin={pinComment}
                     onUnpin={unpinComment}

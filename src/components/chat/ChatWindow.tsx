@@ -602,7 +602,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         });
 
         try {
-            await chatsApi.pinMessage(room.id, messageId);
+            if (messageId) {
+                await chatsApi.pinMessage(room.id, messageId);
+            } else if (room.pinned_message_id) {
+                await chatsApi.unpinMessage(room.id, room.pinned_message_id);
+            }
+
             // 3. Broadcast to other tabs
             chatBroadcast.emit({
                 type: 'message-pinned',
@@ -634,9 +639,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
         try {
             if (msg.is_starred) {
-                await chatsApi.unstarMessage(msg.id);
+                await chatsApi.unstarMessage(room.id, msg.id);
             } else {
-                await chatsApi.starMessage(msg.id);
+                await chatsApi.starMessage(room.id, msg.id);
             }
         } catch (err) {
             console.error('[Chat] Star toggle failed:', err);

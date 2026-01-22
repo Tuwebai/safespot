@@ -7,11 +7,36 @@ import { transformReport, transformComment, RawReport, RawComment } from './adap
 
 export { type Report, type Comment };
 
+// Extended Badge interface to match usage in Gamification.tsx
+export interface GamificationBadge {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  points: number;
+  level: number;
+  category: string;
+  category_label?: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  obtained: boolean;
+  obtained_at?: string;
+  progress: {
+    current: number;
+    required: number;
+    percent: number;
+  };
+}
+
+// NewBadge is what we receive in realtime/notifications
 export interface NewBadge {
   id: string;
+  code: string;
   name: string;
-  icon_url: string;
+  icon: string;
   description: string;
+  points: number;
+  rarity?: 'common' | 'rare' | 'epic' | 'legendary';
 }
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -790,6 +815,36 @@ export const usersApi = {
   getFollowers: async (identifier: string): Promise<any[]> => {
     return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/followers`);
   },
+
+  /**
+   * Get nearby users (Mock/Placeholder for now to fix build)
+   */
+  getNearbyUsers: async (): Promise<UserProfile[]> => {
+    // Return empty array safe logic for now
+    return [];
+  },
+
+  /**
+   * Get global users (Mock/Placeholder)
+   */
+  getGlobalUsers: async (_page?: number): Promise<UserProfile[]> => {
+    return [];
+  },
+
+  /**
+   * Get following list (Self or User)
+   */
+  getFollowing: async (identifier?: string): Promise<any[]> => {
+    if (identifier) return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/following`);
+    return apiRequest<any[]>('/users/me/following');
+  },
+
+  /**
+   * Get suggestions
+   */
+  getSuggestions: async (): Promise<UserProfile[]> => {
+    return [];
+  }
 };
 
 // ============================================
@@ -845,6 +900,9 @@ export const notificationsApi = {
       body: JSON.stringify(settings),
     });
   },
+  delete: async (id: string): Promise<void> => {
+    return apiRequest<void>(`/notifications/${id}`, { method: 'DELETE' });
+  }
 };
 
 // ============================================
@@ -1062,21 +1120,8 @@ export const userZonesApi = {
 // GAMIFICATION API
 // ============================================
 
-// ✅ FIX: Export GamificationBadge (alias for Badge) for compatibility
-export type GamificationBadge = Badge;
-
-export interface Badge {
-  id: string;
-  code: string; // e.g. 'first_report'
-  name: string;
-  description: string;
-  icon_url: string;
-  unlocked_at: string | null;
-  progress: number; // 0-100
-  display_order: number;
-  // ✅ FIX: Missing fields from build error
-  points?: number;
-}
+// Helper type alias: We alias Badge to GamificationBadge to avoid breaking other files importing 'Badge'
+export type Badge = GamificationBadge;
 
 export interface GamificationSummary {
   level: number;

@@ -64,7 +64,7 @@ export function Gamificacion() {
         })
 
         // Find the full badge info
-        const fullBadge = summary.badges.find(b => b.code === badge.code)
+        const fullBadge = summary.badges?.find(b => b.code === badge.code)
         if (fullBadge) {
           // CHECK FOR LEGENDARY
           if (fullBadge.rarity === 'legendary') {

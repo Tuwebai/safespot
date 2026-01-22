@@ -177,12 +177,14 @@ export function useBadgeNotifications() {
       // This ensures we catch badges even if the "newBadges" flag was missed
       const allAwarded: NewBadge[] = [
         ...(summary.newBadges || []),
-        ...summary.badges
+        ...(summary.badges || [])
           .filter(b => b.obtained)
           .map(b => ({
+            id: b.id,
             code: b.code,
             name: b.name,
             icon: b.icon,
+            description: b.description,
             points: b.points
           }))
       ]

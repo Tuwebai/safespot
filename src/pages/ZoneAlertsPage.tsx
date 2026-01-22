@@ -277,10 +277,10 @@ export function ZoneAlertsPage() {
                         />
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {reportIds.map((id) => (
-                                <div key={id} className="h-full">
+                            {reportIds.map((report: any) => (
+                                <div key={report.id} className="h-full">
                                     <ReportCard
-                                        reportId={id}
+                                        reportId={report.id}
                                         onToggleFavorite={() => { }}
                                         onFlag={() => { }}
                                         isFlagging={false}

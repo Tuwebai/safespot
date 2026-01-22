@@ -24,7 +24,7 @@ export function useChatActions() {
 
     const pinMutation = useMutation({
         mutationFn: ({ roomId, isPinned }: { roomId: string; isPinned: boolean }) =>
-            chatsApi.pinChat(roomId, isPinned),
+            isPinned ? chatsApi.pinChat(roomId) : chatsApi.unpinChat(roomId),
         onMutate: async ({ roomId, isPinned }) => {
             if (!anonymousId) return;
             const queryKey = ['chats', 'rooms', anonymousId];
@@ -52,7 +52,7 @@ export function useChatActions() {
 
     const archiveMutation = useMutation({
         mutationFn: ({ roomId, isArchived }: { roomId: string; isArchived: boolean }) =>
-            chatsApi.archiveChat(roomId, isArchived),
+            isArchived ? chatsApi.archiveChat(roomId) : chatsApi.unarchiveChat(roomId),
         onMutate: async ({ roomId, isArchived }) => {
             if (!anonymousId) return;
             const queryKey = ['chats', 'rooms', anonymousId];
