@@ -12,6 +12,7 @@ import { getDeterministicScore } from '@/lib/utils-score'
 
 interface HighlightedReportCardProps {
     reportId: string
+    initialData?: import('@/lib/normalizeReport').NormalizedReport
 }
 
 /**
@@ -19,8 +20,11 @@ interface HighlightedReportCardProps {
  * Card más grande para el reporte más urgente/relevante
  * Incluye mapa estático optimizado (120x120px)
  */
-export function HighlightedReportCard({ reportId }: HighlightedReportCardProps) {
-    const { data: report } = useReport(reportId)
+export function HighlightedReportCard({ reportId, initialData }: HighlightedReportCardProps) {
+    const { data: report } = useReport(reportId, initialData, {
+        enabled: !initialData?._isOptimistic, // ✅ Prevent 404s on optimistic items
+        isOptimistic: initialData?._isOptimistic // ✅ Explicit flag for hook logic
+    })
 
     if (!report) {
         return null
@@ -32,7 +36,7 @@ export function HighlightedReportCard({ reportId }: HighlightedReportCardProps) 
     return (
         <SmartLink
             to={`/reporte/${report.id}`}
-            prefetchReportId={report.id}
+            prefetchReportId={!initialData?._isOptimistic ? report.id : undefined} // ✅ Prevent prefetch 404 on optimistic
             prefetchRoute="DetalleReporte"
             className="block no-underline"
         >
@@ -104,7 +108,7 @@ export function HighlightedReportCard({ reportId }: HighlightedReportCardProps) 
                                 <div className="flex items-center gap-2">
                                     <Avatar className="h-8 w-8 border border-white/10">
                                         <AvatarImage
-                                            src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
+                                            src={report.author?.avatarUrl || getAvatarUrl(report.author?.id || 'unknown')}
                                             alt="Avatar"
                                         />
                                         <AvatarFallback className="bg-muted text-xs text-muted-foreground">

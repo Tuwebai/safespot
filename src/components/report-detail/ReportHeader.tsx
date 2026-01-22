@@ -7,7 +7,6 @@ import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { NormalizedReport } from '@/lib/normalizeReport'
 import { PrefetchLink } from '@/components/PrefetchLink'
-import { getAvatarUrl } from '@/lib/avatar'
 
 // ============================================
 // TYPES
@@ -86,21 +85,23 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 </div>
             ) : (
                 <PrefetchLink
-                    to={`/usuario/${report.alias || report.anonymous_id}`}
+                    // ✅ FIXED: Use Author SSOT. Prefer alias, fallback to ID.
+                    to={`/usuario/${report.author.alias !== 'Anónimo' ? report.author.alias : report.author.id}`}
                     prefetchRoute="PublicProfile"
                 >
                     <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-neon-green/30 transition-all group/author cursor-pointer">
                         <Avatar className="h-8 w-8 border border-white/10 group-hover/author:border-neon-green/50 transition-colors">
                             <AvatarImage
-                                src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
-                                alt="Avatar"
+                                // ✅ FIXED: Use Author SSOT
+                                src={report.author.avatarUrl}
+                                alt={report.author.alias}
                             />
                             <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
                                 {report.avatarFallback}
                             </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
-                            <span className="text-sm font-medium text-foreground/90 leading-none group-hover/author:text-white transition-colors">
+                            <span className="text-sm font-medium text-neon-green leading-none group-hover/author:text-neon-green/80 transition-colors">
                                 {report.displayAuthor}
                             </span>
                             <span className="text-xs text-muted-foreground">

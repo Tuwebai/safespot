@@ -35,7 +35,7 @@ export const NotificationService = {
                     -- General proximity matched from settings
                     SELECT 
                         u.anonymous_id,
-                        'proximity' as alert_type,
+                        'system' as alert_type, -- Fixed constraint violation
                         NULL as zone_type,
                         ST_Distance(ns.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
                     FROM notification_settings ns
@@ -269,7 +269,7 @@ export const NotificationService = {
                 INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
                 SELECT 
                     anonymous_id,
-                    'similar',
+                    'system', -- Fixed constraint violation
                     '📍 Reporte similar cerca tuyo',
                     'Se reportó un nuevo caso de "' || $1::text || '" en tu zona.',
                     'report',

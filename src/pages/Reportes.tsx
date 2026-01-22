@@ -7,7 +7,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useQueryClient } from '@tanstack/react-query'
 import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
-import { reportsApi } from '@/lib/api'
+// reportsApi removed
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
@@ -18,12 +18,12 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Search, MapPin, Filter, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
-import type { Report } from '@/lib/schemas'; import type { ReportFilters } from '@/lib/api'
+import type { Report, ReportFilters } from '@/lib/schemas'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
 import { BottomSheet } from '@/components/ui/bottom-sheet'
 
-import { useReportsQuery } from '@/hooks/queries'
+import { useReportsQuery, useFlagReportMutation } from '@/hooks/queries/useReportsQuery'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -40,12 +40,13 @@ import { UserZoneCard } from '@/components/reportes/UserZoneCard'
 import { QuickFilters, type QuickFilterType } from '@/components/reportes/QuickFilters'
 import { HighlightedReportCard } from '@/components/reportes/HighlightedReportCard'
 import { CompactReportCard } from '@/components/reportes/CompactReportCard'
+import { useUserZone } from '@/hooks/useUserZone'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
 // ============================================
 
-// ... (Helpers can remain if other components use them, or be removed. I'll leave them to avoid large deletions for now, cleanup later)
+// ... (I will use multi_replace_file_content for this) (Helpers can remain if other components use them, or be removed. I'll leave them to avoid large deletions for now, cleanup later)
 // Keep helper functions for now...
 
 // ============================================
@@ -58,6 +59,7 @@ export function Reportes() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { checkAuth } = useAuthGuard()
+  const { mutateAsync: flagReport } = useFlagReportMutation()
 
   // 🛡️ PRE-AUTH GUARD: Check auth BEFORE navigating to form
   const handleCreateReport = () => {
@@ -130,6 +132,46 @@ export function Reportes() {
     searchInputRef.current?.focus()
   })
 
+  // Interactuar con la zona del usuario (SSOT)
+  const { zones, updateCurrentZone } = useUserZone()
+  const currentZone = zones?.find(z => z.type === 'current')
+
+  // Estado para guardar el nombre de la ciudad resuelto (Async)
+  const [cityName, setCityName] = useState<string | null>(null)
+
+  // Effect: Resolver nombre de ciudad cuando se activa el filtro
+  useEffect(() => {
+    const resolveCity = async () => {
+      if (quickFilter !== 'mi_zona') {
+        setCityName(null)
+        return
+      }
+
+      let lat, lng;
+      if (currentZone) {
+        lat = currentZone.lat
+        lng = currentZone.lng
+      } else if (selectedLocation) {
+        lat = selectedLocation.lat
+        lng = selectedLocation.lng
+      }
+
+      if (lat && lng) {
+        try {
+          // Import dinámico para evitar cargar georefClient si no se usa
+          const { reverseGeocode } = await import('@/services/georefClient')
+          const result = await reverseGeocode(lat, lng)
+          if (result && result.locality) {
+            setCityName(result.locality)
+          }
+        } catch (e) {
+          console.error("Error resolving city", e)
+        }
+      }
+    }
+    resolveCity()
+  }, [quickFilter, currentZone, selectedLocation])
+
   // Build filters object (memoized to prevent unnecessary query refetches)
   const filters = useMemo<ReportFilters | undefined>(() => {
     const f: ReportFilters = {}
@@ -141,15 +183,29 @@ export function Reportes() {
       yesterday.setDate(yesterday.getDate() - 1)
       f.startDate = yesterday.toISOString().split('T')[0]
     } else if (quickFilter === 'robos') {
-      // Todas las categorías de robo
-      f.category = 'Robo de Bicicleta' // TODO: Ajustar según categorías reales
-    } else if (quickFilter === 'infraestructura') {
-      f.category = 'Infraestructura' // TODO: Ajustar según categorías reales
-    } else if (quickFilter === 'mi_zona' && selectedLocation) {
-      // Usar ubicación seleccionada
-      f.lat = selectedLocation.lat
-      f.lng = selectedLocation.lng
-      f.radius = 2000
+      // Todas las categorías de robo - TODO: Hacer dinámico
+      f.category = 'Robo de Bicicleta'
+    } else if (quickFilter === 'motos') {
+      f.category = 'Motos'
+    } else if (quickFilter === 'mi_zona') {
+      // ✅ ENTERPRISE LOGIC: "Fijo la Ciudad"
+      // Si logramos resolver el nombre de la ciudad, filtramos por ZONA (Texto Exacto)
+      if (cityName) {
+        f.zone = cityName
+        // NO enviamos lat/lng/radius para evitar lógica geo del backend
+        // Esto activa el filtro `r.zone ILIKE $cityName`
+      } else {
+        // Fallback Graceful: Si falla la resolución de nombre, usamos radio amplio (Safety Net)
+        if (currentZone) {
+          f.lat = currentZone.lat
+          f.lng = currentZone.lng
+          f.radius = currentZone.radius_meters || 15000
+        } else if (selectedLocation) {
+          f.lat = selectedLocation.lat
+          f.lng = selectedLocation.lng
+          f.radius = 15000
+        }
+      }
     }
 
     // Filtros avanzados (solo si no están en conflicto con quick filters)
@@ -171,7 +227,29 @@ export function Reportes() {
     if (followedOnly) f.followed_only = true
 
     return Object.keys(f).length > 0 ? f : undefined
-  }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly])
+  }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly, currentZone, cityName])
+
+  // Effect: Auto-trigger location request if 'mi_zona' selected but no zone exists
+  useEffect(() => {
+    if (quickFilter === 'mi_zona' && !currentZone && !selectedLocation) {
+      // Si el usuario toca "Mi Zona" y no tiene zona ni ubicación manual, pedimos GPS
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            updateCurrentZone({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              label: 'Ubicación Actual'
+            })
+          },
+          (error) => {
+            console.error("Error auto-fetching location for Mi Zona", error)
+            toast.error("No pudimos obtener tu ubicación. Por favor actívala para ver reportes cercanos.")
+          }
+        )
+      }
+    }
+  }, [quickFilter, currentZone, selectedLocation, updateCurrentZone, toast])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading, error: queryError, refetch } = useReportsQuery(filters)
@@ -199,7 +277,7 @@ export function Reportes() {
     const currentAnonymousId = getAnonymousIdSafe()
 
     // No permitir flag si es owner
-    if (report.anonymous_id === currentAnonymousId) {
+    if (report.author?.isAuthor || report.author?.id === currentAnonymousId) {
       return
     }
 
@@ -232,7 +310,9 @@ export function Reportes() {
 
     // Validaciones finales
     const currentAnonymousId = getAnonymousIdSafe()
-    if (report.anonymous_id === currentAnonymousId || report.is_flagged === true) {
+    const isOwner = report.author?.isAuthor || report.author?.id === currentAnonymousId;
+
+    if (isOwner || report.is_flagged === true) {
       setIsFlagDialogOpen(false)
       setFlaggingReportId(null)
       return
@@ -241,27 +321,14 @@ export function Reportes() {
     // Marcar como en proceso
     setFlaggingReports(prev => new Set(prev).add(reportId))
 
-    // Snapshot can be just the report object if we only revert that
-    const previousReport = report
-
-    // Optimistic update: SSOT Patch
-    reportsCache.patch(queryClient, reportId, (old) => ({
-      is_flagged: true,
-      flags_count: (old.flags_count ?? 0) + 1
-    }))
-
     try {
-      await reportsApi.flag(reportId, reason.trim())
+      await flagReport({ reportId, reason: reason.trim() })
 
       // Cerrar modal
       setIsFlagDialogOpen(false)
       setFlaggingReportId(null)
+      toast.success('Reporte denunciado exitosamente')
     } catch (error) {
-      // Revertir optimistic update SSOT
-      if (previousReport) {
-        reportsCache.patch(queryClient, reportId, previousReport)
-      }
-
       const errorMessage = error instanceof Error ? error.message : ''
 
       if (errorMessage.includes('own report')) {
@@ -279,26 +346,21 @@ export function Reportes() {
         return newSet
       })
     }
-  }, [flaggingReportId, toast, queryClient])
+  }, [flaggingReportId, toast, queryClient, flagReport])
 
 
 
 
   // Algoritmo de selección de reporte destacado (nuevo)
-  const highlightedReportId = useMemo(() => {
+  const highlightedReport = useMemo(() => {
     if (reports.length === 0) return null
-    // Algoritmo simple: el primer reporte (ya viene ordenado por relevancia)
-    // TODO: Implementar algoritmo más sofisticado basado en:
-    // - Urgencia (created_at < 2 horas)
-    // - SafeScore (cuando esté implementado)
-    // - Engagement (views + comments + upvotes)
     return reports[0]
   }, [reports])
 
   const feedReports = useMemo(() => {
-    if (!highlightedReportId) return reports
+    if (!highlightedReport) return reports
     return reports.slice(1) // Excluir el destacado del feed
-  }, [reports, highlightedReportId])
+  }, [reports, highlightedReport])
 
 
   return (
@@ -394,7 +456,7 @@ export function Reportes() {
 
             <Select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={(e) => setSortBy(e.target.value as 'recent' | 'popular' | 'oldest')}
             >
               <option value="recent">Más Recientes</option>
               <option value="popular">Más Populares</option>
@@ -479,10 +541,16 @@ export function Reportes() {
                       ))}
                     </div>
                   )}
-                  {selectedLocation && (
+                  {selectedLocation && !cityName && (
                     <p className="text-xs text-neon-green mt-1 flex items-center">
                       <MapPin className="h-3 w-3 mr-1" />
-                      Filtrando a 2km de esta ubicación
+                      Filtrando por radio (15km)
+                    </p>
+                  )}
+                  {cityName && quickFilter === 'mi_zona' && (
+                    <p className="text-xs text-neon-green mt-1 flex items-center">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      Filtrando por Ciudad: {cityName}
                     </p>
                   )}
                 </div>
@@ -607,7 +675,7 @@ export function Reportes() {
           <div>
             <Select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={(e) => setSortBy(e.target.value as 'recent' | 'popular' | 'oldest')}
             >
               <option value="recent">Más Recientes</option>
               <option value="popular">Más Populares</option>
@@ -684,12 +752,15 @@ export function Reportes() {
         </div>
 
         {/* Reporte Destacado (Hero) */}
-        {highlightedReportId && !isLoading && !error && (
-          <HighlightedReportCard reportId={highlightedReportId} />
+        {highlightedReport && !isLoading && !error && (
+          <HighlightedReportCard
+            reportId={highlightedReport.id}
+            initialData={highlightedReport}
+          />
         )}
 
         {/* Separator similar to Footer (Exact Replica) */}
-        {highlightedReportId && !isLoading && !error && reports.length > 1 && (
+        {highlightedReport && !isLoading && !error && reports.length > 1 && (
           <div className="w-full border-t border-white/5 my-8" />
         )}
 
@@ -740,13 +811,14 @@ export function Reportes() {
                   SSOT Layout: Usamos CSS Grid nativo.
                */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-fr">
-                {feedReports.map((reportId) => (
-                  <div key={reportId} className="h-full">
+                {feedReports.map((report) => (
+                  <div key={report.id} className="h-full">
                     <CompactReportCard
-                      reportId={reportId}
-                      onToggleFavorite={(newState) => handleFavoriteUpdate(reportId, newState)}
-                      onFlag={(e) => handleFlag(e, reportId)}
-                      isFlagging={flaggingReports.has(reportId)}
+                      reportId={report.id}
+                      initialData={report}
+                      onToggleFavorite={(newState) => handleFavoriteUpdate(report.id, newState)}
+                      onFlag={(e) => handleFlag(e, report.id)}
+                      isFlagging={flaggingReports.has(report.id)}
                     />
                   </div>
                 ))}

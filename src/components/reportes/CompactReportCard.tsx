@@ -7,8 +7,8 @@ import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/Lazy
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { AnimatedCard } from '@/components/ui/animated'
 import { useReport } from '@/hooks/queries/useReportsQuery'
-import { isOwner as isOwnerPermission } from '@/lib/permissions'
 import type { NormalizedReport } from '@/lib/normalizeReport'
+import { useIsOwner } from '@/hooks/useIsOwner'
 
 // Helper functions (moved from ReportCard.tsx)
 const getStatusColor = (status: NormalizedReport['status']) => {
@@ -50,6 +50,7 @@ import { getDeterministicScore } from '@/lib/utils-score'
 
 interface CompactReportCardProps {
     reportId: string
+    initialData?: NormalizedReport
     onToggleFavorite: (newState: boolean) => void
     onFlag: (e: React.MouseEvent) => void
     isFlagging?: boolean
@@ -61,14 +62,19 @@ interface CompactReportCardProps {
  */
 export function CompactReportCard({
     reportId,
+    initialData,
     onToggleFavorite,
     onFlag,
     isFlagging = false
 }: CompactReportCardProps) {
-    const { data: report } = useReport(reportId)
+    const { data: report } = useReport(reportId, initialData, {
+        enabled: !initialData?._isOptimistic, // ✅ Prevent 404s on optimistic items
+        isOptimistic: initialData?._isOptimistic
+    })
 
     // const currentAnonymousId = getAnonymousIdSafe() // DEPRECATED: Use permission module
-    const isOwner = isOwnerPermission(report);
+    // SSOT Ownership Check
+    const isOwner = useIsOwner(report?.author?.id)
     const isFlagged = report?.is_flagged ?? false
 
     if (!report) {
@@ -86,7 +92,7 @@ export function CompactReportCard({
     return (
         <SmartLink
             to={`/reporte/${report.id}`}
-            prefetchReportId={report.id}
+            prefetchReportId={!initialData?._isOptimistic ? report.id : undefined} // ✅ Prevent prefetch 404 on optimistic
             prefetchRoute="DetalleReporte"
             className="block h-full no-underline"
         >

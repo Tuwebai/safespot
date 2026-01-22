@@ -122,3 +122,19 @@ export const reportsListResponseSchema = z.object({
     data: z.array(z.any()), // Allow logic in adapter to handle shape
     // ... rest
 });
+
+export interface ReportFilters {
+    category?: string
+    status?: string
+    zone?: string
+    search?: string
+    lat?: number
+    lng?: number
+    radius?: number
+    sortBy?: 'recent' | 'popular' | 'oldest'
+    startDate?: string
+    endDate?: string
+    followed_only?: boolean
+    limit?: number
+    offset?: number
+}

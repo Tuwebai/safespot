@@ -2,10 +2,17 @@ import { AppClientError } from './errors';
 import { getClientId } from './clientId';
 import { ensureAnonymousId } from './identity';
 import { ZodSchema } from 'zod';
-import { type Report, type Comment, reportSchema } from './schemas'; // Import Report directly from schemas (already strict)
+import { type Report, type Comment } from './schemas'; // Import Report directly from schemas (already strict)
 import { transformReport, transformComment, RawReport, RawComment } from './adapters'; // Adapter integration
 
 export { type Report, type Comment };
+
+export interface NewBadge {
+  id: string;
+  name: string;
+  icon_url: string;
+  description: string;
+}
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -784,3 +791,266 @@ export const usersApi = {
     return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/followers`);
   },
 };
+
+// ============================================
+// NOTIFICATIONS API
+// ============================================
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: 'comment' | 'mention' | 'like' | 'alert' | 'system' | 'badge';
+  title: string;
+  message: string;
+  data?: Record<string, any>;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationSettings {
+  proximity_alerts: boolean;
+  report_activity: boolean;
+  similar_reports: boolean;
+  radius_meters: number;
+  email_notifications?: boolean;
+  push_notifications?: boolean;
+  // Location History (Cache)
+  last_known_lat?: number;
+  last_known_lng?: number;
+  last_known_city?: string;
+  last_known_province?: string;
+  updated_at?: string;
+  max_notifications_per_day?: number;
+}
+
+export const notificationsApi = {
+  getAll: async (): Promise<Notification[]> => {
+    return apiRequest<Notification[]>('/notifications');
+  },
+  markRead: async (id: string): Promise<void> => {
+    return apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' });
+  },
+  markAllRead: async (): Promise<void> => {
+    return apiRequest<void>('/notifications/read-all', { method: 'PATCH' });
+  },
+  deleteAll: async (): Promise<void> => {
+    return apiRequest<void>('/notifications', { method: 'DELETE' });
+  },
+  getSettings: async (): Promise<NotificationSettings> => {
+    return apiRequest<NotificationSettings>('/notifications/settings');
+  },
+  updateSettings: async (settings: Partial<NotificationSettings>): Promise<NotificationSettings> => {
+    return apiRequest<NotificationSettings>('/notifications/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    });
+  },
+};
+
+// ============================================
+// CHATS API
+// ============================================
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  type: 'text' | 'image' | 'sighting' | 'location';
+  created_at: string;
+  is_read: boolean;
+  is_delivered?: boolean;
+  localUrl?: string; // UI Optimistic
+  localStatus?: 'pending' | 'sent' | 'failed'; // UI Optimistic
+  caption?: string;
+  reply_to_id?: string;
+  reply_to_content?: string;
+  reply_to_type?: string;
+  reply_to_sender_alias?: string;
+  reply_to_sender_id?: string;
+  sender_alias?: string; // Hydrated
+  reactions?: Record<string, string[]>; // emoji -> userIds[]
+}
+
+export interface ChatRoom {
+  id: string;
+  other_participant_id?: string; // 1:1
+  other_participant_alias?: string;
+  other_participant_avatar?: string;
+  other_participant_last_seen?: string;
+  is_online?: boolean; // Hydrated
+  last_message_content?: string;
+  last_message_at?: string;
+  last_message_sender_id?: string;
+  unread_count: number;
+  is_typing?: boolean; // UI state
+  pinned_message_id?: string;
+}
+
+export const chatsApi = {
+  getAllRooms: async (): Promise<ChatRoom[]> => {
+    return apiRequest<ChatRoom[]>('/chats/rooms');
+  },
+  getMessages: async (roomId: string, since?: string): Promise<ChatMessage[]> => {
+    const query = since ? `?since=${since}` : '';
+    return apiRequest<ChatMessage[]>(`/chats/rooms/${roomId}/messages${query}`);
+  },
+  sendMessage: async (roomId: string, content: string, type = 'text', caption?: string, replyToId?: string, tempId?: string): Promise<ChatMessage> => {
+    return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, temp_id: tempId }),
+    });
+  },
+  createRoom: async (params: { reportId?: string; recipientId?: string }): Promise<ChatRoom> => {
+    return apiRequest<ChatRoom>('/chats/rooms', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+  markAsRead: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/read`, { method: 'POST' });
+  },
+  markAsDelivered: async (roomId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/rooms/${roomId}/delivered`, { method: 'POST' });
+  },
+  uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await fetch(`${API_BASE_URL}/chats/rooms/${roomId}/images`, {
+      method: 'POST',
+      headers: {
+        'X-Anonymous-Id': ensureAnonymousId(),
+      },
+      body: formData
+    });
+    if (!response.ok) throw new Error('Upload failed');
+    const json = await response.json();
+    return json.data || json;
+  },
+  reactToMessage: async (roomId: string, messageId: string, emoji: string): Promise<{ success: boolean }> => {
+    return apiRequest(`chats/rooms/${roomId}/messages/${messageId}/reactions`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
+  }
+};
+
+// ============================================
+// GEOCODE API
+// ============================================
+
+export interface GeocodeResult {
+  lat: number;
+  lon: number;
+  address: {
+    city?: string;
+    municipality?: string;
+    town?: string;
+    village?: string;
+    neighborhood?: string;
+    suburb?: string;
+    province?: string;
+    state?: string;
+    region?: string;
+    country?: string;
+  }
+}
+
+export const geocodeApi = {
+  reverse: async (lat: number, lng: number): Promise<GeocodeResult> => {
+    // Proxy through our backend to avoid exposing keys or dealing with CORS
+    return apiRequest<GeocodeResult>(`/geocode/reverse?lat=${lat}&lng=${lng}`);
+  },
+  getByIp: async (): Promise<GeocodeResult> => {
+    return apiRequest<GeocodeResult>('/geocode/ip');
+  }
+}
+
+// ============================================
+// USER ZONES API
+// ============================================
+
+export interface UserZoneData {
+  zone: UserZone; // Reusing UserZone from above
+}
+
+export interface ZoneSafetyData {
+  score: number;
+  level: 'safe' | 'moderate' | 'risky';
+  recent_incidents: number;
+}
+
+
+export const userZonesApi = {
+  getAll: async (): Promise<UserZone[]> => {
+    return apiRequest<UserZone[]>('/user-zones');
+  },
+  updateCurrent: async (lat: number, lng: number, label?: string): Promise<UserZoneData> => {
+    return apiRequest<UserZoneData>('/user-zones/current', {
+      method: 'POST',
+      body: JSON.stringify({ lat, lng, label })
+    })
+  }
+}
+
+// ============================================
+// GAMIFICATION API
+// ============================================
+
+export interface Badge {
+  id: string;
+  code: string; // e.g. 'first_report'
+  name: string;
+  description: string;
+  icon_url: string;
+  unlocked_at: string | null;
+  progress: number; // 0-100
+  display_order: number;
+}
+
+export interface GamificationSummary {
+  level: number;
+  points: number;
+  next_level_points: number;
+  title: string; // 'Novato', 'Vigilante', etc
+  badges_count: number;
+  total_badges: number;
+}
+
+export const gamificationApi = {
+  getSummary: async (): Promise<GamificationSummary> => {
+    return apiRequest<GamificationSummary>('/gamification/summary');
+  },
+  getBadges: async (): Promise<Badge[]> => {
+    return apiRequest<Badge[]>('/gamification/badges');
+  }
+}
+
+// ============================================
+// FAVORITES API
+// ============================================
+
+export const favoritesApi = {
+  getAll: async (): Promise<Report[]> => {
+    const raw = await apiRequest<RawReport[]>('/users/favorites');
+    return raw.map(r => transformReport(r));
+  }
+}
+
+// ============================================
+// SEO / ZONES API
+// ============================================
+
+export interface ZoneSEO {
+  slug: string;
+  name: string;
+  description?: string;
+  lat: number;
+  lng: number;
+}
+
+export const seoApi = {
+  getZones: async (): Promise<ZoneSEO[]> => {
+    return apiRequest<ZoneSEO[]>('/seo/zones');
+  }
+}

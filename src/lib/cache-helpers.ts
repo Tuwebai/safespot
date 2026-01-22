@@ -69,7 +69,44 @@ export const reportsCache = {
 
                 const updated = { ...old, ...updates };
 
-                if ('alias' in updates || 'anonymous_id' in updates || 'created_at' in updates) {
+                // ✅ IDENTITY RECONCILIATION (Strict SSOT):
+                // If the patch comes from a Raw Source (SSE) containing flat fields,
+                // we must manually update the nested 'author' object to maintain SSOT.
+                if ('alias' in updates || 'avatar_url' in updates) {
+                    const rawUpdates = updates as any;
+
+                    // 🔒 GUARD: Never allow null/undefined to overwrite existing valid data
+                    // If backend sends null, fallback to 'Anónimo' immediately if no previous value existed.
+                    // If previous value existed, keep it unless new value is non-null.
+
+                    const oldAuthor = old.author;
+                    const newAliasRaw = rawUpdates.alias;
+                    const newAvatarRaw = rawUpdates.avatar_url;
+
+                    // Logic: 
+                    // 1. If new value is provided (string), use it.
+                    // 2. If new value is null/undefined, keep old.
+                    // 3. If old is also missing, fallback to default.
+
+                    const resolvedAlias = (newAliasRaw !== undefined && newAliasRaw !== null)
+                        ? newAliasRaw
+                        : (oldAuthor?.alias || 'Anónimo');
+
+                    const resolvedAvatar = (newAvatarRaw !== undefined && newAvatarRaw !== null)
+                        ? newAvatarRaw
+                        : (oldAuthor?.avatarUrl || null); // Avatar can be null/undefined, alias cannot
+
+                    updated.author = {
+                        ...oldAuthor,
+                        alias: resolvedAlias,
+                        avatarUrl: resolvedAvatar,
+                        // Maintain ID and other invariant props
+                        id: oldAuthor?.id || 'unknown',
+                        isAuthor: oldAuthor?.isAuthor ?? false
+                    };
+                }
+
+                if ('alias' in updates || 'created_at' in updates) {
                     return normalizeReportForUI(updated as Report);
                 }
 
@@ -87,9 +124,13 @@ export const reportsCache = {
         queryClient.removeQueries({ queryKey: queryKeys.reports.detail(reportId) });
 
         // 2. Remove from ALL list queries (with or without filters)
-        queryClient.setQueriesData<string[]>(
+        queryClient.setQueriesData<Report[]>(
             { queryKey: ['reports', 'list'], exact: false },
-            (oldIds) => oldIds ? oldIds.filter(id => id !== reportId) : []
+            (oldList) => {
+                if (!Array.isArray(oldList)) return []
+                // Filter objects by ID
+                return oldList.filter(report => report.id !== reportId)
+            }
         );
     },
 
@@ -138,16 +179,17 @@ export const reportsCache = {
         queryClient.setQueryData(queryKeys.reports.detail(normalizedReport.id), normalizedReport);
 
         // 2. Update ALL matching lists (with or without filters)
-        queryClient.setQueriesData<string[]>(
+        queryClient.setQueriesData<Report[]>(
             { queryKey: ['reports', 'list'], exact: false },
             (old) => {
-                const list = Array.isArray(old) ? old.filter(item => typeof item === 'string') : [];
+                // Ensure we are working with an array of objects
+                const list = Array.isArray(old) ? old : [];
 
-                // Strict Deduplication using Set
+                // Strict Deduplication using ID check on objects
                 // Filter out the new ID if it already exists to move it to top
-                const uniqueOld = list.filter(id => id !== normalizedReport.id);
+                const uniqueOld = list.filter(r => r.id !== normalizedReport.id);
 
-                return [normalizedReport.id, ...uniqueOld];
+                return [normalizedReport, ...uniqueOld];
             }
         );
 
@@ -155,7 +197,8 @@ export const reportsCache = {
         const defaultKey = queryKeys.reports.list();
         const existingDefault = queryClient.getQueryData(defaultKey);
         if (!existingDefault) {
-            queryClient.setQueryData(defaultKey, [normalizedReport.id]);
+            // Initialize with full object array
+            queryClient.setQueryData(defaultKey, [normalizedReport]);
         }
     },
 
@@ -174,14 +217,19 @@ export const reportsCache = {
             queryClient.removeQueries({ queryKey: queryKeys.reports.detail(oldId) });
         }
 
-        // 2. Swap ID in ALL lists
-        queryClient.setQueriesData<string[]>(
+        // 2. Swap ID in ALL lists (Objects)
+        queryClient.setQueriesData<Report[]>(
             { queryKey: ['reports', 'list'], exact: false },
             (oldList) => {
                 if (!Array.isArray(oldList)) return oldList;
 
-                // Map old -> new
-                return oldList.map(id => id === oldId ? newId : id);
+                // Map old -> new (Object update)
+                return oldList.map(report => {
+                    if (report.id === oldId) {
+                        return { ...report, id: newId };
+                    }
+                    return report;
+                });
             }
         );
     }

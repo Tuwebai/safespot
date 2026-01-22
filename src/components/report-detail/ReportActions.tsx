@@ -2,7 +2,7 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Edit, Trash2, Flag, Save, X, FileText, MoreVertical, Heart } from 'lucide-react'
 // ✅ SSOT: Centralized permissions (Replaced getAnonymousIdSafe)
-import { isOwner as isOwnerPermission } from '@/lib/permissions'
+import { useIsOwner } from '@/hooks/useIsOwner' // ✅ Reactive Hook
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/schemas'
 import { ShareButton } from '@/components/ShareButton'
@@ -45,8 +45,8 @@ export const ReportActions = memo(function ReportActions({
     const [showMenu, setShowMenu] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
 
-    // ✅ PERMISSIONS FIX
-    const isOwner = isOwnerPermission(report);
+    // ✅ PERMISSIONS FIX (Reactive)
+    const isOwner = useIsOwner(report?.author?.id);
 
     const isFlagged = report.is_flagged ?? false
 

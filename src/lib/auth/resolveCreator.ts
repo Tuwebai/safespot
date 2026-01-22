@@ -1,23 +1,23 @@
 import { useAuthStore } from '@/store/authStore';
+import { getAnonymousIdSafe } from '@/lib/identity';
 
 /**
  * 🔴 ENTERPRISE FIX: Resolve Creator Identity (SSOT)
  * 
  * Este helper centraliza la lógica de determinación de creator para optimistic updates.
  * 
- * REGLA: 
+ * REGLA DE ORO (SSOT):
  * - Si autenticado → creator = user.auth_id (identity real)
- * - Si anónimo → creator = anonymous_id (identity anónima)
+ * - Si anónimo → creator = anonymous_id (identity dispositiva)
  * 
- * ALIAS:
- * - El alias es SEPARADO del creator (solo visual)
- * - Siempre se muestra (UX histórica)
+ * Esto asegura que el ID local coincida con lo que el servidor guardará.
  */
 
 export interface CreatorInfo {
-    creator_id: string | null;
+    creator_id: string; // Nunca null para creadores activos
     creator_type: 'user' | 'anonymous';
     displayAlias: string;
+    avatarUrl?: string; // Optional pre-resolved avatar
 }
 
 /**
@@ -25,31 +25,49 @@ export interface CreatorInfo {
  * 
  * @returns {CreatorInfo} Información completa del creator con alias display
  */
-export function resolveCreator(): CreatorInfo {
+export function resolveCreator(cachedProfile?: any): CreatorInfo {
     const auth = useAuthStore.getState();
 
-    // CASO 1: Usuario autenticado
+    // ✅ ENTERPRISE FIX: Smart Alias Resolution
+    // Always extract cached profile first (it's often fresher than auth store snapshot)
+    const profileData = cachedProfile?.data || cachedProfile;
+    const cachedAlias = profileData?.alias;
+    const cachedAvatar = profileData?.avatar_url;
+
+    // CASO 1: Usuario autenticado (PRIORIDAD ABSOLUTA DE ID)
     if (auth.token && auth.user?.auth_id) {
-        // 🔵 UX FIX: Always use Device ID (anonymous_id) for Creator ID
-        // The Renderer (CommentsSection) uses Validated Device ID to check isOwner.
-        // If we return auth_id here, isOwner becomes false until server refresh, causing Grey -> Green flicker.
-        const deviceId = localStorage.getItem('safespot_anonymous_id'); // L1_KEY manual read
+        // Smart Merge: Prefer Cached Alias > Auth Store Alias > 'Usuario'
+        // This handles cases where auth store has stale login snapshot but profile query is fresh
+        const authAlias = auth.user.alias;
+
+        let finalAlias = 'Usuario';
+        if (cachedAlias && cachedAlias !== 'Usuario') {
+            finalAlias = cachedAlias;
+        } else if (authAlias && authAlias !== 'Usuario') {
+            finalAlias = authAlias;
+        }
 
         return {
-            creator_id: deviceId || auth.user.auth_id, // Fallback to auth_id if LS empty (rare)
+            creator_id: auth.user.auth_id,
             creator_type: 'user',
-            displayAlias: auth.user.alias || 'Usuario'
+            displayAlias: finalAlias,
+            avatarUrl: cachedAvatar || auth.user.avatar_url // Prefer fresh avatar too
         };
     }
 
-    // CASO 2: Usuario anónimo (lectura / legacy)
-    // Leer anonymous_id desde localStorage como fallback
-    const anonymousId = localStorage.getItem('anonymous_id');
-    const anonymousAlias = localStorage.getItem('anonymous_alias');
+    // CASO 2: Usuario anónimo (Fallback a Device ID)
+    const anonymousId = getAnonymousIdSafe();
+    const localAlias = localStorage.getItem('anonymous_alias');
+
+    // Priority: Cache > LocalStorage > Default
+    const finalAlias = cachedAlias || localAlias || 'Usuario';
+    const finalAvatar = cachedAvatar || undefined;
 
     return {
         creator_id: anonymousId,
         creator_type: 'anonymous',
-        displayAlias: anonymousAlias || 'Usuario'
+        displayAlias: finalAlias,
+        avatarUrl: finalAvatar
     };
 }
+

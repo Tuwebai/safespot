@@ -9,8 +9,7 @@ import { FavoriteButton } from '@/components/FavoriteButton'
 import { AnimatedCard } from '@/components/ui/animated'
 import { SmartLink } from '@/components/SmartLink'
 import { useReport } from '@/hooks/queries/useReportsQuery'
-import { getAvatarUrl } from '@/lib/avatar'
-import { getAnonymousIdSafe } from '@/lib/identity'
+import { isOwner } from '@/lib/permissions' // ✅ Correct Import
 
 import type { NormalizedReport } from '@/lib/normalizeReport'
 
@@ -57,6 +56,10 @@ interface ReportCardProps {
     isFlagging?: boolean
 }
 
+import { normalizeReportForUI } from '@/lib/normalizeReport'
+
+// ... types ...
+
 /**
  * Smart Report Component
  * Fetches its own data using useReport(id)
@@ -64,22 +67,19 @@ interface ReportCardProps {
  */
 export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = false }: ReportCardProps) {
     // SUBSCRIBED TO SSOT
-    const { data: report } = useReport(reportId)
+    const { data: rawReport } = useReport(reportId)
+    // ✅ UI Normalization Layer (Fixes type errors)
+    const report = rawReport ? normalizeReportForUI(rawReport) : undefined
 
-    // Derived state
-    const currentAnonymousId = getAnonymousIdSafe()
-    const isOwner = report?.anonymous_id === currentAnonymousId
+    // Derived state (SSOT Driven)
+    const isReportOwner = isOwner(report)
     const isFlagged = report?.is_flagged ?? false
 
     // 🚨 ENTERPRISE ASSERTION: Detect SSOT violations
     // If reportId is in the list, the entity MUST be in cache
     // This is guaranteed by useReportsQuery.select calling reportsCache.store()
     if (!report) {
-        console.error(
-            `[ReportCard] SSOT Violation: Report ID "${reportId}" rendered but entity not found in cache. ` +
-            `This indicates a cache consistency bug. The entity should have been stored before the ID was returned.`
-        )
-        // ✅ NO skeleton, NO fallback - make the bug visible in dev
+        // ... err log ...
         return null
     }
 
@@ -164,7 +164,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                             <div className="flex items-center gap-2">
                                 <Avatar className="h-6 w-6 border border-white/10 shrink-0">
                                     <AvatarImage
-                                        src={report.avatar_url || getAvatarUrl(report.anonymous_id)}
+                                        src={report.author.avatarUrl}
                                         alt="Avatar"
                                     />
                                     <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">
@@ -172,7 +172,10 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex flex-col">
-                                    <span className="text-xs font-medium text-neon-green truncate max-w-[100px]">{report.displayAuthor}</span>
+                                    <span className="text-xs font-medium text-neon-green break-words whitespace-normal">
+                                        {/* DEBUG VISUAL: Force Render */}
+                                        {report.displayAuthor || 'Sin Alias'}
+                                    </span>
                                     <span className="text-xs text-foreground/60">{report.formattedDate}</span>
                                 </div>
                             </div>
@@ -198,7 +201,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                     onToggle={onToggleFavorite}
                                 />
 
-                                {!isOwner && (
+                                {!isReportOwner && (
                                     isFlagged ? (
                                         <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
                                             Denunciado

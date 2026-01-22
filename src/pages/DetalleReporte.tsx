@@ -20,7 +20,7 @@ import { useFlagManager } from '@/hooks/useFlagManager'
 import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { useReportDeletionListener } from '@/hooks/useReportDeletionListener'
 import { useHighlightContext } from '@/hooks/useHighlightContext'
-import { isOwner as isOwnerPermission } from '@/lib/permissions'
+import { useIsOwner } from '@/hooks/useIsOwner' // ✅ SSOT Reactive Check
 
 // Components
 import {
@@ -128,8 +128,8 @@ export function DetalleReporte() {
     }
   };
 
-  // ✅ ENTERPRISE FIX #1: Use SSOT for identity via centralized permissions
-  const isOwner = isOwnerPermission(report);
+  // ✅ ENTERPRISE FIX #1: Use SSOT for identity via centralized permissions (Reactive)
+  const isOwner = useIsOwner(report?.author?.id);
 
 
 
@@ -330,9 +330,9 @@ export function DetalleReporte() {
             <CommentsSection
               reportId={id!}
               totalCount={initialReport?.comments_count || 0}
-              reportOwnerId={initialReport?.anonymous_id}
-              reportOwnerAlias={initialReport?.alias || undefined}
-              reportOwnerAvatar={initialReport?.avatar_url || undefined}
+              reportOwnerId={initialReport?.author?.id}
+              reportOwnerAlias={initialReport?.author?.alias || undefined}
+              reportOwnerAvatar={initialReport?.author?.avatarUrl || undefined}
             />
 
             {/* 7. Related Reports */}

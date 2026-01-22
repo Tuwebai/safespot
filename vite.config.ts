@@ -81,7 +81,7 @@ export default defineConfig({
         background_color: '#020617',
         display: 'standalone',
         start_url: '/',
-        // @ts-ignore - Required for Chrome VAPID/Push compatibility
+        // @ts-expect-error - Required for Chrome VAPID/Push compatibility
         gcm_sender_id: "103953800507",
         icons: [
           {

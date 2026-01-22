@@ -1,5 +1,6 @@
-import type { Comment, Report, Author } from './schemas';
-import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
+import { type Comment, type Report, type Author } from './schemas';
+import { getAvatarUrl } from '@/lib/avatar';
+
 
 // --- Interfaces RAW (Contrato Backend) ---
 // Estas interfaces reflejan EXACTAMENTE lo que devuelve el backend hoy.
@@ -168,15 +169,15 @@ export function transformReport(raw: RawReport): Report {
 
         // Optional props
         priority_zone: raw.priority_zone as any, // Cast if needed or validate
-        distance_meters: raw.distance_meters,
+        distance_meters: raw.distance_meters ?? null,
         province: raw.province,
         locality: raw.locality,
         department: raw.department,
-        threads_count: raw.threads_count || 0,
+        threads_count: raw.threads_count ?? 0,
         image_urls: raw.image_urls || [],
-        is_favorite: raw.is_favorite || false,
-        is_flagged: raw.is_flagged || false,
-        flags_count: raw.flags_count || 0
+        is_favorite: raw.is_favorite ?? false,
+        is_flagged: raw.is_flagged ?? false,
+        flags_count: raw.flags_count ?? 0
     };
 }
 

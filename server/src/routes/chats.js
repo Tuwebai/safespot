@@ -29,10 +29,10 @@ const upload = multer({
 });
 
 /**
- * GET /api/chats
+ * GET /api/chats/rooms
  * Obtiene todas las salas de chat del usuario actual
  */
-router.get('/', async (req, res) => {
+router.get('/rooms', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
 
@@ -94,10 +94,10 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * POST /api/chats
+ * POST /api/chats/rooms
  * Crea una nueva sala de chat vinculada a un reporte
  */
-router.post('/', async (req, res) => {
+router.post('/rooms', async (req, res) => {
     const anonymousId = req.headers['x-anonymous-id'];
     const { report_id, recipient_id } = req.body;
 

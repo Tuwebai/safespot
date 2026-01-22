@@ -86,8 +86,11 @@ router.get('/', async (req, res, next) => {
 
       const boundsQuery = `
         SELECT 
-          r.id, r.title, r.category, r.status, r.latitude, r.longitude, r.created_at, r.is_hidden, r.anonymous_id
+          r.id, r.title, r.category, r.status, r.latitude, r.longitude, 
+          r.created_at, r.is_hidden, r.anonymous_id,
+          u.alias, u.avatar_url
         FROM reports r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE 
           r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
           AND r.location IS NOT NULL
@@ -175,7 +178,10 @@ router.get('/', async (req, res, next) => {
         }
 
         if (zone && zone !== 'all') {
-          conds.push(`r.zone = $${idx}`);
+          // Enterprise: Case-insensitive match for robust city filtering
+          conds.push(`r.zone ILIKE $${idx}`);
+          // Add wildcards for partial match robustness if desired, but exact name match is better for "City"
+          // Let's stick to ILIKE with exact string for now to avoid false positives between similar cities
           vals.push(zone.trim());
           idx++;
         }
@@ -351,7 +357,7 @@ router.get('/', async (req, res, next) => {
         meta: {
           feedType: 'geographic',
           userLocation: { lat: userLat, lng: userLng },
-          radius: radiusMeters
+          radius: explicitRadius
         }
       });
     }
@@ -583,7 +589,7 @@ router.get('/', async (req, res, next) => {
     }
 
     // Process results (image formatting)
-    const processedReports = reports.map(report => {
+    const processedReports = reports.map((report) => {
       let normalizedImageUrls = [];
       if (report.image_urls) {
         if (Array.isArray(report.image_urls)) {
@@ -827,11 +833,20 @@ router.post('/',
       const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
       // Insert report using queryWithRLS for RLS consistency
+      // CTE: Insert + Join for Atomic Identity Retrieval
       const insertResult = await queryWithRLS(anonymousId, `
-      INSERT INTO reports (${columns.join(', ')})
-      VALUES (${placeholders})
-      RETURNING *
-    `, values);
+        WITH inserted_report AS (
+          INSERT INTO reports (${columns.join(', ')})
+          VALUES (${placeholders})
+          RETURNING *
+        )
+        SELECT 
+          r.*, 
+          u.alias, 
+          u.avatar_url
+        FROM inserted_report r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+      `, values);
 
       if (insertResult.rows.length === 0) {
         logError(new Error('Insert returned no data'), req);
@@ -843,18 +858,20 @@ router.post('/',
 
       const newReport = insertResult.rows[0];
 
-      const data = newReport;
-
       logSuccess('Report created', {
-        id: data.id,
+        id: newReport.id,
         anonymousId
       });
 
-      // REALTIME: Broadcast new report to global feed
-      realtimeEvents.emitNewReport(data, req.headers['x-client-id']);
+      // REALTIME: Broadcast new report using enriched CTE data
+      try {
+        realtimeEvents.emitNewReport(newReport, req.headers['x-client-id']);
+      } catch (evtError) {
+        logError(evtError, { context: 'realtimeEvents.emitNewReport' });
+      }
 
       // WHATSAPP: Send notification (delayed to wait for images)
-      sendNewReportNotification(data.id);
+      sendNewReportNotification(newReport.id);
 
       // Evaluate badges (await to include in response for real-time notification)
       let newBadges = [];
@@ -874,13 +891,13 @@ router.post('/',
       }
 
       // NOTIFICATIONS: Notify users (In-app)
-      NotificationService.notifyNearbyNewReport(data).catch(err => logError(err, { context: 'notifyNearbyNewReport' }));
-      NotificationService.notifySimilarReports(data).catch(err => logError(err, { context: 'notifySimilarReports' }));
+      NotificationService.notifyNearbyNewReport(newReport).catch(err => logError(err, { context: 'notifyNearbyNewReport' }));
+      NotificationService.notifySimilarReports(newReport).catch(err => logError(err, { context: 'notifySimilarReports' }));
 
       // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
       // Import dynamically to avoid circular dependencies
       import('./push.js').then(({ notifyNearbyUsers }) => {
-        notifyNearbyUsers(data).catch(err => {
+        notifyNearbyUsers(newReport).catch(err => {
           logError(err, { context: 'notifyNearbyUsers' });
         });
       }).catch(() => {
@@ -890,7 +907,7 @@ router.post('/',
       res.status(201).json({
         success: true,
         data: {
-          ...data,
+          ...newReport,
           newBadges
         },
         message: 'Report created successfully'
@@ -947,15 +964,17 @@ router.get('/:id/related', async (req, res) => {
     if (locality) {
       // STRICT FILTER: Only reports in the same city
       query = `
-        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
-        FROM reports
-        WHERE id != $2
-          AND is_hidden = false
-          AND deleted_at IS NULL
-          AND locality = $5
+        SELECT r.id, r.title, r.category, r.zone, r.incident_date, r.status, r.image_urls, r.latitude, r.longitude, r.created_at, r.locality,
+               u.alias, u.avatar_url
+        FROM reports r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+        WHERE r.id != $2
+          AND r.is_hidden = false
+          AND r.deleted_at IS NULL
+          AND r.locality = $5
         ORDER BY
-          (category = $1) DESC, -- Best matches (same category) first
-          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest within city
+          (r.category = $1) DESC, -- Best matches (same category) first
+          r.location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest within city
         LIMIT 5
       `;
       params = [category, id, latitude || 0, longitude || 0, locality];
@@ -963,30 +982,34 @@ router.get('/:id/related', async (req, res) => {
     } else if (latitude && longitude) {
       // PostGIS KNN search by location (Fallback if no locality data)
       query = `
-        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
-        FROM reports
-        WHERE id != $2
-          AND is_hidden = false
-          AND deleted_at IS NULL
-          AND location IS NOT NULL
+        SELECT r.id, r.title, r.category, r.zone, r.incident_date, r.status, r.image_urls, r.latitude, r.longitude, r.created_at, r.locality,
+               u.alias, u.avatar_url
+        FROM reports r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+        WHERE r.id != $2
+          AND r.is_hidden = false
+          AND r.deleted_at IS NULL
+          AND r.location IS NOT NULL
         ORDER BY
-          (category = $1) DESC, 
-          location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC 
+          (r.category = $1) DESC, 
+          r.location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC 
         LIMIT 5
       `;
       params = [category, id, latitude, longitude];
     } else {
       // Fallback: Same zone (Text match)
       query = `
-        SELECT id, title, category, zone, incident_date, status, image_urls, latitude, longitude, created_at, locality
-        FROM reports
-        WHERE id != $2
-          AND is_hidden = false
-          AND deleted_at IS NULL
-          AND zone = $3
+        SELECT r.id, r.title, r.category, r.zone, r.incident_date, r.status, r.image_urls, r.latitude, r.longitude, r.created_at, r.locality,
+               u.alias, u.avatar_url
+        FROM reports r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+        WHERE r.id != $2
+          AND r.is_hidden = false
+          AND r.deleted_at IS NULL
+          AND r.zone = $3
         ORDER BY 
-          (category = $1) DESC,
-          created_at DESC
+          (r.category = $1) DESC,
+          r.created_at DESC
         LIMIT 5
       `;
       params = [category, id, zone];
@@ -1080,10 +1103,19 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     params.push(new Date().toISOString());
 
     // Update report using queryWithRLS for RLS consistency
+    // CTE: Update and Retrieve enriched data in one go
     const updateResult = await queryWithRLS(anonymousId, `
-      UPDATE reports SET ${updates.join(', ')}
-      WHERE id = $1 AND anonymous_id = $2
-      RETURNING *
+      WITH updated_report AS (
+        UPDATE reports SET ${updates.join(', ')}
+        WHERE id = $1 AND anonymous_id = $2
+        RETURNING *
+      )
+      SELECT 
+        r.*, 
+        u.alias,
+        u.avatar_url
+      FROM updated_report r
+      LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
     `, params);
 
     if (updateResult.rows.length === 0) {
@@ -1094,14 +1126,12 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
 
     const updatedReport = updateResult.rows[0];
 
-    // REALTIME: Broadcast report update
+    // REALTIME: Broadcast report update using local enriched data (CTE)
     try {
-      realtimeEvents.emitVoteUpdate('report', id, updatedReport, req.headers['x-client-id']);
+      realtimeEvents.emitReportUpdate(updatedReport);
 
-      // If status changed, emit a dedicated status change event for counters
-      if (req.body.status && req.body.status !== prevStatus) {
-        realtimeEvents.emitStatusChange(id, prevStatus, req.body.status, req.headers['x-client-id']);
-      }
+      // If status changed and we have prevStatus available from scope, handled here or client side.
+      // For now, emit Update covers the data change.
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitReportUpdate', reportId: id });
     }

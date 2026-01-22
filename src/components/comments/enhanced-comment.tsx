@@ -1,4 +1,4 @@
-import { useState, memo, useRef, useEffect, useMemo } from 'react'
+import { useState, memo, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAvatarFallback } from '@/lib/avatar'
 import { isRealUser } from '@/lib/adapters' // ✅ Centralized Helper
+import { useIsOwner } from '@/hooks/useIsOwner' // ✅ SSOT
 import {
   MessageCircle,
   ThumbsUp,
@@ -21,7 +22,7 @@ import {
   Link as LinkIcon,
   Trophy
 } from 'lucide-react'
-import type { Comment } from '@/lib/api'
+import type { Comment } from '@/lib/schemas'
 
 interface EnhancedCommentProps {
   comment: Comment & {
@@ -30,7 +31,7 @@ interface EnhancedCommentProps {
     is_pinned?: boolean
   }
   replies?: Comment[]
-  isOwner?: boolean
+  // _isOwner removed
   isMod?: boolean
   onReply?: (commentId: string) => void
   onEdit?: (commentId: string, content: string) => void
@@ -52,7 +53,7 @@ interface EnhancedCommentProps {
 export const EnhancedComment = memo(function EnhancedComment({
   comment,
   replies = [],
-  isOwner = false, // This comes from parent calculation (permissions.ts checks author.id)
+  // _isOwner removed
   isMod = false,
   onReply,
   onEdit,
@@ -76,7 +77,30 @@ export const EnhancedComment = memo(function EnhancedComment({
   const [localIsContextMenuOpen, setLocalIsContextMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  // ✅ SSOT Permission: Calculate ownership directly, ignoring potential prop staleness
+  const isMe = useIsOwner(comment.author.id)
+
+  // Determine if we can edit/delete (Must be owner OR Mod)
+  const canModify = isMe || isMod
+
   const isContextMenuOpen = onMenuOpen ? activeMenuId === comment.id : localIsContextMenuOpen
+
+  const closeMenu = useCallback(() => {
+    if (onMenuOpen) {
+      onMenuOpen(null)
+    } else {
+      setLocalIsContextMenuOpen(false)
+    }
+  }, [onMenuOpen])
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onMenuOpen) {
+      onMenuOpen(isContextMenuOpen ? null : comment.id)
+    } else {
+      setLocalIsContextMenuOpen(!localIsContextMenuOpen)
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -89,24 +113,7 @@ export const EnhancedComment = memo(function EnhancedComment({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [isContextMenuOpen, activeMenuId]) // activeMenuId dependency ensures fresh closure if using global state logic
-
-  const handleToggleMenu = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (onMenuOpen) {
-      onMenuOpen(isContextMenuOpen ? null : comment.id)
-    } else {
-      setLocalIsContextMenuOpen(!localIsContextMenuOpen)
-    }
-  }
-
-  const closeMenu = () => {
-    if (onMenuOpen) {
-      onMenuOpen(null)
-    } else {
-      setLocalIsContextMenuOpen(false)
-    }
-  }
+  }, [isContextMenuOpen, activeMenuId, closeMenu])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', {
@@ -269,7 +276,7 @@ export const EnhancedComment = memo(function EnhancedComment({
             >
               <Avatar className={cn(
                 "h-8 w-8 sm:h-10 sm:w-10 border border-border group-hover:border-neon-green/40 transition-colors",
-                isOwner && "ring-2 ring-neon-green/20"
+                isMe && "ring-2 ring-neon-green/20"
               )}>
                 <AvatarImage src={author.avatarUrl} />
                 <AvatarFallback>{getAvatarFallback(author.alias)}</AvatarFallback>
@@ -295,8 +302,8 @@ export const EnhancedComment = memo(function EnhancedComment({
                 </Link>
 
                 {/* Contextual Role Badges */}
-                {/* isAuthor now comes from Author object context if set, OR we check derived prop */}
-                {(author.isAuthor || comment.is_author) && (
+                {/* isAuthor comes from Author object context */}
+                {author.isAuthor && (
                   <Badge className="bg-neon-green/10 text-neon-green border-neon-green/30 px-1.5 py-0 h-5 text-[10px] font-black tracking-tighter shadow-[0_0_10px_rgba(57,255,20,0.1)]">
                     AUTOR
                   </Badge>
@@ -403,7 +410,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                   </button>
 
                   {/* Flag Action (Non-owners) */}
-                  {!isOwner && (
+                  {!isMe && (
                     <button
                       onClick={() => {
                         if (!comment.is_flagged) {
@@ -423,7 +430,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                   )}
 
                   {/* Consolidated Admin/Owner Actions */}
-                  {(isOwner || isMod) && (
+                  {canModify && (
                     <>
                       <div className="border-t border-border my-1" />
 

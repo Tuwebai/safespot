@@ -459,7 +459,7 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
  * Requires: X-Anonymous-Id header
  * Body: { content: string }
  */
-router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res) => {
+router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res, next) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -477,8 +477,28 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     }
 
     const comment = checkResult.rows[0];
+    const content = req.body.content;
 
-    // ... (rest of logic)
+    // UPDATE query with JOIN to return full identity (SSOT)
+    // Using CTE to update and join in one atomic operation
+    const updateResult = await queryWithRLS(
+      anonymousId,
+      `WITH updated AS (
+         UPDATE comments 
+         SET content = $1, last_edited_at = NOW()
+         WHERE id = $2 AND anonymous_id = $3
+         RETURNING *
+       )
+       SELECT 
+         c.*, 
+         u.alias, 
+         u.avatar_url
+       FROM updated c
+       LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id`,
+      [content, id, anonymousId]
+    );
+
+    const updatedComment = updateResult.rows[0];
 
     res.json({
       success: true,
@@ -498,7 +518,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
  * Delete a comment (only by creator)
  * Requires: X-Anonymous-Id header
  */
-router.delete('/:id', requireAnonymousId, async (req, res) => {
+router.delete('/:id', requireAnonymousId, async (req, res, next) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
@@ -506,7 +526,7 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     // Check if comment exists and belongs to user using queryWithRLS
     const checkResult = await queryWithRLS(
       anonymousId,
-      `SELECT anonymous_id FROM comments 
+      `SELECT anonymous_id, report_id FROM comments 
        WHERE id = $1 AND anonymous_id = $2`,
       [id, anonymousId]
     );
@@ -538,6 +558,12 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       realtimeEvents.emitCommentDelete(reportId, deletedId, clientId);
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
+    }
+
+    if (!reportId) {
+      console.warn('[DELETE_COMMENT] Warning: report_id not found for comment', id);
+      // We continue to respond success but skip stat decrement
+      return res.json({ success: true, message: 'Comment deleted successfully (stat skipped)' });
     }
 
     // CRITICAL FIX: Manually decrement report counter because DB trigger might not handle soft deletes

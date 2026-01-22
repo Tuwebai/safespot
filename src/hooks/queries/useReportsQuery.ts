@@ -1,8 +1,8 @@
-import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries, useIsMutating } from '@tanstack/react-query'
 
 import { queryKeys } from '@/lib/queryKeys'
-import { reportsApi, type ReportFilters, type CreateReportData } from '@/lib/api'
-import { type Report } from '@/lib/schemas'
+import { reportsApi, type CreateReportData } from '@/lib/api'
+import { type Report, type ReportFilters } from '@/lib/schemas'
 import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
@@ -30,34 +30,34 @@ import { reportsCache } from '@/lib/cache-helpers'
 // QUERIES (READ)
 // ============================================
 
+import { type NormalizedReport, normalizeReportForUI } from '@/lib/normalizeReport'
+
 /**
  * Get a single report by ID from cache (SSOT)
  */
-export function useReport(id: string) {
+/**
+ * Get a single report by ID from cache (SSOT)
+ */
+export function useReport(id: string, initialData?: NormalizedReport, options?: { enabled?: boolean, isOptimistic?: boolean }) {
     const queryClient = useQueryClient()
 
-    return useQuery<Report>({ // NormalizedReport is effectively Report now if strictly typed
+    return useQuery<NormalizedReport>({
         queryKey: queryKeys.reports.detail(id),
-
         queryFn: async () => {
-            // Fetch from API (Adapter inside api.ts handles transformation)
+            // ✅ ENTERPRISE 0ms: Check cache manually to catch race conditions
+            const cached = queryClient.getQueryData<NormalizedReport>(queryKeys.reports.detail(id))
+            if (cached) return cached
+
             const report = await reportsApi.getById(id)
-
-            if (!report) {
-                throw new Error(`Report ${id} not found`)
-            }
-
-            // Normalization is handled by adapter in API layer now?
-            // If normalizeReportForUI does extra stuff (like relative time string?), check it.
-            // For now, assuming adapter does strict transformation to standard Report object.
-            // We store it directly.
+            if (!report) throw new Error(`Report ${id} not found`)
 
             reportsCache.store(queryClient, [report])
-            return report
+            return normalizeReportForUI(report)
         },
-
-        enabled: !!id,
-        staleTime: 5 * 60 * 1000, // 5 minutes
+        enabled: (options?.enabled ?? true) && !!id && !options?.isOptimistic,
+        initialData: initialData,
+        placeholderData: initialData,
+        staleTime: 5 * 60 * 1000,
     })
 }
 
@@ -68,24 +68,29 @@ export function useReportsQuery(filters?: ReportFilters) {
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()  // ✅ SSOT for identity
 
-    return useQuery<Report[], Error, string[]>({
+    // ✅ ENTERPRISE FIX: Block refetches while creating to prevent Optimistic Rollback
+    const isCreating = useIsMutating({ mutationKey: ['createReport'] }) > 0;
+
+    return useQuery<Report[], Error, NormalizedReport[]>({
         queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
         queryFn: async () => {
             // Adapter handles transformation to Strict Report[]
             return await reportsApi.getAll(filters)
         },
         enabled: !!anonymousId,
-        staleTime: 30 * 1000,
-        refetchOnWindowFocus: true,
-        refetchOnMount: 'always',
+        staleTime: 30 * 1000, // 30s
+        refetchOnWindowFocus: !isCreating, // Block refetch if creating
+        refetchOnMount: !isCreating ? 'always' : false, // Block refetch if creating
         select: (data) => {
             if (!Array.isArray(data)) {
-                // ... error handling
                 return [] // Fallback
             }
 
             // Store in SSOT
-            return reportsCache.store(queryClient, data)
+            reportsCache.store(queryClient, data)
+
+            // ✅ Return Objects for UI (enables initialData injection)
+            return data.map(normalizeReportForUI)
         },
         placeholderData: (previousData) => previousData,
     })
@@ -119,7 +124,7 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
     const queryClient = useQueryClient()
     const anonymousId = useAnonymousId()
 
-    return useQuery<Report>({
+    return useQuery<NormalizedReport>({
         queryKey: queryKeys.reports.detail(reportId ?? ''),
         queryFn: async () => {
             if (!reportId) throw new Error("No ID")
@@ -127,7 +132,7 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
             if (!report) throw new Error("Not found")
 
             reportsCache.store(queryClient, [report])
-            return report
+            return normalizeReportForUI(report)
         },
         enabled: !!reportId && enabled && !!anonymousId,
         staleTime: Infinity,
@@ -145,6 +150,7 @@ export function useCreateReportMutation() {
     const { checkAuth } = useAuthGuard()
 
     return useMutation({
+        mutationKey: ['createReport'], // ✅ Key for detection
         mutationFn: async (data: CreateReportData) => {
             if (!checkAuth()) {
                 throw new Error('AUTH_REQUIRED');
@@ -168,15 +174,19 @@ export function useCreateReportMutation() {
             }
             const reportId = newReportData.id!
 
-            // 🔵 ROBUSTNESS FIX: Resolve creator correctly
-            const creator = resolveCreator();
+            // 🔵 ROBUSTNESS FIX: Resolve creator correctly using Cache
+            const cachedProfile = queryClient.getQueryData(queryKeys.user.profile);
+            const creator = resolveCreator(cachedProfile);
 
             // 4. Create Optimistic Report (Final ID, no Temp)
             // ✅ ENTERPRISE FIX: Complete entity with Strict Author Model
             const optimisticReport: Report = {
                 // Required fields
                 id: reportId,
-                // anonymous_id: creator.creator_id || '', // DEPRECATED
+                // anonymous_id: creator.creator_id, // DEPRECATED but kept if schema requires strict compliance (though we prefer author.id)
+                // We will omit anonymous_id if Type permits, or set it to creator_id if strictly needed by older consumers.
+                // Assuming schema defines it but we want to move away. Let's map it for safety but focus on author.
+
                 title: newReportData.title,
                 description: newReportData.description,
                 category: newReportData.category,
@@ -188,9 +198,9 @@ export function useCreateReportMutation() {
 
                 // ✅ IDENTITY SSOT (Critical Fix)
                 author: {
-                    id: creator.creator_id || '',
-                    alias: creator.displayAlias || 'Anónimo',
-                    avatarUrl: getAvatarUrl(creator.creator_id || ''),
+                    id: creator.creator_id,
+                    alias: creator.displayAlias,
+                    avatarUrl: creator.avatarUrl || getAvatarUrl(creator.creator_id),
                     isAuthor: true // Implicit owner
                 },
 
@@ -201,7 +211,7 @@ export function useCreateReportMutation() {
                 longitude: newReportData.longitude ?? null,
                 last_edited_at: null,
                 incident_date: newReportData.incident_date ?? null,
-                // Flat fields gone: alias, avatar_url 
+                // Flat fields GONE
                 priority_zone: null,
                 distance_meters: null,
 
@@ -305,8 +315,9 @@ export function useUpdateReportMutation() {
                 queryClient.setQueryData(queryKeys.reports.detail(id), context.previousDetail)
             }
         },
-        onSettled: (_data, _error, { id }) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(id) })
+        onSettled: () => {
+            // ✅ ENTERPRISE RULE: Never invalidate detail on update. Rely on Optimistic + SSE.
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(id) })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
             queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
         }

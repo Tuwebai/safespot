@@ -17,3 +17,5 @@ export const STATUS_OPTIONS = [
   { value: 'resuelto', label: 'Resuelto' },
   { value: 'cerrado', label: 'Cerrado' }
 ] as const
+
+export type ZoneType = 'home' | 'work' | 'frequent' | 'current'

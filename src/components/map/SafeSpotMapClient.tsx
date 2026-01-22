@@ -5,14 +5,15 @@ import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
 // Remove getMarkerIcon
 // Remove getMarkerIcon
-import type { ZoneType } from '@/lib/api' // Remove Report
+import { ZoneType } from '@/lib/constants'
 // Remove Link if unused (will check lint after)
-import { notificationsApi } from '@/lib/api'
+// notificationsApi removed
 import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
 // Remove Link
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useUserZones } from '@/hooks/useUserZones'
 import { useReport, useReportsBatch } from '@/hooks/queries/useReportsQuery'
+import { useSettingsQuery } from '@/hooks/queries/useSettingsQuery'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
@@ -145,7 +146,10 @@ const ZoneMarkers = () => {
     return (
         <>
             {zones.map(zone => {
-                const color = zoneStyles[zone.type].color
+                const style = zoneStyles[zone.type as keyof typeof zoneStyles]
+                if (!style) return null // 🛑 GUARD: Prevents crash if zone type is 'current' or unknown
+
+                const color = style.color
                 const pinIcon = createPinIcon(color)
 
                 return (
@@ -155,7 +159,7 @@ const ZoneMarkers = () => {
                             center={[zone.lat, zone.lng]}
                             radius={zone.radius_meters}
                             pathOptions={{
-                                ...zoneStyles[zone.type],
+                                ...style,
                                 fillOpacity: 0.15,
                                 weight: 2,
                                 dashArray: '5, 5'
@@ -432,6 +436,11 @@ export function SafeSpotMapClient({
     const [startPosition, setStartPosition] = useState<[number, number] | null>(null);
     const [statusMessage, setStatusMessage] = useState<string>('');
 
+    // ✅ Hook Integration for Settings
+    const { data: settings } = useSettingsQuery()
+    const settingsRef = useRef(settings)
+    useEffect(() => { settingsRef.current = settings }, [settings])
+
     // Cleanup on unmount
     useEffect(() => {
         isMountedRef.current = true
@@ -479,17 +488,15 @@ export function SafeSpotMapClient({
             return;
         }
 
-        // 3. Last Known Location (Settings) (Async/Fast)
-        try {
-            const settings = await notificationsApi.getSettings()
-            if (settings && typeof settings.last_known_lat === 'number' && typeof settings.last_known_lng === 'number' && !isNaN(settings.last_known_lat) && !isNaN(settings.last_known_lng)) {
-                setStartPosition([settings.last_known_lat, settings.last_known_lng]);
-                setLocationState('resolved');
-                return;
-            }
-        } catch (e) {
-            // Proceed to GPS if settings fail
+        // 3. Last Known Location (Settings) (Cache/Fast)
+        const cachedSettings = settingsRef.current
+        if (cachedSettings?.last_known_lat && cachedSettings?.last_known_lng &&
+            !isNaN(cachedSettings.last_known_lat) && !isNaN(cachedSettings.last_known_lng)) {
+            setStartPosition([cachedSettings.last_known_lat, cachedSettings.last_known_lng]);
+            setLocationState('resolved');
+            return;
         }
+
 
         // 4. BROWSER GEOLOCATION (The Tricky Part)
         if (!('geolocation' in navigator)) {
@@ -538,23 +545,24 @@ export function SafeSpotMapClient({
                 setLocationState('resolved');
             }
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             if (!isMountedRef.current) return;
-            console.warn(`[Map ${getTimestamp()}] High Accuracy Failed:`, err.code, err.message);
+            const error = err as GeolocationPositionError;
+            console.warn(`[Map ${getTimestamp()}] High Accuracy Failed:`, error.code, error.message);
 
             // Handle Specifc Errors State 1
-            if (err.code === 1) { // PERMISSION_DENIED
+            if (error.code === 1) { // PERMISSION_DENIED
                 setLocationState('denied');
                 return;
             }
-            if (err.code === 2) { // POSITION_UNAVAILABLE
+            if (error.code === 2) { // POSITION_UNAVAILABLE
                 setLocationState('unavailable');
                 setStatusMessage('No pudimos determinar tu ubicación. Verifica tu GPS o red.');
                 return;
             }
 
             // TIMEOUT (Code 3) or other errors -> RETRY STRATEGY
-            if (err.code === 3 || retryMode === 'manual') {
+            if (error.code === 3 || retryMode === 'manual') {
                 console.log(`[Map ${getTimestamp()}] Retrying with Relaxed Constraints...`);
                 setLocationState('retrying_timeout');
                 setStatusMessage('Afinando ubicación (modo extendido)...');
@@ -571,18 +579,21 @@ export function SafeSpotMapClient({
                         setStartPosition([posRetry.coords.latitude, posRetry.coords.longitude]);
                         setLocationState('resolved');
                     }
-                } catch (retryErr: any) {
+                } catch (retryErr: unknown) {
                     if (!isMountedRef.current) return;
-                    console.error(`[Map ${getTimestamp()}] Retry Failed:`, retryErr.code, retryErr.message);
+                    const retryError = retryErr as GeolocationPositionError;
+                    console.error(`[Map ${getTimestamp()}] Retry Failed:`, retryError.code, retryError.message);
 
-                    if (retryErr.code === 1) {
+                    if (retryError.code === 1) {
                         setLocationState('denied');
-                    } else if (retryErr.code === 2) {
+                    } else if (retryError.code === 2) {
                         setLocationState('unavailable');
                     } else {
-                        // Double Timeout or Unknown -> Manual Retry State
-                        setLocationState('manual_retry');
-                        setStatusMessage('El servicio de ubicación tardó demasiado.');
+                        if (retryError.code === 3 || retryMode === 'manual') {
+                            // Double Timeout or Unknown -> Manual Retry State
+                            setLocationState('manual_retry');
+                            setStatusMessage('El servicio de ubicación tardó demasiado.');
+                        }
                     }
                 }
             } else {

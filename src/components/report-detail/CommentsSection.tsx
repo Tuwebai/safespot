@@ -5,7 +5,7 @@ import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
 import { CommentThread } from '@/components/comments/comment-thread'
 import { ThreadList } from '@/components/comments/thread-list'
 import { useCommentsManager } from '@/hooks/useCommentsManager'
-import { getAnonymousIdSafe } from '@/lib/identity'
+
 import { MessageCircle } from 'lucide-react'
 import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
@@ -15,7 +15,7 @@ import { useConfirm } from '@/components/ui/confirmation-manager'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
-import { isOwner } from '@/lib/permissions'
+import { isOwner, getCurrentUserId } from '@/lib/permissions'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
 const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
@@ -169,7 +169,7 @@ export function CommentsSection({
         }
     }
 
-    const currentAnonymousId = getAnonymousIdSafe()
+    const currentUserId = getCurrentUserId()
 
 
     const { sightings, discussionComments } = useMemo(() => {
@@ -222,11 +222,11 @@ export function CommentsSection({
 
         // Add all commenters
         comments.forEach(c => {
-            if (c.alias) {
-                uniqueEntries.set(c.anonymous_id, {
-                    anonymous_id: c.anonymous_id,
-                    alias: c.alias,
-                    avatar_url: c.avatar_url
+            if (c.author.alias) {
+                uniqueEntries.set(c.author.id, {
+                    anonymous_id: c.author.id,
+                    alias: c.author.alias,
+                    avatar_url: c.author.avatarUrl
                 })
             }
         })
@@ -339,7 +339,7 @@ export function CommentsSection({
                                                 onFlag={handleFlagComment}
                                                 onLikeChange={handleLikeChange}
                                                 isOwner={isCommentOwner}
-                                                isMod={currentAnonymousId === reportOwnerId}
+                                                isMod={currentUserId === reportOwnerId}
                                                 onPin={pinComment}
                                                 onUnpin={unpinComment}
                                                 replyingTo={replyingTo}
@@ -404,7 +404,7 @@ export function CommentsSection({
                         const comment = comments.find(c => c.id === commentId)
                         return isOwner(comment)
                     }}
-                    isMod={currentAnonymousId === reportOwnerId} // "Report Owner" logic
+                    isMod={currentUserId === reportOwnerId} // "Report Owner" logic
                     onPin={pinComment}
                     onUnpin={unpinComment}
                     editingCommentId={editingId}

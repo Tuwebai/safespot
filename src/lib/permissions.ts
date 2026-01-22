@@ -11,20 +11,34 @@
  */
 
 import { getAnonymousIdSafe } from '@/lib/identity';
+import { useAuthStore } from '@/store/authStore'; // Access to Auth State
 import type { Report, Comment } from '@/lib/schemas'; // Strict models
 
 /**
+ * Obtiene el ID canónico del usuario actual (Auth > Device).
+ * Esta es la identidad contra la cual se comparan los recursos.
+ */
+export function getCurrentUserId(): string {
+    const auth = useAuthStore.getState();
+    if (auth.token && auth.user?.auth_id) {
+        return auth.user.auth_id;
+    }
+    return getAnonymousIdSafe();
+}
+
+/**
  * Checks if the current user is the owner of an entity.
- * Uses getAnonymousIdSafe() as the SSOT for current user identity.
+ * Uses getCurrentUserId() as the SSOT for current user identity.
  * Adapts to new Strict Model where ID is in 'author.id'
  */
 export function isOwner(entity: { author: { id: string } } | null | undefined): boolean {
     if (!entity || !entity.author || !entity.author.id) return false;
 
-    const currentId = getAnonymousIdSafe();
+    const currentId = getCurrentUserId();
     // Strict comparison
     return entity.author.id === currentId;
 }
+
 
 // ============================================
 // REPORTS

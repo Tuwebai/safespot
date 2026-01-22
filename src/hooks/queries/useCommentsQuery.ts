@@ -113,9 +113,9 @@ export function useCreateCommentMutation() {
 
                 // ✅ STRICT SSOT IDENTITY
                 author: {
-                    id: creator.creator_id || '',
-                    alias: creator.displayAlias || 'Anónimo',
-                    avatarUrl: getAvatarUrl(creator.creator_id || ''),
+                    id: creator.creator_id,
+                    alias: creator.displayAlias,
+                    avatarUrl: creator.avatarUrl || getAvatarUrl(creator.creator_id),
                     isAuthor: true // Contextually true for own comment
                 },
 

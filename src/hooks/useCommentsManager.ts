@@ -316,14 +316,20 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'edit', id: commentId } })
 
+        // OPTIMISTIC UI: Close form immediately (0ms latency perception)
+        // We trust the query mutation onMutate to handle the data cache update instantly
+        dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'edit' })
+
         try {
             await updateMutation.mutateAsync({
                 id: commentId,
                 content: rich || plain
             })
-            dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'edit' })
+            // Success handled by query invalidation
         } catch (error) {
             handleErrorWithMessage(error, 'Error al editar comentario', toast.error, 'useCommentsManager.submitEdit')
+            // Re-open edit mode if failed? For now, we just notify error.
+            // dispatch({ type: 'START_EDIT', payload: { id: commentId, text: plain } }) // Optional: Revert
             dispatch({ type: 'END_SUBMIT' })
         }
     }, [state.editText, state.submitting, normalizeCommentPayload, updateMutation, toast])

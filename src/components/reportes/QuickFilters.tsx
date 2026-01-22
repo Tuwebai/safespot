@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
-import { Flame, AlertTriangle, Construction, Star, List } from 'lucide-react'
+import { Flame, AlertTriangle, Bike, Star, List } from 'lucide-react'
 
-export type QuickFilterType = 'urgent' | 'robos' | 'infraestructura' | 'mi_zona' | 'all'
+export type QuickFilterType = 'urgent' | 'robos' | 'motos' | 'mi_zona' | 'all'
 
 interface QuickFiltersProps {
     activeFilter: QuickFilterType
@@ -11,7 +11,7 @@ interface QuickFiltersProps {
 const FILTERS = [
     { id: 'urgent' as const, label: 'Urgentes', icon: Flame, color: 'text-red-400' },
     { id: 'robos' as const, label: 'Robos', icon: AlertTriangle, color: 'text-orange-400' },
-    { id: 'infraestructura' as const, label: 'Infraestructura', icon: Construction, color: 'text-yellow-400' },
+    { id: 'motos' as const, label: 'Motos', icon: Bike, color: 'text-yellow-400' },
     { id: 'mi_zona' as const, label: 'Mi Zona', icon: Star, color: 'text-neon-green' },
     { id: 'all' as const, label: 'Todos', icon: List, color: 'text-muted-foreground' },
 ]
