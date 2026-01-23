@@ -408,6 +408,7 @@ interface SafeSpotMapProps {
     initialFocus?: { focusReportId?: string, lat: number, lng: number } | null
     isSearching?: boolean
     activateZoneType?: ZoneType | null
+    hideControls?: boolean
 }
 
 export function SafeSpotMapClient({
@@ -416,7 +417,8 @@ export function SafeSpotMapClient({
     onSearchArea,
     initialFocus,
     isSearching,
-    activateZoneType: externalActivateZoneType
+    activateZoneType: externalActivateZoneType,
+    hideControls
 }: SafeSpotMapProps) {
     // --- LOAD SAVED SETTINGS ---
     const mapStyle = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_style') || 'streets') : 'streets';
@@ -719,7 +721,7 @@ export function SafeSpotMapClient({
             className={`relative w-full h-full min-h-[500px] bg-dark-bg z-0 ${className} ${activeZoneType ? 'map-placement-mode' : ''}`}
         >
             {/* Zone Management UI */}
-            <AlertZoneControl activeType={activeZoneType} setActiveType={setActiveZoneType} />
+            {!hideControls && <AlertZoneControl activeType={activeZoneType} setActiveType={setActiveZoneType} />}
 
 
             <MapContainer

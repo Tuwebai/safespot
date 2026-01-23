@@ -44,6 +44,9 @@ const ComoFuncionaPage = lazyRetry(() => import('@/pages/ComoFuncionaPage'), 'Co
 const FaqPage = lazyRetry(() => import('@/pages/FaqPage'), 'Faq')
 const GuiaSeguridadSimple = lazyRetry(() => import('@/pages/GuiaSeguridadSimple'), 'GuiaSeguridad')
 const AuthPage = lazyRetry(() => import('@/pages/AuthPage'), 'AuthPage')
+const RoboPiranaPage = lazyRetry(() => import('@/pages/intel/RoboPiranaPage').then(m => ({ default: m.RoboPiranaPage })), 'RoboPiranaPage')
+const CorredoresSegurosPage = lazyRetry(() => import('@/pages/intel/CorredoresSegurosPage').then(m => ({ default: m.CorredoresSegurosPage })), 'CorredoresSegurosPage')
+const NocturnaPage = lazyRetry(() => import('@/pages/intel/NocturnaPage').then(m => ({ default: m.NocturnaPage })), 'NocturnaPage')
 
 // Admin Imports (Lazy Loaded)
 const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
@@ -139,6 +142,12 @@ function App() {
                           <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
                           <Route path="/login" element={<AuthPage />} />
                           <Route path="/register" element={<AuthPage />} />
+
+                          {/* Safety Intel Routes */}
+                          <Route path="/guia/robo-pirana" element={<RoboPiranaPage />} />
+                          <Route path="/mapa/corredores" element={<CorredoresSegurosPage />} />
+                          <Route path="/guia/nocturna" element={<NocturnaPage />} />
+
                           <Route path="/sobre-nosotros" element={<AboutPage />} />
                           <Route path="/usuario/:alias" element={<PublicProfile />} />
                           <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
@@ -187,17 +196,17 @@ function App() {
         </GoogleOAuthProvider>
       </QueryClientProvider>
     </HelmetProvider>
-      )
+  )
 }
 
 
-      /**
-       * Helper component para montar el modal global
-       * Lee el estado del AuthGuardContext
-       */
-      function GlobalAuthModal() {
-  const {isModalOpen, closeModal} = useAuthGuardContext();
-      return <AuthRequiredModal isOpen={isModalOpen} onClose={closeModal} />;
+/**
+ * Helper component para montar el modal global
+ * Lee el estado del AuthGuardContext
+ */
+function GlobalAuthModal() {
+  const { isModalOpen, closeModal } = useAuthGuardContext();
+  return <AuthRequiredModal isOpen={isModalOpen} onClose={closeModal} />;
 }
 
-      export default App
+export default App
