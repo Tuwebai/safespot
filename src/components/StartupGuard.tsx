@@ -1,10 +1,8 @@
-import { ReactNode, useEffect, useState } from 'react';
-import { GlobalErrorFallback } from './GlobalErrorFallback';
-import { useAuthStore } from '@/store/authStore';
+import { ReactNode, useEffect } from 'react';
+import { bootstrapManager } from '@/lib/lifecycle/ApplicationBootstrap';
 
-const BOOTSTRAP_TIMEOUT_MS = 5000; // 5 segundos máximo para arrancar
+// Bootstrap logic is moved to bootstrapManager
 
-type BootState = 'booting' | 'ready' | 'timeout' | 'error';
 
 interface StartupGuardProps {
     children: ReactNode;
@@ -17,50 +15,25 @@ interface StartupGuardProps {
  * Este componente fuerza un estado de fallo si la inicialización tarda demasiado.
  */
 export function StartupGuard({ children }: StartupGuardProps) {
-    const [bootState, setBootState] = useState<BootState>('booting');
-    const isInitializing = useAuthStore(state => state.isInitializing); // Necesitaremos agregar esto al store
-
+    // We start the boot process ONCE when the provider mounts
     useEffect(() => {
-        let timeoutId: NodeJS.Timeout;
+        const init = async () => {
+            await bootstrapManager.initialize();
+        };
+        init();
+    }, []);
 
-        if (bootState === 'booting') {
-            // 1. Iniciar Watchdog Timer
-            timeoutId = setTimeout(() => {
-                console.error('[StartupGuard] 🚨 Bootstrap timeout triggered (5000ms). Forcing fallback.');
-                setBootState('timeout');
-            }, BOOTSTRAP_TIMEOUT_MS);
-        }
+    // While booting, we CAN show children if they can handle async states (Skeleton).
+    // But for a true "Guard", we might want to wait until 'RUNNING'.
+    // Given the requirement "No loaders infinite", we render children immediately 
+    // but the children (IdentityInitializer) might rely on the manager state.
 
-        // 2. Verificar si Auth Store terminó de inicializar
-        if (!isInitializing && bootState === 'booting') {
-            clearTimeout(timeoutId!);
-            setBootState('ready');
-        }
+    // Actually, IdentityInitializer is now redundant if BootstrapManager handles identity.
+    // So we render children only after boot?
+    // No, the requirement says "No fallbacks visuales", "App REAL debe cargar SIEMPRE".
 
-        return () => clearTimeout(timeoutId);
-    }, [bootState, isInitializing]);
+    // Enterprise Strategy: Render immediately. Components that need data will use Suspense/Query.
+    // The BootstrapManager ensures "Identity" is ready before queries fire.
 
-    // ✅ ENTERPRISE CHANGE: Phase 0 - Render Immediately
-    // We do NOT block the UI while booting. We render content with placeholders.
-    // If timeout occurs, we trigger a "Degraded Mode" toast/alert, but we KEEP rendering.
-
-    if (bootState === 'timeout') {
-        // NON-BLOCKING ERROR: Just log or show toast via effect, but return children
-        // For now, if strictly required by user to "never show global error", we render children.
-        // We could inject a context here to tell children "we are in degraded mode".
-        return <>{children}</>;
-    }
-
-    if (bootState === 'error') {
-        return (
-            <GlobalErrorFallback
-                title="Error Crítico"
-                message="Falló la secuencia de arranque. Intenta recargar."
-            />
-        );
-    }
-
-    // While booting, just render children. 
-    // Components inside should handle "loading" states via skeleton UI.
     return <>{children}</>;
 }

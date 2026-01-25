@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Shield, MapPin, BookOpen } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Shield, MapPin, BookOpen, Smartphone, Train, Landmark, HeartHandshake, PawPrint, FileWarning, ClipboardList, BrainCircuit, Lightbulb, Scale } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,7 @@ const INTEL_DATA = [
         description: 'Si te rodean, priorizá tu vida. Guía rápida para actuar en frío y salir ileso en 60 segundos.',
         icon: Shield,
         actionLabel: 'Ver Pasos',
-        action: '/guia/robo-pirana',
+        action: '/intel/protocolo-anti-pirana',
         stats: 'Vital'
     },
     {
@@ -24,7 +24,7 @@ const INTEL_DATA = [
         description: 'Chequeá por dónde conviene moverse. Calles con más luz, cámaras y vecinos atentos en GBA Norte.',
         icon: MapPin,
         actionLabel: 'Ver Mapa',
-        action: '/mapa/corredores',
+        action: '/intel/corredores-seguros',
         stats: '+3 Zonas'
     },
     {
@@ -34,8 +34,108 @@ const INTEL_DATA = [
         description: 'No seas un blanco fácil al entrar a casa. Tips clave para bajarte del auto o bondi sin regalarte.',
         icon: BookOpen,
         actionLabel: 'Leer Tips',
-        action: '/guia/nocturna',
+        action: '/intel/nocturna',
         stats: 'Nuevo'
+    },
+    {
+        id: '4',
+        category: 'Ciberdelito',
+        title: 'Cuento del Tío 2.0',
+        description: 'No caigas en la de "te ganaste un auto". Guía para detectar phishing, estafas en Marketplace y clonación de WhatsApp.',
+        icon: Smartphone,
+        actionLabel: 'Anti-Estafas',
+        action: '/intel/cuento-del-tio-ciberdelito',
+        stats: 'Alerta'
+    },
+    {
+        id: '5',
+        category: 'Movilidad',
+        title: 'Viajá Pillo',
+        description: 'Subte, Tren y Bondi. Dónde pararte, qué mirar y la mochila siempre adelante para que no te pungueen.',
+        icon: Train,
+        actionLabel: 'Ver Guía',
+        action: '/intel/viaja-pillo-transporte',
+        stats: 'Diario'
+    },
+    {
+        id: '6',
+        category: 'Bancos',
+        title: 'Ojo en el Cajero',
+        description: 'Si sacás efectivo, no te regales. Rutas de escape, cómo detectar marcadores y evitar salideras.',
+        icon: Landmark,
+        actionLabel: 'Seguridad',
+        action: '/intel/ojo-en-el-cajero',
+        stats: 'Crítico'
+    },
+    {
+        id: '7',
+        category: 'Comunidad',
+        title: 'Violencia de Género',
+        description: 'No estás sola. Recursos directos, línea 144 y red de contención segura. Pedí ayuda sin dejar rastro.',
+        icon: HeartHandshake,
+        actionLabel: 'Pedir Ayuda',
+        action: '/intel/violencia-de-genero',
+        stats: 'Ayuda'
+    },
+    {
+        id: '8',
+        category: 'Mascotas',
+        title: '¿Perdiste al Firu?',
+        description: 'Red de búsqueda barrial activada. Cómo reportar mascotas perdidas y alertar a veterinarias cercanas.',
+        icon: PawPrint,
+        actionLabel: 'Buscar',
+        action: '/intel/perdiste-al-firu',
+        stats: 'Red'
+    },
+    {
+        id: '9',
+        category: 'Justicia',
+        title: 'Hablá Sin Miedo',
+        description: '¿Viste algo turbio en el barrio? Cómo realizar denuncias anónimas sobre venta de drogas o trata.',
+        icon: FileWarning,
+        actionLabel: 'Denunciar',
+        action: '/intel/habla-sin-miedo',
+        stats: 'Anónimo'
+    },
+    {
+        id: '10',
+        category: 'Playbook',
+        title: 'Protocolo Testigo',
+        description: 'Protocolo de acción fría. Qué hacer, qué NO hacer y cómo ayudar a la víctima sin ponerte en riesgo. Guía paso a paso.',
+        icon: ClipboardList,
+        actionLabel: 'Ver Protocolo',
+        action: '/intel/protocolo-testigo',
+        stats: 'Táctico'
+    },
+    {
+        id: '11',
+        category: 'Intel',
+        title: 'Predicción de Delito',
+        description: 'No es magia, son datos. Cómo nuestro algoritmo cruza reportes históricos y tiempo real para detectar zonas calientes antes de que pases.',
+        icon: BrainCircuit,
+        actionLabel: 'Tecnología',
+        action: '/intel/prediccion-del-delito',
+        stats: 'Beta'
+    },
+    {
+        id: '12',
+        category: 'Educación',
+        title: 'Manual Urbano',
+        description: 'Errores de novato que te exponen. Desde usar el celu en la parada hasta caminar por la sombra. Ajustá tu rutina hoy.',
+        icon: Lightbulb,
+        actionLabel: 'Leer Manual',
+        action: '/intel/manual-urbano',
+        stats: 'Evergreen'
+    },
+    {
+        id: '13',
+        category: 'Transparencia',
+        title: 'Sistema de Confianza',
+        description: '¿Cómo validamos lo que ves? Proceso de verificación de reportes y política de "Cero Datos Personales". Tu privacidad es blindada.',
+        icon: Scale,
+        actionLabel: 'System Trust',
+        action: '/confianza/sistema-de-confianza',
+        stats: 'Enterprise'
     }
 ];
 

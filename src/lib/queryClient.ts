@@ -26,12 +26,17 @@ export const queryClient = new QueryClient({
             // 2. Refetch Triggers (Aggressive background updates)
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
-            refetchOnMount: 'always', // ✅ CRITICAL: Always check server on component mount
+            refetchOnMount: true, // ✅ ENTERPRISE FIX: Changed from 'always' to 'true'. Respects staleTime (1 min).
 
             // 3. Network Behavior - RETRY LOGIC (Unified)
             // ✅ PRODUCTION FIX: Retry transient errors (DNS, packet loss, TLS handshake)
             // 3 retries with exponential backoff: 1s, 2s, 4s (~7s total before final error)
-            retry: 3,
+            retry: (failureCount, error: any) => {
+                // Don't retry on 4xx client errors (404, 401, 403, 429 Too Many Requests)
+                // 429 should be handled by backoff, but for now we stop the storm.
+                if (error?.status >= 400 && error?.status < 500) return false;
+                return failureCount < 3;
+            },
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential Backoff
             networkMode: 'online',
         },

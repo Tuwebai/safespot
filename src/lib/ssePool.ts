@@ -1,11 +1,10 @@
 /**
- * SSE Connection Manager (v4.0 - Simplified Enterprise)
+ * SSE Connection Manager (v5.0 - Enterprise Resilient)
  * 
- * Strategy:
- * - One EventSource per Tab (KISS Principle).
- * - React Query handles invalidation.
- * - Browser handles connection limits (HTTP/2 multiplexing usually solves this).
- * - No complex leader election.
+ * Capabilities:
+ * - Sleep/Wake support for background tabs.
+ * - Infinite Backoff (capped) for persistent network issues.
+ * - Visibility awareness.
  */
 
 type SSEListener = (event: MessageEvent) => void;
@@ -13,14 +12,14 @@ type ReconnectCallback = (lastEventId: string | null) => void;
 
 class Backoff {
     private attempt = 0;
-    private maxDelay = 15000;
+    private maxDelay = 60000; // Cap at 60s
     private baseDelay = 1000;
 
     getDelay() {
         const exponential = this.baseDelay * Math.pow(2, this.attempt);
         const cap = Math.min(exponential, this.maxDelay);
         this.attempt++;
-        return Math.floor(Math.random() * cap); // Full Jitter
+        return Math.floor(Math.random() * cap * 0.5 + cap * 0.5); // Jitter
     }
 
     reset() {
@@ -37,7 +36,11 @@ class SSEPool {
         listeners: Map<string, Set<SSEListener>>;
         reconnectCallbacks: Set<ReconnectCallback>;
         backoff: Backoff;
+        isSleeping: boolean;
+        url: string; // Store URL for reconnection
     }>();
+
+    private isGlobalSleep = false;
 
     subscribe(url: string, eventName: string, listener: SSEListener) {
         let entry = this.connections.get(url);
@@ -48,7 +51,9 @@ class SSEPool {
                 refCount: 0,
                 listeners: new Map(),
                 reconnectCallbacks: new Set(),
-                backoff: new Backoff()
+                backoff: new Backoff(),
+                isSleeping: false,
+                url: url
             };
             this.connections.set(url, entry);
         }
@@ -59,24 +64,54 @@ class SSEPool {
         }
         entry.listeners.get(eventName)!.add(listener);
 
-        if (!entry.source) {
-            this.connect(url, entry);
+        if (!entry.source && !this.isGlobalSleep && !entry.isSleeping) {
+            this.connect(entry);
         }
 
         return () => this.unsubscribe(url, eventName, listener);
     }
 
-    private connect(url: string, entry: any) {
+    /**
+     * Called when tab goes into background (save battery/data)
+     */
+    sleep() {
+        console.log('[SSE] 💤 Sleeping all connections');
+        this.isGlobalSleep = true;
+        this.connections.forEach(entry => {
+            entry.isSleeping = true;
+            if (entry.source) {
+                entry.source.close();
+                entry.source = null;
+            }
+        });
+    }
+
+    /**
+     * Called when tab becomes visible (restore realtime)
+     */
+    wake() {
+        if (!this.isGlobalSleep) return;
+
+        console.log('[SSE] ☀️ Waking up connections');
+        this.isGlobalSleep = false;
+        this.connections.forEach(entry => {
+            entry.isSleeping = false;
+            if (entry.refCount > 0 && !entry.source) {
+                entry.backoff.reset(); // Reset backoff for eager reconnect
+                this.connect(entry);
+            }
+        });
+    }
+
+    private connect(entry: any) {
+        if (this.isGlobalSleep || entry.isSleeping) return; // Don't connect if sleeping
+
         if (!navigator.onLine) {
-            // console.debug(`[SSE] ⏸️ Defaulting to offline mode for ${url}. Waiting for network...`);
-            // We don't need to schedule retry here; the window 'online' event handled in App.tsx or useOnlineStatus should trigger a reconnect/refetch.
-            // But for safety, we can check back in a bit.
-            setTimeout(() => {
-                if (entry.refCount > 0 && navigator.onLine) this.connect(url, entry);
-            }, 5000);
+            // Wait for online event handled by Bootstrap
             return;
         }
 
+        const url = entry.url;
         // console.debug(`[SSE] Connecting to ${url}...`);
 
         try {
@@ -86,31 +121,24 @@ class SSEPool {
             source.onopen = () => {
                 // console.debug(`[SSE] Connected to ${url}`);
                 entry.backoff.reset();
-                // Trigger any reconnect callbacks (Gap Recovery)
-                entry.reconnectCallbacks.forEach((cb: any) => cb(null)); // TODO: Trace lastEventId if needed
+                entry.reconnectCallbacks.forEach((cb: any) => cb(null));
             };
 
             source.onerror = () => {
                 if (source.readyState === EventSource.CLOSED) {
-                    // ENTERPRISE: Fail-Safe Limit
-                    // If we fail 5 times (approx 30-60s of trying), we stop to save battery/data.
-                    // The user is likely offline or the server is down.
-                    const MAX_RETRIES = 5;
-
-                    if (entry.backoff.count >= MAX_RETRIES) {
-                        console.error(`[SSE] ❌ Connection failed after ${MAX_RETRIES} attempts. Giving up to save resources.`);
-                        entry.source = null;
-                        // TODO: Emit global 'connection-degraded' event if needed
-                        return;
-                    }
-
-                    console.warn(`[SSE] Connection closed for ${url}. Reconnecting (Attempt ${entry.backoff.count + 1}/${MAX_RETRIES})...`);
                     source.close();
                     entry.source = null;
 
+                    // ENTERPRISE: Infinite Backoff (Never give up while visible)
+                    // If we are visible, we must keep trying, but slowly.
                     const delay = entry.backoff.getDelay();
+
+                    if (entry.backoff.count % 5 === 0) {
+                        console.warn(`[SSE] Connection struggling for ${url}. Next retry in ${delay}ms. (Attempt ${entry.backoff.count})`);
+                    }
+
                     setTimeout(() => {
-                        if (entry.refCount > 0) this.connect(url, entry);
+                        if (entry.refCount > 0 && !this.isGlobalSleep) this.connect(entry);
                     }, delay);
                 }
             };
@@ -121,9 +149,7 @@ class SSEPool {
                 listeners?.forEach((fn: any) => fn(e));
             };
 
-            // Hook standard events + wildcard
             source.onmessage = dispatch;
-            // Add all custom event types we care about
             [
                 'new-message', 'typing', 'messages-read', 'messages-delivered',
                 'presence', 'connected', 'inbox-update',
@@ -132,6 +158,8 @@ class SSEPool {
 
         } catch (err) {
             console.error('[SSE] Fatal connection error', err);
+            // Retry anyway
+            setTimeout(() => this.connect(entry), 5000);
         }
     }
 
@@ -143,7 +171,6 @@ class SSEPool {
         entry.listeners.get(eventName)?.delete(listener);
 
         if (entry.refCount <= 0) {
-            // console.debug(`[SSE] Closing connection to ${url}`);
             entry.source?.close();
             this.connections.delete(url);
         }
@@ -157,6 +184,19 @@ class SSEPool {
         return () => {
             entry?.reconnectCallbacks.delete(callback);
         }
+    }
+
+    isConnectionHealthy(): boolean {
+        // A simple heuristic: if we have any active sources, we are mostly healthy.
+        // Or we could check if any are in CONNECTING state.
+        if (this.connections.size === 0) return false;
+
+        for (const [_, entry] of this.connections) {
+            if (entry.source && entry.source.readyState === EventSource.OPEN) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 

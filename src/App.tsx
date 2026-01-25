@@ -62,6 +62,20 @@ const AdminModerationPage = lazyRetry(() => import('@/pages/admin/ModerationPage
 const AdminTasksPage = lazyRetry(() => import('@/pages/admin/TasksPage').then(m => ({ default: m.TasksPage })), 'AdminTasksPage')
 import { AdminGuard } from '@/components/admin/AdminGuard'
 
+// Intel Pages (Lazy Load could be better but direct for now)
+import EstafasPage from '@/pages/guia/EstafasPage';
+import TransportePage from '@/pages/guia/TransportePage';
+import BancosPage from '@/pages/guia/BancosPage';
+import MascotasPage from '@/pages/guia/MascotasPage';
+import GeneroPage from '@/pages/guia/GeneroPage';
+import DenunciaPage from '@/pages/guia/DenunciaPage';
+import ProtocoloTestigoPage from '@/pages/guia/ProtocoloTestigoPage';
+import PrediccionPage from '@/pages/guia/PrediccionPage';
+import ManualUrbanoPage from '@/pages/guia/ManualUrbanoPage';
+import TransparenciaPage from '@/pages/guia/TransparenciaPage';
+import BlogPage from '@/pages/BlogPage';
+import BlogPostPage from '@/pages/BlogPostPage';
+
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'
 
@@ -85,7 +99,11 @@ function App() {
     // 1. BOOT STRATEGY: Invalidate everything on mount to clear "stale" in-memory state
     // This pairs with SecureBoot (which clears storage) to guarantee 100% freshness.
     // console.debug('[App] 🚀 Booting... Invalidating all queries.');
-    queryClient.invalidateQueries();
+
+    // ⚠️ ENTERPRISE FIX: DISABLED GLOBAL INVALIDATION 
+    // This caused a "Request Storm" (429 Too Many Requests) on boot. 
+    // We rely on `staleTime: 60s` and `refetchOnMount: true` instead.
+    // queryClient.invalidateQueries();
 
     const handleOnline = () => {
       // console.debug('[App] ✅ Network restored → refetching active queries');
@@ -150,9 +168,28 @@ function App() {
                               <Route path="/register" element={<AuthPage />} />
 
                               {/* Safety Intel Routes */}
-                              <Route path="/guia/robo-pirana" element={<RoboPiranaPage />} />
-                              <Route path="/mapa/corredores" element={<CorredoresSegurosPage />} />
-                              <Route path="/guia/nocturna" element={<NocturnaPage />} />
+                              {/* Safety Intel Routes (Standardized SEO) */}
+                              <Route path="/intel/protocolo-anti-pirana" element={<RoboPiranaPage />} />
+                              <Route path="/intel/cuento-del-tio-ciberdelito" element={<EstafasPage />} />
+                              <Route path="/intel/viaja-pillo-transporte" element={<TransportePage />} />
+                              <Route path="/intel/ojo-en-el-cajero" element={<BancosPage />} />
+                              <Route path="/intel/perdiste-al-firu" element={<MascotasPage />} />
+                              <Route path="/intel/violencia-de-genero" element={<GeneroPage />} />
+                              <Route path="/intel/habla-sin-miedo" element={<DenunciaPage />} />
+
+                              {/* Intel Advanced */}
+                              <Route path="/intel/protocolo-testigo" element={<ProtocoloTestigoPage />} />
+                              <Route path="/intel/prediccion-del-delito" element={<PrediccionPage />} />
+                              <Route path="/intel/manual-urbano" element={<ManualUrbanoPage />} />
+
+                              {/* System Trust */}
+                              <Route path="/confianza/sistema-de-confianza" element={<TransparenciaPage />} />
+
+                              <Route path="/intel/corredores-seguros" element={<CorredoresSegurosPage />} />
+                              <Route path="/intel/nocturna" element={<NocturnaPage />} />
+
+                              <Route path="/blog" element={<BlogPage />} />
+                              <Route path="/blog/:slug" element={<BlogPostPage />} />
 
                               <Route path="/sobre-nosotros" element={<AboutPage />} />
                               <Route path="/usuario/:alias" element={<PublicProfile />} />

@@ -103,6 +103,7 @@ export function Footer() {
             <div className="space-y-4">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Compañía</h4>
               <ul className="space-y-2">
+                <FooterLink to="/blog">Blog & Novedades</FooterLink>
                 <FooterLink to="/terminos">Términos de Servicio</FooterLink>
                 <FooterLink to="/privacidad">Política de Privacidad</FooterLink>
                 <li>
