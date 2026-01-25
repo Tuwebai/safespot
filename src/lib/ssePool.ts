@@ -67,6 +67,16 @@ class SSEPool {
     }
 
     private connect(url: string, entry: any) {
+        if (!navigator.onLine) {
+            console.log(`[SSE] ⏸️ Defaulting to offline mode for ${url}. Waiting for network...`);
+            // We don't need to schedule retry here; the window 'online' event handled in App.tsx or useOnlineStatus should trigger a reconnect/refetch.
+            // But for safety, we can check back in a bit.
+            setTimeout(() => {
+                if (entry.refCount > 0 && navigator.onLine) this.connect(url, entry);
+            }, 5000);
+            return;
+        }
+
         console.log(`[SSE] Connecting to ${url}...`);
 
         try {
@@ -82,7 +92,19 @@ class SSEPool {
 
             source.onerror = () => {
                 if (source.readyState === EventSource.CLOSED) {
-                    console.warn(`[SSE] Connection closed for ${url}. Reconnecting...`);
+                    // ENTERPRISE: Fail-Safe Limit
+                    // If we fail 5 times (approx 30-60s of trying), we stop to save battery/data.
+                    // The user is likely offline or the server is down.
+                    const MAX_RETRIES = 5;
+
+                    if (entry.backoff.count >= MAX_RETRIES) {
+                        console.error(`[SSE] ❌ Connection failed after ${MAX_RETRIES} attempts. Giving up to save resources.`);
+                        entry.source = null;
+                        // TODO: Emit global 'connection-degraded' event if needed
+                        return;
+                    }
+
+                    console.warn(`[SSE] Connection closed for ${url}. Reconnecting (Attempt ${entry.backoff.count + 1}/${MAX_RETRIES})...`);
                     source.close();
                     entry.source = null;
 
