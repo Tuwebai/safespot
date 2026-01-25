@@ -74,7 +74,7 @@ const CACHE_VERSION_KEY = 'ss_cache_schema_version';
       // Continue anyway (fail-safe)
     }
   } else {
-    console.log(`[SecureBoot] ✅ Schema version OK (${CACHE_SCHEMA_VERSION})`);
+    // console.debug(`[SecureBoot] ✅ Schema version OK (${CACHE_SCHEMA_VERSION})`);
   }
 })();
 
@@ -88,7 +88,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-console.log('[Bootstrap] ✅ React mounted successfully');
+// console.debug('[Bootstrap] ✅ React mounted successfully');
 
 // ============================================
 // ENTERPRISE: UPDATE MANAGER
@@ -102,6 +102,6 @@ if ('serviceWorker' in navigator) {
   // Delay initialization to not block initial render
   setTimeout(() => {
     updateManager.init();
-    console.log('[Bootstrap] ✅ UpdateManager initialized');
+    // console.debug('[Bootstrap] ✅ UpdateManager initialized');
   }, 1000);
 }

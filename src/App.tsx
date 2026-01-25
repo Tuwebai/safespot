@@ -84,11 +84,11 @@ function App() {
   useEffect(() => {
     // 1. BOOT STRATEGY: Invalidate everything on mount to clear "stale" in-memory state
     // This pairs with SecureBoot (which clears storage) to guarantee 100% freshness.
-    console.log('[App] 🚀 Booting... Invalidating all queries.');
+    // console.debug('[App] 🚀 Booting... Invalidating all queries.');
     queryClient.invalidateQueries();
 
     const handleOnline = () => {
-      console.log('[App] ✅ Network restored → refetching active queries');
+      // console.debug('[App] ✅ Network restored → refetching active queries');
       queryClient.refetchQueries({ type: 'active', stale: true });
     };
 

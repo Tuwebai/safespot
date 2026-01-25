@@ -39,7 +39,7 @@ class UpdateManager {
             return;
         }
 
-        console.log('[UpdateManager] PROD mode → silent deploy tracking enabled');
+        // console.debug('[UpdateManager] PROD mode → silent deploy tracking enabled');
 
         // 2. Check immediately on boot
         await this.checkForDeployUpdate();
@@ -49,7 +49,7 @@ class UpdateManager {
             this.checkForDeployUpdate();
         }, POLLING_INTERVAL_PROD);
 
-        console.log(`[UpdateManager] Polling every ${POLLING_INTERVAL_PROD / 1000}s`);
+        // console.debug(`[UpdateManager] Polling every ${POLLING_INTERVAL_PROD / 1000}s`);
     }
 
     /**
@@ -104,7 +104,7 @@ class UpdateManager {
             // 5. CRITICAL: Persist baseline FIRST (before reload)
             // This ensures we only reload ONCE per deploy
             localStorage.setItem(DEPLOY_STORAGE_KEY, remote.deployId);
-            console.log('[UpdateManager] Deploy baseline persisted');
+            // console.debug('[UpdateManager] Deploy baseline persisted');
 
             // 6. Silent hard update (NO banner, NO prompt)
             await this.forceSilentUpdate();
@@ -124,7 +124,7 @@ class UpdateManager {
      * Just: cleanup → reload
      */
     private async forceSilentUpdate() {
-        console.log('[UpdateManager] Applying new deploy silently...');
+        console.warn('[UpdateManager] Applying new deploy silently...');
 
         // ✅ OBSERVABILITY: Track forced update
         if (AppVersion.environment === 'production') {

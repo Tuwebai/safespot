@@ -535,7 +535,7 @@ export function SafeSpotMapClient({
         try {
             // ATTEMPT 1: High Accuracy, 6s timeout
             // Desktop often times out here if it's trying to use WiFi triangulation slowly
-            console.log(`[Map ${getTimestamp()}] Attempting High Accuracy Location...`);
+            // console.debug(`[Map ${getTimestamp()}] Attempting High Accuracy Location...`);
             const pos = await getPosition({
                 enableHighAccuracy: true,
                 timeout: 6000,
@@ -565,7 +565,7 @@ export function SafeSpotMapClient({
 
             // TIMEOUT (Code 3) or other errors -> RETRY STRATEGY
             if (error.code === 3 || retryMode === 'manual') {
-                console.log(`[Map ${getTimestamp()}] Retrying with Relaxed Constraints...`);
+                // console.debug(`[Map ${getTimestamp()}] Retrying with Relaxed Constraints...`);
                 setLocationState('retrying_timeout');
                 setStatusMessage('Afinando ubicación (modo extendido)...');
 

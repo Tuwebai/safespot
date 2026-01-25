@@ -68,7 +68,7 @@ class SSEPool {
 
     private connect(url: string, entry: any) {
         if (!navigator.onLine) {
-            console.log(`[SSE] ⏸️ Defaulting to offline mode for ${url}. Waiting for network...`);
+            // console.debug(`[SSE] ⏸️ Defaulting to offline mode for ${url}. Waiting for network...`);
             // We don't need to schedule retry here; the window 'online' event handled in App.tsx or useOnlineStatus should trigger a reconnect/refetch.
             // But for safety, we can check back in a bit.
             setTimeout(() => {
@@ -77,14 +77,14 @@ class SSEPool {
             return;
         }
 
-        console.log(`[SSE] Connecting to ${url}...`);
+        // console.debug(`[SSE] Connecting to ${url}...`);
 
         try {
             const source = new EventSource(url);
             entry.source = source;
 
             source.onopen = () => {
-                console.log(`[SSE] Connected to ${url}`);
+                // console.debug(`[SSE] Connected to ${url}`);
                 entry.backoff.reset();
                 // Trigger any reconnect callbacks (Gap Recovery)
                 entry.reconnectCallbacks.forEach((cb: any) => cb(null)); // TODO: Trace lastEventId if needed
@@ -143,7 +143,7 @@ class SSEPool {
         entry.listeners.get(eventName)?.delete(listener);
 
         if (entry.refCount <= 0) {
-            console.log(`[SSE] Closing connection to ${url}`);
+            // console.debug(`[SSE] Closing connection to ${url}`);
             entry.source?.close();
             this.connections.delete(url);
         }

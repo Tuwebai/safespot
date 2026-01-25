@@ -73,7 +73,7 @@ export const useAuthStore = create<AuthState>()(
             }),
             // ⚡ HYDRATION LIFECYCLE
             onRehydrateStorage: () => (state) => {
-                console.log('[AuthStore] 💧 Hydration finished');
+                // console.debug('[AuthStore] 💧 Hydration finished');
                 // Ensure we unset initializing when storage is loaded
                 state?.setInitialized();
             }
