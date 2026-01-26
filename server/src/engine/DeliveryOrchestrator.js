@@ -92,13 +92,29 @@ export const DeliveryOrchestrator = {
             return true;
         }
 
-        if (type === 'REPORT_ACTIVITY' || type === 'COMMENT_ACTIVITY') {
+        if (type === 'REPORT_ACTIVITY' || type === 'COMMENT_ACTIVITY' || type === 'FOLLOW_ACTIVITY' || type === 'MENTION_ACTIVITY') {
             // General notification toast
             realtimeEvents.emitUserNotification(target.anonymousId, {
                 type: 'activity',
                 title: payload.title,
                 message: payload.message,
                 link: payload.data?.url,
+                timestamp: Date.now(),
+                eventId: jobData.id
+            });
+            return true;
+        }
+
+        // 🧠 ENTERPRISE FINAL CATCH-ALL
+        // If we don't know the type specifically but it has a title/message, send it as generic activity.
+        // This ensures NO notification is "invisible" if the App supresses the Push.
+        if (payload?.title && payload?.message) {
+            realtimeEvents.emitUserNotification(target.anonymousId, {
+                type: 'activity',
+                title: payload.title,
+                message: payload.message,
+                link: payload.data?.url,
+                timestamp: Date.now(),
                 eventId: jobData.id
             });
             return true;

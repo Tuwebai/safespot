@@ -31,55 +31,7 @@ export function usePushNotifications() {
     // Check supported browser
     const isSupported = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
 
-    // Check current status on mount
-    useEffect(() => {
-        if (!isSupported) {
-            setLoading(false);
-            return;
-        }
-
-        const checkSubscription = async () => {
-            try {
-                // ✅ ENTERPRISE RESILIENCE: 5s timeout for SW ready
-                const swReady = Promise.race([
-                    navigator.serviceWorker.ready,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('SW Timeout')), 5000))
-                ]) as Promise<ServiceWorkerRegistration>;
-
-                const registration = await swReady;
-                const subscription = await registration.pushManager.getSubscription();
-
-                if (subscription) {
-                    setIsSubscribed(true);
-                    // 🧠 PROACTIVE AUTO-SYNC (Identity Bridge)
-                    // If we have a subscription, we refresh it on the backend to ensure 
-                    // the current anonymous_id is linked to this endpoint.
-                    // This is silent and non-blocking.
-                    console.log('[Push] Active subscription found. Triggering identity sync...');
-                    apiRequest(SUBSCRIBE_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            subscription: subscription,
-                            location: null // Location is updated separately via updateServiceLocation if needed
-                        })
-                    }).then(() => console.log('[Push] Identity sync successful.'))
-                        .catch(e => console.warn('[Push] Identity sync failed (ignored):', e));
-                } else {
-                    setIsSubscribed(false);
-                }
-
-                setPermission(Notification.permission);
-            } catch (err) {
-                console.warn('[Push] Subscription check aborted (SW not ready or timeout).', err);
-                setPermission(Notification.permission);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        checkSubscription();
-    }, [isSupported]);
-
+    // 🧠 DEFINE SUBSCRIBE FUNCTION FIRST (To be used in useEffect)
     const subscribe = useCallback(async () => {
         if (!isSupported) {
             error('Tu navegador no soporta notificaciones push.');
@@ -105,18 +57,22 @@ export function usePushNotifications() {
             if (!publicKey) throw new Error('No VAPID key available');
 
             // 3. Subscribe in Browser
+            // Ensure SW is ready
             const registration = await navigator.serviceWorker.ready;
+
+            // Convert Key
             const convertedVapidKey = urlBase64ToUint8Array(publicKey);
 
+            // ⚠️ FORCE NEW SUBSCRIPTION
             const subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: convertedVapidKey
             });
 
             // 4. Send to Backend
-            // Try to get location, but don't fail subscription if it's denied/unavailable
             let location = null;
             try {
+                // Quick timeout for location
                 const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
                     navigator.geolocation.getCurrentPosition(resolve, reject, {
                         enableHighAccuracy: false,
@@ -126,19 +82,18 @@ export function usePushNotifications() {
                 location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             } catch (e) {
                 console.log('[Push] GPS unavailable (Timeout/Denied). Subscribing with generic location scope.');
-                // Proceed with location = null
             }
 
             await apiRequest(SUBSCRIBE_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     subscription: subscription,
-                    location: location // Can be null now
+                    location: location
                 })
             });
 
             setIsSubscribed(true);
-            success('Notificaciones activadas. Ahora recibirás alertas.');
+            console.log('[Push Authority] Subscription fresh and synced.');
 
         } catch (err) {
             console.error('Failed to subscribe:', err);
@@ -147,6 +102,55 @@ export function usePushNotifications() {
             setLoading(false);
         }
     }, [isSupported, success, error]);
+
+    // Check current status on mount AND perform Authority Check
+    useEffect(() => {
+        if (!isSupported) {
+            setLoading(false);
+            return;
+        }
+
+        const checkSubscription = async () => {
+            try {
+                // ✅ ENTERPRISE RESILIENCE: 5s timeout for SW ready
+                const swReady = Promise.race([
+                    navigator.serviceWorker.ready,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('SW Timeout')), 5000))
+                ]) as Promise<ServiceWorkerRegistration>;
+
+                const registration = await swReady;
+                const existingSubscription = await registration.pushManager.getSubscription();
+
+                if (existingSubscription) {
+                    // 🧠 PUSH AUTHORITY STRATEGY (WhatsApp-Grade)
+                    // We DO NOT trust old subscriptions. Browsers silently expire them or change keys.
+                    // If we find one, we destroy it and recreate it to ensure 100% freshness.
+                    console.log('[Push Authority] Found existing subscription. Replacing to ensure freshness...');
+
+                    try {
+                        await existingSubscription.unsubscribe();
+                    } catch (e) {
+                        console.warn('[Push Authority] Unsubscribe failed (ignored):', e);
+                    }
+
+                    // Re-subscribe immediately
+                    await subscribe();
+                } else {
+                    // Clean start
+                    setIsSubscribed(false);
+                }
+
+                setPermission(Notification.permission);
+            } catch (err) {
+                console.warn('[Push] Subscription check aborted (SW not ready or timeout).', err);
+                setPermission(Notification.permission);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        checkSubscription();
+    }, [isSupported, subscribe]);
 
     const unsubscribe = useCallback(async () => {
         setLoading(true);
