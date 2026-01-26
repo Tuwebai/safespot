@@ -160,9 +160,27 @@ self.addEventListener('push', (event: any) => {
         vibrate: [200, 100, 200]
     };
 
-    // 3. Show Notification
-    const notificationPromise = self.registration.showNotification(title, options);
-    event.waitUntil(notificationPromise);
+    // 3. Client-Side Dedup (WhatsApp Style)
+    // If the user has the app OPEN and FOCUSED, we do NOT show the notification.
+    // The App's internal socket (SSE) handles the UI (Toast/Badge).
+    event.waitUntil(
+        (async () => {
+            const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+            const isAppFocused = clientList.some(client => client.focused);
+
+            if (isAppFocused) {
+                console.log('[SW] 🔕 App is focused. Suppressing Push Notification (Handled by Realtime/In-App).');
+                return;
+            }
+
+            // If background or closed, SHOW IT.
+            try {
+                await self.registration.showNotification(title, options);
+            } catch (e) {
+                console.error('[SW] ShowNotification Error:', e);
+            }
+        })()
+    );
 });
 
 // ============================================

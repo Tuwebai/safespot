@@ -46,19 +46,21 @@ export const DeliveryOrchestrator = {
             }
 
             // MESSAGING / ACTIVITY
-            if (isOnline) {
-                console.log(`[Orchestrator] [${traceId}] User is ONLINE. Attempting Realtime delivery...`);
-                const delivered = this._dispatchSSE(jobData);
+            // 🧠 ENTERPRISE FIX: DUAL DELIVERY ARCHITECTURE
+            // We NO LONGER suppress Push based on "Online" status (Redis is soft-state and unreliable for exact socket connectivity).
+            // Strategy: Send BOTH (SSE + Push). 
+            // - If user is truly online: App consumes SSE. Service Worker suppresses Push (if focused).
+            // - If user is background/dead socket: Push ensures delivery.
 
-                if (delivered) {
-                    console.log(`[Orchestrator] [${traceId}] Realtime Handled. SKIPPING Push.`);
-                    return DispatchResult.SUCCESS;
-                } else {
-                    console.warn(`[Orchestrator] [${traceId}] Realtime attempt failed (no local listeners?). Fallback to Push.`);
-                    // Fallthrough to Push
-                }
+            if (isOnline) {
+                console.log(`[Orchestrator] [${traceId}] User "Online" in Redis. Sending SSE...`);
+                // 1. Send Realtime (Best Effort)
+                this._dispatchSSE(jobData);
+
+                // 2. Fallthrough to Push (Guaranteed Delivery)
+                console.log(`[Orchestrator] [${traceId}] Proceeding to Push (Dual Strategy) to ensure delivery.`);
             } else {
-                console.log(`[Orchestrator] [${traceId}] User is OFFLINE. Routing to Push.`);
+                console.log(`[Orchestrator] [${traceId}] User OFFLINE. Routing to Push.`);
             }
 
             // 3. Push Delivery (Fallback or Primary)
