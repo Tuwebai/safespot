@@ -358,10 +358,29 @@ export function getAnonymousId(): string {
       return storedV2;
     }
 
-    // Fallback to raw localStorage (v1 migration path)
-    const stored = localStorage.getItem(L1_KEY);
-    if (isValidUUID(stored)) {
-      const cleanId = stored.includes('|') ? stored.split('|')[1] : stored;
+    // 🧠 ENTERPRISE FAIL-SAFE:
+    // If we reach here, it means the versioned storage returned null.
+    // This could be because it's MIGRATING or because it's RAW legacy data.
+    const raw = localStorage.getItem(L1_KEY);
+    if (!raw) return '';
+
+    // If it looks like JSON but getVersioned failed, we attempt an emergency unwrap
+    // to avoid generating a new ID and losing the user's identity.
+    if (raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        const data = parsed.data || (typeof parsed === 'string' ? parsed : null);
+        if (isValidUUID(data)) {
+          console.log('[Identity] [Recovery] Successfully unwrapped identity from JSON raw access');
+          cachedId = data;
+          return data;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Traditional Legacy Fallback (v1 string)
+    if (isValidUUID(raw)) {
+      const cleanId = raw.includes('|') ? raw.split('|')[1] : raw;
       cachedId = cleanId;
 
       // Migrate to v2 in background
