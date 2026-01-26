@@ -177,6 +177,24 @@ class RealtimeEvents extends EventEmitter {
     }
 
     /**
+     * Emit a granular message delivery confirmation
+     * @param {string} userId - Sender of the message (who will receive the ACK)
+     * @param {object} payload - { messageId, conversationId, deliveredAt, traceId }
+     */
+    emitMessageDelivered(userId, payload) {
+        this.broadcast(`user-message-delivered:${userId}`, payload);
+    }
+
+    /**
+     * Emit a granular message read confirmation
+     * @param {string} userId - Sender of the message (who will receive the ACK)
+     * @param {object} payload - { roomId, readerId }
+     */
+    emitMessageRead(userId, payload) {
+        this.broadcast(`user-message-read:${userId}`, payload);
+    }
+
+    /**
      * Emit a vote/like update
      * @param {string} type - 'report' or 'comment'
      * @param {string} id - The ID of the item being liked

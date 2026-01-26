@@ -196,12 +196,12 @@ router.get('/chats/:roomId', (req, res) => {
 
     const handleRead = (data) => {
         // Notificar que los mensajes fueron leídos (doble tilde vv)
-        stream.send('messages-read', data);
+        stream.send('message.read', data);
     };
 
-    const handleDelivered = (data) => {
+    const handleMessageDelivered = (data) => {
         // Notificar que los mensajes fueron entregados (doble tilde gris vv)
-        stream.send('messages-delivered', data);
+        stream.send('message.delivered', data);
     };
 
     const handlePresence = (data) => {
@@ -213,7 +213,7 @@ router.get('/chats/:roomId', (req, res) => {
     realtimeEvents.on(`chat:${roomId}`, handleNewMessage);
     realtimeEvents.on(`chat-typing:${roomId}`, handleTyping);
     realtimeEvents.on(`chat-read:${roomId}`, handleRead);
-    realtimeEvents.on(`chat-delivered:${roomId}`, handleDelivered);
+    realtimeEvents.on(`chat-delivered:${roomId}`, handleMessageDelivered);
     realtimeEvents.on(`chat-presence:${roomId}`, handlePresence);
 
     // Initial Presence Snapshot: Tell the connecting user if the other participant is online
@@ -274,15 +274,16 @@ router.get('/chats/:roomId', (req, res) => {
                 if (result.rowCount > 0) {
                     // 1. Room SSE (for clients with chat open)
                     realtimeEvents.emitChatStatus('delivered', roomId, {
+                        conversationId: roomId,
                         receiverId: anonymousId
                     });
 
                     // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
                     senderIds.forEach(senderId => {
-                        realtimeEvents.emitUserChatUpdate(senderId, {
-                            roomId,
-                            action: 'delivered',
-                            receiverId: anonymousId
+                        realtimeEvents.emitMessageDelivered(senderId, {
+                            conversationId: roomId,
+                            receiverId: anonymousId,
+                            traceId: `bulk_delivered_${Date.now()}`
                         });
                     });
                 }
@@ -305,7 +306,7 @@ router.get('/chats/:roomId', (req, res) => {
         realtimeEvents.off(`chat:${roomId}`, handleNewMessage);
         realtimeEvents.off(`chat-typing:${roomId}`, handleTyping);
         realtimeEvents.off(`chat-read:${roomId}`, handleRead);
-        realtimeEvents.off(`chat-delivered:${roomId}`, handleDelivered);
+        realtimeEvents.off(`chat-delivered:${roomId}`, handleMessageDelivered);
         realtimeEvents.off(`chat-presence:${roomId}`, handlePresence);
     });
 });
@@ -331,6 +332,14 @@ router.get('/user/:anonymousId', (req, res) => {
         stream.send('chat-update', data);
     };
 
+    const handleMessageDelivered = (data) => {
+        stream.send('message.delivered', data);
+    };
+
+    const handleMessageRead = (data) => {
+        stream.send('message.read', data);
+    };
+
     const handleNotification = (data) => {
         stream.send('notification', data);
     };
@@ -344,7 +353,8 @@ router.get('/user/:anonymousId', (req, res) => {
     };
 
     realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);
-
+    realtimeEvents.on(`user-message-delivered:${anonymousId}`, handleMessageDelivered);
+    realtimeEvents.on(`user-message-read:${anonymousId}`, handleMessageRead);
     realtimeEvents.on(`user-notification:${anonymousId}`, handleNotification);
     realtimeEvents.on(`user-chat-rollback:${anonymousId}`, handleRollback);
     realtimeEvents.on('presence-update', handlePresenceUpdate);
@@ -361,6 +371,7 @@ router.get('/user/:anonymousId', (req, res) => {
 
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);
+        realtimeEvents.off(`user-message-delivered:${anonymousId}`, handleMessageDelivered);
         realtimeEvents.off(`user-notification:${anonymousId}`, handleNotification);
         realtimeEvents.off(`user-chat-rollback:${anonymousId}`, handleRollback);
         realtimeEvents.off('presence-update', handlePresenceUpdate);

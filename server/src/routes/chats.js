@@ -486,6 +486,15 @@ router.post('/rooms/:roomId/read', async (req, res) => {
     const { roomId } = req.params;
 
     try {
+        // 1. Get senders BEFORE marking as read (to notify them)
+        const sendersResult = await queryWithRLS(anonymousId,
+            `SELECT DISTINCT sender_id FROM chat_messages 
+             WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)`,
+            [roomId, anonymousId]
+        );
+        const senderIds = sendersResult.rows.map(r => r.sender_id);
+
+        // 2. Mark as read
         const result = await queryWithRLS(anonymousId,
             'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
             [roomId, anonymousId]
@@ -493,13 +502,21 @@ router.post('/rooms/:roomId/read', async (req, res) => {
 
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
-            // Notificar al usuario actual que su bandeja cambió (para limpiar el badge de la UI)
+            // 3. Notify senders (Blue Tick Sync)
+            senderIds.forEach(senderId => {
+                realtimeEvents.emitMessageRead(senderId, {
+                    roomId,
+                    readerId: anonymousId
+                });
+            });
+
+            // 4. Notify current user tabs (clear unread count)
             realtimeEvents.emitUserChatUpdate(anonymousId, {
                 roomId,
                 action: 'read'
             });
 
-            // Notificar al OTRO usuario que sus mensajes en esta sala fueron leídos
+            // 5. Notify Room (Active Window Sync)
             realtimeEvents.emitChatStatus('read', roomId, {
                 readerId: anonymousId
             });
@@ -539,17 +556,18 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0) {
             // 1. Room SSE (for clients with chat open)
+            // 1. Room SSE (for clients with chat open)
             realtimeEvents.emitChatStatus('delivered', roomId, {
                 receiverId: anonymousId
             });
 
             // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
-            console.log(`[Delivered] Notifying ${senderIds.length} senders:`, senderIds);
+            // console.log(`[Delivered] Notifying ${senderIds.length} senders:`, senderIds); // Original line, commented out or removed based on the instruction's snippet
             senderIds.forEach(senderId => {
-                realtimeEvents.emitUserChatUpdate(senderId, {
-                    roomId,
-                    action: 'delivered',
-                    receiverId: anonymousId
+                realtimeEvents.emitMessageDelivered(senderId, {
+                    conversationId: roomId,
+                    receiverId: anonymousId,
+                    traceId: `bulk_read_${Date.now()}`
                 });
             });
         }
@@ -568,10 +586,14 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
  * Marks a specific message as delivered and notifies the sender.
  */
 router.post('/messages/:messageId/ack-delivered', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
     const { messageId } = req.params;
+    const anonymousId = req.headers['x-anonymous-id'];
 
-    if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
+    console.log(`[ACK-REQ] Received delivered request for ${messageId} from ${anonymousId?.substring(0, 8)}`);
+
+    if (!messageId || !anonymousId) {
+        return res.status(400).json({ error: 'MessageId and X-Anonymous-Id are required' });
+    }
 
     try {
         // 1. Get message and room info BEFORE update (to calculate latency and identify sender)
@@ -602,21 +624,25 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
             );
 
             // 3. Notify Sender via SSE (Real-time sync)
-            realtimeEvents.emitUserChatUpdate(message.sender_id, {
-                roomId: message.conversation_id,
-                action: 'delivered',
+            // Enterprise Contract: { messageId, conversationId, deliveredAt, traceId }
+            const traceId = `tr_${Math.random().toString(36).substring(2, 15)}`;
+
+            realtimeEvents.emitMessageDelivered(message.sender_id, {
                 messageId: messageId,
+                id: messageId,
+                conversationId: message.conversation_id,
+                deliveredAt: deliveredAt,
                 receiverId: anonymousId,
-                delivery_latency_ms: latencyMs
+                traceId: traceId
             });
 
-            // 4. Notify active ChatWindow (Room channel)
+            // 4. Notify active ChatWindow (Room channel fallback/sync)
             realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
                 messageId: messageId,
                 receiverId: anonymousId
             });
 
-            console.log(`[ACK] Message ${messageId} delivered in ${latencyMs}ms`);
+            console.log(`[ACK-OK] Message ${messageId} confirmed delivered. Notifying room ${message.conversation_id?.substring(0, 8)}`);
         }
 
         res.json({ success: true });

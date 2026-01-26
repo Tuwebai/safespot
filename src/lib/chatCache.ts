@@ -61,6 +61,7 @@ export const chatCache = {
                 last_message_at: message.created_at,
                 last_message_sender_id: message.sender_id,
                 last_message_type: message.type,
+                last_message_is_read: isMyMessage, // If I sent it, it's "read" by me. If not, it's new/unread.
                 unread_count: newUnreadCount
             };
 
@@ -81,8 +82,74 @@ export const chatCache = {
                 last_message_content: message.type === 'image' ? '📷 Imagen' : message.content,
                 last_message_at: message.created_at,
                 last_message_sender_id: message.sender_id,
+                last_message_is_read: isMyMessage,
                 unread_count: newUnreadCount
             };
+        });
+    },
+
+    /**
+     * READ RECEIPT AUTHORITY: Handles a remote read event (Someone read my messages).
+     * Actions:
+     * 1. Patches Sidebar (last_message_is_read: true).
+     * 2. Patches Messages List (is_read: true for my messages).
+     */
+    applyReadReceipt: (queryClient: QueryClient, roomId: string, currentUserId: string) => {
+        // 1. Sidebar Sync
+        queryClient.setQueryData(KEYS.rooms(currentUserId), (old: ChatRoom[] | undefined) => {
+            if (!old) return old;
+            return old.map(r => r.id === roomId ? { ...r, last_message_is_read: true } : r);
+        });
+
+        // 2. Detail Sync
+        queryClient.setQueryData(KEYS.conversation(roomId, currentUserId), (old: ChatRoom | undefined) => {
+            if (!old) return old;
+            return { ...old, last_message_is_read: true };
+        });
+
+        // 3. Messages Sync
+        queryClient.setQueryData<ChatMessage[]>(KEYS.messages(roomId, currentUserId), (old) => {
+            if (!old) return old;
+            // Mark all sent by me as read
+            return old.map(m => m.sender_id === currentUserId ? { ...m, is_read: true, is_delivered: true } : m);
+        });
+    },
+
+    /**
+     * DELIVERY AUTHORITY: Handles a remote delivery event (Message hit recipient's device).
+     * Actions:
+     * 1. Patches Messages List (sets is_delivered: true).
+     * 2. Patches Sidebar last message status.
+     */
+    applyDeliveryUpdate: (queryClient: QueryClient, roomId: string, currentUserId: string, data: { messageId?: string, id?: string }) => {
+        const targetId = data.messageId || data.id;
+
+        // 1. Messages Sync (active chat)
+        queryClient.setQueryData<ChatMessage[]>(KEYS.messages(roomId, currentUserId), (old) => {
+            if (!old) return old;
+            if (targetId) {
+                return old.map(m => m.id === targetId ? { ...m, is_delivered: true } : m);
+            }
+            // Bulk update fallback (for entire conversation)
+            return old.map(m => m.sender_id === currentUserId ? { ...m, is_delivered: true } : m);
+        });
+
+        // 2. Sidebar Sync (last message status)
+        queryClient.setQueryData(KEYS.rooms(currentUserId), (old: ChatRoom[] | undefined) => {
+            if (!old) return old;
+            return old.map(r => {
+                if (r.id === roomId) {
+                    // Update only if it's the last message or if we are doing bulk
+                    return { ...r, last_message_is_delivered: true };
+                }
+                return r;
+            });
+        });
+
+        // 3. Detail Sync
+        queryClient.setQueryData(KEYS.conversation(roomId, currentUserId), (old: ChatRoom | undefined) => {
+            if (!old) return old;
+            return { ...old, last_message_is_delivered: true };
         });
     },
 

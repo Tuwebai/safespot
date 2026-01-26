@@ -132,9 +132,25 @@ class SSEPool {
 
             source.onmessage = dispatch;
             [
-                'new-message', 'typing', 'messages-read', 'messages-delivered',
-                'presence', 'connected', 'inbox-update',
-                'notification', 'mark-read'
+                'new-message',
+                'message.delivered',
+                'message.read',
+                'typing',
+                'presence',
+                'presence-update',
+                'chat-update',
+                'chat-rollback',
+                'message-reaction',
+                'message-pinned',
+                'connected',
+                'inbox-update',
+                'notification',
+                'mark-read',
+                'report-update',
+                'report-create',
+                'report-delete',
+                'comment-update',
+                'comment-delete'
             ].forEach(evt => source.addEventListener(evt, dispatch));
 
         } catch (err) {

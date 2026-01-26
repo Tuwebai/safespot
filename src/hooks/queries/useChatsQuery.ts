@@ -17,6 +17,9 @@ export interface UserPresence {
     last_seen_at: string | null;
 }
 
+// ✅ ENTERPRISE: Shared ACK Cache to avoid redundant network calls between hooks
+const deliveredAcks = new Set<string>();
+
 
 
 const CHATS_KEYS = {
@@ -82,9 +85,11 @@ export function useChatRooms() {
 
                     // ✅ WhatsApp-Grade: If I received a message from someone else, 
                     // ACK it as delivered immediately (double grey tick for sender)
-                    if (message.sender_id !== anonymousId) {
+                    if (message.sender_id !== anonymousId && !deliveredAcks.has(message.id)) {
+                        deliveredAcks.add(message.id);
                         chatsApi.markMessageAsDelivered(message.id).catch(err => {
                             console.warn('[Delivered ACK] Failed:', err);
+                            deliveredAcks.delete(message.id); // Retry allowed if failed
                         });
                     }
 
@@ -99,19 +104,29 @@ export function useChatRooms() {
                         if (!old || !Array.isArray(old)) return old;
                         return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
                     });
-                } else if (data.action === 'delivered') {
-                    // ✅ WhatsApp-Grade: Update messages to show double tick
-                    console.log('[SSE] Global Delivered ACK:', data);
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
-                        if (!old) return old;
-                        // Support granular message update if provided
-                        if (data.messageId) {
-                            return old.map(m => m.id === data.messageId ? { ...m, is_delivered: true } : m);
-                        }
-                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
-                    });
                 }
             } catch (err) { }
+        });
+
+        const unsubscribeDelivered = ssePool.subscribe(sseUrl, 'message.delivered', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                const convId = data.conversationId;
+                if (!convId) return;
+
+                console.log('[SSE] Global message.delivered received:', data);
+                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, data);
+            } catch (e) { }
+        });
+
+        const unsubscribeRead = ssePool.subscribe(sseUrl, 'message.read', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('[SSE] Global message.read received:', data);
+                if (data.readerId !== anonymousId && data.roomId) {
+                    chatCache.applyReadReceipt(queryClient, data.roomId, anonymousId);
+                }
+            } catch (e) { }
         });
 
         const unsubscribeRollback = ssePool.subscribe(sseUrl, 'chat-rollback', (event) => {
@@ -130,13 +145,25 @@ export function useChatRooms() {
             try {
                 const data = JSON.parse(event.data);
                 if (data.userId) {
+                    // 1. Update individual presence cache
                     queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(data.userId), data.partial);
+
+                    // 2. Patch global rooms list (sidebar) for instant status light update
+                    queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
+                        if (!old || !Array.isArray(old)) return old;
+                        return old.map(r => r.other_participant_id === data.userId
+                            ? { ...r, is_online: data.partial.status === 'online', other_participant_last_seen: data.partial.last_seen_at || r.other_participant_last_seen }
+                            : r
+                        );
+                    });
                 }
             } catch (e) { }
         });
 
         return () => {
             unsubscribeUpdate();
+            unsubscribeDelivered();
+            unsubscribeRead(); // ✅ New
             unsubscribeRollback();
             unsubscribePresence();
         };
@@ -328,15 +355,17 @@ export function useChatMessages(convId: string | undefined) {
                 chatCache.upsertMessage(queryClient, message, anonymousId || '');
 
                 // ✅ WhatsApp-Grade: Instant ACK + Sound if active
-                if (message.sender_id !== anonymousId) {
+                if (message.sender_id !== anonymousId && !deliveredAcks.has(message.id)) {
                     // 1. Play "Pop" Sound
                     playNotificationSound();
 
                     // 2. Send Delivery ACK (Tick Gris)
                     // ✅ ENTERPRISE: Use Granular ACK for better accuracy
-                    chatsApi.markMessageAsDelivered(message.id).catch(e =>
-                        console.warn('[ACK] Failed to mark as delivered:', e)
-                    );
+                    deliveredAcks.add(message.id);
+                    chatsApi.markMessageAsDelivered(message.id).catch(e => {
+                        console.warn('[ACK] Failed to mark as delivered:', e);
+                        deliveredAcks.delete(message.id);
+                    });
                 }
 
                 // ✅ GAP RECOVERY: Update watermark on every new message
@@ -369,31 +398,20 @@ export function useChatMessages(convId: string | undefined) {
             } catch (e) { }
         });
 
-        const unsubRead = ssePool.subscribe(sseUrl, 'messages-read', (event) => {
+        const unsubRead = ssePool.subscribe(sseUrl, 'message.read', (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.readerId !== anonymousId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
-                        if (!old) return old;
-                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
-                    });
+                    chatCache.applyReadReceipt(queryClient, convId, anonymousId);
                 }
             } catch (e) { }
         });
 
-        const unsubDelivered = ssePool.subscribe(sseUrl, 'messages-delivered', (event) => {
+        const unsubDelivered = ssePool.subscribe(sseUrl, 'message.delivered', (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('[SSE] messages-delivered received:', data);
-                if (data.receiverId !== anonymousId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
-                        if (!old) return old;
-                        if (data.messageId) {
-                            return old.map(m => m.id === data.messageId ? { ...m, is_delivered: true } : m);
-                        }
-                        return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
-                    });
-                }
+                console.log('[SSE] Room message.delivered received:', data);
+                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, data);
             } catch (e) { }
         });
 

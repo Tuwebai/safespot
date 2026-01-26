@@ -43,30 +43,28 @@ const AvatarImage = React.forwardRef<
             return
         }
 
-        // Reset status to loading when src changes (unless it was already loaded? no, safer to reset)
-        // Actually, simply creating a new Image object detects status.
+        // Reset to loading on src change to allow retry
+        context?.onImageLoadingStatusChange('loading')
+
         const img = new Image()
         img.src = src
 
-        // Check if image is already cached/loaded
         if (img.complete) {
-            context?.onImageLoadingStatusChange('loaded')
-            // Even if complete, we attach error just in case, but usually unnecessary
+            if (img.naturalWidth > 0) {
+                context?.onImageLoadingStatusChange('loaded')
+            } else {
+                context?.onImageLoadingStatusChange('error')
+            }
             return
         }
 
         img.onload = () => context?.onImageLoadingStatusChange('loaded')
         img.onerror = () => context?.onImageLoadingStatusChange('error')
 
-        // Initial status? 
-        // If we want immediate feedback, we can assume 'loading' here but the Effect runs after render.
-        // If we want to show fallback immediately, default state 'error' maps to fallback effectively 
-        // until loaded.
-
     }, [src, context])
 
-    // Only render img if loaded
-    if (context?.imageLoadingStatus !== 'loaded') return null
+    // Render img if loaded OR if we want to let the browser try during 'loading'
+    if (context?.imageLoadingStatus === 'error') return null
 
     return (
         <img

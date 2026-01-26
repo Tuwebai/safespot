@@ -1,5 +1,6 @@
 import redis from '../config/redis.js';
 import { realtimeEvents } from './eventEmitter.js';
+import pool from '../config/database.js';
 
 /**
  * Presence Tracker (Redis Distributed)
@@ -70,13 +71,22 @@ class PresenceTracker {
                 // Last tab closed! Clear presence and notify
                 await redis.del(`${this.PREFIX}${userId}`);
 
+                const lastSeen = new Date().toISOString();
+
+                // 🧠 ENTERPRISE PERSISTENCE: Save to DB so initial fetches are accurate
+                pool.query(
+                    'UPDATE anonymous_users SET last_seen_at = $2 WHERE anonymous_id = $1',
+                    [userId, lastSeen]
+                ).catch(err => console.error(`[Presence] Failed to persist last_seen_at for ${userId}:`, err));
+
                 realtimeEvents.broadcast('presence-update', {
                     userId,
-                    status: 'offline',
-                    lastSeen: new Date().toISOString()
+                    partial: {
+                        status: 'offline',
+                        last_seen_at: lastSeen
+                    }
                 });
 
-                // Backward compatibility: Also notify per-room if needed (handled by caller if specific)
                 console.log(`[Presence] Last session closed for ${userId}. User is now Offline.`);
             }
         } catch (err) {

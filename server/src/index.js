@@ -106,12 +106,22 @@ app.use(cors({
     // Normalize incoming origin (just in case)
     const normalizedOrigin = origin.replace(/\/$/, '');
 
+    // 1. Direct match in whitelist
     if (allowedOrigins.includes(normalizedOrigin)) {
-      callback(null, true);
-    } else {
-      console.warn(`[CORS] Blocked origin: ${origin}`); // Log blocked origin for debugging
-      callback(new Error('Not allowed by CORS'));
+      return callback(null, true);
     }
+
+    // 2. Dynamic Netlify Subdomains (Previews/Deploys)
+    // Format: https://random-hash--sitename.netlify.app
+    const isNetlifyPreview = /^https:\/\/.*--(safespotar|safespot)\.netlify\.app$/.test(normalizedOrigin);
+    if (isNetlifyPreview) {
+      console.log(`[CORS] Shared access granted to Netlify preview: ${origin}`);
+      return callback(null, true);
+    }
+
+    // 3. Block otherwise
+    console.warn(`[CORS] Blocked origin: ${origin}`); // Log blocked origin for debugging
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -124,7 +134,21 @@ app.use('/api/realtime', realtimeRouter);
 
 // 3. Security Middleware (Helmet)
 // Helmet is applied AFTER realtime to avoid interfering with SSE headers
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": [
+        "'self'",
+        "data:",
+        "blob:",
+        "https://lh3.googleusercontent.com",
+        "https://*.supabase.co",
+        "https://api.dicebear.com"
+      ],
+    },
+  },
+}));
 
 // ============================================
 // BODY PARSING WITH LIMITS

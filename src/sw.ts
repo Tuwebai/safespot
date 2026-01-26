@@ -205,21 +205,27 @@ self.addEventListener('push', (event: any) => {
             }
 
             // 🧠 ENTERPRISE GRANULAR ACK: Chat messages need immediate delivery confirmation
-            if (data.type === 'chat' && data.entityId) {
-                const messageId = data.entityId;
-                const recipientId = data.recipientId;
+            const chatData = data.data || data; // Handle both flat and nested structures for robustness
+            if ((chatData.type === 'chat' || data.type === 'chat') && chatData.entityId) {
+                const messageId = chatData.entityId;
+                const recipientId = chatData.recipientId;
 
                 if (!recipientId) {
                     console.warn(`[SW] ⚠️ Cannot send ACK for ${messageId}: Missing recipientId in payload.`);
                 } else {
                     console.log(`[SW] 📬 Sending Granular ACK for message: ${messageId} (As: ${recipientId.substring(0, 8)}...)`);
-                    fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Anonymous-Id': recipientId
-                        }
-                    }).catch(err => console.error('[SW] ACK Fetch failed:', err));
+                    try {
+                        await fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Anonymous-Id': recipientId
+                            }
+                        });
+                        console.log(`[SW] ✅ ACK Sent for ${messageId}`);
+                    } catch (err) {
+                        console.error('[SW] ACK Fetch failed:', err);
+                    }
                 }
             }
 

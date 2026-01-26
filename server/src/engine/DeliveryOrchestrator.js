@@ -69,7 +69,15 @@ export const DeliveryOrchestrator = {
             }
 
             // 3. Push Delivery (Fallback or Primary)
-            return await this._dispatchPush(jobData);
+            const pushResult = await this._dispatchPush(jobData);
+
+            // 🧠 ENTERPRISE OPTIMISM: If Push or SSE succeeded, mark as DELIVERED in DB and notify sender.
+            // This satisfies the user expectation: "Notified = Delivered".
+            if (pushResult === DispatchResult.SUCCESS || isOnline) {
+                this._markAsDeliveredProactively(jobData);
+            }
+
+            return pushResult;
 
         } catch (err) {
             logError(err, { context: 'DeliveryOrchestrator', traceId });
@@ -87,13 +95,22 @@ export const DeliveryOrchestrator = {
         // Map Job Type to SSE Channel/Event
         if (type === 'CHAT_MESSAGE') {
             await deliveryLedger.markDispatched(jobData.id, 'sse');
+
+            // ✅ ENTERPRISE CONTRACT: Send the full message object for frontend processing
             realtimeEvents.emitUserChatUpdate(target.anonymousId, {
-                type: 'new-message',
                 roomId: payload.data?.roomId,
-                content: payload.message,
-                senderAlias: payload.data?.senderAlias,
-                eventId: jobData.id, // Idempotency Key
-                timestamp: Date.now()
+                message: {
+                    id: payload.entityId, // The real message ID from DB
+                    conversation_id: payload.data?.roomId,
+                    sender_id: payload.data?.senderId || 'system',
+                    content: payload.message,
+                    type: 'text',
+                    created_at: new Date().toISOString(),
+                    sender_alias: payload.data?.senderAlias,
+                    is_read: false,
+                    is_delivered: true
+                },
+                originClientId: 'orchestrator'
             });
             return true;
         }
@@ -200,5 +217,58 @@ export const DeliveryOrchestrator = {
         // Basic classification
         const allRetryable = results.every(r => r.status === 'rejected');
         return allRetryable ? DispatchResult.RETRYABLE_ERROR : DispatchResult.SUCCESS;
+    },
+
+    /**
+     * Proactively mark a message as delivered once the server confirms dispatch.
+     * This ensures the sender sees the double tick as soon as the notification hits FCM or SSE.
+     */
+    async _markAsDeliveredProactively(jobData) {
+        if (jobData.type !== 'CHAT_MESSAGE') return;
+
+        const messageId = jobData.payload?.entityId;
+        const recipientId = jobData.target?.anonymousId;
+
+        if (!messageId || !recipientId) return;
+
+        try {
+            const { DB } = await import('../utils/db.js');
+            const db = DB.public();
+
+            // 1. Mark in DB (Idempotent)
+            const result = await db.query(
+                `UPDATE chat_messages 
+                 SET is_delivered = true 
+                 WHERE id = $1 AND is_delivered = false 
+                 RETURNING sender_id, conversation_id`,
+                [messageId]
+            );
+
+            if (result.rowCount > 0) {
+                const message = result.rows[0];
+
+                // 2. Notify Sender (User Channel)
+                realtimeEvents.emitMessageDelivered(message.sender_id, {
+                    messageId: messageId,
+                    id: messageId,
+                    conversationId: message.conversation_id,
+                    deliveredAt: new Date().toISOString(),
+                    receiverId: recipientId,
+                    traceId: `proactive_${jobData.traceId}`
+                });
+
+                // 3. Notify Room (Active Window Sync)
+                realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
+                    messageId: messageId,
+                    receiverId: recipientId
+                });
+
+                console.log(`[PROACTIVE-ACK] [${jobData.traceId}] Message ${messageId} confirmed delivered to sender ${message.sender_id?.substring(0, 8)}`);
+            } else {
+                console.log(`[PROACTIVE-ACK] [${jobData.traceId}] Message ${messageId} already marked delivered. Skipping.`);
+            }
+        } catch (err) {
+            console.error('[Orchestrator] Failed proactive delivery mark:', err.message);
+        }
     }
 };

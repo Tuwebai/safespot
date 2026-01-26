@@ -983,6 +983,7 @@ export interface ChatRoom {
   report_title?: string;
   report_category?: string;
   type?: 'report' | 'direct' | 'group'; // ✅ FIX: Added type
+  last_message_is_read?: boolean; // ✅ FIX: Added for double tick sync
 }
 
 export const chatsApi = {
