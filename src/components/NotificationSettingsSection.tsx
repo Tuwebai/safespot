@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getAnonymousId } from '@/lib/identity';
 import { notificationsApi, NotificationSettings, geocodeApi, userZonesApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -490,7 +491,7 @@ export function NotificationSettingsSection() {
                 </div>
 
                 <div className="text-[10px] text-muted-foreground/50 text-center font-mono py-2 border-t border-dark-border/30 mt-4">
-                    ID de Usuario: {typeof window !== 'undefined' ? (localStorage.getItem('safespot_anonymous_id') || 'Sin ID') : '...'}
+                    ID de Usuario: {typeof window !== 'undefined' ? (getAnonymousId() || 'Sin ID') : '...'}
                 </div>
             </CardContent>
         </Card>

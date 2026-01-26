@@ -8,6 +8,8 @@
  * handling token rehydration, bootstrapping, and expiration.
  */
 
+import { versionedStorage } from '../../lib/storage/VersionedStorageManager';
+
 export enum SessionState {
     UNINITIALIZED = 'UNINITIALIZED',
     BOOTSTRAPPING = 'BOOTSTRAPPING',
@@ -100,8 +102,8 @@ class SessionAuthority {
 
         this.bootstrapPromise = (async () => {
             try {
-                // Get existing ID to preserve continuity (Motor 1 or Legacy)
-                const currentId = localStorage.getItem('safespot_anonymous_id');
+                // ✅ MOTOR 2.1: Use VersionedStorage for bootstrap negotiation
+                const currentId = versionedStorage.getVersioned<string>('safespot_anonymous_id');
 
                 // Normalize URL to avoid double slashes or missing /api
                 const bootstrapUrl = `${API_BASE_URL}/auth/bootstrap`.replace(/([^:]\/)\/+/g, '$1');
@@ -189,8 +191,8 @@ class SessionAuthority {
     }
 
     public getAnonymousId(): string | null {
-        // In DEGRADED/FAILED, we might still have an old ID in localStorage
-        return this.token?.anonymousId || localStorage.getItem('safespot_anonymous_id') || null;
+        // ✅ MOTOR 2.1: Use VersionedStorageManager helper (fixes JSON-in-header leak)
+        return this.token?.anonymousId || versionedStorage.getVersioned<string>('safespot_anonymous_id') || null;
     }
 
     private setState(newState: SessionState) {
