@@ -253,14 +253,16 @@ export function createActivityNotificationPayload({ type, title, message, report
  */
 export function createChatNotificationPayload(message, room) {
     const senderAlias = message.senderAlias || message.sender_alias || 'Alguien';
-    // FIX: Fallback chain for report title to ensure we NEVER define "undefined" or empty string context
-    const reportTitle = typeof room?.report_title === 'string' && room.report_title.trim().length > 0
-        ? room.report_title
-        : (message.reportTitle || 'Consulta');
+    // 🧠 UX REFINEMENT (WhatsApp Style)
+    // Removed "Consulta:" prefix. The body should be JUST the message content.
+    // The title identifies the sender.
+
+    // If there is specific report context (not generic), maybe append to title?
+    // For now, clean and simple as requested.
 
     return {
-        title: `💬 Nuevo mensaje de @${senderAlias}`,
-        body: `${reportTitle}: ${message.content}`,
+        title: senderAlias, // Just the name, like WhatsApp
+        body: message.content, // Just the content
         icon: '/icons/icon-192.png', // ✅ Standard PWA Icon (Reliable)
         badge: '/icons/icon-192.png',
         tag: `chat-${message.room_id}`, // Groups notifications
