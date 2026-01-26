@@ -1,7 +1,7 @@
 import { Header } from './Header'
 import { Footer } from './Footer'
 import { BottomNav } from './BottomNav'
-import { ToastProvider } from '@/components/ui/toast'
+// ToastProvider removed (moved to App.tsx)
 import { BadgeNotificationManager } from '@/components/BadgeNotificationManager'
 import { NetworkStatusIndicator } from '@/components/NetworkStatusIndicator'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
@@ -13,6 +13,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useGlobalFeed } from '@/hooks/useGlobalFeed'
 import { usePresenceHeartbeat } from '@/hooks/usePresenceHeartbeat'
+import { useGlobalRealtime } from '@/hooks/useGlobalRealtime'
 // import { AdModal } from '@/components/ads/AdModal'
 import { EditAliasModal } from '@/components/profile/EditAliasModal'
 import { ServiceWorkerController } from '@/components/ServiceWorkerController'
@@ -38,6 +39,7 @@ export function Layout({ children }: LayoutProps) {
   useUserNotifications()
   useGlobalFeed() // Listen for home feed updates (likes counters)
   usePresenceHeartbeat() // Keep user "Online" in Redis
+  useGlobalRealtime(profile?.id) // ✅ ENTERPRISE REALTIME: Always-on connection
 
   // Routes where alias is not enforced
   const publicRoutes = ['/terminos', '/privacidad']
@@ -50,7 +52,7 @@ export function Layout({ children }: LayoutProps) {
   const showForceAlias = !isLoading && profile && !profile.alias && !isPublicRoute && !isAdminPage
 
   return (
-    <ToastProvider>
+    <>
       <ServiceWorkerController />
       <NotificationFeedbackListener />
       {/* <AdModal /> */}
@@ -105,6 +107,6 @@ export function Layout({ children }: LayoutProps) {
         {!isMensajesPage && !isAdminPage && <Footer />}
         {!isMensajesPage && !isAdminPage && <BottomNav />}
       </div>
-    </ToastProvider>
+    </>
   )
 }

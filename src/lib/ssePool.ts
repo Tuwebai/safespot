@@ -135,6 +135,8 @@ class SSEPool {
 
                     if (entry.backoff.count % 5 === 0) {
                         console.warn(`[SSE] Connection struggling for ${url}. Next retry in ${delay}ms. (Attempt ${entry.backoff.count})`);
+                        // Notify Lifecycle Engine of persistent failure
+                        window.dispatchEvent(new CustomEvent('safespot:sse_struggle', { detail: { url, attempts: entry.backoff.count } }));
                     }
 
                     setTimeout(() => {

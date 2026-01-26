@@ -14,7 +14,8 @@ export const DispatchResult = {
  * NotificationDispatcher
  * 
  * High-reliability layer for physical notification delivery.
- * Handles rate limiting, protocol-specific formatting, and error classifications.
+ * REFACTOR (v2): Now acts as a FACADE delegates logic to DeliveryOrchestrator
+ * to handle single-channel delivery policy.
  */
 export const NotificationDispatcher = {
     /**
@@ -23,7 +24,7 @@ export const NotificationDispatcher = {
      * @returns {Promise<string>} DispatchResult
      */
     async dispatch(jobData) {
-        const { traceId, type, target, payload, delivery } = jobData;
+        const { traceId, type, delivery } = jobData;
 
         try {
             // 🧠 ENTERPRISE: TTL Check (Discard old notifications if engine was down/saturated)
@@ -31,79 +32,14 @@ export const NotificationDispatcher = {
                 const ageMs = Date.now() - jobData.createdAt;
                 if (ageMs > delivery.ttlSeconds * 1000) {
                     console.warn(`[NotificationEngine] [${traceId}] Job expired (TTL: ${delivery.ttlSeconds}s). Discarding.`);
-                    this._recordMetric('notifications.discarded', { reason: 'ttl_expired', type });
                     return DispatchResult.SUCCESS; // Success as in "Don't retry"
                 }
             }
 
-            console.log(`[NotificationEngine] [${traceId}] Dispatching ${type} [Priority: ${delivery?.priority || 'normal'}]`);
-
-            // 1. Resolve Subscriptions
-            const subscriptions = await this._resolveTargetSubscriptions(target);
-            if (!subscriptions || subscriptions.length === 0) {
-                console.warn(`[NotificationEngine] [${traceId}] Skipping: No active push subscriptions found for target ${JSON.stringify(target)}`);
-                this._recordMetric('notifications.skipped', { reason: 'no_subscriptions', type });
-                return DispatchResult.SUCCESS;
-            }
-
-            // 2. Prepare Payload
-            let pushPayload;
-            if (type === 'CHAT_MESSAGE') {
-                const { createChatNotificationPayload } = await import('../utils/webPush.js');
-                pushPayload = createChatNotificationPayload({
-                    id: payload.entityId,
-                    room_id: payload.data?.roomId,
-                    senderAlias: payload.data?.senderAlias || 'Alguien',
-                    content: payload.message,
-                    recipientAnonymousId: target.anonymousId
-                }, { report_title: payload.data?.reportTitle });
-            } else {
-                pushPayload = createActivityNotificationPayload({
-                    type: type,
-                    title: payload.title,
-                    message: payload.message,
-                    reportId: payload.reportId,
-                    entityId: payload.entityId,
-                    ...payload.data
-                });
-            }
-
-            // 3. Physical Dispatch
-            const results = await Promise.allSettled(subscriptions.map(async (sub) => {
-                try {
-                    await sendPushNotification(
-                        { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                        pushPayload
-                    );
-                    this._recordMetric('notifications.dispatched', { type });
-                    return DispatchResult.SUCCESS;
-                } catch (err) {
-                    const statusCode = err.statusCode || (err.endpoint && err.statusCode);
-
-                    // 🔴 ENTERPRISE: Classification Logic
-                    if (statusCode === 410 || statusCode === 404) {
-                        await this._cleanupInvalidSubscription(sub.id);
-                        this._recordMetric('notifications.failed.permanent', { code: statusCode, type });
-                        return DispatchResult.PERMANENT_ERROR;
-                    }
-
-                    if (statusCode === 429 || statusCode >= 500 || !statusCode) {
-                        this._recordMetric('notifications.failed.retryable', { code: statusCode || 'network', type });
-                        throw err; // Trigger retryable catch block
-                    }
-
-                    this._recordMetric('notifications.failed.permanent', { code: statusCode, type });
-                    return DispatchResult.PERMANENT_ERROR;
-                }
-            }));
-
-            // Classification logic to tell Worker if it should retry the whole job
-            const allRetryable = results.every(r => r.status === 'rejected');
-            if (allRetryable) {
-                return DispatchResult.RETRYABLE_ERROR;
-            }
-
-            return DispatchResult.SUCCESS;
+            // 🚀 DELEGATE TO ORCHESTRATOR
+            // The Orchestrator decides: SSE vs Push based on Presence.
+            const { DeliveryOrchestrator } = await import('./DeliveryOrchestrator.js');
+            return await DeliveryOrchestrator.routeAndDispatch(jobData);
 
         } catch (err) {
             logError(err, { context: 'NotificationDispatcher', traceId, type });
@@ -117,6 +53,7 @@ export const NotificationDispatcher = {
 
     /**
      * Private: Fetch active push subscriptions from DB based on target
+     * @deprecated Used by Orchestrator internally via duplicate query, keeping here just in case.
      */
     async _resolveTargetSubscriptions(target) {
         const { DB } = await import('../utils/db.js');
@@ -128,10 +65,6 @@ export const NotificationDispatcher = {
         if (target.anonymousId) {
             query = 'SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE anonymous_id = $1 AND is_active = true';
             params = [target.anonymousId];
-        } else if (target.userId) {
-            // Placeholder for Motor 2: Link anonymous_ids to userId
-            // For now, if no anonymousId is provided but userId is, we might need a lookup table.
-            return [];
         } else {
             return [];
         }

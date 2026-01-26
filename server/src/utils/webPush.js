@@ -77,8 +77,8 @@ export async function sendPushNotification(subscription, payload) {
             pushSubscription,
             JSON.stringify(payload),
             {
-                TTL: 3600, // 1 hour time-to-live
-                urgency: 'normal'
+                TTL: 86400, // 24 hours (increased for reliability)
+                urgency: 'high' // ⚡ CRITICAL: High urgency for immediate delivery even in doze mode
             }
         );
 
@@ -253,8 +253,10 @@ export function createActivityNotificationPayload({ type, title, message, report
  */
 export function createChatNotificationPayload(message, room) {
     const senderAlias = message.senderAlias || message.sender_alias || 'Alguien';
-    // FIX: Allow explicit reportTitle passing or fallback to room object
-    const reportTitle = message.reportTitle || room?.report_title || 'un reporte';
+    // FIX: Fallback chain for report title to ensure we NEVER define "undefined" or empty string context
+    const reportTitle = typeof room?.report_title === 'string' && room.report_title.trim().length > 0
+        ? room.report_title
+        : (message.reportTitle || 'Consulta');
 
     return {
         title: `💬 Nuevo mensaje de @${senderAlias}`,

@@ -8,6 +8,7 @@ import { lazyRetry } from '@/lib/lazyRetry'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/queryClient'
 import { HelmetProvider } from 'react-helmet-async'
+import { ToastProvider } from '@/components/ui/toast'
 
 // ✅ ENTERPRISE: Anti-Infinite Loading Guards
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary'
@@ -131,105 +132,107 @@ function App() {
               <StartupGuard>
                 <AuthGuardProvider>
                   <ThemeProvider>
-                    <ConfirmationProvider>
-                      <FirstTimeOnboardingTheme />
-                      <SEO />
-                      <Layout>
-                        <ChunkErrorBoundary>
-                          <Suspense fallback={<RouteLoadingFallback />}>
-                            <AuthToastListener />
-                            <Routes>
-                              <Route path="/" element={<Home />} />
-                              <Route path="/reportes" element={<Reportes />} />
-                              <Route path="/crear-reporte" element={<CrearReporte />} />
-                              <Route
-                                path="/reporte/:id"
-                                element={
-                                  <Suspense fallback={<DetailLoadingFallback />}>
-                                    <DetalleReporte />
-                                  </Suspense>
-                                }
-                              />
-                              <Route path="/explorar" element={<Explorar />} />
-                              <Route path="/gamificacion" element={<Gamificacion />} />
-                              <Route path="/perfil" element={<Perfil />} />
-                              <Route path="/reset-password" element={<ResetPassword />} />
-                              <Route path="/perfil/configuracion" element={<SettingsPage />} />
-                              <Route path="/favoritos" element={<MisFavoritos />} />
-                              <Route path="/comunidad" element={<Comunidad />} />
-                              <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
-                              <Route path="/notificaciones" element={<NotificationsPage />} />
-                              <Route path="/terminos" element={<TerminosPage />} />
-                              <Route path="/privacidad" element={<PrivacidadPage />} />
-                              <Route path="/como-funciona" element={<ComoFuncionaPage />} />
-                              <Route path="/faq" element={<FaqPage />} />
-                              <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
-                              <Route path="/login" element={<AuthPage />} />
-                              <Route path="/register" element={<AuthPage />} />
+                    <ToastProvider>
+                      <ConfirmationProvider>
+                        <FirstTimeOnboardingTheme />
+                        <SEO />
+                        <Layout>
+                          <ChunkErrorBoundary>
+                            <Suspense fallback={<RouteLoadingFallback />}>
+                              <AuthToastListener />
+                              <Routes>
+                                <Route path="/" element={<Home />} />
+                                <Route path="/reportes" element={<Reportes />} />
+                                <Route path="/crear-reporte" element={<CrearReporte />} />
+                                <Route
+                                  path="/reporte/:id"
+                                  element={
+                                    <Suspense fallback={<DetailLoadingFallback />}>
+                                      <DetalleReporte />
+                                    </Suspense>
+                                  }
+                                />
+                                <Route path="/explorar" element={<Explorar />} />
+                                <Route path="/gamificacion" element={<Gamificacion />} />
+                                <Route path="/perfil" element={<Perfil />} />
+                                <Route path="/reset-password" element={<ResetPassword />} />
+                                <Route path="/perfil/configuracion" element={<SettingsPage />} />
+                                <Route path="/favoritos" element={<MisFavoritos />} />
+                                <Route path="/comunidad" element={<Comunidad />} />
+                                <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />
+                                <Route path="/notificaciones" element={<NotificationsPage />} />
+                                <Route path="/terminos" element={<TerminosPage />} />
+                                <Route path="/privacidad" element={<PrivacidadPage />} />
+                                <Route path="/como-funciona" element={<ComoFuncionaPage />} />
+                                <Route path="/faq" element={<FaqPage />} />
+                                <Route path="/guia-seguridad" element={<GuiaSeguridadSimple />} />
+                                <Route path="/login" element={<AuthPage />} />
+                                <Route path="/register" element={<AuthPage />} />
 
-                              {/* Safety Intel Routes */}
-                              {/* Safety Intel Routes (Standardized SEO) */}
-                              <Route path="/intel/protocolo-anti-pirana" element={<RoboPiranaPage />} />
-                              <Route path="/intel/cuento-del-tio-ciberdelito" element={<EstafasPage />} />
-                              <Route path="/intel/viaja-pillo-transporte" element={<TransportePage />} />
-                              <Route path="/intel/ojo-en-el-cajero" element={<BancosPage />} />
-                              <Route path="/intel/perdiste-al-firu" element={<MascotasPage />} />
-                              <Route path="/intel/violencia-de-genero" element={<GeneroPage />} />
-                              <Route path="/intel/habla-sin-miedo" element={<DenunciaPage />} />
+                                {/* Safety Intel Routes */}
+                                {/* Safety Intel Routes (Standardized SEO) */}
+                                <Route path="/intel/protocolo-anti-pirana" element={<RoboPiranaPage />} />
+                                <Route path="/intel/cuento-del-tio-ciberdelito" element={<EstafasPage />} />
+                                <Route path="/intel/viaja-pillo-transporte" element={<TransportePage />} />
+                                <Route path="/intel/ojo-en-el-cajero" element={<BancosPage />} />
+                                <Route path="/intel/perdiste-al-firu" element={<MascotasPage />} />
+                                <Route path="/intel/violencia-de-genero" element={<GeneroPage />} />
+                                <Route path="/intel/habla-sin-miedo" element={<DenunciaPage />} />
 
-                              {/* Intel Advanced */}
-                              <Route path="/intel/protocolo-testigo" element={<ProtocoloTestigoPage />} />
-                              <Route path="/intel/prediccion-del-delito" element={<PrediccionPage />} />
-                              <Route path="/intel/manual-urbano" element={<ManualUrbanoPage />} />
+                                {/* Intel Advanced */}
+                                <Route path="/intel/protocolo-testigo" element={<ProtocoloTestigoPage />} />
+                                <Route path="/intel/prediccion-del-delito" element={<PrediccionPage />} />
+                                <Route path="/intel/manual-urbano" element={<ManualUrbanoPage />} />
 
-                              {/* System Trust */}
-                              <Route path="/confianza/sistema-de-confianza" element={<TransparenciaPage />} />
+                                {/* System Trust */}
+                                <Route path="/confianza/sistema-de-confianza" element={<TransparenciaPage />} />
 
-                              <Route path="/intel/corredores-seguros" element={<CorredoresSegurosPage />} />
-                              <Route path="/intel/nocturna" element={<NocturnaPage />} />
+                                <Route path="/intel/corredores-seguros" element={<CorredoresSegurosPage />} />
+                                <Route path="/intel/nocturna" element={<NocturnaPage />} />
 
-                              <Route path="/blog" element={<BlogPage />} />
-                              <Route path="/blog/:slug" element={<BlogPostPage />} />
+                                <Route path="/blog" element={<BlogPage />} />
+                                <Route path="/blog/:slug" element={<BlogPostPage />} />
 
-                              <Route path="/sobre-nosotros" element={<AboutPage />} />
-                              <Route path="/usuario/:alias" element={<PublicProfile />} />
-                              <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
-                              <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
-                              <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
-                              <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
-                              <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
-                              <Route path="/mensajes/:roomId?" element={<Mensajes />} />
+                                <Route path="/sobre-nosotros" element={<AboutPage />} />
+                                <Route path="/usuario/:alias" element={<PublicProfile />} />
+                                <Route path="/usuario/:alias/seguidores" element={<FollowsPage />} />
+                                <Route path="/usuario/:alias/seguidos" element={<FollowsPage />} />
+                                <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                                <Route path="/usuario/:alias/sugerencias" element={<FollowsPage />} />
+                                <Route path="/reporte/:reportId/hilo/:commentId" element={<ThreadPage />} />
+                                <Route path="/mensajes/:roomId?" element={<Mensajes />} />
 
-                              {/* Enterprise Security Pages */}
-                              <Route path="/status" element={<SystemStatus />} />
-                              <Route path="/cookies" element={<CookiesPolicy />} />
+                                {/* Enterprise Security Pages */}
+                                <Route path="/status" element={<SystemStatus />} />
+                                <Route path="/cookies" element={<CookiesPolicy />} />
 
-                              {/* --- ADMIN ROUTES (Protected by Guard) --- */}
-                              {/* 
-                    Ghost Protocol Logic Update: 
-                    User requested "/admin" to be the entry. 
-                    - If unauthorized -> Show Login Screen (at /admin).
-                    - If authorized -> Show Admin Layout (at /admin).
-                    We will handle this in a wrapper component. 
-                */}
-                              <Route path="/admin/*" element={
-                                <AdminGuard>
-                                  <AdminLayout />
-                                </AdminGuard>
-                              }>
-                                <Route index element={<AdminDashboard />} />
-                                <Route path="reports" element={<AdminReportsPage />} />
-                                <Route path="users" element={<UsersPage />} />
-                                <Route path="moderation" element={<AdminModerationPage />} />
-                                <Route path="tasks" element={<AdminTasksPage />} />
-                                {/* Add other admin sub-routes here */}
-                              </Route>
+                                {/* --- ADMIN ROUTES (Protected by Guard) --- */}
+                                {/* 
+                      Ghost Protocol Logic Update: 
+                      User requested "/admin" to be the entry. 
+                      - If unauthorized -> Show Login Screen (at /admin).
+                      - If authorized -> Show Admin Layout (at /admin).
+                      We will handle this in a wrapper component. 
+                  */}
+                                <Route path="/admin/*" element={
+                                  <AdminGuard>
+                                    <AdminLayout />
+                                  </AdminGuard>
+                                }>
+                                  <Route index element={<AdminDashboard />} />
+                                  <Route path="reports" element={<AdminReportsPage />} />
+                                  <Route path="users" element={<UsersPage />} />
+                                  <Route path="moderation" element={<AdminModerationPage />} />
+                                  <Route path="tasks" element={<AdminTasksPage />} />
+                                  {/* Add other admin sub-routes here */}
+                                </Route>
 
-                            </Routes>
-                          </Suspense>
-                        </ChunkErrorBoundary >
-                      </Layout >
-                    </ConfirmationProvider>
+                              </Routes>
+                            </Suspense>
+                          </ChunkErrorBoundary >
+                        </Layout >
+                      </ConfirmationProvider>
+                    </ToastProvider>
                   </ThemeProvider >
 
                   {/* ✅ ENTERPRISE: Modal global - UNA SOLA INSTANCIA */}
