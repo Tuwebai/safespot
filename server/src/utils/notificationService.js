@@ -2,10 +2,11 @@ import { DB } from './db.js';
 import { logError } from './logger.js';
 import { NOTIFICATIONS } from '../config/constants.js';
 import {
-    sendPushNotification,
     createActivityNotificationPayload,
     isPushConfigured
 } from './webPush.js';
+import { NotificationQueue } from '../engine/NotificationQueue.js';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * NotificationService
@@ -117,7 +118,27 @@ export const NotificationService = {
             const notifications = result.rows;
             console.log(`[Notify] Bulk notification process completed for report ${report.id}. emitted=${notifications.length}`);
 
-            // 5. Emit Real-time Events (Fire-and-forget, Async)
+            // 5. Enqueue Push Notifications for nearby users (Enterprise Engine)
+            if (notifications.length > 0 && isPushConfigured()) {
+                // We send it to a specialized background processor if needed, 
+                // but for v1 we can enqueue them individually or in a batch job.
+                // Let's do one job per recipient for maximum retry granularity.
+                for (const n of notifications) {
+                    NotificationQueue.enqueue({
+                        type: 'REPORT_NEARBY',
+                        target: { anonymousId: n.anonymous_id },
+                        delivery: { priority: 'high', ttlSeconds: 1800 }, // 30 min TTL
+                        payload: {
+                            title: n.title,
+                            message: n.message,
+                            reportId: report.id,
+                            data: { type: 'proximity' }
+                        }
+                    });
+                }
+            }
+
+            // 6. Emit Real-time Events (SSE)
             if (notifications.length > 0) {
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
@@ -126,7 +147,6 @@ export const NotificationService = {
                             notification
                         });
                     });
-                    console.log(`[Notify] Emitted ${notifications.length} proximity events.`);
                 }).catch(err => console.error('[Notify] Failed to load eventEmitter', err));
             }
 
@@ -202,30 +222,19 @@ export const NotificationService = {
             });
             console.log(`[Notify] Notification stored for activity ${type} on report ${reportId}`);
 
-            // 4. Send Push Notification
+            // 4. Enqueue Push Notification (Resilient Background Engine)
             if (isPushConfigured()) {
-                const subscriptionsResult = await db.query(`
-                    SELECT * FROM push_subscriptions 
-                    WHERE anonymous_id = $1 AND is_active = true
-                `, [report.anonymous_id]);
-
-                if (subscriptionsResult.rows.length > 0) {
-                    const payload = createActivityNotificationPayload({
-                        type: type, // 'comment', 'sighting', 'share'
-                        title: title,
-                        message: message,
-                        reportId: reportId,
-                        entityId: entityId
-                    });
-
-                    // Send to all active subscriptions of user
-                    for (const sub of subscriptionsResult.rows) {
-                        sendPushNotification(
-                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                            payload
-                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                await NotificationQueue.enqueue({
+                    type: 'ACTIVITY',
+                    target: { anonymousId: report.anonymous_id },
+                    delivery: { priority: 'normal', ttlSeconds: 7200 }, // 2h TTL
+                    payload: {
+                        title,
+                        message,
+                        reportId,
+                        entityId
                     }
-                }
+                });
             }
 
             // 5. Emit Real-time Event (SSE)
@@ -292,15 +301,31 @@ export const NotificationService = {
                     WHERE anonymous_id = ANY($1::uuid[])
                 `, [notifications.map(r => r.anonymous_id)]).catch(e => console.error('[Notify] Stats update failed', e));
 
+                // Enqueue Push Notifications (Enterprise Engine)
+                if (isPushConfigured()) {
+                    notifications.forEach(n => {
+                        NotificationQueue.enqueue({
+                            type: 'REPORT_NEARBY',
+                            target: { anonymousId: n.anonymous_id },
+                            delivery: { priority: 'high', ttlSeconds: 1800 },
+                            payload: {
+                                title: n.title,
+                                message: n.message,
+                                reportId: report.id,
+                                data: { type: 'similar' }
+                            }
+                        });
+                    });
+                }
+
                 // Emit Real-time Events
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
                         realtimeEvents.emitUserNotification(notification.anonymous_id, {
-                            type: 'similar', // or 'proximity' depending on frontend usage, but 'similar' is specific
+                            type: 'similar',
                             notification
                         });
                     });
-                    console.log(`[Notify] Emitted ${notifiedCount} similar report events.`);
                 }).catch(err => console.error('[Notify] Failed to load eventEmitter', err));
             }
 
@@ -378,30 +403,20 @@ export const NotificationService = {
             });
             console.log(`[Notify] Notification sent to parent comment author ${parent.anonymous_id}`);
 
-            // 3. Send Push Notification
+            // 3. Enqueue Push Notification (Enterprise Engine)
             if (isPushConfigured()) {
-                const subscriptionsResult = await db.query(`
-                    SELECT * FROM push_subscriptions 
-                    WHERE anonymous_id = $1 AND is_active = true
-                `, [parent.anonymous_id]);
-
-                if (subscriptionsResult.rows.length > 0) {
-                    const payload = createActivityNotificationPayload({
-                        type: 'reply',
-                        title: '↩️ Nuevo comentario',
+                await NotificationQueue.enqueue({
+                    type: 'ACTIVITY',
+                    target: { anonymousId: parent.anonymous_id },
+                    delivery: { priority: 'normal', ttlSeconds: 7200 },
+                    payload: {
+                        title: '↩️ Respondieron a tu comentario',
                         message: 'Alguien respondió a tu comentario.',
                         reportId: parent.report_id,
-                        entityId: replyId
-                    });
-
-                    // Send to all active subscriptions of user
-                    for (const sub of subscriptionsResult.rows) {
-                        sendPushNotification(
-                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                            payload
-                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                        entityId: replyId,
+                        data: { type: 'reply' }
                     }
-                }
+                });
             }
 
             // 4. Emit Real-time Event (SSE)
@@ -455,29 +470,20 @@ export const NotificationService = {
                 report_id: reportId
             });
 
-            // 3. Send Push Notification
+            // 3. Enqueue Push Notification (Enterprise Engine)
             if (isPushConfigured()) {
-                const subscriptionsResult = await db.query(`
-                    SELECT * FROM push_subscriptions 
-                    WHERE anonymous_id = $1 AND is_active = true
-                `, [targetAnonymousId]);
-
-                if (subscriptionsResult.rows.length > 0) {
-                    const payload = createActivityNotificationPayload({
-                        type: 'mention',
+                await NotificationQueue.enqueue({
+                    type: 'ACTIVITY',
+                    target: { anonymousId: targetAnonymousId },
+                    delivery: { priority: 'high', ttlSeconds: 7200 }, // Mentions are high priority
+                    payload: {
                         title: '⚡ Te han mencionado',
                         message: 'Alguien te mencionó en un comentario.',
                         reportId: reportId,
-                        entityId: commentId
-                    });
-
-                    for (const sub of subscriptionsResult.rows) {
-                        sendPushNotification(
-                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                            payload
-                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                        entityId: commentId,
+                        data: { type: 'mention' }
                     }
-                }
+                });
             }
 
             // 4. Emit Real-time Event (SSE)
@@ -547,30 +553,20 @@ export const NotificationService = {
                 report_id: owner.report_id
             });
 
-            // 3. Send Push Notification
+            // 3. Enqueue Push Notification (Enterprise Engine)
             if (isPushConfigured()) {
-                // ... (existing push logic)
-                const subscriptionsResult = await db.query(`
-                    SELECT * FROM push_subscriptions 
-                    WHERE anonymous_id = $1 AND is_active = true
-                `, [owner.anonymous_id]);
-
-                if (subscriptionsResult.rows.length > 0) {
-                    const payload = createActivityNotificationPayload({
-                        type: 'like',
-                        title: title,
-                        message: message,
+                await NotificationQueue.enqueue({
+                    type: 'ACTIVITY',
+                    target: { anonymousId: owner.anonymous_id },
+                    delivery: { priority: 'normal', ttlSeconds: 7200 },
+                    payload: {
+                        title,
+                        message,
                         reportId: owner.report_id,
-                        entityId: targetId
-                    });
-
-                    for (const sub of subscriptionsResult.rows) {
-                        sendPushNotification(
-                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                            payload
-                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                        entityId: targetId,
+                        data: { type: 'like' }
                     }
-                }
+                });
             }
 
             // 4. Emit Real-time Event (Private User Notification)
@@ -670,30 +666,20 @@ export const NotificationService = {
                 report_id: null
             });
 
-            // 3. Send Push Notification
-            const pushConfigured = isPushConfigured();
-            if (pushConfigured) {
-                const subscriptionsResult = await db.query(`
-                    SELECT * FROM push_subscriptions 
-                    WHERE anonymous_id = $1 AND is_active = true
-                `, [followedId]);
-
-                if (subscriptionsResult.rows.length > 0) {
-                    const payload = createActivityNotificationPayload({
-                        type: 'follow',
-                        title: '👤 Nuevo Seguidor',
-                        message: `${followerAlias} comenzó a seguirte`,
+            // 3. Enqueue Push Notification (Enterprise Engine)
+            if (isPushConfigured()) {
+                await NotificationQueue.enqueue({
+                    type: 'ACTIVITY',
+                    target: { anonymousId: followedId },
+                    delivery: { priority: 'normal', ttlSeconds: 7200 },
+                    payload: {
+                        title: '👤 Tienes un nuevo seguidor',
+                        message: `"${followerAlias}" comenzó a seguirte.`,
                         reportId: null,
-                        entityId: followerAlias
-                    });
-
-                    for (const sub of subscriptionsResult.rows) {
-                        sendPushNotification(
-                            { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-                            payload
-                        ).catch(err => console.error('[Notify] Push failed:', err.message));
+                        entityId: followedId,
+                        data: { type: 'follow', followerId, followerAlias }
                     }
-                }
+                });
             }
 
             // 4. Emit Real-time Event (SSE)

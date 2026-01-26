@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import { NotificationWorker } from './engine/NotificationWorker.js';
+
 dotenv.config();
 
 import express from 'express';

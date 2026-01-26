@@ -302,7 +302,14 @@ export function useChatMessages(convId: string | undefined) {
 
         const unsubNewMessage = ssePool.subscribe(sseUrl, 'new-message', (event) => {
             try {
-                const { message } = JSON.parse(event.data);
+                const { message, originClientId } = JSON.parse(event.data);
+
+                // ✅ Echo Suppression: Don't process our own messages from SSE
+                // they are already handled via mutation optimistic update / onSuccess.
+                if (originClientId === getClientId()) {
+                    console.log('[SSE] Echo suppressed for own message:', message.id);
+                    return;
+                }
 
                 // ✅ DIAGNOSTIC: Log SSE message arrival
                 console.log('[SSE] new-message received:', {
