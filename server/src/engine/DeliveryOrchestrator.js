@@ -91,6 +91,7 @@ export const DeliveryOrchestrator = {
      */
     async _dispatchSSE(jobData) {
         const { type, target, payload } = jobData;
+        const serverTimestamp = Date.now();
 
         // Map Job Type to SSE Channel/Event
         if (type === 'CHAT_MESSAGE') {
@@ -98,6 +99,8 @@ export const DeliveryOrchestrator = {
 
             // ✅ ENTERPRISE CONTRACT: Send the full message object for frontend processing
             realtimeEvents.emitUserChatUpdate(target.anonymousId, {
+                eventId: jobData.id,
+                serverTimestamp,
                 roomId: payload.data?.roomId,
                 message: {
                     id: payload.entityId, // The real message ID from DB
@@ -119,28 +122,28 @@ export const DeliveryOrchestrator = {
             await deliveryLedger.markDispatched(jobData.id, 'sse');
             // General notification toast
             realtimeEvents.emitUserNotification(target.anonymousId, {
+                eventId: jobData.id,
+                serverTimestamp,
                 type: 'activity',
                 title: payload.title,
                 message: payload.message,
                 link: payload.data?.url,
-                timestamp: Date.now(),
-                eventId: jobData.id
+                timestamp: serverTimestamp
             });
             return true;
         }
 
         // 🧠 ENTERPRISE FINAL CATCH-ALL
-        // If we don't know the type specifically but it has a title/message, send it as generic activity.
-        // This ensures NO notification is "invisible" if the App supresses the Push.
         if (payload?.title && payload?.message) {
             await deliveryLedger.markDispatched(jobData.id, 'sse');
             realtimeEvents.emitUserNotification(target.anonymousId, {
+                eventId: jobData.id,
+                serverTimestamp,
                 type: 'activity',
                 title: payload.title,
                 message: payload.message,
                 link: payload.data?.url,
-                timestamp: Date.now(),
-                eventId: jobData.id
+                timestamp: serverTimestamp
             });
             return true;
         }

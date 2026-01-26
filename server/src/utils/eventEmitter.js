@@ -61,17 +61,26 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - Event data
      */
     broadcast(event, payload) {
+        // Enforce Enterprise Contract: eventId + serverTimestamp
+        // If the payload is already an object, we inject it. If not (primitive), we wrap it.
+        const eventId = payload?.eventId || crypto.randomUUID();
+        const serverTimestamp = payload?.serverTimestamp || Date.now();
+
+        const enrichedPayload = (typeof payload === 'object' && payload !== null)
+            ? { ...payload, eventId, serverTimestamp }
+            : { payload, eventId, serverTimestamp };
+
         // 1. Emit locally immediately (Optimistic/Fast)
-        super.emit(event, payload);
+        super.emit(event, enrichedPayload);
 
         // 2. Publish to Redis for other instances
         if (redis && redis.status === 'ready') {
             const message = JSON.stringify({
-                eventId: crypto.randomUUID(),
+                eventId,
                 origin: this.instanceId,
                 channel: event,
-                payload: payload,
-                timestamp: Date.now()
+                payload: enrichedPayload,
+                timestamp: serverTimestamp
             });
 
             redis.publish(REALTIME_CHANNEL, message).catch(err => {

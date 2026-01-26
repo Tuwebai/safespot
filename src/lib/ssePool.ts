@@ -126,8 +126,16 @@ class SSEPool {
 
             // Proxy all events to listeners
             const dispatch = (e: MessageEvent) => {
-                const listeners = entry.listeners.get(e.type) || entry.listeners.get('message');
-                listeners?.forEach((fn: any) => fn(e));
+                // 1. Specific listeners for this event type
+                const specificListeners = entry.listeners.get(e.type);
+                specificListeners?.forEach((fn: any) => fn(e));
+
+                // 2. 👑 Spy/Global listeners (the Orchestrator)
+                // We notify 'message' for EVERY event unless the type is already 'message' (to avoid double call)
+                if (e.type !== 'message') {
+                    const globalListeners = entry.listeners.get('message');
+                    globalListeners?.forEach((fn: any) => fn(e));
+                }
             };
 
             source.onmessage = dispatch;

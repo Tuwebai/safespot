@@ -14,6 +14,7 @@
 
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
 import { queryClient } from '@/lib/queryClient';
+import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 
 export enum BootstrapState {
     IDLE = 'idle',
@@ -89,6 +90,12 @@ class ApplicationBootstrapManager {
                 console.error('[Bootstrap] Identity failed. Proceeding in degraded mode.');
             }
 
+            // 👑 ORCHESTRATOR: Start Realtime Commander
+            const anonymousId = sessionAuthority.getAnonymousId();
+            if (anonymousId) {
+                realtimeOrchestrator.connect(anonymousId);
+            }
+
             this.setState(BootstrapState.RUNNING, 'boot_success');
         } catch (error) {
             console.error('[Bootstrap] ⚠️ Critical Failure or Timeout during Boot:', error);
@@ -153,8 +160,8 @@ class ApplicationBootstrapManager {
             console.log('[Lifecycle] RECOVERY_STEP identity=skipped');
         }
 
-        // B. Resume Realtime (SSE) - 🧠 FIXED: Removed ssePool.wake() as it is now immortal
-        // console.log('[Lifecycle] RECOVERY_STEP sse=wake');
+        // 👑 ORCHESTRATOR: Resume and Resync Delta
+        realtimeOrchestrator.wake('app_recovery');
 
         // C. Staggered Data Rehydration (Prioritized)
         console.log('[Lifecycle] RECOVERY_STEP queries=staggered');
@@ -188,7 +195,10 @@ class ApplicationBootstrapManager {
         }
 
         this.setState(BootstrapState.SUSPENDED, reason);
-        // 🧠 FIXED: Removed ssePool.sleep() - SSE must stay alive in background
+
+        // 👑 ORCHESTRATOR: Enter throttling mode
+        realtimeOrchestrator.sleep(reason);
+
         console.log(`[Lifecycle] 💤 System Suspended reason=${reason}`);
     }
 

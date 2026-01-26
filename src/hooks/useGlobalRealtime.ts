@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { API_BASE_URL } from '@/lib/api';
-import { ssePool } from '@/lib/ssePool';
+import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { useToast } from '@/components/ui/toast/useToast';
 import { getClientId } from '@/lib/clientId';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -20,64 +19,38 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
     const toast = useToast(); // Get the whole object to access methods
     const location = useLocation();
     const navigate = useNavigate();
-    const processedEvents = useRef(new Set<string>());
-
     useEffect(() => {
         if (!userId || !enabled) return;
 
-        const url = `${API_BASE_URL}/realtime/user/${userId}`;
         const myClientId = getClientId();
 
-        const shouldProcess = (eventId?: string) => {
-            if (!eventId) return true;
-            if (processedEvents.current.has(eventId)) return false;
-            processedEvents.current.add(eventId);
-            return true;
-        };
+        // 👑 NEW: Unified Orchestrator Authority for Global Events
+        const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
+            const { type, payload } = event;
 
-        // 1. New Message Notification
-        const unsubMessage = ssePool.subscribe(url, 'new-message', (event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.originClientId === myClientId) return;
+            if (type === 'new-message') {
+                if (payload.originClientId === myClientId) return;
 
                 // Don't show toast if we are already in the chat room!
-                const isInRoom = location.pathname.includes(`/mensajes/${data.roomId}`);
+                const isInRoom = location.pathname.includes(`/mensajes/${payload.message?.conversation_id}`);
                 if (isInRoom) return;
-
-                if (!shouldProcess(data.eventId)) return;
 
                 // Invalidate query to update badge count if we have one
                 queryClient.invalidateQueries({ queryKey: ['unread-messages'] });
 
-                // Show In-App Toast instead of Push
-                toast.info(`💬 ${data.senderAlias || 'Usuario'}: ${data.content}`);
-
-                // 🧠 ENTERPRISE ACK: Notify backend that we got it via SSE
-                if (data.eventId) {
-                    fetch(`${API_BASE_URL}/realtime/ack/${data.eventId}`, { method: 'POST' }).catch(() => { });
-                }
-
-            } catch (err) {
-                console.error('[SSE Global] Error processing new-message:', err);
-            }
-        });
-
-        // 2. Global Alert (Security/Admin)
-        const unsubAlert = ssePool.subscribe(url, 'security-alert', (event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                toast.error(`⚠️ ${data.message}`, 10000); // 10s duration
-            } catch (err) {
-                console.error('[SSE Global] Error processing alert:', err);
+                // Show In-App Toast
+                const senderAlias = payload.message?.sender_alias || payload.senderAlias || 'Usuario';
+                toast.info(`💬 ${senderAlias}: ${payload.message?.content || payload.content}`);
+            } else if (type === 'security-alert' || type === 'activity') {
+                toast.error(`⚠️ ${payload.message || 'Alerta de seguridad'}`, 10000);
             }
         });
 
         // 3. Service Worker Bridge (Deduplication)
-        const handleSWMessage = (event: MessageEvent) => {
+        const handleSWMessage = async (event: MessageEvent) => {
             if (event.data?.type === 'CHECK_EVENT_PROCESSED') {
                 const eventId = event.data.eventId;
-                const isProcessed = processedEvents.current.has(eventId);
+                const isProcessed = await realtimeOrchestrator.isEventProcessed(eventId);
 
                 if (event.ports && event.ports[0]) {
                     event.ports[0].postMessage({ processed: isProcessed });
@@ -88,8 +61,7 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
         window.navigator.serviceWorker?.addEventListener('message', handleSWMessage);
 
         return () => {
-            unsubMessage();
-            unsubAlert();
+            unsubOrchestrator();
             window.navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
         };
     }, [userId, enabled, queryClient, toast, location, navigate]);

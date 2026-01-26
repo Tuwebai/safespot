@@ -25,6 +25,58 @@ router.post('/ack/:eventId', async (req, res) => {
 });
 
 /**
+ * GET /api/realtime/catchup
+ * 🚑 Gap Catchup API for Realtime Orchestrator
+ * Returns missed domain events since a given serverTimestamp
+ */
+router.get('/catchup', async (req, res) => {
+    const { since } = req.query;
+    if (!since) return res.status(400).json({ error: 'Missing since timestamp' });
+
+    try {
+        const sinceTs = parseInt(since);
+
+        // 1. Fetch missed Chat Messages
+        // We map them to the RealtimeEvent contract
+        const messagesResult = await pool.query(
+            `SELECT m.*, c.user_id as recipient_id
+					 FROM chat_messages m
+					 JOIN conversation_members c ON m.conversation_id = c.conversation_id
+					 WHERE EXTRACT(EPOCH FROM m.created_at) * 1000 > $1
+					 ORDER BY m.created_at ASC
+					 LIMIT 50`,
+            [sinceTs]
+        );
+
+
+        const events = messagesResult.rows.map(m => ({
+            eventId: `msg_${m.id}`, // Synthetic eventId based on DB ID if missing
+            serverTimestamp: new Date(m.created_at).getTime(),
+            type: 'new-message',
+            payload: {
+                message: {
+                    id: m.id,
+                    conversation_id: m.conversation_id,
+                    sender_id: m.sender_id,
+                    content: m.content,
+                    type: m.type,
+                    created_at: m.created_at,
+                    is_read: m.is_read,
+                    is_delivered: m.is_delivered
+                },
+                originClientId: 'system_catchup'
+            },
+            isReplay: true
+        }));
+
+        res.json(events);
+    } catch (err) {
+        console.error('[Catchup] Error:', err);
+        res.status(500).json({ error: 'Catchup failed', details: err.message });
+    }
+});
+
+/**
  * GET /api/realtime/status/:eventId
  * Check logical delivery status of an event
  */
@@ -101,11 +153,13 @@ router.get('/comments/:reportId', (req, res) => {
     stream.startHeartbeat(2000);
 
     // Event Handlers - STRICT CONTRACT ADAPTERS
-    const handleNewComment = ({ comment, originClientId }) => {
+    const handleNewComment = (data) => {
+        const { comment, originClientId, ...contract } = data;
         stream.send('new-comment', {
             id: comment.id,
             partial: comment,
-            originClientId
+            originClientId,
+            ...contract
         });
     };
 
@@ -126,11 +180,13 @@ router.get('/comments/:reportId', (req, res) => {
         });
     };
 
-    const handleCommentDelete = ({ commentId, originClientId }) => {
+    const handleCommentDelete = (data) => {
+        const { commentId, originClientId, ...contract } = data;
         stream.send('comment-delete', {
             id: commentId,
             partial: null,
-            originClientId
+            originClientId,
+            ...contract
         });
     };
 
@@ -186,8 +242,8 @@ router.get('/chats/:roomId', (req, res) => {
     stream.startHeartbeat(2000);
 
     // Event Handlers
-    const handleNewMessage = ({ message, originClientId }) => {
-        stream.send('new-message', { message, originClientId });
+    const handleNewMessage = (data) => {
+        stream.send('new-message', data);
     };
 
     const handleTyping = (data) => {
@@ -388,6 +444,7 @@ router.get('/feed', (req, res) => {
     const stream = new SSEResponse(res);
     // console.log('[SSE] Client connected to Global Feed');
 
+    // Confirm connection
     stream.send('connected', { feed: 'global' });
     stream.startHeartbeat(10000); // 10s heartbeat for global feed (less aggressive)
 

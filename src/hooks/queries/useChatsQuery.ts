@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
 import { ssePool } from '@/lib/ssePool';
+import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { chatCache } from '../../lib/chatCache';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
 import { chatBroadcast } from '@/lib/chatBroadcast';
@@ -71,101 +72,71 @@ export function useChatRooms() {
 
         const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/user/${anonymousId}`;
 
-        const unsubscribeUpdate = ssePool.subscribe(sseUrl, 'chat-update', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const convId = data.roomId;
-                if (!convId) return;
-                if (data.originClientId === getClientId()) return;
+        // 👑 NEW: Unified Orchestrator Authority for Domain Events
+        const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
+            const { type, payload } = event;
 
-                if (data.message) {
-                    const message = data.message;
+            if (type === 'chat-update') {
+                const convId = payload.roomId;
+                if (!convId) return;
+
+                if (payload.message) {
+                    const message = payload.message;
                     const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
-
-                    // ✅ WhatsApp-Grade: If I received a message from someone else, 
-                    // ACK it as delivered immediately (double grey tick for sender)
-                    if (message.sender_id !== anonymousId && !deliveredAcks.has(message.id)) {
-                        deliveredAcks.add(message.id);
-                        chatsApi.markMessageAsDelivered(message.id).catch(err => {
-                            console.warn('[Delivered ACK] Failed:', err);
-                            deliveredAcks.delete(message.id); // Retry allowed if failed
-                        });
-                    }
-
-                } else if (data.action === 'read') {
+                } else if (payload.action === 'read') {
                     chatCache.markRoomAsRead(queryClient, convId, anonymousId);
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
-                } else if (data.action === 'typing') {
+                }
+            } else if (type === 'message.delivered') {
+                const convId = payload.conversationId;
+                if (!convId) return;
+                console.log('[Orchestrator-Hook] message.delivered received:', payload);
+                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, payload);
+            } else if (type === 'message.read') {
+                if (payload.readerId !== anonymousId && payload.roomId) {
+                    chatCache.applyReadReceipt(queryClient, payload.roomId, anonymousId);
+                }
+            } else if (type === 'chat-rollback') {
+                if (payload.roomId && payload.messageId) {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(payload.roomId, anonymousId), (old) => {
+                        if (!old) return old;
+                        return old.filter(m => m.id !== payload.messageId);
+                    });
+                }
+            } else if (type === 'presence-update') {
+                if (payload.userId) {
+                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(payload.userId), payload.partial);
+                    queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
+                        if (!old || !Array.isArray(old)) return old;
+                        return old.map(r => r.other_participant_id === payload.userId
+                            ? { ...r, is_online: payload.partial.status === 'online', other_participant_last_seen: payload.partial.last_seen_at || r.other_participant_last_seen }
+                            : r
+                        );
+                    });
+                }
+            }
+        });
+
+        // ✅ KEEP ssePool ONLY for ephemeral UI states (Typing) or legacy compatibility
+        const unsubscribeUpdate = ssePool.subscribe(sseUrl, 'chat-update', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.action === 'typing') {
                     queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
                         if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.id === convId ? { ...r, is_typing: data.isTyping } : r);
+                        return old.map(r => r.id === data.roomId ? { ...r, is_typing: data.isTyping } : r);
                     });
                 }
             } catch (err) { }
         });
 
-        const unsubscribeDelivered = ssePool.subscribe(sseUrl, 'message.delivered', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const convId = data.conversationId;
-                if (!convId) return;
-
-                console.log('[SSE] Global message.delivered received:', data);
-                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, data);
-            } catch (e) { }
-        });
-
-        const unsubscribeRead = ssePool.subscribe(sseUrl, 'message.read', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('[SSE] Global message.read received:', data);
-                if (data.readerId !== anonymousId && data.roomId) {
-                    chatCache.applyReadReceipt(queryClient, data.roomId, anonymousId);
-                }
-            } catch (e) { }
-        });
-
-        const unsubscribeRollback = ssePool.subscribe(sseUrl, 'chat-rollback', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.roomId && data.messageId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(data.roomId, anonymousId), (old) => {
-                        if (!old) return old;
-                        return old.filter(m => m.id !== data.messageId);
-                    });
-                }
-            } catch (e) { }
-        });
-
-        const unsubscribePresence = ssePool.subscribe(sseUrl, 'presence-update', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.userId) {
-                    // 1. Update individual presence cache
-                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(data.userId), data.partial);
-
-                    // 2. Patch global rooms list (sidebar) for instant status light update
-                    queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
-                        if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.other_participant_id === data.userId
-                            ? { ...r, is_online: data.partial.status === 'online', other_participant_last_seen: data.partial.last_seen_at || r.other_participant_last_seen }
-                            : r
-                        );
-                    });
-                }
-            } catch (e) { }
-        });
-
         return () => {
+            unsubOrchestrator();
             unsubscribeUpdate();
-            unsubscribeDelivered();
-            unsubscribeRead(); // ✅ New
-            unsubscribeRollback();
-            unsubscribePresence();
         };
 
     }, [anonymousId, queryClient]);
@@ -353,6 +324,12 @@ export function useChatMessages(convId: string | undefined) {
                 // ✅ CRITICAL FIX: Use consistent query key (anonymousId || '')
                 // Must match the key used in optimistic update to find and merge
                 chatCache.upsertMessage(queryClient, message, anonymousId || '');
+
+                // 👑 SHADOW MODE
+                const rawData = JSON.parse(event.data);
+                if (rawData.eventId) {
+                    realtimeOrchestrator.shadowReport(rawData.eventId, 'useChatMessages:new-message');
+                }
 
                 // ✅ WhatsApp-Grade: Instant ACK + Sound if active
                 if (message.sender_id !== anonymousId && !deliveredAcks.has(message.id)) {
