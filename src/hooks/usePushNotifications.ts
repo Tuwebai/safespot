@@ -41,7 +41,6 @@ export function usePushNotifications() {
         const checkSubscription = async () => {
             try {
                 // ✅ ENTERPRISE RESILIENCE: 5s timeout for SW ready
-                // Prevents hanging the entire UI if registration fails or in DEV
                 const swReady = Promise.race([
                     navigator.serviceWorker.ready,
                     new Promise((_, reject) => setTimeout(() => reject(new Error('SW Timeout')), 5000))
@@ -50,7 +49,25 @@ export function usePushNotifications() {
                 const registration = await swReady;
                 const subscription = await registration.pushManager.getSubscription();
 
-                setIsSubscribed(!!subscription);
+                if (subscription) {
+                    setIsSubscribed(true);
+                    // 🧠 PROACTIVE AUTO-SYNC (Identity Bridge)
+                    // If we have a subscription, we refresh it on the backend to ensure 
+                    // the current anonymous_id is linked to this endpoint.
+                    // This is silent and non-blocking.
+                    console.log('[Push] Active subscription found. Triggering identity sync...');
+                    apiRequest(SUBSCRIBE_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            subscription: subscription,
+                            location: null // Location is updated separately via updateServiceLocation if needed
+                        })
+                    }).then(() => console.log('[Push] Identity sync successful.'))
+                        .catch(e => console.warn('[Push] Identity sync failed (ignored):', e));
+                } else {
+                    setIsSubscribed(false);
+                }
+
                 setPermission(Notification.permission);
             } catch (err) {
                 console.warn('[Push] Subscription check aborted (SW not ready or timeout).', err);
