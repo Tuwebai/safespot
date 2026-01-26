@@ -131,9 +131,11 @@ export default function NotificationsPage() {
         // Mark read first
         if (!n.is_read) handleRead(n.id);
 
-        switch (n.entity_type) {
+        const type = n.entity_type || n.type;
+
+        switch (type) {
             case 'report':
-                navigate(`/reporte/${n.entity_id}`);
+                navigate(`/reporte/${n.entity_id || n.report_id}`);
                 break;
             case 'comment':
             case 'mention':
@@ -145,8 +147,9 @@ export default function NotificationsPage() {
             case 'achievement':
                 navigate(`/gamificacion?tab=badges&highlight=${n.entity_id}`);
                 break;
+            case 'user': // SSOT: Follows use 'user' entity_type
             case 'follow':
-                navigate(`/perfil/${n.entity_id}`); // Go to user profile
+                navigate(`/usuario/${n.entity_id}`);
                 break;
             default:
                 // Fallback

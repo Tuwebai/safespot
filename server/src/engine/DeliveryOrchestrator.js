@@ -199,13 +199,13 @@ export const DeliveryOrchestrator = {
             }, { report_title: payload.data?.reportTitle });
         } else {
             pushPayload = createActivityNotificationPayload({
-                type: type, // 'follow', 'comment', etc
+                type: (payload.data?.type || type).toLowerCase(), // 🚀 Standardize to lowercase (e.g. 'follow')
                 title: payload.title,
                 message: payload.message,
                 reportId: payload.reportId,
                 entityId: payload.entityId,
-                eventId: jobData.id, // Clave para deduplicación en SW
-                ...payload.data
+                eventId: jobData.id,
+                deepLink: payload.data?.deepLink // 🚀 Pass deepLink if present
             });
         }
 

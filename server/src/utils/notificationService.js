@@ -662,7 +662,7 @@ export const NotificationService = {
                 title: '👤 Tienes un nuevo seguidor',
                 message: `"${followerAlias}" comenzó a seguirte.`,
                 entity_type: 'user',
-                entity_id: followerId,
+                entity_id: followerId, // 🧠 SSOT: entity_id is the FOLLOWER (to visit their profile)
                 report_id: null
             });
 
@@ -676,8 +676,13 @@ export const NotificationService = {
                         title: '👤 Tienes un nuevo seguidor',
                         message: `"${followerAlias}" comenzó a seguirte.`,
                         reportId: null,
-                        entityId: followedId,
-                        data: { type: 'follow', followerId, followerAlias }
+                        entityId: followerId, // 🧠 Corrected: follower is the entity to visit
+                        data: {
+                            type: 'follow',
+                            followerId,
+                            followerAlias,
+                            deepLink: `/usuario/${followerId}` // 🚀 SSOT Deep Link
+                        }
                     }
                 });
             }

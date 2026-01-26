@@ -205,7 +205,7 @@ export function createReportNotificationPayload(report, distanceMeters) {
  * Create notification payload for social activity (likes/comments)
  * ...
  */
-export function createActivityNotificationPayload({ type, title, message, reportId, entityId }) {
+export function createActivityNotificationPayload({ type, title, message, reportId, entityId, deepLink }) {
     let url = `/reporte/${reportId}`;
     let icon = '/favicon.svg';
 
@@ -237,10 +237,12 @@ export function createActivityNotificationPayload({ type, title, message, report
         tag: `${type}-${entityId}`,
         renotify: true,
         data: {
-            url: url,
+            url: deepLink || url,
+            deepLink: deepLink || url, // 🚀 Dual-Support for SW
             reportId: reportId,
+            type: type, // 🚀 Explicit type pass-through
             timestamp: Date.now(),
-            eventId: entityId // Fallback to entityId if specific eventId not provided
+            eventId: entityId
         },
         actions: actions
     };

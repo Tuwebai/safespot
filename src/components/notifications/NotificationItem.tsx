@@ -8,7 +8,8 @@ import {
     Trophy,
     Bell,
     ExternalLink,
-    MoreHorizontal
+    MoreHorizontal,
+    User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -59,6 +60,8 @@ export function NotificationItem({
             case 'proximity':
             case 'similar':
             case 'zone': return <FileText className="w-5 h-5 text-red-500" />;
+            case 'user':
+            case 'follow': return <User className="w-5 h-5 text-neon-green" />;
             default: return <Bell className="w-5 h-5 text-gray-500" />;
         }
     };

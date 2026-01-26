@@ -247,7 +247,7 @@ self.addEventListener('notificationclick', (event: any) => {
     const notification = event.notification;
     const action = event.action;
     const data = notification.data || {};
-    const urlToOpen = data.url || '/';
+    const urlToOpen = data.deepLink || data.url || '/'; // 🚀 Priority: deepLink -> url -> root
 
     console.log(`[SW] 🖱️ Notification Clicked. Action: ${action || 'default'}, URL: ${urlToOpen}`);
 
