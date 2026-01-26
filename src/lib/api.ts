@@ -1011,6 +1011,11 @@ export const chatsApi = {
   markAsDelivered: async (roomId: string): Promise<void> => {
     return apiRequest<void>(`/chats/rooms/${roomId}/delivered`, { method: 'POST' });
   },
+  markMessageAsDelivered: async (messageId: string): Promise<void> => {
+    return apiRequest<void>(`/chats/messages/${messageId}/ack-delivered`, {
+      method: 'POST',
+    });
+  },
   uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append('image', file);

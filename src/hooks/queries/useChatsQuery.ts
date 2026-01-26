@@ -83,7 +83,7 @@ export function useChatRooms() {
                     // ✅ WhatsApp-Grade: If I received a message from someone else, 
                     // ACK it as delivered immediately (double grey tick for sender)
                     if (message.sender_id !== anonymousId) {
-                        chatsApi.markAsDelivered(convId).catch(err => {
+                        chatsApi.markMessageAsDelivered(message.id).catch(err => {
                             console.warn('[Delivered ACK] Failed:', err);
                         });
                     }
@@ -101,8 +101,13 @@ export function useChatRooms() {
                     });
                 } else if (data.action === 'delivered') {
                     // ✅ WhatsApp-Grade: Update messages to show double tick
+                    console.log('[SSE] Global Delivered ACK:', data);
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
+                        // Support granular message update if provided
+                        if (data.messageId) {
+                            return old.map(m => m.id === data.messageId ? { ...m, is_delivered: true } : m);
+                        }
                         return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
                     });
                 }
@@ -328,7 +333,8 @@ export function useChatMessages(convId: string | undefined) {
                     playNotificationSound();
 
                     // 2. Send Delivery ACK (Tick Gris)
-                    chatsApi.markAsDelivered(convId).catch(e =>
+                    // ✅ ENTERPRISE: Use Granular ACK for better accuracy
+                    chatsApi.markMessageAsDelivered(message.id).catch(e =>
                         console.warn('[ACK] Failed to mark as delivered:', e)
                     );
                 }
@@ -378,9 +384,13 @@ export function useChatMessages(convId: string | undefined) {
         const unsubDelivered = ssePool.subscribe(sseUrl, 'messages-delivered', (event) => {
             try {
                 const data = JSON.parse(event.data);
+                console.log('[SSE] messages-delivered received:', data);
                 if (data.receiverId !== anonymousId) {
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
+                        if (data.messageId) {
+                            return old.map(m => m.id === data.messageId ? { ...m, is_delivered: true } : m);
+                        }
                         return old.map(m => m.sender_id === anonymousId ? { ...m, is_delivered: true } : m);
                     });
                 }

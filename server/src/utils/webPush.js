@@ -271,9 +271,9 @@ export function createChatNotificationPayload(message, room) {
         renotify: true, // ✅ Force sound
         data: {
             roomId: message.room_id,
-            messageId: message.id || null,
-            anonymousId: message.recipientAnonymousId || null,
-            type: 'chat-message',
+            entityId: message.id || null, // ⚡ Normalized (was messageId)
+            recipientId: message.recipientAnonymousId || null, // ⚡ Needed for SW ACK
+            type: 'chat', // ⚡ Match SW expectation (was chat-message)
             url: `/mensajes/${message.room_id}`,
             timestamp: Date.now()
         },

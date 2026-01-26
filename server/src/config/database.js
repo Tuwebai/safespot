@@ -122,6 +122,7 @@ async function testConnection() {
       -- 6. Chat features
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS caption TEXT;
       ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN DEFAULT FALSE;
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP WITH TIME ZONE;
       
       -- 7. Constraints
       DO $$

@@ -8,6 +8,7 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 // 🧠 ENTERPRISE: Explicit typing for Service Worker Context
 declare const self: ServiceWorkerGlobalScope & { __WB_DISABLE_DEV_LOGS: boolean };
+declare const __API_BASE_URL__: string; // 🧠 Injected by Vite
 
 // @ts-ignore - Silence Workbox logs
 self.__WB_DISABLE_DEV_LOGS = true;
@@ -188,7 +189,7 @@ self.addEventListener('push', (event: any) => {
             // We fetch the status from the server to ensure consistency even if local clients are frozen.
             if (eventId) {
                 try {
-                    const response = await fetch(`/api/realtime/status/${eventId}`, {
+                    const response = await fetch(`${__API_BASE_URL__}/realtime/status/${eventId}`, {
                         cache: 'no-store' // Absolute truth
                     });
                     if (response.ok) {
@@ -200,6 +201,25 @@ self.addEventListener('push', (event: any) => {
                     }
                 } catch (e) {
                     console.warn('[SW] Ledger check failed, falling back to showing notification.', e);
+                }
+            }
+
+            // 🧠 ENTERPRISE GRANULAR ACK: Chat messages need immediate delivery confirmation
+            if (data.type === 'chat' && data.entityId) {
+                const messageId = data.entityId;
+                const recipientId = data.recipientId;
+
+                if (!recipientId) {
+                    console.warn(`[SW] ⚠️ Cannot send ACK for ${messageId}: Missing recipientId in payload.`);
+                } else {
+                    console.log(`[SW] 📬 Sending Granular ACK for message: ${messageId} (As: ${recipientId.substring(0, 8)}...)`);
+                    fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Anonymous-Id': recipientId
+                        }
+                    }).catch(err => console.error('[SW] ACK Fetch failed:', err));
                 }
             }
 

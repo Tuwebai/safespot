@@ -529,7 +529,9 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
         );
         const senderIds = sendersResult.rows.map(r => r.sender_id);
 
-        const result = await queryWithRLS(anonymousId,
+        // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous query, but RLS might block UPDATE if user isn't the sender)
+        const { default: pool } = await import('../config/database.js');
+        const result = await pool.query(
             'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
             [roomId, anonymousId]
         );
@@ -559,6 +561,70 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
     }
 });
 
+
+/**
+ * POST /api/chats/messages/:messageId/ack-delivered
+ * WhatsApp-Grade Granular ACK (Doble Tick Gris)
+ * Marks a specific message as delivered and notifies the sender.
+ */
+router.post('/messages/:messageId/ack-delivered', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { messageId } = req.params;
+
+    if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
+
+    try {
+        // 1. Get message and room info BEFORE update (to calculate latency and identify sender)
+        const msgCheck = await queryWithRLS(anonymousId,
+            `SELECT m.sender_id, m.conversation_id, m.created_at, m.is_delivered 
+             FROM chat_messages m 
+             JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+             WHERE m.id = $1 AND cm.user_id = $2`,
+            [messageId, anonymousId]
+        );
+
+        if (msgCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Message not found or access denied' });
+        }
+
+        const message = msgCheck.rows[0];
+
+        // 2. Only update if not already delivered (Idempotency)
+        if (!message.is_delivered) {
+            const deliveredAt = new Date();
+            const latencyMs = deliveredAt - new Date(message.created_at);
+
+            // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous Selective query)
+            const { default: pool } = await import('../config/database.js');
+            await pool.query(
+                'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
+                [messageId, deliveredAt]
+            );
+
+            // 3. Notify Sender via SSE (Real-time sync)
+            realtimeEvents.emitUserChatUpdate(message.sender_id, {
+                roomId: message.conversation_id,
+                action: 'delivered',
+                messageId: messageId,
+                receiverId: anonymousId,
+                delivery_latency_ms: latencyMs
+            });
+
+            // 4. Notify active ChatWindow (Room channel)
+            realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
+                messageId: messageId,
+                receiverId: anonymousId
+            });
+
+            console.log(`[ACK] Message ${messageId} delivered in ${latencyMs}ms`);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 /**
  * POST /api/chats/:roomId/typing

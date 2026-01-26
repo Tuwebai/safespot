@@ -23,6 +23,9 @@ export default defineConfig({
 
     // 3. SERVICE WORKER INJECTION
     '__SW_VERSION__': JSON.stringify(`${packageJson.version}_${buildHash}`),
+    '__API_BASE_URL__': JSON.stringify((process.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '').endsWith('/api')
+      ? (process.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')
+      : `${(process.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')}/api`),
   },
   plugins: [
     react(),
