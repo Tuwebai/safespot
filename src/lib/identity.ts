@@ -406,6 +406,24 @@ export function ensureAnonymousId(): string {
     return id.includes('|') ? id.split('|')[1] : id;
   }
 
+  // ✅ EXTREME RECOVERY: Before generating a new ID, check if Motor 2 has a session
+  if (typeof window !== 'undefined') {
+    try {
+      const sessionRaw = localStorage.getItem('safespot_session_v2');
+      if (sessionRaw) {
+        const session = JSON.parse(sessionRaw);
+        if (session.anonymousId && isValidUUID(session.anonymousId)) {
+          console.warn('[Identity] [ExtremeRecovery] Restored identity from SessionToken SSOT');
+          const recoveredId = session.anonymousId;
+          cachedId = recoveredId;
+          // Re-persist to all layers immediately
+          versionedStorage.putVersioned(L1_KEY, recoveredId, 365);
+          return recoveredId;
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   // If we get here and it was never initialized, this is an emergency
   const emergencyId = generateUUID();
   cachedId = emergencyId;
