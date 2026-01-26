@@ -244,26 +244,61 @@ self.addEventListener('push', (event: any) => {
 // ============================================
 
 self.addEventListener('notificationclick', (event: any) => {
-    event.notification.close();
+    const notification = event.notification;
+    const action = event.action;
+    const data = notification.data || {};
+    const urlToOpen = data.url || '/';
 
-    const urlToOpen = event.notification.data?.url || '/';
+    console.log(`[SW] 🖱️ Notification Clicked. Action: ${action || 'default'}, URL: ${urlToOpen}`);
+
+    // Standard dismiss action
+    if (action === 'dismiss') {
+        notification.close();
+        return;
+    }
+
+    // 🧠 ENTERPRISE: Handle Reply Action (Inline)
+    if (action === 'reply') {
+        const replyText = event.reply;
+        if (replyText) {
+            console.log(`[SW] 💬 Inline Reply received: "${replyText}"`);
+            // Note: Inline reply handling usually requires opening the client
+            // to process the message in a stateful way, but the ACK is already sent.
+        }
+    }
+
+    notification.close();
 
     event.waitUntil(
         (async () => {
             const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-            // 1. Try to find existing window
+            // 1. Try to find existing window with exactly that URL or any other window to re-use
+            let chatClient = null;
             for (const client of allClients) {
-                if (client.url === urlToOpen || (client.url.includes(self.location.origin) && 'focus' in client)) {
-                    await client.focus();
-                    if (client.url !== urlToOpen) {
-                        client.postMessage({ type: 'NAVIGATE_TO', url: urlToOpen });
-                    }
-                    return;
+                // If it's already on the target URL, prioritize it
+                if (client.url.includes(urlToOpen)) {
+                    chatClient = client;
+                    break;
+                }
+                // Fallback: use any client from our origin
+                if (client.url.includes(self.location.origin)) {
+                    chatClient = client;
                 }
             }
 
-            // 2. Open new window
+            if (chatClient && 'focus' in chatClient) {
+                await chatClient.focus();
+                // Send command to Navigate
+                chatClient.postMessage({
+                    type: 'NAVIGATE_TO',
+                    url: urlToOpen,
+                    replyText: action === 'reply' ? event.reply : undefined
+                });
+                return;
+            }
+
+            // 2. Open new window if no client found
             if (self.clients.openWindow) {
                 await self.clients.openWindow(urlToOpen);
             }

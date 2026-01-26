@@ -190,7 +190,7 @@ export function createReportNotificationPayload(report, distanceMeters) {
         },
         actions: [
             {
-                action: 'map',
+                action: 'view',
                 title: '📍 Ver en Mapa'
             },
             {
@@ -212,8 +212,8 @@ export function createActivityNotificationPayload({ type, title, message, report
     // Different actions based on type
     let actions = [
         {
-            action: 'view_report',
-            title: '📄 Abrir Reporte'
+            action: 'view',
+            title: '📄 Abrir'
         },
         {
             action: 'dismiss',
@@ -267,7 +267,8 @@ export function createChatNotificationPayload(message, room) {
         body: message.content, // Just the content
         icon: '/icons/icon-192.png', // ✅ Standard PWA Icon (Reliable)
         badge: '/icons/icon-192.png',
-        tag: `chat-${message.room_id}`, // Groups notifications
+        // 🧠 ENTERPRISE FIX: Unique tag per message to avoid OVERWRITE (Stacking like WhatsApp)
+        tag: `chat-msg-${message.id}`,
         renotify: true, // ✅ Force sound
         data: {
             roomId: message.room_id,
@@ -279,8 +280,14 @@ export function createChatNotificationPayload(message, room) {
         },
         actions: [
             {
-                action: 'mark-read',
-                title: '✅ Leído'
+                action: 'reply',
+                title: '💬 Responder',
+                type: 'text', // Inline reply if supported by OS
+                placeholder: 'Escribe tu mensaje...'
+            },
+            {
+                action: 'view',
+                title: '👁️ Ver Chat'
             }
         ]
     };
