@@ -6,8 +6,37 @@ import pool from '../config/database.js';
 
 
 import redis, { redisSubscriber } from '../config/redis.js';
+import { deliveryLedger } from '../engine/DeliveryLedger.js';
 
 const router = express.Router();
+
+/**
+ * POST /api/realtime/ack/:eventId
+ * Acknowledge receipt of a message (logical delivery confirmation)
+ */
+router.post('/ack/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    try {
+        await deliveryLedger.markDelivered(eventId);
+        res.json({ success: true, eventId });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * GET /api/realtime/status/:eventId
+ * Check logical delivery status of an event
+ */
+router.get('/status/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    try {
+        const status = await deliveryLedger.getStatus(eventId);
+        res.json(status || { status: 'not_found' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 /**
  * GET /api/realtime/status

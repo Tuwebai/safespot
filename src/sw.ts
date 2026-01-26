@@ -117,7 +117,7 @@ registerRoute(
 );
 
 // ============================================
-// 4. PUSH EVENTS (Pure Passthrough)
+// 4. PUSH EVENTS (Pure Passthrough with Intelligent Dedup)
 // ============================================
 
 interface PushEvent extends Event {
@@ -160,20 +160,50 @@ self.addEventListener('push', (event: any) => {
         vibrate: [200, 100, 200]
     };
 
-    // 3. Client-Side Dedup (WhatsApp Style)
-    // If the user has the app OPEN and FOCUSED, we do NOT show the notification.
-    // The App's internal socket (SSE) handles the UI (Toast/Badge).
+    // 3. Dual-Channel Delivery Logic with Global Ledger
+    // Strategy: We check if any active client handled it, OR if the Global Ledger says it's delivered.
     event.waitUntil(
         (async () => {
+            const eventId = data.eventId || data.data?.eventId || data.data?.messageId;
             const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-            const isAppFocused = clientList.some(client => client.focused);
 
-            if (isAppFocused) {
-                console.log('[SW] 🔕 App is focused. Suppressing Push Notification (Handled by Realtime/In-App).');
-                return;
+            // 3.1 Local Client Check (Fastest)
+            if (clientList.length > 0) {
+                const checkPromises = clientList.map(client => {
+                    return new Promise((resolve) => {
+                        const channel = new MessageChannel();
+                        channel.port1.onmessage = (msg) => resolve(msg.data?.processed === true);
+                        client.postMessage({ type: 'CHECK_EVENT_PROCESSED', eventId }, [channel.port2]);
+                        setTimeout(() => resolve(false), 200); // Strict 200ms
+                    });
+                });
+                const results = await Promise.all(checkPromises);
+                if (results.some(r => r === true)) {
+                    console.log(`[SW] 🔕 Event ${eventId} handled by local client. Suppressing.`);
+                    return;
+                }
             }
 
-            // If background or closed, SHOW IT.
+            // 3.2 Global Ledger Check (Single Source of Truth)
+            // We fetch the status from the server to ensure consistency even if local clients are frozen.
+            if (eventId) {
+                try {
+                    const response = await fetch(`/api/realtime/status/${eventId}`, {
+                        cache: 'no-store' // Absolute truth
+                    });
+                    if (response.ok) {
+                        const status = await response.json();
+                        if (status.status === 'delivered') {
+                            console.log(`[SW] 🔕 Event ${eventId} marked as DELIVERED in Global Ledger. Suppressing Push.`);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[SW] Ledger check failed, falling back to showing notification.', e);
+                }
+            }
+
+            // If not handled, SHOW IT.
             try {
                 await self.registration.showNotification(title, options);
             } catch (e) {

@@ -40,7 +40,7 @@ class SSEPool {
         url: string; // Store URL for reconnection
     }>();
 
-    private isGlobalSleep = false;
+    // private isGlobalSleep = false; // Removed unused variable
 
     subscribe(url: string, eventName: string, listener: SSEListener) {
         let entry = this.connections.get(url);
@@ -52,7 +52,7 @@ class SSEPool {
                 listeners: new Map(),
                 reconnectCallbacks: new Set(),
                 backoff: new Backoff(),
-                isSleeping: false,
+                isSleeping: false, // Legacy field, kept for internal structure for now but ignored logic-wise
                 url: url
             };
             this.connections.set(url, entry);
@@ -64,7 +64,7 @@ class SSEPool {
         }
         entry.listeners.get(eventName)!.add(listener);
 
-        if (!entry.source && !this.isGlobalSleep && !entry.isSleeping) {
+        if (!entry.source) {
             this.connect(entry);
         }
 
@@ -72,40 +72,19 @@ class SSEPool {
     }
 
     /**
-     * Called when tab goes into background (save battery/data)
+     * 🧠 ENTERPRISE FIX: SSE is now IMMORTAL.
+     * We no longer sleep or wake connections based on tab visibility.
+     * The OS/Browser will manage resources, but we never voluntarily disconnect.
      */
     sleep() {
-        console.log('[SSE] 💤 Sleeping all connections');
-        this.isGlobalSleep = true;
-        this.connections.forEach(entry => {
-            entry.isSleeping = true;
-            if (entry.source) {
-                entry.source.close();
-                entry.source = null;
-            }
-        });
+        console.log('[SSE] 🛡️ Sleep ignored: Connection is now persistent/immortal.');
     }
 
-    /**
-     * Called when tab becomes visible (restore realtime)
-     */
     wake() {
-        if (!this.isGlobalSleep) return;
-
-        console.log('[SSE] ☀️ Waking up connections');
-        this.isGlobalSleep = false;
-        this.connections.forEach(entry => {
-            entry.isSleeping = false;
-            if (entry.refCount > 0 && !entry.source) {
-                entry.backoff.reset(); // Reset backoff for eager reconnect
-                this.connect(entry);
-            }
-        });
+        console.log('[SSE] 🛡️ Wake ignored: Connection was already persistent.');
     }
 
     private connect(entry: any) {
-        if (this.isGlobalSleep || entry.isSleeping) return; // Don't connect if sleeping
-
         if (!navigator.onLine) {
             // Wait for online event handled by Bootstrap
             return;
@@ -140,7 +119,7 @@ class SSEPool {
                     }
 
                     setTimeout(() => {
-                        if (entry.refCount > 0 && !this.isGlobalSleep) this.connect(entry);
+                        if (entry.refCount > 0) this.connect(entry);
                     }, delay);
                 }
             };

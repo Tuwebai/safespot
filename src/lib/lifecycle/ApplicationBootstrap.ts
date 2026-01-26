@@ -13,7 +13,6 @@
  */
 
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
-import { ssePool } from '@/lib/ssePool';
 import { queryClient } from '@/lib/queryClient';
 
 export enum BootstrapState {
@@ -154,9 +153,8 @@ class ApplicationBootstrapManager {
             console.log('[Lifecycle] RECOVERY_STEP identity=skipped');
         }
 
-        // B. Resume Realtime (SSE)
-        ssePool.wake();
-        console.log('[Lifecycle] RECOVERY_STEP sse=wake');
+        // B. Resume Realtime (SSE) - 🧠 FIXED: Removed ssePool.wake() as it is now immortal
+        // console.log('[Lifecycle] RECOVERY_STEP sse=wake');
 
         // C. Staggered Data Rehydration (Prioritized)
         console.log('[Lifecycle] RECOVERY_STEP queries=staggered');
@@ -190,7 +188,7 @@ class ApplicationBootstrapManager {
         }
 
         this.setState(BootstrapState.SUSPENDED, reason);
-        ssePool.sleep();
+        // 🧠 FIXED: Removed ssePool.sleep() - SSE must stay alive in background
         console.log(`[Lifecycle] 💤 System Suspended reason=${reason}`);
     }
 

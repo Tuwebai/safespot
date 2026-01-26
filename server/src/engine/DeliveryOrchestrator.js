@@ -1,6 +1,7 @@
 import { presenceTracker } from '../utils/presenceTracker.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { sendPushNotification, createChatNotificationPayload, createActivityNotificationPayload } from '../utils/webPush.js';
+import { deliveryLedger } from './DeliveryLedger.js';
 import { DispatchResult } from './NotificationDispatcher.js';
 import { logError } from '../utils/logger.js';
 
@@ -54,13 +55,17 @@ export const DeliveryOrchestrator = {
 
             if (isOnline) {
                 console.log(`[Orchestrator] [${traceId}] User "Online" in Redis. Sending SSE...`);
-                // 1. Send Realtime (Best Effort)
+                // 1. Mark as dispatched via SSE
+                await deliveryLedger.markDispatched(jobData.id, 'sse');
+
+                // 2. Send Realtime (Best Effort)
                 this._dispatchSSE(jobData);
 
-                // 2. Fallthrough to Push (Guaranteed Delivery)
+                // 3. Fallthrough to Push (Guaranteed Delivery)
                 console.log(`[Orchestrator] [${traceId}] Proceeding to Push (Dual Strategy) to ensure delivery.`);
             } else {
                 console.log(`[Orchestrator] [${traceId}] User OFFLINE. Routing to Push.`);
+                await deliveryLedger.markDispatched(jobData.id, 'push');
             }
 
             // 3. Push Delivery (Fallback or Primary)
@@ -76,11 +81,12 @@ export const DeliveryOrchestrator = {
      * Internal: Send via SSE
      * Returns true if emitted (fire & forget assumption of success if online)
      */
-    _dispatchSSE(jobData) {
+    async _dispatchSSE(jobData) {
         const { type, target, payload } = jobData;
 
         // Map Job Type to SSE Channel/Event
         if (type === 'CHAT_MESSAGE') {
+            await deliveryLedger.markDispatched(jobData.id, 'sse');
             realtimeEvents.emitUserChatUpdate(target.anonymousId, {
                 type: 'new-message',
                 roomId: payload.data?.roomId,
@@ -93,6 +99,7 @@ export const DeliveryOrchestrator = {
         }
 
         if (type === 'REPORT_ACTIVITY' || type === 'COMMENT_ACTIVITY' || type === 'FOLLOW_ACTIVITY' || type === 'MENTION_ACTIVITY') {
+            await deliveryLedger.markDispatched(jobData.id, 'sse');
             // General notification toast
             realtimeEvents.emitUserNotification(target.anonymousId, {
                 type: 'activity',
@@ -109,6 +116,7 @@ export const DeliveryOrchestrator = {
         // If we don't know the type specifically but it has a title/message, send it as generic activity.
         // This ensures NO notification is "invisible" if the App supresses the Push.
         if (payload?.title && payload?.message) {
+            await deliveryLedger.markDispatched(jobData.id, 'sse');
             realtimeEvents.emitUserNotification(target.anonymousId, {
                 type: 'activity',
                 title: payload.title,
@@ -179,6 +187,7 @@ export const DeliveryOrchestrator = {
                 message: payload.message,
                 reportId: payload.reportId,
                 entityId: payload.entityId,
+                eventId: jobData.id, // Clave para deduplicación en SW
                 ...payload.data
             });
         }

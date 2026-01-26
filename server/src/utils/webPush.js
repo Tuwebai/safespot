@@ -185,7 +185,8 @@ export function createReportNotificationPayload(report, distanceMeters) {
         data: {
             reportId: report.id,
             url: `/explorar?reportId=${report.id}`,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            eventId: report.id // or jobData.id if passed
         },
         actions: [
             {
@@ -238,7 +239,8 @@ export function createActivityNotificationPayload({ type, title, message, report
         data: {
             url: url,
             reportId: reportId,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            eventId: entityId // Fallback to entityId if specific eventId not provided
         },
         actions: actions
     };

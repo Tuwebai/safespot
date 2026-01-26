@@ -51,8 +51,12 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
                 queryClient.invalidateQueries({ queryKey: ['unread-messages'] });
 
                 // Show In-App Toast instead of Push
-                // Note: Current Toast lib only supports string messages, no actions.
                 toast.info(`💬 ${data.senderAlias || 'Usuario'}: ${data.content}`);
+
+                // 🧠 ENTERPRISE ACK: Notify backend that we got it via SSE
+                if (data.eventId) {
+                    fetch(`${API_BASE_URL}/realtime/ack/${data.eventId}`, { method: 'POST' }).catch(() => { });
+                }
 
             } catch (err) {
                 console.error('[SSE Global] Error processing new-message:', err);
@@ -69,9 +73,24 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
             }
         });
 
+        // 3. Service Worker Bridge (Deduplication)
+        const handleSWMessage = (event: MessageEvent) => {
+            if (event.data?.type === 'CHECK_EVENT_PROCESSED') {
+                const eventId = event.data.eventId;
+                const isProcessed = processedEvents.current.has(eventId);
+
+                if (event.ports && event.ports[0]) {
+                    event.ports[0].postMessage({ processed: isProcessed });
+                }
+            }
+        };
+
+        window.navigator.serviceWorker?.addEventListener('message', handleSWMessage);
+
         return () => {
             unsubMessage();
             unsubAlert();
+            window.navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
         };
     }, [userId, enabled, queryClient, toast, location, navigate]);
 }
