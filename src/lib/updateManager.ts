@@ -33,23 +33,37 @@ class UpdateManager {
      * DEV mode exits immediately (HMR handles updates)
      */
     async init() {
-        // 1. DEV MODE: Hard exit
-        if (AppVersion.environment === 'development') {
-            console.info('[UpdateManager] DEV mode → updates DISABLED (HMR active)');
-            return;
+        // 1. Silent Deploy Tracking: PROD only
+        if (AppVersion.environment === 'production') {
+            // console.debug('[UpdateManager] PROD mode → silent deploy tracking enabled');
+
+            // Initial check
+            await this.checkForDeployUpdate();
+
+            // Start polling (PROD only, every 5 minutes)
+            this.intervalId = window.setInterval(() => {
+                this.checkForDeployUpdate();
+            }, POLLING_INTERVAL_PROD);
+        } else {
+            console.info('[UpdateManager] DEV mode → silent updates DISABLED, but SW registration allowed.');
         }
 
-        // console.debug('[UpdateManager] PROD mode → silent deploy tracking enabled');
+        // 2. Core SW Registration (Needed for Push/PWA in both Dev & Prod)
+        if ('serviceWorker' in navigator) {
+            try {
+                // Determine the correct SW path (Vite PWA handles this)
+                // In dev, it's usually /sw.js or similar
+                const swPath = AppVersion.environment === 'development' ? '/sw.js?dev-sw' : '/sw.js';
 
-        // 2. Check immediately on boot
-        await this.checkForDeployUpdate();
-
-        // 3. Start polling (PROD only, every 5 minutes)
-        this.intervalId = window.setInterval(() => {
-            this.checkForDeployUpdate();
-        }, POLLING_INTERVAL_PROD);
-
-        // console.debug(`[UpdateManager] Polling every ${POLLING_INTERVAL_PROD / 1000}s`);
+                await navigator.serviceWorker.register(swPath, {
+                    type: AppVersion.environment === 'development' ? 'module' : 'classic',
+                    scope: '/'
+                });
+                // console.log('[UpdateManager] ✅ Service Worker registered');
+            } catch (error) {
+                console.error('[UpdateManager] ❌ SW Registration failed:', error);
+            }
+        }
     }
 
     /**

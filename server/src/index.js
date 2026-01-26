@@ -3,6 +3,8 @@ import { NotificationWorker } from './engine/NotificationWorker.js';
 
 dotenv.config();
 
+// Force reload for Motor 2 identity sync
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -200,7 +202,7 @@ const keyGenerator = (req) => {
 // Global limiter: 100 req / 5 min
 const globalLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 100,
+  max: 500,
   keyGenerator,
   message: {
     error: true,

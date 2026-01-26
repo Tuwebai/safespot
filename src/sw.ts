@@ -16,27 +16,34 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 // ============================================
 
 self.addEventListener('push', (event) => {
-    // 1. Parse Payload
-    let data;
+    console.log('[SW] 📥 Push Event received', event);
+
+    // 1. Get Payload
+    // If no data, we show a generic notification to avoid silent drops
+    let data: any = {};
     try {
         data = event.data?.json();
+        console.log('[SW] 📦 Payload:', data);
     } catch (e) {
-        console.warn('Push parse error', e);
-        return;
+        console.warn('[SW] Push parse error or no JSON data', e);
+        // data remains empty object
     }
 
     // 2. Normalize Defaults (Fail-safe)
-    const title = data?.title || 'SafeSpot Notification';
+    const title = data?.title || 'SafeSpot';
     const options = {
-        body: data?.body || 'Nuevo evento',
+        body: data?.body || 'Nueva notificación de la comunidad.',
         icon: data?.icon || '/icons/icon-192.png',
         badge: data?.badge || '/icons/icon-192.png',
         tag: data?.tag || 'safespot-generic',
         data: data, // Keep raw data for click handler
-        requireInteraction: false
+        // Standard PWA properties for better delivery
+        renotify: data?.renotify ?? true,
+        requireInteraction: data?.requireInteraction ?? false,
+        vibrate: [200, 100, 200]
     };
 
-    // 3. Show Notification (Always show, no hidden logic)
+    // 3. Show Notification
     const notificationPromise = self.registration.showNotification(title, options);
     event.waitUntil(notificationPromise);
 });
@@ -200,28 +207,7 @@ registerRoute(
 );
 
 
-// ============================================
-// PUSH EVENT PASS-THROUGH
-// ============================================
-// (Logic unchanged, just ensuring it's robust)
-self.addEventListener('push', (event) => {
-    let data;
-    try {
-        data = event.data?.json();
-    } catch (e) {
-        return;
-    }
-
-    const title = data?.title || 'SafeSpot';
-    const options = {
-        body: data?.body || 'Nueva notificación',
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        data: data
-    };
-
-    event.waitUntil(self.registration.showNotification(title, options));
-});
+// Consolidated with main listener at top
 
 self.addEventListener('notificationclick', (event: any) => {
     event.notification.close();

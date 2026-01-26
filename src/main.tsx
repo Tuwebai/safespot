@@ -50,13 +50,18 @@ const CACHE_VERSION_KEY = 'ss_cache_schema_version';
         console.log('[SecureBoot] ✅ Cleared all Cache API entries');
       }
 
-      // 3. Clear localStorage (except auth)
+      // 3. Clear localStorage (except auth & identity)
       const authBackup = localStorage.getItem('auth-storage');
+      const identityBackup = localStorage.getItem('safespot_anonymous_id');
+      const sessionV2Backup = localStorage.getItem('safespot_session_v2');
+
       localStorage.clear();
-      if (authBackup) {
-        localStorage.setItem('auth-storage', authBackup);
-      }
-      console.log('[SecureBoot] ✅ Cleared localStorage (auth preserved)');
+
+      if (authBackup) localStorage.setItem('auth-storage', authBackup);
+      if (identityBackup) localStorage.setItem('safespot_anonymous_id', identityBackup);
+      if (sessionV2Backup) localStorage.setItem('safespot_session_v2', sessionV2Backup);
+
+      console.log('[SecureBoot] ✅ Cleared localStorage (Identity & Auth preserved)');
 
       // 4. Clear sessionStorage
       sessionStorage.clear();

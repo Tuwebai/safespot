@@ -40,13 +40,21 @@ export function usePushNotifications() {
 
         const checkSubscription = async () => {
             try {
-                const registration = await navigator.serviceWorker.ready;
+                // ✅ ENTERPRISE RESILIENCE: 5s timeout for SW ready
+                // Prevents hanging the entire UI if registration fails or in DEV
+                const swReady = Promise.race([
+                    navigator.serviceWorker.ready,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('SW Timeout')), 5000))
+                ]) as Promise<ServiceWorkerRegistration>;
+
+                const registration = await swReady;
                 const subscription = await registration.pushManager.getSubscription();
 
                 setIsSubscribed(!!subscription);
                 setPermission(Notification.permission);
             } catch (err) {
-                console.error('Error checking subscription:', err);
+                console.warn('[Push] Subscription check aborted (SW not ready or timeout).', err);
+                setPermission(Notification.permission);
             } finally {
                 setLoading(false);
             }

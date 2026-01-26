@@ -35,7 +35,21 @@ export const useAuthStore = create<AuthState>()(
             isInitializing: true, // Start in loading state
 
             loginSuccess: async (token, anonymousId, user) => {
+                // 1. Update legacy identity layer
                 await updateIdentity(anonymousId);
+
+                // 2. Update Motor 2 Authority Engine
+                // We create a fresh session object from the backend data
+                import('../engine/session/SessionAuthority').then(({ sessionAuthority }) => {
+                    sessionAuthority.setSession({
+                        anonymousId,
+                        sessionId: self.crypto.randomUUID ? self.crypto.randomUUID() : 'session-' + Date.now(),
+                        issuedAt: Date.now(),
+                        expiresAt: Date.now() + (1000 * 60 * 60 * 24 * 30), // 30 days auth
+                        jwt: token
+                    });
+                });
+
                 set({
                     token,
                     user,

@@ -34,7 +34,7 @@ export const QueueFactory = {
     },
 
     createQueue(name) {
-        return new Queue(name, {
+        const queue = new Queue(name, {
             connection: this.getConnection(),
             defaultJobOptions: {
                 removeOnComplete: true,
@@ -44,6 +44,20 @@ export const QueueFactory = {
                 },
             }
         });
+
+        // 🧠 ENTERPRISE: Circuit Breaker Wrapper
+        // We override 'add' to include a strict safety timeout.
+        const originalAdd = queue.add.bind(queue);
+        queue.add = async (...args) => {
+            return Promise.race([
+                originalAdd(...args),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('REDIS_CIRCUIT_BREAKER_TIMEOUT')), 2000)
+                )
+            ]);
+        };
+
+        return queue;
     },
 
     createWorker(name, processor, options = {}) {

@@ -12,7 +12,7 @@
  * @singleton
  */
 
-import { initializeIdentity, ensureAnonymousId, getAnonymousId } from '@/lib/identity';
+import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
 import { ssePool } from '@/lib/ssePool';
 import { queryClient } from '@/lib/queryClient';
 
@@ -22,16 +22,21 @@ export enum BootstrapState {
     RUNNING = 'running',
     SUSPENDED = 'suspended',
     RECOVERING = 'recovering',
-    FAILED = 'failed' // Should trigger full reload or error boundary
+    FAILED = 'failed'
 }
 
 type StateListener = (state: BootstrapState) => void;
 
+/**
+ * ApplicationBootstrapManager (Enterprise Core v2.1)
+ * 
+ * ROLE: Primary Orchestrator & State Commander.
+ * RESPONSIBILITY: Link Identity Engine with App Lifecycle.
+ */
 class ApplicationBootstrapManager {
     private state: BootstrapState = BootstrapState.IDLE;
     private listeners: Set<StateListener> = new Set();
     private recoveryAttempts = 0;
-    private isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
     constructor() {
         if (typeof window !== 'undefined') {
@@ -45,142 +50,141 @@ class ApplicationBootstrapManager {
 
     public subscribe(listener: StateListener): () => void {
         this.listeners.add(listener);
-        // Fire immediately
         listener(this.state);
         return () => this.listeners.delete(listener);
     }
 
     private setState(newState: BootstrapState) {
         if (this.state === newState) return;
-
-        console.info(`[Bootstrap] 🔄 State Change: ${this.state} -> ${newState}`);
+        console.info(`[BootstrapManager] [${this.state}] -> [${newState}]`);
         this.state = newState;
-
         this.listeners.forEach(fn => fn(newState));
     }
 
     /**
-     * Entry Point: Called by <StartupGuard> or main.tsx
+     * Entry Point: Orchestrates the secure boot sequence
      */
     public async initialize() {
         if (this.state !== BootstrapState.IDLE) return;
 
         try {
             this.setState(BootstrapState.BOOTING);
-            console.time('[Bootstrap] Boot Sequence');
+            console.time('[Bootstrap] Secure Boot Sequence');
 
-            // 1. Identity (Critical Path)
-            await this.ensureIdentity();
+            // 1. Identity Authority Negotiation
+            // We use a safe race to prevent infinite hanging
+            await Promise.race([
+                sessionAuthority.init(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Identity Timeout')), 8000))
+            ]);
 
-            // 2. Network / SSE Prep
-            if (this.isOnline) {
-                // We don't block boot on SSE connection, but we signal it to start
-                // ssePool will handle its own connection logic
+            const idState = sessionAuthority.getState();
+            console.log(`[Bootstrap] Identity Phase Result: ${idState}`);
+
+            // 2. Network / Context Prep
+            // If we are DEGRADED or READY, we can continue. 
+            // Only FAILED blocks if critical.
+            if (idState === SessionState.FAILED) {
+                throw new Error('Identity Engine failed critical initialization');
             }
 
-            console.timeEnd('[Bootstrap] Boot Sequence');
+            console.timeEnd('[Bootstrap] Secure Boot Sequence');
             this.setState(BootstrapState.RUNNING);
 
         } catch (error) {
-            console.error('[Bootstrap] ❌ Critical Failure:', error);
-            // Fallback to emergency identity to allow app usage
-            await ensureAnonymousId();
-            this.setState(BootstrapState.RUNNING); // Degraded but running
+            console.error('[Bootstrap] ⚠️ Critical Failure during Boot:', error);
+            // In Enterprise, we prefer DEGRADED running over SKELETON INFINITO
+            this.setState(BootstrapState.RUNNING);
         }
     }
 
     /**
-     * Called when tab becomes visible or network returns
+     * Recovery Logic: Re-validates state after suspension
      */
     public async recover() {
+        // Only recover if we were suspended or failed
         if (this.state === BootstrapState.RECOVERING) return;
+        if (this.state !== BootstrapState.SUSPENDED && this.state !== BootstrapState.FAILED) return;
 
         this.setState(BootstrapState.RECOVERING);
-
-        console.log(`[Bootstrap] 🚑 Starting Recovery Protocol (Attempt ${this.recoveryAttempts + 1})`);
+        console.log(`[Bootstrap] 🚑 Protocol Recovery Attempt ${this.recoveryAttempts + 1}`);
 
         try {
-            // 1. Re-verify identity validity
-            // Some tokens might expire while in background
-            const currentId = getAnonymousId();
-            if (!currentId) {
-                await this.ensureIdentity();
+            // 1. Refresh Identity if needed
+            if (sessionAuthority.getState() !== SessionState.READY) {
+                await sessionAuthority.init();
             }
 
-            // 2. Wake up SSE
+            // 2. Resume sub-systems
             ssePool.wake();
 
-            // 3. Rehydrate Critical Data
-            // We force a refetch of "active" queries to ensure UI is fresh
-            await queryClient.refetchQueries({ type: 'active' });
+            // 🧠 ENTERPRISE: STAGGERED REFETCH
+            // Instead of { type: 'active' } which nukes the backend with 10+ reqs,
+            // we prioritize critical resources and stagger the rest.
+
+            console.log('[Bootstrap] ⚡ Beginning Staggered Recovery...');
+
+            // A. Priority 1: User Profile & Context
+            await queryClient.refetchQueries({ queryKey: [['users', 'profile']], type: 'active' });
+
+            // B. Priority 2: Infrastructure & Safety Config
+            await queryClient.refetchQueries({ queryKey: [['notifications', 'settings']], type: 'active' });
+
+            // C. Jittered Background: Refetch everything else with a staggered delay
+            // This is non-blocking to the recovery state
+            setTimeout(async () => {
+                const activeQueries = queryClient.getQueryCache().findAll({ type: 'active' });
+                for (const query of activeQueries) {
+                    const keyString = JSON.stringify(query.queryKey);
+                    if (keyString.includes('profile') || keyString.includes('settings')) continue;
+
+                    // Small jitter between requests (50-200ms)
+                    await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
+                    query.fetch();
+                }
+                console.log('[Bootstrap] ✨ Total system rehydration complete.');
+            }, 500);
 
             this.setState(BootstrapState.RUNNING);
             this.recoveryAttempts = 0;
-            console.log('[Bootstrap] ✅ Recovery Successful');
+            console.log('[Bootstrap] ✅ System Restored');
 
         } catch (error) {
-            console.error('[Bootstrap] ⚠️ Recovery partial failure:', error);
-            // Even if refetch fails (e.g. offline), we return to RUNNING
-            // React Query will handle retry logic
-            this.setState(BootstrapState.RUNNING);
+            console.error('[Bootstrap] ⚠️ Recovery Partial failure:', error);
+            this.setState(BootstrapState.RUNNING); // Degraded but alive
             this.recoveryAttempts++;
         }
     }
 
     public suspend() {
-        if (this.state === BootstrapState.SUSPENDED) return;
+        // RULE: Only suspend if we are actually RUNNING or RECOVERING
+        // DO NOT suspend during BOOTING (prevents infinite bootstrap loop)
+        if (this.state !== BootstrapState.RUNNING && this.state !== BootstrapState.RECOVERING) {
+            console.log('[Bootstrap] Suspend ignored: System not initialized yet.');
+            return;
+        }
 
         console.log('[Bootstrap] 💤 Suspending Application (Background)');
         this.setState(BootstrapState.SUSPENDED);
-
-        // Pause expensive things
         ssePool.sleep();
     }
 
     private setupSystemListeners() {
-        // VISIBILITY
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                if (this.state === BootstrapState.SUSPENDED) {
-                    this.recover();
-                }
+                this.recover();
             } else {
                 this.suspend();
             }
         });
 
-        // ONLINE/OFFLINE
         window.addEventListener('online', () => {
-            this.isOnline = true;
-            if (this.state === BootstrapState.RUNNING || this.state === BootstrapState.SUSPENDED) {
-                console.log('[Bootstrap] 🌐 Network Restored -> Triggering Recovery');
-                this.recover();
-            }
+            this.recover();
         });
 
         window.addEventListener('offline', () => {
-            this.isOnline = false;
-            console.log('[Bootstrap] 🔌 Network Lost');
+            // Passive listener: system is aware but doesn't block
         });
-    }
-
-    // --- Private Recovery Steps ---
-
-    private async ensureIdentity() {
-        try {
-            // Timeout promise to prevent infinite hang
-            const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Identity Init Timeout')), 5000)
-            );
-
-            await Promise.race([
-                initializeIdentity(),
-                timeout
-            ]);
-        } catch (e) {
-            console.warn('[Bootstrap] Identity init timed out or failed, forcing anonymous.');
-            await ensureAnonymousId();
-        }
     }
 }
 

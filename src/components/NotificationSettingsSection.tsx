@@ -20,7 +20,7 @@ export function NotificationSettingsSection() {
     const [locationName, setLocationName] = useState<string | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
     const { success, error, info } = useToast();
-    const { isSubscribed, subscribe, updateServiceLocation } = usePushNotifications();
+    const { isSubscribed, subscribe, updateServiceLocation, permission, loading: pushLoading } = usePushNotifications();
     const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
 
     useEffect(() => {
@@ -463,8 +463,34 @@ export function NotificationSettingsSection() {
                         Para tu tranquilidad, las notificaciones son solo internas por ahora. Limitamos las alertas a un máximo de {settings?.max_notifications_per_day} por día para no distraerte.
                     </p>
                 </div>
-                <div className="text-[10px] text-muted-foreground/50 text-center font-mono">
-                    ID: {typeof window !== 'undefined' ? localStorage.getItem('anonymous_id') : '...'}
+
+                {/* Manual Sync / Diagnosis */}
+                <div className="pt-4 border-t border-dark-border space-y-3">
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                        <Zap className="h-4 w-4 text-blue-400 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-xs font-semibold text-blue-400">Estado del Navegador</p>
+                            <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">
+                                Permiso: <span className={cn(
+                                    "font-bold",
+                                    permission === 'granted' ? "text-neon-green" : "text-orange-500"
+                                )}>{permission}</span>
+                            </p>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[10px] border-blue-500/20 hover:bg-blue-500/10"
+                                onClick={() => subscribe()}
+                                disabled={pushLoading}
+                            >
+                                {isSubscribed ? "Sincronizar Dispositivo" : "Vincular Dispositivo"}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="text-[10px] text-muted-foreground/50 text-center font-mono py-2 border-t border-dark-border/30 mt-4">
+                    ID de Usuario: {typeof window !== 'undefined' ? (localStorage.getItem('safespot_anonymous_id') || 'Sin ID') : '...'}
                 </div>
             </CardContent>
         </Card>

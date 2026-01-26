@@ -338,6 +338,16 @@ export async function initializeIdentity(): Promise<string> {
  * Falls back to LocalStorage if needed.
  */
 export function getAnonymousId(): string {
+  // ✅ MOTOR 2.1 Proxy: Prefer Authority Engine if available
+  // This allows legacy code to benefit from the new authority system.
+  try {
+    const authority = (window as any).__safespot_session_authority;
+    if (authority) {
+      const authId = authority.getAnonymousId();
+      if (authId) return authId;
+    }
+  } catch (e) { /* silent fail for SSR or early access */ }
+
   if (cachedId) return cachedId;
 
   // Try v2 versioned storage first

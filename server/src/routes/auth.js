@@ -9,9 +9,66 @@ import { authLimiter } from '../utils/rateLimiter.js';
 import { verifyGoogleToken } from '../services/googleAuth.js';
 import jwt from 'jsonwebtoken';
 import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
-import { ErrorCodes } from '../utils/errorCodes.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
+
+/**
+ * POST /api/auth/bootstrap
+ * Deterministic identity bootstrap for anonymous sessions.
+ * Returns a short-lived JWT that confers identity authority.
+ */
+router.post('/bootstrap', async (req, res, next) => {
+    try {
+        const { currentAnonymousId } = req.body;
+        let anonymousId = currentAnonymousId;
+
+        // 1. Validate or Generate ID
+        if (anonymousId) {
+            try {
+                validateAnonymousId(anonymousId);
+            } catch (e) {
+                anonymousId = uuidv4();
+            }
+        } else {
+            anonymousId = uuidv4();
+        }
+
+        // 2. Ensure ID exists in DB (Idempotent)
+        await pool.query(
+            'INSERT INTO anonymous_users (anonymous_id) VALUES ($1) ON CONFLICT (anonymous_id) DO NOTHING',
+            [anonymousId]
+        );
+
+        // 3. Generate Session Token
+        const sessionId = uuidv4();
+        const issuedAt = Date.now();
+        const expiresIn = 60 * 60 * 24 * 7; // 7 days in seconds
+        const expiresAt = issuedAt + (expiresIn * 1000);
+
+        const token = jwt.sign({
+            anonymous_id: anonymousId,
+            session_id: sessionId,
+            type: 'anonymous'
+        }, process.env.JWT_SECRET || 'safespot-secret-key-change-me', { expiresIn });
+
+        logSuccess('Identity Bootstrap', { anonymousId, sessionId });
+
+        res.json({
+            success: true,
+            token,
+            session: {
+                anonymousId,
+                sessionId,
+                issuedAt,
+                expiresAt
+            }
+        });
+
+    } catch (err) {
+        next(err);
+    }
+});
 
 /**
  * POST /api/auth/register

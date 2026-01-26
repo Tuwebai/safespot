@@ -46,33 +46,44 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
   : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
 
+import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
+
 /**
  * Get headers with anonymous_id, client_id, and APP VERSION
  * 
  * ✅ ENTERPRISE TRACING: Injects X-Request-ID for E2E Observability
+ * ✅ MOTOR 2.1: Strict Session Boundary Contract
  */
 function getHeaders(requestId?: string): HeadersInit {
+  const sessionState = sessionAuthority.getState();
+  const sessionToken = sessionAuthority.getToken();
+
+  // Use Authority ID if available, otherwise fallback to local identity
+  const anonymousId = sessionAuthority.getAnonymousId() || ensureAnonymousId();
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Client-ID': getClientId(),
-    'X-Anonymous-Id': ensureAnonymousId(),
-    // ✅ ENTERPRISE: Semantic Version Injection
+    'X-Anonymous-Id': anonymousId,
     'X-App-Version': __SW_VERSION__,
-    // ✅ ENTERPRISE: Distributed Tracing
     'X-Request-ID': requestId || self.crypto.randomUUID(),
   };
 
-  // INJECT AUTH TOKEN (Phase 2)
-  try {
-    const storedAuth = localStorage.getItem('auth-storage');
-    if (storedAuth) {
-      const parsed = JSON.parse(storedAuth);
-      if (parsed.state && parsed.state.token) {
-        headers['Authorization'] = `Bearer ${parsed.state.token}`;
+  // ✅ MOTOR 2.1: Only inject JWT if Authority is READY
+  if (sessionState === SessionState.READY && sessionToken?.jwt) {
+    headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
+  } else {
+    // Legacy / Auth Guard Fallback
+    // We still support the legacy auth-storage for backwards compatibility during transition
+    try {
+      const storedAuth = localStorage.getItem('auth-storage');
+      if (storedAuth) {
+        const parsed = JSON.parse(storedAuth);
+        if (parsed.state && parsed.state.token) {
+          headers['Authorization'] = `Bearer ${parsed.state.token}`;
+        }
       }
-    }
-  } catch (e) {
-    // Ignore read errors
+    } catch (e) { /* ignore */ }
   }
 
   return headers;
@@ -93,6 +104,22 @@ export async function apiRequest<T>(
 
   // 1. Generate Correlation ID for this specific request
   const requestId = self.crypto.randomUUID();
+
+  // 🔴 ENTERPRISE: Request Gate (Motor 2 Resilience)
+  // If system is bootstrapping or recovering, we pause the request
+  const currentState = sessionAuthority.getState();
+  if (
+    currentState === SessionState.UNINITIALIZED ||
+    currentState === SessionState.BOOTSTRAPPING ||
+    currentState === SessionState.RECOVERING
+  ) {
+    if (import.meta.env.DEV) console.debug(`[API Gate] [${requestId}] Pausing request ${endpoint} until Authority is stable...`);
+    await sessionAuthority.waitUntilReady();
+
+    // ✅ STAGGERED RELEASE: Add a small random jitter (0-300ms) 
+    // to avoid a synchronized burst when the gate opens.
+    await new Promise(r => setTimeout(r, Math.random() * 300));
+  }
 
   // 2. Normalize endpoint: Remove any existing /api or api/ prefix to avoid duplication
   let cleanEndpoint = endpoint;
