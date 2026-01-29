@@ -13,6 +13,14 @@ import { getClientId } from '../clientId';
  * 1. PERSIST before NOTIFY
  * 2. NOTIFY before ACK
  * 3. Authority for Deduplication and Gap-Resync
+ * 4. AUTHORITY OF STATE: Exclusive responsibility for domain-level state (ACKs, Persistence).
+ * 
+ * Note on Architecture:
+ * This Orchestrator handles the User Stream (Domain Events). 
+ * UI Hooks handle Room Streams (Ephemeral/Reflection Events).
+ * This "Separated Authority" design is intentional: 
+ * - Orchestrator = Source of Truth for state changes.
+ * - Hooks = Idempotent reflections for UI responsiveness.
  */
 
 export interface RealtimeEvent {
@@ -119,6 +127,22 @@ class RealtimeOrchestrator {
             return;
         }
 
+        // 🏛️ ARCHITECTURAL FIX: ACK de mensaje (INVARIANTE 1.5 - Después de PERSIST)
+        // SOLO el Orchestrator puede marcar mensajes como delivered
+        // Esto reemplaza los 3 ACK paths anteriores (SW, Hook, Backend proactivo)
+        if (type === 'new-message' || type === 'chat-update') {
+            const message = data.payload?.message || data.message;
+            const messageId = message?.id;
+            const senderId = message?.sender_id;
+
+            // Solo ACK si: hay messageId, Y el mensaje NO fue enviado por nosotros
+            if (messageId && senderId && senderId !== this.userId) {
+                this.acknowledgeMessageDelivered(messageId).catch(err => {
+                    console.error('[Orchestrator] ⚠️ Message ACK failed for:', messageId, err);
+                });
+            }
+        }
+
         // 4. Notify Consumers (INVARIANTE 2)
         const realtimeEvent: RealtimeEvent = {
             eventId,
@@ -150,6 +174,40 @@ class RealtimeOrchestrator {
             headers: { 'X-Client-Id': this.myClientId }
         });
         console.log(`[Orchestrator] 📬 ACK sent for: ${eventId}`);
+    }
+
+    /**
+     * Este método es el SOLO lugar que puede marcar mensajes como "entregados".
+     * Reemplaza los paths de ACK proactivos anteriores.
+     * 
+     * Invariante:
+     * - RealtimeOrchestrator (SSE) y ServiceWorker (Push) son los únicos que reportan "delivered"
+     *   al recibir el payload crudo del transporte.
+     */
+    private async acknowledgeMessageDelivered(messageId: string): Promise<void> {
+        if (!this.userId) {
+            console.warn('[Orchestrator] Cannot ACK message: No userId');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/chats/messages/${messageId}/ack-delivered`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Anonymous-Id': this.userId,
+                    'X-Client-Id': this.myClientId
+                }
+            });
+
+            if (response.ok) {
+                console.log(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
+            } else {
+                console.warn(`[Orchestrator] Message ACK failed: ${response.status} for ${messageId}`);
+            }
+        } catch (err) {
+            console.error('[Orchestrator] ⚠️ Message delivery ACK network error:', messageId, err);
+        }
     }
 
     /**

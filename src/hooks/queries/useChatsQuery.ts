@@ -18,8 +18,8 @@ export interface UserPresence {
     last_seen_at: string | null;
 }
 
-// ✅ ENTERPRISE: Shared ACK Cache to avoid redundant network calls between hooks
-const deliveredAcks = new Set<string>();
+// 🏛️ ARCHITECTURAL FIX: ACK de mensajes es responsabilidad EXCLUSIVA de RealtimeOrchestrator
+// Los hooks NO pueden confirmar entrega - solo actualizan UI
 
 
 
@@ -303,53 +303,37 @@ export function useChatMessages(convId: string | undefined) {
             }
         });
 
-        const unsubNewMessage = ssePool.subscribe(sseUrl, 'new-message', (event) => {
-            try {
-                const { message, originClientId } = JSON.parse(event.data);
+        // 🏛️ ARCHITECTURAL FIX (P0): Hook NO consume SSE directo para new-message
+        // RealtimeOrchestrator es la ÚNICA autoridad que procesa SSE crudo.
+        // El hook escucha eventos YA PROCESADOS (después de persist/ack)
+        const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
+            // Solo procesar eventos de mensaje para este chat
+            if (event.type !== 'new-message' && event.type !== 'chat-update') return;
 
-                // ✅ Echo Suppression: Don't process our own messages from SSE
-                // they are already handled via mutation optimistic update / onSuccess.
-                if (originClientId === getClientId()) {
-                    console.log('[SSE] Echo suppressed for own message:', message.id);
-                    return;
-                }
+            const message = event.payload?.message || event.payload;
+            if (!message?.conversation_id || message.conversation_id !== convId) return;
 
-                // ✅ DIAGNOSTIC: Log SSE message arrival
-                console.log('[SSE] new-message received:', {
-                    id: message.id,
-                    hasLocalStatus: !!message.localStatus,
-                    sender: message.sender_id?.substring(0, 8)
-                });
+            // Echo suppression (ya hecho por Orchestrator, pero por seguridad)
+            if (event.originClientId === getClientId()) return;
 
-                // ✅ CRITICAL FIX: Use consistent query key (anonymousId || '')
-                // Must match the key used in optimistic update to find and merge
-                chatCache.upsertMessage(queryClient, message, anonymousId || '');
+            console.log('[Hook] ✅ Received from Orchestrator:', {
+                id: message.id,
+                type: event.type,
+                sender: message.sender_id?.substring(0, 8)
+            });
 
-                // 👑 SHADOW MODE
-                const rawData = JSON.parse(event.data);
-                if (rawData.eventId) {
-                    realtimeOrchestrator.shadowReport(rawData.eventId, 'useChatMessages:new-message');
-                }
+            // Actualizar cache SOLO con datos ya validados por Orchestrator
+            chatCache.upsertMessage(queryClient, message, anonymousId || '');
 
-                // ✅ WhatsApp-Grade: Instant ACK + Sound if active
-                if (message.sender_id !== anonymousId && !deliveredAcks.has(message.id)) {
-                    // 1. Play "Pop" Sound
-                    playNotificationSound();
+            // 🏛️ ACK es responsabilidad EXCLUSIVA del Orchestrator (NO hacemos ACK aquí)
 
-                    // 2. Send Delivery ACK (Tick Gris)
-                    // ✅ ENTERPRISE: Use Granular ACK for better accuracy
-                    deliveredAcks.add(message.id);
-                    chatsApi.markMessageAsDelivered(message.id).catch(e => {
-                        console.warn('[ACK] Failed to mark as delivered:', e);
-                        deliveredAcks.delete(message.id);
-                    });
-                }
-
-                // ✅ GAP RECOVERY: Update watermark on every new message
-                watermark = message.id;
-            } catch (e) {
-                console.error('[SSE] Error parsing new-message:', e);
+            // Reproducir sonido para mensajes de otros
+            if (message.sender_id !== anonymousId) {
+                playNotificationSound();
             }
+
+            // Actualizar watermark
+            watermark = message.id;
         });
 
         const unsubTyping = ssePool.subscribe(sseUrl, 'typing', (event) => {
@@ -473,7 +457,7 @@ export function useChatMessages(convId: string | undefined) {
 
         return () => {
             unsubReconnect();
-            unsubNewMessage();
+            unsubOrchestrator();
             unsubTyping();
             unsubRead();
             unsubDelivered();

@@ -83,7 +83,8 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
                 last_known_lat: hasLocation ? location.lat : null,
                 last_known_lng: hasLocation ? location.lng : null,
                 radius_meters: safeRadius,
-                is_active: true
+                is_active: true,
+                updated_at: new Date().toISOString()
             }, {
                 onConflict: 'endpoint',
                 ignoreDuplicates: false
@@ -99,7 +100,11 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
             });
         }
 
-        logSuccess('Push subscription created', { anonymousId, radius: safeRadius });
+        logSuccess('Push subscription synced', {
+            anonymousId,
+            radius: safeRadius,
+            isRepair: req.body.repair === true ? 'YES' : 'NO'
+        });
 
         res.json({
             success: true,

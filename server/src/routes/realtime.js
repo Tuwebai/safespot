@@ -6,18 +6,21 @@ import pool from '../config/database.js';
 
 
 import redis, { redisSubscriber } from '../config/redis.js';
-import { deliveryLedger } from '../engine/DeliveryLedger.js';
+import { eventDeduplicator } from '../engine/DeliveryLedger.js';
 
 const router = express.Router();
 
 /**
  * POST /api/realtime/ack/:eventId
- * Acknowledge receipt of a message (logical delivery confirmation)
+ * Acknowledge receipt of an EVENT (technical deduplication)
+ * ⚠️ This is NOT message delivery - that's handled by /chats/messages/:id/ack-delivered
  */
 router.post('/ack/:eventId', async (req, res) => {
     const { eventId } = req.params;
     try {
-        await deliveryLedger.markDelivered(eventId);
+        // 🏛️ SSOT: This marks the EVENT as processed (deduplication)
+        // Message delivered status is in PostgreSQL, not here
+        await eventDeduplicator.markProcessed(eventId);
         res.json({ success: true, eventId });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -78,15 +81,47 @@ router.get('/catchup', async (req, res) => {
 
 /**
  * GET /api/realtime/status/:eventId
- * Check logical delivery status of an event
+ * Check processing status of an event (technical deduplication)
+ * ⚠️ DEPRECATED: For message delivery status use /message-status/:messageId (PostgreSQL SSOT)
  */
 router.get('/status/:eventId', async (req, res) => {
     const { eventId } = req.params;
     try {
-        const status = await deliveryLedger.getStatus(eventId);
+        const status = await eventDeduplicator.getStatus(eventId);
         res.json(status || { status: 'not_found' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * GET /api/realtime/message-status/:messageId
+ * 🏛️ SSOT: Check message delivery status from PostgreSQL (NOT Redis)
+ * 
+ * This is the AUTHORITATIVE source for delivered/read state.
+ * SW uses this for Push suppression instead of Redis.
+ */
+router.get('/message-status/:messageId', async (req, res) => {
+    const { messageId } = req.params;
+    try {
+        const result = await pool.query(
+            'SELECT is_delivered, is_read FROM chat_messages WHERE id = $1',
+            [messageId]
+        );
+
+        if (result.rows.length === 0) {
+            // Message not found - allow Push (fail-open)
+            return res.json({ delivered: false, read: false });
+        }
+
+        res.json({
+            delivered: result.rows[0].is_delivered || false,
+            read: result.rows[0].is_read || false
+        });
+    } catch (err) {
+        console.error('[SSOT] Error fetching message status:', err);
+        // Fail-open: if we can't check, allow Push
+        res.status(500).json({ delivered: false, read: false });
     }
 });
 
@@ -307,46 +342,11 @@ router.get('/chats/:roomId', (req, res) => {
             status: 'online'
         });
 
-        // Al entrar, marcar mensajes de otros como ENTREGADOS
-        (async () => {
-            try {
-                const { queryWithRLS } = await import('../utils/rls.js');
-
-                // ✅ WhatsApp-Grade: Get senders of undelivered messages BEFORE marking them
-                const sendersResult = await queryWithRLS(anonymousId,
-                    `SELECT DISTINCT sender_id FROM chat_messages 
-                     WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
-                    [roomId, anonymousId]
-                );
-                const senderIds = sendersResult.rows.map(r => r.sender_id);
-
-                // Mark as delivered
-                const result = await queryWithRLS(anonymousId,
-                    'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
-                    [roomId, anonymousId]
-                );
-
-                // SOLO emitir si realmente se actualizaron mensajes
-                if (result.rowCount > 0) {
-                    // 1. Room SSE (for clients with chat open)
-                    realtimeEvents.emitChatStatus('delivered', roomId, {
-                        conversationId: roomId,
-                        receiverId: anonymousId
-                    });
-
-                    // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
-                    senderIds.forEach(senderId => {
-                        realtimeEvents.emitMessageDelivered(senderId, {
-                            conversationId: roomId,
-                            receiverId: anonymousId,
-                            traceId: `bulk_delivered_${Date.now()}`
-                        });
-                    });
-                }
-            } catch (err) {
-                console.error('[SSE] Error marking as delivered on connect:', err);
-            }
-        })();
+        // 🏛️ ARCHITECTURAL FIX: ELIMINADO - ACK proactivo de delivered
+        // El backend NO marca delivered al conectar a SSE room
+        // ACK es responsabilidad EXCLUSIVA del cliente:
+        // - RealtimeOrchestrator (SSE path)
+        // - Service Worker (Push path)
     }
 
     req.on('close', () => {

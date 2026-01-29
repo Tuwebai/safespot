@@ -120,27 +120,34 @@ export function usePushNotifications() {
 
                 const registration = await swReady;
                 const existingSubscription = await registration.pushManager.getSubscription();
+                const currentPermission = Notification.permission;
 
-                if (existingSubscription) {
-                    // 🧠 PUSH AUTHORITY STRATEGY (WhatsApp-Grade)
-                    // We DO NOT trust old subscriptions. Browsers silently expire them or change keys.
-                    // If we find one, we destroy it and recreate it to ensure 100% freshness.
-                    console.log('[Push Authority] Found existing subscription. Replacing to ensure freshness...');
+                setPermission(currentPermission);
 
-                    try {
-                        await existingSubscription.unsubscribe();
-                    } catch (e) {
-                        console.warn('[Push Authority] Unsubscribe failed (ignored):', e);
+                // 🧠 PUSH AUTHORITY STRATEGY (WhatsApp-Grade)
+                // Goal: If permission is granted, we MUST have a valid subscription.
+
+                if (currentPermission === 'granted') {
+                    if (existingSubscription) {
+                        // We check if it's potentially stale or if we just want to ensure the backend has it.
+                        // For maximum reliability, we re-subscribe to ensure the token is active.
+                        console.log('[Push Authority] Permission is GRANTED and subscription exists. Refreshing to ensure backend sync...');
+                        await subscribe();
+                    } else {
+                        // Permission is granted but NO subscription? This is the "Root Cause" of the bug.
+                        // We auto-subscribe silently.
+                        console.log('[Push Authority] Permission is GRANTED but NO subscription found. Auto-subscribing...');
+                        await subscribe();
                     }
-
-                    // Re-subscribe immediately
-                    await subscribe();
                 } else {
-                    // Clean start
-                    setIsSubscribed(false);
+                    // If not granted, we can't do much silently, just update state.
+                    if (existingSubscription) {
+                        setIsSubscribed(true);
+                    } else {
+                        setIsSubscribed(false);
+                    }
                 }
 
-                setPermission(Notification.permission);
             } catch (err) {
                 console.warn('[Push] Subscription check aborted (SW not ready or timeout).', err);
                 setPermission(Notification.permission);

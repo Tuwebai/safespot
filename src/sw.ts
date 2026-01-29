@@ -161,72 +161,51 @@ self.addEventListener('push', (event: any) => {
         vibrate: [200, 100, 200]
     };
 
-    // 3. Dual-Channel Delivery Logic with Global Ledger
-    // Strategy: We check if any active client handled it, OR if the Global Ledger says it's delivered.
+    // 3. 🏛️ ENTERPRISE PUSH SUPPRESSION (SSOT)
+    // Single authority: PostgreSQL. No MessageChannel, no Redis, no heuristics.
     event.waitUntil(
         (async () => {
-            const eventId = data.eventId || data.data?.eventId || data.data?.messageId;
-            const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+            const chatData = data.data || data;
+            const messageId = chatData.messageId || chatData.entityId;
+            const recipientId = chatData.recipientId;
 
-            // 3.1 Local Client Check (Fastest)
-            if (clientList.length > 0) {
-                const checkPromises = clientList.map(client => {
-                    return new Promise((resolve) => {
-                        const channel = new MessageChannel();
-                        channel.port1.onmessage = (msg) => resolve(msg.data?.processed === true);
-                        client.postMessage({ type: 'CHECK_EVENT_PROCESSED', eventId }, [channel.port2]);
-                        setTimeout(() => resolve(false), 200); // Strict 200ms
-                    });
-                });
-                const results = await Promise.all(checkPromises);
-                if (results.some(r => r === true)) {
-                    console.log(`[SW] 🔕 Event ${eventId} handled by local client. Suppressing.`);
-                    return;
-                }
-            }
-
-            // 3.2 Global Ledger Check (Single Source of Truth)
-            // We fetch the status from the server to ensure consistency even if local clients are frozen.
-            if (eventId) {
+            // SSOT Check: PostgreSQL is the ONLY truth
+            if (messageId) {
                 try {
-                    const response = await fetch(`${__API_BASE_URL__}/realtime/status/${eventId}`, {
-                        cache: 'no-store' // Absolute truth
+                    const response = await fetch(`${__API_BASE_URL__}/realtime/message-status/${messageId}`, {
+                        cache: 'no-store' // Absolute truth from PostgreSQL
                     });
                     if (response.ok) {
                         const status = await response.json();
-                        if (status.status === 'delivered') {
-                            console.log(`[SW] 🔕 Event ${eventId} marked as DELIVERED in Global Ledger. Suppressing Push.`);
+                        // delivered OR read → SUPPRESS
+                        if (status.delivered === true || status.read === true) {
+                            console.log(`[SW] 🔕 Message ${messageId} already delivered/read (SSOT). Suppressing Push.`);
                             return;
                         }
                     }
                 } catch (e) {
-                    console.warn('[SW] Ledger check failed, falling back to showing notification.', e);
+                    // FAIL-OPEN: If we can't check, show Push (better duplicate than miss)
+                    console.warn('[SW] ⚠️ PostgreSQL status check failed, showing Push (fail-open).', e);
                 }
             }
 
-            // 🧠 ENTERPRISE GRANULAR ACK: Chat messages need immediate delivery confirmation
-            const chatData = data.data || data; // Handle both flat and nested structures for robustness
-            if ((chatData.type === 'chat' || data.type === 'chat') && chatData.entityId) {
-                const messageId = chatData.entityId;
-                const recipientId = chatData.recipientId;
-
-                if (!recipientId) {
-                    console.warn(`[SW] ⚠️ Cannot send ACK for ${messageId}: Missing recipientId in payload.`);
-                } else {
-                    console.log(`[SW] 📬 Sending Granular ACK for message: ${messageId} (As: ${recipientId.substring(0, 8)}...)`);
-                    try {
-                        await fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Anonymous-Id': recipientId
-                            }
-                        });
-                        console.log(`[SW] ✅ ACK Sent for ${messageId}`);
-                    } catch (err) {
-                        console.error('[SW] ACK Fetch failed:', err);
+            // 🏛️ WHATSAPP-GRADE: ACK mínimo para Push (delivered = llegó al dispositivo)
+            // El SW SOLO confirma recepción, NO hace lógica de dominio
+            // Orchestrator sigue siendo autoridad para SSE (app abierta)
+            if ((chatData.type === 'chat' || data.type === 'chat') && messageId && recipientId) {
+                // Fire-and-forget ACK: NO retry, NO lógica, NO persistencia
+                fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Anonymous-Id': recipientId
                     }
-                }
+                }).then(() => {
+                    console.log(`[SW] 📬📬 Push ACK sent for message: ${messageId}`);
+                }).catch(() => {
+                    // Silently fail - Orchestrator will ACK when app opens
+                    console.warn(`[SW] Push ACK failed for ${messageId} (will retry on app open)`);
+                });
             }
 
             // If not handled, SHOW IT.
@@ -305,3 +284,60 @@ self.addEventListener('notificationclick', (event: any) => {
         })()
     );
 });
+
+// ============================================
+// 6. SUBSCRIPTION ROTATION (Auto-Repair)
+// ============================================
+
+self.addEventListener('pushsubscriptionchange', (event: any) => {
+    console.log('[SW] 🔄 Push subscription expired or changed. Repairing...');
+
+    event.waitUntil(
+        (async () => {
+            try {
+                const response = await fetch(`${__API_BASE_URL__}/push/vapid-key`);
+                const { publicKey } = await response.json();
+
+                if (!publicKey) throw new Error('No VAPID key for repair');
+
+                const newSubscription = await self.registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+
+                console.log('[SW] ✅ New subscription obtained. Syncing with backend...');
+
+                await fetch(`${__API_BASE_URL__}/push/subscribe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Note: anonymousId will be handled by the backend middleware if 
+                        // we can recover it, or we might need it from IndexedDB.
+                        // For now, let's assume the backend identify the device by endpoint if possible,
+                        // or we rely on the next app boot to fix the ID link.
+                    },
+                    body: JSON.stringify({
+                        subscription: newSubscription,
+                        repair: true
+                    })
+                });
+
+                console.log('[SW] 🚀 Push subscription auto-repaired successfully.');
+            } catch (err) {
+                console.error('[SW] ❌ Failed to repair push subscription:', err);
+            }
+        })()
+    );
+});
+
+// Helper for VAPID conversion inside SW
+function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}

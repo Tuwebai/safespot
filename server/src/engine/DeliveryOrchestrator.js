@@ -1,7 +1,8 @@
-import { presenceTracker } from '../utils/presenceTracker.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { presenceTracker } from '../utils/presenceTracker.js';
+import webpush from 'web-push';
 import { sendPushNotification, createChatNotificationPayload, createActivityNotificationPayload } from '../utils/webPush.js';
-import { deliveryLedger } from './DeliveryLedger.js';
+import { eventDeduplicator } from './DeliveryLedger.js';
 import { DispatchResult } from './NotificationDispatcher.js';
 import { logError } from '../utils/logger.js';
 
@@ -28,7 +29,7 @@ export const DeliveryOrchestrator = {
         const anonymousId = target.anonymousId;
 
         if (!anonymousId) {
-            console.warn(`[Orchestrator] [${traceId}] Skipped: No target anonymousId.`);
+            console.warn(`[Orchestrator][${traceId}]Skipped: No target anonymousId.`);
             return DispatchResult.PERMANENT_ERROR;
         }
 
@@ -41,7 +42,7 @@ export const DeliveryOrchestrator = {
             // 2. Decision Logic
             // SECURITY -> ALWAYS PUSH (Safety First)
             if (isSecurity) {
-                console.log(`[Orchestrator] [${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
+                console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
                 this._dispatchSSE(jobData); // Try update UI if open
                 return await this._dispatchPush(jobData); // Ensure wake up
             }
@@ -54,28 +55,26 @@ export const DeliveryOrchestrator = {
             // - If user is background/dead socket: Push ensures delivery.
 
             if (isOnline) {
-                console.log(`[Orchestrator] [${traceId}] User "Online" in Redis. Sending SSE...`);
+                console.log(`[Orchestrator][${traceId}] User "Online" in Redis.Sending SSE...`);
                 // 1. Mark as dispatched via SSE
-                await deliveryLedger.markDispatched(jobData.id, 'sse');
+                await eventDeduplicator.markDispatched(jobData.id, 'sse');
 
                 // 2. Send Realtime (Best Effort)
                 this._dispatchSSE(jobData);
 
                 // 3. Fallthrough to Push (Guaranteed Delivery)
-                console.log(`[Orchestrator] [${traceId}] Proceeding to Push (Dual Strategy) to ensure delivery.`);
+                console.log(`[Orchestrator][${traceId}] Proceeding to Push(Dual Strategy) to ensure delivery.`);
             } else {
-                console.log(`[Orchestrator] [${traceId}] User OFFLINE. Routing to Push.`);
-                await deliveryLedger.markDispatched(jobData.id, 'push');
+                console.log(`[Orchestrator][${traceId}] User OFFLINE.Routing to Push.`);
+                await eventDeduplicator.markDispatched(jobData.id, 'push');
             }
 
             // 3. Push Delivery (Fallback or Primary)
             const pushResult = await this._dispatchPush(jobData);
 
-            // 🧠 ENTERPRISE OPTIMISM: If Push or SSE succeeded, mark as DELIVERED in DB and notify sender.
-            // This satisfies the user expectation: "Notified = Delivered".
-            if (pushResult === DispatchResult.SUCCESS || isOnline) {
-                this._markAsDeliveredProactively(jobData);
-            }
+            // 🏛️ ARCHITECTURAL FIX: Backend NO marca delivered proactivamente
+            // ACK de mensajes es responsabilidad EXCLUSIVA del cliente (RealtimeOrchestrator)
+            // El backend solo despacha SSE/Push, el cliente confirma recepción
 
             return pushResult;
 
@@ -95,7 +94,7 @@ export const DeliveryOrchestrator = {
 
         // Map Job Type to SSE Channel/Event
         if (type === 'CHAT_MESSAGE') {
-            await deliveryLedger.markDispatched(jobData.id, 'sse');
+            await eventDeduplicator.markDispatched(jobData.id, 'sse');
 
             // ✅ ENTERPRISE CONTRACT: Send the full message object for frontend processing
             realtimeEvents.emitUserChatUpdate(target.anonymousId, {
@@ -119,7 +118,7 @@ export const DeliveryOrchestrator = {
         }
 
         if (type === 'REPORT_ACTIVITY' || type === 'COMMENT_ACTIVITY' || type === 'FOLLOW_ACTIVITY' || type === 'MENTION_ACTIVITY') {
-            await deliveryLedger.markDispatched(jobData.id, 'sse');
+            await eventDeduplicator.markDispatched(jobData.id, 'sse');
             // General notification toast
             realtimeEvents.emitUserNotification(target.anonymousId, {
                 eventId: jobData.id,
@@ -135,7 +134,7 @@ export const DeliveryOrchestrator = {
 
         // 🧠 ENTERPRISE FINAL CATCH-ALL
         if (payload?.title && payload?.message) {
-            await deliveryLedger.markDispatched(jobData.id, 'sse');
+            await eventDeduplicator.markDispatched(jobData.id, 'sse');
             realtimeEvents.emitUserNotification(target.anonymousId, {
                 eventId: jobData.id,
                 serverTimestamp,
@@ -220,58 +219,9 @@ export const DeliveryOrchestrator = {
         // Basic classification
         const allRetryable = results.every(r => r.status === 'rejected');
         return allRetryable ? DispatchResult.RETRYABLE_ERROR : DispatchResult.SUCCESS;
-    },
-
-    /**
-     * Proactively mark a message as delivered once the server confirms dispatch.
-     * This ensures the sender sees the double tick as soon as the notification hits FCM or SSE.
-     */
-    async _markAsDeliveredProactively(jobData) {
-        if (jobData.type !== 'CHAT_MESSAGE') return;
-
-        const messageId = jobData.payload?.entityId;
-        const recipientId = jobData.target?.anonymousId;
-
-        if (!messageId || !recipientId) return;
-
-        try {
-            const { DB } = await import('../utils/db.js');
-            const db = DB.public();
-
-            // 1. Mark in DB (Idempotent)
-            const result = await db.query(
-                `UPDATE chat_messages 
-                 SET is_delivered = true 
-                 WHERE id = $1 AND is_delivered = false 
-                 RETURNING sender_id, conversation_id`,
-                [messageId]
-            );
-
-            if (result.rowCount > 0) {
-                const message = result.rows[0];
-
-                // 2. Notify Sender (User Channel)
-                realtimeEvents.emitMessageDelivered(message.sender_id, {
-                    messageId: messageId,
-                    id: messageId,
-                    conversationId: message.conversation_id,
-                    deliveredAt: new Date().toISOString(),
-                    receiverId: recipientId,
-                    traceId: `proactive_${jobData.traceId}`
-                });
-
-                // 3. Notify Room (Active Window Sync)
-                realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
-                    messageId: messageId,
-                    receiverId: recipientId
-                });
-
-                console.log(`[PROACTIVE-ACK] [${jobData.traceId}] Message ${messageId} confirmed delivered to sender ${message.sender_id?.substring(0, 8)}`);
-            } else {
-                console.log(`[PROACTIVE-ACK] [${jobData.traceId}] Message ${messageId} already marked delivered. Skipping.`);
-            }
-        } catch (err) {
-            console.error('[Orchestrator] Failed proactive delivery mark:', err.message);
-        }
     }
+
+    // 🏛️ ARCHITECTURAL FIX: _markAsDeliveredProactively ELIMINADO
+    // El backend NO puede marcar delivered sin confirmación del cliente
+    // ACK es responsabilidad EXCLUSIVA de RealtimeOrchestrator (frontend)
 };
