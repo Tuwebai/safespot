@@ -191,6 +191,7 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - { messageId, conversationId, deliveredAt, traceId }
      */
     emitMessageDelivered(userId, payload) {
+        console.log(`[RealtimeEvents] 📬 Emitting message.delivered to ${userId?.substring(0, 8)}...`, payload);
         this.broadcast(`user-message-delivered:${userId}`, payload);
     }
 

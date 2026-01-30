@@ -15,6 +15,7 @@
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
 import { queryClient } from '@/lib/queryClient';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
+import { dataIntegrityEngine } from '@/engine/integrity';
 
 export enum BootstrapState {
     IDLE = 'idle',
@@ -97,6 +98,10 @@ class ApplicationBootstrapManager {
             }
 
             this.setState(BootstrapState.RUNNING, 'boot_success');
+
+            // 🧠 MOTOR 4: Start Data Integrity Engine
+            dataIntegrityEngine.start();
+            dataIntegrityEngine.processEvent({ type: 'lifecycle:running' });
         } catch (error) {
             console.error('[Bootstrap] ⚠️ Critical Failure or Timeout during Boot:', error);
             // GUARANTEE: Always end in RUNNING state to show UI
@@ -138,6 +143,9 @@ class ApplicationBootstrapManager {
             this.setState(BootstrapState.RUNNING, 'recovery_success');
             this.recoveryAttempts = 0;
             console.log('[Lifecycle] ✅ System Restored');
+
+            // 🧠 MOTOR 4: Notify recovery completed
+            dataIntegrityEngine.processEvent({ type: 'lifecycle:recovered' });
 
         } catch (error) {
             console.error('[Lifecycle] ⚠️ Recovery Partial failure or Timeout:', error);
@@ -198,6 +206,9 @@ class ApplicationBootstrapManager {
 
         // 👑 ORCHESTRATOR: Enter throttling mode
         realtimeOrchestrator.sleep(reason);
+
+        // 🧠 MOTOR 4: Pause tick during suspension
+        dataIntegrityEngine.processEvent({ type: 'lifecycle:suspended' });
 
         console.log(`[Lifecycle] 💤 System Suspended reason=${reason}`);
     }

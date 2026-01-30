@@ -4,34 +4,34 @@ import { MapPin, TrendingUp, ShieldCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUserZone } from '@/hooks/useUserZone'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLocationAuthority } from '@/hooks/useLocationAuthority'
 
 /**
  * Sección "Tu Zona" - Personalización + Contexto (Backend Driven & SSOT)
  * Muestra la zona actual y el SafeScore REAL calculado por el servidor.
- * Ahora soporta Lazy Migration (el botón "Actualizar" solo pide refrescar posición).
+ * ✅ MOTOR 5: Consume LocationAuthorityEngine para resolución de ubicación.
  */
 export function UserZoneCard() {
     const navigate = useNavigate()
     const { zones, isLoading, updateCurrentZone, isUpdating } = useUserZone()
 
+    // ✅ MOTOR 5: Location Authority Engine
+    const { requestLocation, position } = useLocationAuthority()
+
     // SSOT: Usamos la zona marcada como 'current'
-    // La API backend ya devuelve el array enriquecido con safety: { score, ... }
     const currentZone = zones?.find(z => z.type === 'current')
 
-    const handleChangeZone = () => {
-        if ('geolocation' in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    updateCurrentZone({
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
-                    })
-                },
-                (error) => {
-                    console.error("Error getting location", error)
-                    // TODO: Gestionar permisos denegados enterprise-grade
-                }
-            )
+    const handleChangeZone = async () => {
+        // Solicitar ubicación vía Motor 5
+        await requestLocation('manual')
+
+        // El engine actualiza position - usamos el último obtenido
+        const currentPos = position
+        if (currentPos) {
+            updateCurrentZone({
+                lat: currentPos.lat,
+                lng: currentPos.lng
+            })
         }
     }
 

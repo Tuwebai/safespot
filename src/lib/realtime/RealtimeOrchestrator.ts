@@ -3,6 +3,7 @@ import { localProcessedLog } from './LocalProcessedLog';
 import { API_BASE_URL } from '../api';
 import { queryClient } from '../queryClient';
 import { getClientId } from '../clientId';
+import { dataIntegrityEngine } from '@/engine/integrity';
 
 /**
  * 👑 RealtimeOrchestrator
@@ -35,6 +36,10 @@ export interface RealtimeEvent {
 type EventCallback = (event: RealtimeEvent) => void;
 
 const CONTROL_EVENTS = ['connected', 'heartbeat', 'presence', 'presence-update', 'typing', 'chat-typing', 'chat-presence', 'notification', 'error'];
+
+// 🏛️ STATUS_EVENTS: Eventos de ACK/status que NO necesitan persistencia en IndexedDB
+// pero SÍ necesitan notificar a los listeners para actualizar UI
+const STATUS_EVENTS = ['message.delivered', 'message.read'];
 
 class RealtimeOrchestrator {
     private listeners: Set<EventCallback> = new Set();
@@ -81,6 +86,10 @@ class RealtimeOrchestrator {
         }
 
         const type = data.type || event.type;
+
+        // 🔍 DEBUG: Log all incoming events to diagnose message.delivered issue
+        console.log(`[Orchestrator] 📥 RAW EVENT: type=${type} eventType=${event.type}`);
+
         return this.processValidatedData(data, type, channel);
     }
 
@@ -95,6 +104,24 @@ class RealtimeOrchestrator {
         if (CONTROL_EVENTS.includes(type)) {
             // console.debug(`[Orchestrator] 🧊 Control event received: ${type}`);
             return;
+        }
+
+        // 1.5 🏛️ STATUS_EVENTS: Notificar sin persistir (Ticks de entrega/lectura)
+        // Estos eventos son idempotentes y no críticos, solo actualizan UI
+        if (STATUS_EVENTS.includes(type)) {
+            console.log(`[Orchestrator] 📬 Status event received: ${type}`);
+            const statusEvent: RealtimeEvent = {
+                eventId: data.eventId || `status_${Date.now()}`,
+                serverTimestamp: data.serverTimestamp || Date.now(),
+                type,
+                payload: data.payload || data,
+                originClientId: data.originClientId,
+                isReplay: false
+            };
+            this.listeners.forEach(cb => {
+                try { cb(statusEvent); } catch (err) { console.error('[Orchestrator] Listener error:', err); }
+            });
+            return; // NO persist, NO ack - just notify
         }
 
         // 2. Contract Verification (ONLY for Domain Events)
@@ -239,9 +266,15 @@ class RealtimeOrchestrator {
             }
 
             this.status = 'HEALTHY';
+
+            // 🧠 MOTOR 4: Notify status change
+            dataIntegrityEngine.processEvent({ type: 'realtime:status', status: 'HEALTHY' });
         } catch (err) {
             console.error('[Orchestrator] ❌ Resync failed. Entering DEGRADED mode.', err);
             this.status = 'DEGRADED';
+
+            // 🧠 MOTOR 4: Notify status change
+            dataIntegrityEngine.processEvent({ type: 'realtime:status', status: 'DEGRADED' });
 
             // EMERGENCY FALLBACK: Force invalidate critical queries to ensure consistency
             console.log('[Orchestrator] 🚑 Disaster Recovery: Invalidating critical queries...');

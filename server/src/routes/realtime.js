@@ -39,38 +39,65 @@ router.get('/catchup', async (req, res) => {
     try {
         const sinceTs = parseInt(since);
 
-        // 1. Fetch missed Chat Messages
-        // We map them to the RealtimeEvent contract
+        // 1. Fetch missed Chat Messages OR missed Delivery ACKs
+        // We look for messages created or DELIVERED after 'since'
         const messagesResult = await pool.query(
             `SELECT m.*, c.user_id as recipient_id
 					 FROM chat_messages m
 					 JOIN conversation_members c ON m.conversation_id = c.conversation_id
-					 WHERE EXTRACT(EPOCH FROM m.created_at) * 1000 > $1
-					 ORDER BY m.created_at ASC
-					 LIMIT 50`,
+					 WHERE (EXTRACT(EPOCH FROM m.created_at) * 1000 > $1)
+                     OR (EXTRACT(EPOCH FROM m.delivered_at) * 1000 > $1)
+					 ORDER BY GREATEST(m.created_at, m.delivered_at) ASC
+					 LIMIT 100`,
             [sinceTs]
         );
 
+        const events = [];
+        messagesResult.rows.forEach(m => {
+            const createdAtTs = new Date(m.created_at).getTime();
+            const deliveredAtTs = m.delivered_at ? new Date(m.delivered_at).getTime() : 0;
 
-        const events = messagesResult.rows.map(m => ({
-            eventId: `msg_${m.id}`, // Synthetic eventId based on DB ID if missing
-            serverTimestamp: new Date(m.created_at).getTime(),
-            type: 'new-message',
-            payload: {
-                message: {
-                    id: m.id,
-                    conversation_id: m.conversation_id,
-                    sender_id: m.sender_id,
-                    content: m.content,
-                    type: m.type,
-                    created_at: m.created_at,
-                    is_read: m.is_read,
-                    is_delivered: m.is_delivered
-                },
-                originClientId: 'system_catchup'
-            },
-            isReplay: true
-        }));
+            // A. If it's a NEW message
+            if (createdAtTs > sinceTs) {
+                events.push({
+                    eventId: `msg_${m.id}`,
+                    serverTimestamp: createdAtTs,
+                    type: 'new-message',
+                    payload: {
+                        message: {
+                            id: m.id,
+                            conversation_id: m.conversation_id,
+                            sender_id: m.sender_id,
+                            content: m.content,
+                            type: m.type,
+                            created_at: m.created_at,
+                            is_read: m.is_read,
+                            is_delivered: m.is_delivered
+                        },
+                        originClientId: 'system_catchup'
+                    },
+                    isReplay: true
+                });
+            }
+
+            // B. If it's an OLD message that was DELIVERED after 'since'
+            // (Enterprise: We only send this to the SENDER of the message)
+            if (deliveredAtTs > sinceTs) {
+                events.push({
+                    eventId: `ack_${m.id}_${deliveredAtTs}`,
+                    serverTimestamp: deliveredAtTs,
+                    type: 'message.delivered',
+                    payload: {
+                        messageId: m.id,
+                        id: m.id,
+                        conversationId: m.conversation_id,
+                        deliveredAt: m.delivered_at,
+                        originClientId: 'system_catchup'
+                    },
+                    isReplay: true
+                });
+            }
+        });
 
         res.json(events);
     } catch (err) {
@@ -389,6 +416,7 @@ router.get('/user/:anonymousId', (req, res) => {
     };
 
     const handleMessageDelivered = (data) => {
+        console.log(`[SSE] 📬 Sending message.delivered to client:`, data);
         stream.send('message.delivered', data);
     };
 

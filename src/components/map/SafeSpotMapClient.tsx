@@ -1,23 +1,18 @@
 import { divIcon } from 'leaflet'
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl, Circle } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
-// Remove getMarkerIcon
-// Remove getMarkerIcon
 import { ZoneType } from '@/lib/constants'
-// Remove Link if unused (will check lint after)
-// notificationsApi removed
 import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
-// Remove Link
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useUserZones } from '@/hooks/useUserZones'
 import { useReport, useReportsBatch } from '@/hooks/queries/useReportsQuery'
 import { useSettingsQuery } from '@/hooks/queries/useSettingsQuery'
+import { useLocationAuthority, LocationState } from '@/hooks/useLocationAuthority'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
-// Remove getAvatarUrl
 import { LocationPermissionDenied } from './LocationPermissionDenied'
 import { SafeSpotMapMarker } from './SafeSpotMapMarker'
 
@@ -426,30 +421,36 @@ export function SafeSpotMapClient({
 
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
     const { zones, saveZone } = useUserZones()
-    const isMountedRef = useRef(true)
 
     // ✅ OPTIMIZATION: Resolve all reports in one batch for clustering
     const reports = useReportsBatch(reportIds)
 
-    // ✅ ENTERPRISE GEOLOCATION STATE MACHINE
-    type LocationState = 'idle' | 'resolving' | 'retrying_timeout' | 'resolved' | 'denied' | 'unavailable' | 'manual_retry';
-
-    const [locationState, setLocationState] = useState<LocationState>('idle');
-    const [startPosition, setStartPosition] = useState<[number, number] | null>(null);
-    const [statusMessage, setStatusMessage] = useState<string>('');
-
-    // ✅ Hook Integration for Settings
+    // ✅ Hook Integration for Settings (for fallbacks)
     const { data: settings } = useSettingsQuery()
-    const settingsRef = useRef(settings)
-    useEffect(() => { settingsRef.current = settings }, [settings])
 
-    // Cleanup on unmount
-    useEffect(() => {
-        isMountedRef.current = true
-        return () => {
-            isMountedRef.current = false
-        }
-    }, [])
+    // ✅ MOTOR 5: Location Authority Engine
+    const {
+        state: locationState,
+        position,
+        statusMessage,
+        retry,
+        isResolved,
+        isDenied,
+        isUnavailable,
+        isResolving
+    } = useLocationAuthority({
+        initialFocus: initialFocus ? { lat: initialFocus.lat, lng: initialFocus.lng } : null,
+        zones: zones?.map(z => ({ type: z.type, lat: z.lat, lng: z.lng })) || null,
+        lastKnown: settings?.last_known_lat && settings?.last_known_lng
+            ? { lat: settings.last_known_lat, lng: settings.last_known_lng }
+            : null,
+        autoRequest: true
+    })
+
+    // Convert position to tuple for MapContainer
+    const startPosition: [number, number] | null = position
+        ? [position.lat, position.lng]
+        : null
 
     // Sync external activation from props (e.g. from Profile)
     useEffect(() => {
@@ -457,159 +458,6 @@ export function SafeSpotMapClient({
             setActiveZoneType(externalActivateZoneType)
         }
     }, [externalActivateZoneType])
-
-
-    // ✅ ENTERPRISE LOCATION RESOLVER PIPELINE
-    const resolveLocation = useCallback(async (retryMode: 'auto' | 'manual' = 'auto') => {
-        if (!isMountedRef.current) return;
-
-        // Reset state only if starting fresh or manual retry
-        setLocationState('resolving');
-        setStatusMessage(retryMode === 'manual' ? 'Reintentando ubicarte...' : 'Iniciando geolocalización...');
-
-        // 1. Initial Focus (Deep Link) -> HIGHEST PRIORITY (Instant)
-        if (initialFocus) {
-            const lat = Number(initialFocus.lat)
-            const lng = Number(initialFocus.lng)
-            if (!isNaN(lat) && !isNaN(lng)) {
-                setStartPosition([lat, lng]);
-                setLocationState('resolved');
-                return;
-            }
-        }
-
-        // 2. Priority Zones (Home > Work > Frequent) (Cache/Instant)
-        const home = zones.find(z => z.type === 'home')
-        const work = zones.find(z => z.type === 'work')
-        const frequent = zones.find(z => z.type === 'frequent')
-        const priorityZone = home || work || frequent
-
-        if (priorityZone && typeof priorityZone.lat === 'number' && typeof priorityZone.lng === 'number' && !isNaN(priorityZone.lat) && !isNaN(priorityZone.lng)) {
-            setStartPosition([priorityZone.lat, priorityZone.lng]);
-            setLocationState('resolved');
-            return;
-        }
-
-        // 3. Last Known Location (Settings) (Cache/Fast)
-        const cachedSettings = settingsRef.current
-        if (cachedSettings?.last_known_lat && cachedSettings?.last_known_lng &&
-            !isNaN(cachedSettings.last_known_lat) && !isNaN(cachedSettings.last_known_lng)) {
-            setStartPosition([cachedSettings.last_known_lat, cachedSettings.last_known_lng]);
-            setLocationState('resolved');
-            return;
-        }
-
-
-        // 4. BROWSER GEOLOCATION (The Tricky Part)
-        if (!('geolocation' in navigator)) {
-            setLocationState('unavailable');
-            setStatusMessage('Tu navegador no soporta geolocalización.');
-            return;
-        }
-
-        // 4.1 Check Permissions API first (if available) to fail fast
-        try {
-            if (navigator.permissions && navigator.permissions.query) {
-                const result = await navigator.permissions.query({ name: 'geolocation' });
-                if (result.state === 'denied') {
-                    if (isMountedRef.current) setLocationState('denied');
-                    return;
-                }
-            }
-        } catch (e) {
-            // Ignore permission query errors (some browsers don't support it well)
-        }
-
-        setStatusMessage('Solicitando ubicación precisa...');
-
-        // 4.2 Helper function for promisified Geolocation
-        const getTimestamp = () => new Date().toLocaleTimeString();
-
-        const getPosition = (options: PositionOptions): Promise<GeolocationPosition> => {
-            return new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, options);
-            });
-        };
-
-        // 4.3 Strategy: High Accuracy (Short Timeout) -> Relaxed (Long Timeout)
-        try {
-            // ATTEMPT 1: High Accuracy, 6s timeout
-            // Desktop often times out here if it's trying to use WiFi triangulation slowly
-            // console.debug(`[Map ${getTimestamp()}] Attempting High Accuracy Location...`);
-            const pos = await getPosition({
-                enableHighAccuracy: true,
-                timeout: 6000,
-                maximumAge: 10000
-            });
-
-            if (isMountedRef.current) {
-                setStartPosition([pos.coords.latitude, pos.coords.longitude]);
-                setLocationState('resolved');
-            }
-
-        } catch (err: unknown) {
-            if (!isMountedRef.current) return;
-            const error = err as GeolocationPositionError;
-            console.warn(`[Map ${getTimestamp()}] High Accuracy Failed:`, error.code, error.message);
-
-            // Handle Specifc Errors State 1
-            if (error.code === 1) { // PERMISSION_DENIED
-                setLocationState('denied');
-                return;
-            }
-            if (error.code === 2) { // POSITION_UNAVAILABLE
-                setLocationState('unavailable');
-                setStatusMessage('No pudimos determinar tu ubicación. Verifica tu GPS o red.');
-                return;
-            }
-
-            // TIMEOUT (Code 3) or other errors -> RETRY STRATEGY
-            if (error.code === 3 || retryMode === 'manual') {
-                // console.debug(`[Map ${getTimestamp()}] Retrying with Relaxed Constraints...`);
-                setLocationState('retrying_timeout');
-                setStatusMessage('Afinando ubicación (modo extendido)...');
-
-                try {
-                    // ATTEMPT 2: Low Accuracy (Accept WiFi/IP), 15s timeout
-                    const posRetry = await getPosition({
-                        enableHighAccuracy: false,
-                        timeout: 15000,
-                        maximumAge: 60000
-                    });
-
-                    if (isMountedRef.current) {
-                        setStartPosition([posRetry.coords.latitude, posRetry.coords.longitude]);
-                        setLocationState('resolved');
-                    }
-                } catch (retryErr: unknown) {
-                    if (!isMountedRef.current) return;
-                    const retryError = retryErr as GeolocationPositionError;
-                    console.error(`[Map ${getTimestamp()}] Retry Failed:`, retryError.code, retryError.message);
-
-                    if (retryError.code === 1) {
-                        setLocationState('denied');
-                    } else if (retryError.code === 2) {
-                        setLocationState('unavailable');
-                    } else {
-                        if (retryError.code === 3 || retryMode === 'manual') {
-                            // Double Timeout or Unknown -> Manual Retry State
-                            setLocationState('manual_retry');
-                            setStatusMessage('El servicio de ubicación tardó demasiado.');
-                        }
-                    }
-                }
-            } else {
-                // Unknown error not suitable for retry
-                setLocationState('unavailable');
-            }
-        }
-
-    }, [initialFocus, zones]);
-
-    // Initial Resolution Effect
-    useEffect(() => {
-        resolveLocation('auto');
-    }, [resolveLocation]);
 
     // Use the comprehensive top-level styles for placement mode
     const [isSavingZone, setIsSavingZone] = useState(false)
@@ -646,45 +494,34 @@ export function SafeSpotMapClient({
     }, [activeZoneType])
 
     // CRITICAL: Initialize Leaflet icons
-    // Note: Global default icons are handled in App.tsx, but we ensure Leaflet is loaded here.
     useEffect(() => {
         if (typeof window === 'undefined') return
-        // We just ensure leaflet is imported if needed, but no longer mess with Icon.Default
+        // Leaflet loaded
     }, [])
 
-    // Memo removed
-
-
-    // Memo removed
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
 
-    // 🛑 BLOCK RENDER Logic
-    // If not resolved or resolving, handle UI states
+    // 🛑 BLOCK RENDER Logic - Consuming Location Authority Engine
 
     // 1. Permission Denied (Strict)
-    if (locationState === 'denied') {
-        return <LocationPermissionDenied onRetry={() => resolveLocation('manual')} />;
+    if (isDenied) {
+        return <LocationPermissionDenied onRetry={() => retry()} />;
     }
 
-    // 2. Loading States (Resolving Or Retrying)
-    if (locationState === 'resolving' || locationState === 'retrying_timeout') {
+    // 2. Loading States (Resolving)
+    if (isResolving || locationState === LocationState.UNKNOWN) {
         return (
             <div className="w-full h-full flex items-center justify-center bg-dark-bg">
                 <div className="text-center">
                     <div className="animate-spin h-12 w-12 border-4 border-neon-green border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-foreground/80 font-medium animate-pulse">{statusMessage}</p>
-                    {locationState === 'retrying_timeout' && (
-                        <p className="text-xs text-muted-foreground mt-2 max-w-[200px] mx-auto">
-                            Esto puede demorar unos segundos en PC...
-                        </p>
-                    )}
+                    <p className="text-foreground/80 font-medium animate-pulse">{statusMessage || 'Iniciando geolocalización...'}</p>
                 </div>
             </div>
         );
     }
 
-    // 3. Unavailable / Manual Retry
-    if (locationState === 'unavailable' || locationState === 'manual_retry') {
+    // 3. Unavailable
+    if (isUnavailable) {
         return (
             <div className="w-full h-full flex items-center justify-center bg-dark-bg p-6">
                 <div className="max-w-xs text-center space-y-4">
@@ -696,7 +533,7 @@ export function SafeSpotMapClient({
                         {statusMessage || 'No pudimos detectarte automáticamente.'}
                     </p>
                     <Button
-                        onClick={() => resolveLocation('manual')}
+                        onClick={() => retry()}
                         className="w-full bg-white text-black hover:bg-gray-200"
                     >
                         Intentar de Nuevo
@@ -706,8 +543,8 @@ export function SafeSpotMapClient({
         );
     }
 
-    if (locationState !== 'resolved' || !startPosition) {
-        // Fallback for any unknown state (shouldn't happen)
+    // 4. Not resolved yet (fallback)
+    if (!isResolved || !startPosition) {
         return (
             <div className="w-full h-full flex items-center justify-center bg-dark-bg">
                 <div className="animate-spin h-8 w-8 border-2 border-white border-t-transparent rounded-full"></div>

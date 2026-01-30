@@ -41,6 +41,7 @@ import { QuickFilters, type QuickFilterType } from '@/components/reportes/QuickF
 import { HighlightedReportCard } from '@/components/reportes/HighlightedReportCard'
 import { CompactReportCard } from '@/components/reportes/CompactReportCard'
 import { useUserZone } from '@/hooks/useUserZone'
+import { useLocationAuthority } from '@/hooks/useLocationAuthority'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -229,27 +230,33 @@ export function Reportes() {
     return Object.keys(f).length > 0 ? f : undefined
   }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly, currentZone, cityName])
 
+  // ✅ MOTOR 5: Location Authority Engine
+  const { requestLocation, position: enginePosition } = useLocationAuthority()
+
   // Effect: Auto-trigger location request if 'mi_zona' selected but no zone exists
   useEffect(() => {
     if (quickFilter === 'mi_zona' && !currentZone && !selectedLocation) {
       // Si el usuario toca "Mi Zona" y no tiene zona ni ubicación manual, pedimos GPS
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            updateCurrentZone({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-              label: 'Ubicación Actual'
-            })
-          },
-          (error) => {
-            console.error("Error auto-fetching location for Mi Zona", error)
-            toast.error("No pudimos obtener tu ubicación. Por favor actívala para ver reportes cercanos.")
-          }
-        )
-      }
+      requestLocation('manual').then(() => {
+        // El engine resuelve la ubicación de forma async
+        // La integración con updateCurrentZone se hace mediante otro effect
+      }).catch((error) => {
+        console.error("Error auto-fetching location for Mi Zona", error)
+        toast.error("No pudimos obtener tu ubicación. Por favor actívala para ver reportes cercanos.")
+      })
     }
-  }, [quickFilter, currentZone, selectedLocation, updateCurrentZone, toast])
+  }, [quickFilter, currentZone, selectedLocation, requestLocation, toast])
+
+  // Effect: Sync engine position to current zone
+  useEffect(() => {
+    if (enginePosition && quickFilter === 'mi_zona' && !currentZone) {
+      updateCurrentZone({
+        lat: enginePosition.lat,
+        lng: enginePosition.lng,
+        label: 'Ubicación Actual'
+      })
+    }
+  }, [enginePosition, quickFilter, currentZone, updateCurrentZone])
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading, error: queryError, refetch } = useReportsQuery(filters)

@@ -548,13 +548,18 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
 
         // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous query, but RLS might block UPDATE if user isn't the sender)
         const { default: pool } = await import('../config/database.js');
+
+        console.log(`[Delivered-Debug] Attempting to mark delivered for room ${roomId}. MyID: ${anonymousId}. Pending senders: ${senderIds.join(',')}`);
+
         const result = await pool.query(
             'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
             [roomId, anonymousId]
         );
 
+        console.log(`[Delivered-Debug] ROWS UPDATED: ${result.rowCount}`);
+
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
-        if (result.rowCount > 0) {
+        if (result.rowCount > 0 || senderIds.length > 0) {
             // 1. Room SSE (for clients with chat open)
             // 1. Room SSE (for clients with chat open)
             realtimeEvents.emitChatStatus('delivered', roomId, {

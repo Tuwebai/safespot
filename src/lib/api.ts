@@ -1,6 +1,7 @@
 import { AppClientError } from './errors';
 import { getClientId } from './clientId';
 import { ensureAnonymousId } from './identity';
+import { isTokenExpired } from './auth/permissions';
 import { ZodSchema } from 'zod';
 import { type Report, type Comment } from './schemas'; // Import Report directly from schemas (already strict)
 import { transformReport, transformComment, RawReport, RawComment } from './adapters'; // Adapter integration
@@ -73,14 +74,16 @@ function getHeaders(requestId?: string): HeadersInit {
   if (sessionState === SessionState.READY && sessionToken?.jwt) {
     headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
   } else {
-    // Legacy / Auth Guard Fallback
+    // Legacy / Auth Guard Fallback (DEPRECATED - Transition to Motor 2)
     // We still support the legacy auth-storage for backwards compatibility during transition
     try {
       const storedAuth = localStorage.getItem('auth-storage');
       if (storedAuth) {
         const parsed = JSON.parse(storedAuth);
-        if (parsed.state && parsed.state.token) {
-          headers['Authorization'] = `Bearer ${parsed.state.token}`;
+        const legacyToken = parsed.state?.token;
+        // ✅ HARDENING: Only use legacy token if not expired
+        if (legacyToken && !isTokenExpired(legacyToken)) {
+          headers['Authorization'] = `Bearer ${legacyToken}`;
         }
       }
     } catch (e) { /* ignore */ }
