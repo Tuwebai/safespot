@@ -90,31 +90,35 @@ export function useLocationAuthority(
         return unsubscribe
     }, [])
 
-    // Set fallbacks when they change
+    // ✅ FIX: Unified effect - setFallbacks THEN autoRequest
+    // This eliminates the race condition where autoRequest fired before fallbacks were set
     useEffect(() => {
+        // 1. Set fallbacks first (if any)
         const fallbacks: LocationFallbacks = {}
 
         if (initialFocus) {
             fallbacks.initialFocus = initialFocus
         }
-        if (zones) {
+        if (zones && zones.length > 0) {
             fallbacks.zones = zones
         }
         if (lastKnown) {
             fallbacks.lastKnown = lastKnown
         }
 
-        if (Object.keys(fallbacks).length > 0) {
+        const hasFallbacks = Object.keys(fallbacks).length > 0
+        if (hasFallbacks) {
             locationAuthority.setFallbacks(fallbacks)
         }
-    }, [initialFocus, zones, lastKnown])
 
-    // Auto-request on mount if enabled and not already resolved
-    useEffect(() => {
-        if (autoRequest && state === LocationState.UNKNOWN) {
+        // 2. THEN trigger autoRequest if enabled and not resolved
+        // Only trigger if we have fallbacks OR if none are expected (no zones/lastKnown data passed)
+        const currentState = locationAuthority.getState()
+        if (autoRequest && currentState === LocationState.UNKNOWN) {
+            // If we have fallbacks, they're now set. If not, we go to GPS.
             locationAuthority.requestLocation('auto')
         }
-    }, [autoRequest, state])
+    }, [autoRequest, initialFocus, zones, lastKnown])
 
     // Actions
     const requestLocation = useCallback(async (mode: 'auto' | 'manual' = 'auto') => {

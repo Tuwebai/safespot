@@ -1,5 +1,5 @@
 import { divIcon } from 'leaflet'
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, Fragment, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl, Circle } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
@@ -103,27 +103,65 @@ const RecenterButton = () => {
     )
 }
 
-const SearchAreaButton = ({ onClick, visible, loading }: { onClick: () => void, visible: boolean, loading?: boolean }) => {
+interface SearchAreaButtonProps {
+    onClick: () => void
+    visible: boolean
+    loading?: boolean
+    visibleCount?: number  // ✅ UX: Contador de reportes en viewport
+}
+
+const SearchAreaButton = ({ onClick, visible, loading, visibleCount }: SearchAreaButtonProps) => {
     if (!visible && !loading) return null
     return (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] animate-in fade-in slide-in-from-top-4">
-            <Button
-                onClick={onClick}
-                disabled={loading}
-                className="rounded-full shadow-xl bg-white text-black hover:bg-gray-50 border border-gray-200 px-6 font-semibold"
-            >
-                {loading ? (
-                    <>
-                        <span className="animate-spin mr-2">⏳</span>
-                        Buscando...
-                    </>
-                ) : (
-                    <>
-                        <Search className="w-4 h-4 mr-2" />
-                        Buscar en esta zona
-                    </>
+            <div className="flex items-center gap-3">
+                {/* ✅ Botón principal con alto contraste */}
+                <Button
+                    onClick={onClick}
+                    disabled={loading}
+                    className="rounded-full shadow-2xl bg-black text-white hover:bg-gray-900 border-2 border-neon-green px-6 py-2 font-semibold text-base"
+                >
+                    {loading ? (
+                        <>
+                            <span className="animate-spin mr-2">⏳</span>
+                            Buscando...
+                        </>
+                    ) : (
+                        <>
+                            <Search className="w-4 h-4 mr-2" />
+                            Buscar en esta zona
+                        </>
+                    )}
+                </Button>
+                {/* ✅ Badge contador con fondo sólido */}
+                {!loading && typeof visibleCount === 'number' && visibleCount > 0 && (
+                    <span className="px-4 py-2 rounded-full bg-neon-green text-black text-sm font-bold shadow-2xl border-2 border-white">
+                        {visibleCount} {visibleCount === 1 ? 'reporte' : 'reportes'}
+                    </span>
                 )}
-            </Button>
+            </div>
+        </div>
+    )
+}
+
+// ✅ UX: Badge persistente que muestra resultados de la última búsqueda
+interface SearchResultBadgeProps {
+    searchActive: boolean  // true si hay searchBounds activo
+    resultCount: number
+    isSearching: boolean
+}
+
+const SearchResultBadge = ({ searchActive, resultCount, isSearching }: SearchResultBadgeProps) => {
+    if (!searchActive || isSearching) return null
+    return (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] animate-in fade-in slide-in-from-top-4">
+            {/* ✅ Badge persistente con fondo sólido negro y borde verde para máximo contraste */}
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-black border-2 border-neon-green shadow-2xl">
+                <Search className="w-4 h-4 text-neon-green" />
+                <span className="text-white text-sm font-semibold">
+                    {resultCount} {resultCount === 1 ? 'reporte' : 'reportes'} en esta zona
+                </span>
+            </div>
         </div>
     )
 }
@@ -441,8 +479,9 @@ export function SafeSpotMapClient({
     } = useLocationAuthority({
         initialFocus: initialFocus ? { lat: initialFocus.lat, lng: initialFocus.lng } : null,
         zones: zones?.map(z => ({ type: z.type, lat: z.lat, lng: z.lng })) || null,
+        // ✅ FIX: Convert string to number (backend returns strings)
         lastKnown: settings?.last_known_lat && settings?.last_known_lng
-            ? { lat: settings.last_known_lat, lng: settings.last_known_lng }
+            ? { lat: Number(settings.last_known_lat), lng: Number(settings.last_known_lng) }
             : null,
         autoRequest: true
     })
@@ -500,6 +539,24 @@ export function SafeSpotMapClient({
     }, [])
 
     const showSearchButton = useMapStore(s => s.showSearchAreaButton)
+    const mapBounds = useMapStore(s => s.mapBounds)
+    const searchBounds = useMapStore(s => s.searchBounds)  // ✅ Para badge persistente
+
+    // ✅ UX MEJORA: Cálculo derivado de reportes en viewport (READ-ONLY, sin fetch)
+    const visibleReportsCount = useMemo(() => {
+        if (!mapBounds || !reports.length) return 0
+        return reports.filter(report => {
+            const lat = Number(report.latitude)
+            const lng = Number(report.longitude)
+            if (isNaN(lat) || isNaN(lng)) return false
+            return (
+                lat >= mapBounds.south &&
+                lat <= mapBounds.north &&
+                lng >= mapBounds.west &&
+                lng <= mapBounds.east
+            )
+        }).length
+    }, [mapBounds, reports])
 
     // 🛑 BLOCK RENDER Logic - Consuming Location Authority Engine
 
@@ -615,6 +672,13 @@ export function SafeSpotMapClient({
                     onClick={() => onSearchArea && onSearchArea()}
                     visible={showSearchButton}
                     loading={isSearching}
+                    visibleCount={visibleReportsCount}
+                />
+                {/* ✅ UX: Badge persistente post-búsqueda (solo cuando NO se muestra el botón) */}
+                <SearchResultBadge
+                    searchActive={!!searchBounds && !showSearchButton}
+                    resultCount={reports.length}
+                    isSearching={!!isSearching}
                 />
             </MapContainer>
         </div>

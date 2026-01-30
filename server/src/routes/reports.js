@@ -86,8 +86,10 @@ router.get('/', async (req, res, next) => {
 
       const boundsQuery = `
         SELECT 
-          r.id, r.title, r.category, r.status, r.latitude, r.longitude, 
-          r.created_at, r.is_hidden, r.anonymous_id,
+          r.id, r.title, r.description, r.category, r.zone, r.address,
+          r.status, r.latitude, r.longitude, 
+          r.created_at, r.updated_at, r.is_hidden, r.anonymous_id,
+          r.upvotes_count, r.comments_count, r.image_urls,
           u.alias, u.avatar_url
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
@@ -95,6 +97,7 @@ router.get('/', async (req, res, next) => {
           r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
           AND r.location IS NOT NULL
           AND r.is_hidden = false
+          AND r.deleted_at IS NULL
         ORDER BY r.created_at DESC
         LIMIT 100
       `;

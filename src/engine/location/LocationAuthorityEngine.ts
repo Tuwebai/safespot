@@ -126,11 +126,78 @@ class LocationAuthorityEngine {
     // ===========================================
 
     /**
-     * Set fallback data for resolution pipeline
-     * Call this before requestLocation() with available data
+     * Set fallback data for resolution pipeline.
+     * ✅ FIX: If we're resolving (waiting for GPS) or failed, and we now have fallbacks,
+     * resolve IMMEDIATELY from cached data instead of waiting for GPS timeout.
      */
     public setFallbacks(fallbacks: LocationFallbacks): void {
+        // Merge new fallbacks
         this.fallbacks = { ...this.fallbacks, ...fallbacks }
+
+        console.log('[Location] setFallbacks called', {
+            state: this.state,
+            hasLastKnown: !!this.fallbacks.lastKnown,
+            hasZones: !!(this.fallbacks.zones && this.fallbacks.zones.length > 0),
+            hasInitialFocus: !!this.fallbacks.initialFocus
+        })
+
+        // ✅ FIX: If resolving (GPS pending) or failed, and we have fallbacks → resolve NOW
+        const shouldAutoResolve =
+            (this.state === LocationState.RESOLVING || this.state === LocationState.UNAVAILABLE) &&
+            this.hasFallbacks()
+
+        if (shouldAutoResolve) {
+            console.log('[Location] Have fallbacks + state is RESOLVING/UNAVAILABLE → resolving immediately!')
+            this.abort() // Cancel any pending GPS request
+            this.resolveFromFallbacksOnly()
+        }
+    }
+
+    /**
+     * Check if we have any valid fallbacks
+     */
+    private hasFallbacks(): boolean {
+        return !!(
+            this.fallbacks.initialFocus ||
+            (this.fallbacks.zones && this.fallbacks.zones.length > 0) ||
+            this.fallbacks.lastKnown
+        )
+    }
+
+    /**
+     * Resolve using only fallbacks (no GPS attempt)
+     */
+    private resolveFromFallbacksOnly(): void {
+        // Priority: initialFocus > zones > lastKnown
+        if (this.fallbacks.initialFocus) {
+            const { lat, lng } = this.fallbacks.initialFocus
+            if (this.isValidCoord(lat, lng)) {
+                this.setState(LocationState.RESOLVED, { lat, lng, source: 'initial_focus' })
+                return
+            }
+        }
+
+        if (this.fallbacks.zones && this.fallbacks.zones.length > 0) {
+            const priorityOrder = ['home', 'work', 'frequent']
+            for (const zoneType of priorityOrder) {
+                const zone = this.fallbacks.zones.find(z => z.type === zoneType)
+                if (zone && this.isValidCoord(zone.lat, zone.lng)) {
+                    this.setState(LocationState.RESOLVED, { lat: zone.lat, lng: zone.lng, source: 'zone' })
+                    return
+                }
+            }
+        }
+
+        if (this.fallbacks.lastKnown) {
+            const { lat, lng } = this.fallbacks.lastKnown
+            if (this.isValidCoord(lat, lng)) {
+                this.setState(LocationState.RESOLVED, { lat, lng, source: 'settings' })
+                return
+            }
+        }
+
+        // No valid fallbacks found
+        console.log('[Location] No valid fallbacks to resolve from')
     }
 
     /**

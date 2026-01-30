@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
 // import { PullToRefresh } from '@/components/ui/PullToRefresh' // Removed for map compatibility
 import { reportsApi } from '@/lib/api'
@@ -33,14 +33,13 @@ export function Explorar() {
   const initialFocus = location.state as { focusReportId: string, lat: number, lng: number } | null
   const activateZoneType = (location.state as any)?.activateZoneType as any
   const [searchParams] = useSearchParams()
-  const setShowSearchAreaButton = useMapStore(s => s.setShowSearchAreaButton)
-  const mapBounds = useMapStore(s => s.mapBounds)
   const setSelectedReportId = useMapStore(s => s.setSelectedReportId)
 
-  const [boundsSearchEnabled, setBoundsSearchEnabled] = useState(false)
+  // ✅ FIX: Use searchBounds (normalized) instead of mapBounds (raw)
+  const searchBounds = useMapStore(s => s.searchBounds)
+  const triggerSearchInBounds = useMapStore(s => s.triggerSearchInBounds)
 
   // ✅ PERFORMANCE FIX: Initialize Leaflet icons only when map component loads
-  // This prevents loading Leaflet in the main bundle
   useEffect(() => {
     initializeLeafletIcons()
   }, [])
@@ -53,13 +52,22 @@ export function Explorar() {
     }
   }, [searchParams, setSelectedReportId])
 
+  // ✅ FIX: Parse normalized bounds for API call
+  const parsedBounds = useMemo(() => {
+    if (!searchBounds) return null
+    const [north, south, east, west] = searchBounds.split(',').map(Number)
+    return { north, south, east, west }
+  }, [searchBounds])
+
   // MAIN REPORTS QUERY - Returns IDs (Enterprise Normalization)
+  // ✅ FIX: queryKey uses normalized searchBounds (stable) instead of raw mapBounds
   const { data: reportIds = [], isFetching } = useQuery<string[]>({
-    queryKey: ['reports', 'list', boundsSearchEnabled ? mapBounds : 'all'],
+    queryKey: ['reports', 'list', searchBounds || 'all'],
     queryFn: async () => {
       let data: Report[]
-      if (boundsSearchEnabled && mapBounds) {
-        const { north, south, east, west } = mapBounds
+      if (parsedBounds) {
+        const { north, south, east, west } = parsedBounds
+        console.log('[MapSearch] REQUEST_SENT', { north, south, east, west })
         data = await reportsApi.getReportsInBounds(north, south, east, west)
       } else {
         data = await reportsApi.getAll()
@@ -67,7 +75,7 @@ export function Explorar() {
       // ENTERPRISE: Normalize into cache, return IDs
       return reportsCache.store(queryClient, data)
     },
-    staleTime: 30000, // 30 seconds fresh
+    staleTime: 60000, // 60 seconds fresh (increased for scoped queries)
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
@@ -84,14 +92,14 @@ export function Explorar() {
     return reportIds
   }, [reportIds, reportFromState, queryClient])
 
+  // ✅ FIX: Handler now uses store action with built-in idempotence & telemetry
   const handleSearchInArea = useCallback(() => {
-    if (!mapBounds) return
-    setBoundsSearchEnabled(true)
-    setShowSearchAreaButton(false)
-    // HOTFIX: Don't invalidate - changing queryKey will trigger refetch automatically
-    // The queryKey includes mapBounds, so React Query will refetch when bounds change
-    // No need for manual invalidation (violates SSE-only invariant)
-  }, [mapBounds, setShowSearchAreaButton])
+    const result = triggerSearchInBounds()
+    if (result.triggered) {
+      // Query will automatically refetch due to queryKey change
+    }
+    // If not triggered (idempotent skip), nothing happens - by design
+  }, [triggerSearchInBounds])
 
   return (
     <>
@@ -130,7 +138,7 @@ export function Explorar() {
               <EmptyState
                 variant="map"
                 title="No hay reportes visibles"
-                description={boundsSearchEnabled ? "No encontramos reportes en esta área específica del mapa." : "Actualmente no hay reportes cargados en el sistema."}
+                description={searchBounds ? "No encontramos reportes en esta área específica del mapa." : "Actualmente no hay reportes cargados en el sistema."}
                 action={{
                   label: "Ver Lista Completa",
                   onClick: () => navigate('/reportes'),
