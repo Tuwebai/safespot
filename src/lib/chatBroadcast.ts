@@ -47,7 +47,7 @@ class ChatBroadcastManager {
                 this.notifyListeners(event.data);
             };
             this.isInitialized = true;
-            console.log('[ChatBroadcast] ✅ Initialized');
+            console.debug('[ChatBroadcast] ✅ Initialized');
         } catch (err) {
             console.error('[ChatBroadcast] Failed to initialize:', err);
         }

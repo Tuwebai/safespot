@@ -43,7 +43,7 @@ export const initSentry = () => {
         },
     });
 
-    console.log("[Observability] ✅ Sentry initialized");
+    console.debug("[Observability] ✅ Sentry initialized");
 };
 
 /**

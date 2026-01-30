@@ -60,8 +60,8 @@ class ApplicationBootstrapManager {
     private setState(newState: BootstrapState, reason: string = 'internal') {
         if (this.state === newState) return;
 
-        // 🔴 ENTERPRISE LOGGING: Structured Trace
-        console.info(`[Lifecycle] STATE_TRANSITION from=${this.state} to=${newState} reason=${reason}`);
+        // 🔴 ENTERPRISE LOGGING: Structured Trace (Debug only to keep console clean)
+        console.debug(`[Lifecycle] STATE_TRANSITION from=${this.state} to=${newState} reason=${reason}`);
 
         this.state = newState;
         this.listeners.forEach(fn => fn(newState));
@@ -73,8 +73,8 @@ class ApplicationBootstrapManager {
     public async initialize() {
         if (this.state !== BootstrapState.IDLE) return;
 
-        console.time('[Bootstrap] Secure Boot Sequence');
         this.setState(BootstrapState.BOOTING, 'app_init');
+        const startTime = performance.now();
 
         try {
             // 🧠 FAIL-SAFE BOOT: 8s Hard Limit
@@ -85,7 +85,7 @@ class ApplicationBootstrapManager {
             ]);
 
             const idState = sessionAuthority.getState();
-            console.log(`[Bootstrap] Identity Phase Result: ${idState}`);
+            console.debug(`[Bootstrap] Identity Phase Result: ${idState}`);
 
             if (idState === SessionState.FAILED) {
                 console.error('[Bootstrap] Identity failed. Proceeding in degraded mode.');
@@ -107,7 +107,8 @@ class ApplicationBootstrapManager {
             // GUARANTEE: Always end in RUNNING state to show UI
             this.setState(BootstrapState.RUNNING, 'failsafe_trigger');
         } finally {
-            console.timeEnd('[Bootstrap] Secure Boot Sequence');
+            const duration = performance.now() - startTime;
+            console.debug(`[Bootstrap] Secure Boot Sequence: ${duration.toFixed(2)}ms`);
         }
     }
 
@@ -131,7 +132,7 @@ class ApplicationBootstrapManager {
         this.setState(BootstrapState.RECOVERING, reason);
         this.lastRecoveryAt = now;
 
-        console.log(`[Lifecycle] 🚑 RECOVERY_START attempt=${this.recoveryAttempts + 1} reason=${reason}`);
+        console.debug(`[Lifecycle] 🚑 RECOVERY_START attempt=${this.recoveryAttempts + 1} reason=${reason}`);
 
         try {
             // 🧠 FAIL-SAFE RECOVERY: 10s Hard Limit
@@ -142,7 +143,7 @@ class ApplicationBootstrapManager {
 
             this.setState(BootstrapState.RUNNING, 'recovery_success');
             this.recoveryAttempts = 0;
-            console.log('[Lifecycle] ✅ System Restored');
+            console.debug('[Lifecycle] ✅ System Restored');
 
             // 🧠 MOTOR 4: Notify recovery completed
             dataIntegrityEngine.processEvent({ type: 'lifecycle:recovered' });
@@ -162,17 +163,17 @@ class ApplicationBootstrapManager {
         // A. Identity Check: Only init if we are not in a terminal/ready state
         const idState = sessionAuthority.getState();
         if (idState !== SessionState.READY && idState !== SessionState.DEGRADED) {
-            console.log('[Lifecycle] RECOVERY_STEP identity=verify');
+            console.debug('[Lifecycle] RECOVERY_STEP identity=verify');
             await sessionAuthority.init();
         } else {
-            console.log('[Lifecycle] RECOVERY_STEP identity=skipped');
+            console.debug('[Lifecycle] RECOVERY_STEP identity=skipped');
         }
 
         // 👑 ORCHESTRATOR: Resume and Resync Delta
         realtimeOrchestrator.wake('app_recovery');
 
         // C. Staggered Data Rehydration (Prioritized)
-        console.log('[Lifecycle] RECOVERY_STEP queries=staggered');
+        console.debug('[Lifecycle] RECOVERY_STEP queries=staggered');
 
         // 1. Critical Profile
         await queryClient.refetchQueries({ queryKey: [['users', 'profile']], type: 'active' });
@@ -210,7 +211,7 @@ class ApplicationBootstrapManager {
         // 🧠 MOTOR 4: Pause tick during suspension
         dataIntegrityEngine.processEvent({ type: 'lifecycle:suspended' });
 
-        console.log(`[Lifecycle] 💤 System Suspended reason=${reason}`);
+        console.debug(`[Lifecycle] 💤 System Suspended reason=${reason}`);
     }
 
     private setupSystemListeners() {
@@ -239,7 +240,7 @@ class ApplicationBootstrapManager {
         window.addEventListener('focus', () => {
             // Only trigger if we were potentially stale
             if (this.state === BootstrapState.RUNNING) {
-                console.log('[Lifecycle] App Focused. Checking for freshness...');
+                console.debug('[Lifecycle] App Focused. Checking for freshness...');
                 // Optional: trigger light recovery or just log
             }
         });

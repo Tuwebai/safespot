@@ -61,7 +61,7 @@ class RealtimeOrchestrator {
 
         if (this.activeSubscriptions.includes(url)) return;
 
-        console.log('[Orchestrator] 🚀 Connecting to user stream...');
+        console.debug('[Orchestrator] 🚀 Connecting to user stream...');
 
         // Subscribe to ssePool with a generic handler that we control
         ssePool.subscribe(url, 'message', (event) => this.processRawEvent(event, 'user'));
@@ -88,7 +88,7 @@ class RealtimeOrchestrator {
         const type = data.type || event.type;
 
         // 🔍 DEBUG: Log all incoming events to diagnose message.delivered issue
-        console.log(`[Orchestrator] 📥 RAW EVENT: type=${type} eventType=${event.type}`);
+        console.debug(`[Orchestrator] 📥 RAW EVENT: type=${type} eventType=${event.type}`);
 
         return this.processValidatedData(data, type, channel);
     }
@@ -109,7 +109,7 @@ class RealtimeOrchestrator {
         // 1.5 🏛️ STATUS_EVENTS: Notificar sin persistir (Ticks de entrega/lectura)
         // Estos eventos son idempotentes y no críticos, solo actualizan UI
         if (STATUS_EVENTS.includes(type)) {
-            console.log(`[Orchestrator] 📬 Status event received: ${type}`);
+            console.debug(`[Orchestrator] 📬 Status event received: ${type}`);
             const statusEvent: RealtimeEvent = {
                 eventId: data.eventId || `status_${Date.now()}`,
                 serverTimestamp: data.serverTimestamp || Date.now(),
@@ -148,7 +148,7 @@ class RealtimeOrchestrator {
             if (this.userId) {
                 await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
             }
-            console.log(`[Orchestrator] ✅ Persisted event: ${eventId}`);
+            console.debug(`[Orchestrator] ✅ Persisted event: ${eventId}`);
         } catch (err) {
             console.error('[Orchestrator] ❌ Persistence failure. Aborting notify/ack.', err);
             return;
@@ -200,7 +200,7 @@ class RealtimeOrchestrator {
             method: 'POST',
             headers: { 'X-Client-Id': this.myClientId }
         });
-        console.log(`[Orchestrator] 📬 ACK sent for: ${eventId}`);
+        console.debug(`[Orchestrator] 📬 ACK sent for: ${eventId}`);
     }
 
     /**
@@ -228,7 +228,7 @@ class RealtimeOrchestrator {
             });
 
             if (response.ok) {
-                console.log(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
+                console.debug(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
             } else {
                 console.warn(`[Orchestrator] Message ACK failed: ${response.status} for ${messageId}`);
             }
@@ -244,7 +244,7 @@ class RealtimeOrchestrator {
         if (!this.userId) return;
 
         const lastAt = await localProcessedLog.getLastProcessedAt(this.userId, 'user');
-        console.log(`[Orchestrator] 🚑 Starting Resync from cursor: ${lastAt}`);
+        console.debug(`[Orchestrator] 🚑 Starting Resync from cursor: ${lastAt}`);
 
         try {
             const resp = await fetch(`${API_BASE_URL}/realtime/catchup?since=${lastAt}`);
@@ -257,12 +257,12 @@ class RealtimeOrchestrator {
             }
 
             const events: RealtimeEvent[] = await resp.json();
-            console.log(`[Orchestrator] 🚑 Catchup found ${events.length} events.`);
+            console.debug(`[Orchestrator] 🚑 Catchup found ${events.length} events.`);
 
             for (const event of events) {
                 // Re-route through authoritative processing
                 await this.processValidatedData(event, event.type, 'user');
-                console.log(`[Orchestrator] 🚑 Replayed event: ${event.eventId}`);
+                console.debug(`[Orchestrator] 🚑 Replayed event: ${event.eventId}`);
             }
 
             this.status = 'HEALTHY';
@@ -277,7 +277,7 @@ class RealtimeOrchestrator {
             dataIntegrityEngine.processEvent({ type: 'realtime:status', status: 'DEGRADED' });
 
             // EMERGENCY FALLBACK: Force invalidate critical queries to ensure consistency
-            console.log('[Orchestrator] 🚑 Disaster Recovery: Invalidating critical queries...');
+            console.debug('[Orchestrator] 🚑 Disaster Recovery: Invalidating critical queries...');
             queryClient.invalidateQueries({ queryKey: ['chats'] });
             queryClient.invalidateQueries({ queryKey: ['notifications'] });
         }
@@ -291,18 +291,18 @@ class RealtimeOrchestrator {
         if (!alreadyProcessed) {
             console.warn(`[Orchestrator-Shadow] ⚠️ Inconsistency: Hook ${source} processed event ${eventId} but Orchestrator missed it.`);
         } else {
-            console.log(`[Orchestrator-Shadow] ✅ Consistency: Hook ${source} and Orchestrator both saw ${eventId}`);
+            console.debug(`[Orchestrator-Shadow] ✅ Consistency: Hook ${source} and Orchestrator both saw ${eventId}`);
         }
     }
 
     sleep(reason: string): void {
-        console.log(`[Orchestrator] 💤 Sleeping: ${reason}`);
+        console.debug(`[Orchestrator] 💤 Sleeping: ${reason}`);
         // Here we could implement throttling or heartbeat slows
         // but WE DO NOT close the SSE pool unless instructed.
     }
 
     wake(reason: string): void {
-        console.log(`[Orchestrator] ⏰ Waking up: ${reason}`);
+        console.debug(`[Orchestrator] ⏰ Waking up: ${reason}`);
         this.resync(); // Always resync on wake
     }
 
@@ -318,7 +318,7 @@ class RealtimeOrchestrator {
     destroy(): void {
         this.listeners.clear();
         this.activeSubscriptions = [];
-        console.log('[Orchestrator] ⚰️ Destroyed');
+        console.debug('[Orchestrator] ⚰️ Destroyed');
     }
 }
 

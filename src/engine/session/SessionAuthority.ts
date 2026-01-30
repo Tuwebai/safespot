@@ -54,7 +54,7 @@ class SessionAuthority {
     private readonly STORAGE_KEY = 'safespot_session_v2';
 
     private constructor() {
-        console.log('[SessionAuthority] [v2.1] Initializing Authority Resource...');
+        console.debug('[SessionAuthority] [v2.1] Initializing Authority Resource...');
         this.rehydrate();
     }
 
@@ -78,7 +78,7 @@ class SessionAuthority {
                 if (parsed.expiresAt > now) {
                     this.token = parsed;
                     this.state = SessionState.READY;
-                    console.log(`[SessionAuthority] [READY] Session rehydrated. ID: ${parsed.anonymousId.substring(0, 8)}`);
+                    console.debug(`[SessionAuthority] [READY] Session rehydrated. ID: ${parsed.anonymousId.substring(0, 8)}`);
                 } else {
                     console.warn('[SessionAuthority] [EXPIRED] Stored session has expired.');
                     this.state = SessionState.EXPIRED;
@@ -97,7 +97,7 @@ class SessionAuthority {
         if (this.state === SessionState.READY) return;
         if (this.state === SessionState.BOOTSTRAPPING) return this.bootstrapPromise!;
 
-        console.log('[SessionAuthority] [BOOTSTRAPPING] Negotiating identity with authority server...');
+        console.debug('[SessionAuthority] [BOOTSTRAPPING] Negotiating identity with authority server...');
         this.setState(SessionState.BOOTSTRAPPING);
 
         this.bootstrapPromise = (async () => {
@@ -197,7 +197,7 @@ class SessionAuthority {
 
     private setState(newState: SessionState) {
         if (this.state === newState) return;
-        console.log(`[SessionAuthority] [${this.state}] -> [${newState}]`);
+        console.debug(`[SessionAuthority] [${this.state}] -> [${newState}]`);
         this.state = newState;
         this.notify();
     }

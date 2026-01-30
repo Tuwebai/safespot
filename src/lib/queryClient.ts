@@ -32,9 +32,13 @@ export const queryClient = new QueryClient({
             // ✅ PRODUCTION FIX: Retry transient errors (DNS, packet loss, TLS handshake)
             // 3 retries with exponential backoff: 1s, 2s, 4s (~7s total before final error)
             retry: (failureCount, error: any) => {
-                // Don't retry on 4xx client errors (404, 401, 403, 429 Too Many Requests)
-                // 429 should be handled by backoff, but for now we stop the storm.
+                // 🏛️ MOTOR 7: Permit retries for 429 (Rate Limit) because 
+                // TrafficController handles the global wait.
+                if (error?.status === 429) return failureCount < 2;
+
+                // Don't retry on other 4xx client errors (404, 401, 403)
                 if (error?.status >= 400 && error?.status < 500) return false;
+
                 return failureCount < 3;
             },
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential Backoff

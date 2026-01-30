@@ -16,7 +16,7 @@ export function usePWAInstall() {
             // Stash the event so it can be triggered later.
             setDeferredPrompt(e as BeforeInstallPromptEvent);
             setIsCtx(true);
-            console.log('✅ [PWA] Install prompt intercepted');
+            console.debug('✅ [PWA] Install prompt intercepted');
         };
 
         window.addEventListener('beforeinstallprompt', handler);

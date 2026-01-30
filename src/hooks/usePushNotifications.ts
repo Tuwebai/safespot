@@ -81,7 +81,7 @@ export function usePushNotifications() {
                 });
                 location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             } catch (e) {
-                console.log('[Push] GPS unavailable (Timeout/Denied). Subscribing with generic location scope.');
+                console.debug('[Push] GPS unavailable (Timeout/Denied). Subscribing with generic location scope.');
             }
 
             await apiRequest(SUBSCRIBE_URL, {
@@ -93,7 +93,7 @@ export function usePushNotifications() {
             });
 
             setIsSubscribed(true);
-            console.log('[Push Authority] Subscription fresh and synced.');
+            console.debug('[Push Authority] Subscription fresh and synced.');
 
         } catch (err) {
             console.error('Failed to subscribe:', err);
@@ -131,12 +131,12 @@ export function usePushNotifications() {
                     if (existingSubscription) {
                         // We check if it's potentially stale or if we just want to ensure the backend has it.
                         // For maximum reliability, we re-subscribe to ensure the token is active.
-                        console.log('[Push Authority] Permission is GRANTED and subscription exists. Refreshing to ensure backend sync...');
+                        console.debug('[Push Authority] Permission is GRANTED and subscription exists. Refreshing to ensure backend sync...');
                         await subscribe();
                     } else {
                         // Permission is granted but NO subscription? This is the "Root Cause" of the bug.
                         // We auto-subscribe silently.
-                        console.log('[Push Authority] Permission is GRANTED but NO subscription found. Auto-subscribing...');
+                        console.debug('[Push Authority] Permission is GRANTED but NO subscription found. Auto-subscribing...');
                         await subscribe();
                     }
                 } else {

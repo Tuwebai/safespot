@@ -1,33 +1,7 @@
-/**
- * SSE Connection Manager (v5.0 - Enterprise Resilient)
- * 
- * Capabilities:
- * - Sleep/Wake support for background tabs.
- * - Infinite Backoff (capped) for persistent network issues.
- * - Visibility awareness.
- */
+import { Backoff } from '@/engine/traffic/Backoff';
 
 type SSEListener = (event: MessageEvent) => void;
 type ReconnectCallback = (lastEventId: string | null) => void;
-
-class Backoff {
-    private attempt = 0;
-    private maxDelay = 60000; // Cap at 60s
-    private baseDelay = 1000;
-
-    getDelay() {
-        const exponential = this.baseDelay * Math.pow(2, this.attempt);
-        const cap = Math.min(exponential, this.maxDelay);
-        this.attempt++;
-        return Math.floor(Math.random() * cap * 0.5 + cap * 0.5); // Jitter
-    }
-
-    reset() {
-        this.attempt = 0;
-    }
-
-    get count() { return this.attempt; }
-}
 
 class SSEPool {
     private connections = new Map<string, {

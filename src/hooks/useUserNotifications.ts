@@ -36,14 +36,14 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
         // ============================================
         const unsubReconnect = ssePool.onReconnect(url, async () => {
             try {
-                console.log('[Notifications] SSE reconnected, fetching missed notifications...');
+                console.debug('[Notifications] SSE reconnected, fetching missed notifications...');
 
                 // Import dynamically to avoid circular deps
                 const { notificationsApi } = await import('@/lib/api');
                 const freshNotifications = await notificationsApi.getAll();
 
                 if (freshNotifications && freshNotifications.length > 0) {
-                    console.log(`[Notifications] ✅ Recovered ${freshNotifications.length} notifications`);
+                    console.debug(`[Notifications] ✅ Recovered ${freshNotifications.length} notifications`);
                     // Replace entire list with fresh data (dedup not needed - full refresh)
                     queryClient.setQueryData(
                         ['notifications', 'list', anonymousId],

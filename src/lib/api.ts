@@ -48,6 +48,7 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
 
 
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
+import { trafficController } from '@/engine/traffic/TrafficController';
 
 /**
  * Get headers with anonymous_id, client_id, and APP VERSION
@@ -107,6 +108,10 @@ export async function apiRequest<T>(
 
   // 1. Generate Correlation ID for this specific request
   const requestId = self.crypto.randomUUID();
+
+  // 🏛️ MOTOR 7: Traffic Control Gate
+  // Pause if the system is globally throttled or rate limited
+  await trafficController.waitUntilAllowed();
 
   // 🔴 ENTERPRISE: Request Gate (Motor 2 Resilience)
   // If system is bootstrapping or recovering, we pause the request
@@ -181,6 +186,9 @@ export async function apiRequest<T>(
 
     // Handle 429 Too Many Requests specifically
     if (response.status === 429) {
+      // 🏛️ MOTOR 7: Activate global backoff
+      trafficController.reportRateLimit();
+
       throw new AppClientError(
         'Demasiadas peticiones. Por favor, esperá un momento.',
         'RATE_LIMIT_EXCEEDED',
@@ -188,6 +196,9 @@ export async function apiRequest<T>(
         true
       );
     }
+
+    // ✅ MOTOR 7: Record successful request to reset backoff
+    trafficController.notifySuccess();
 
     // Parse JSON safely
     const data = await response.json().catch(() => ({
@@ -386,31 +397,37 @@ export const reportsApi = {
    * Create a new report
    */
   create: async (data: CreateReportData): Promise<Report> => {
-    const rawReport = await apiRequest<RawReport>('/reports', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    return transformReport(rawReport);
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>('/reports', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      return transformReport(rawReport);
+    }, 'CREATE_REPORT');
   },
 
   /**
    * Update a report
    */
   update: async (id: string, data: Partial<CreateReportData>): Promise<Report> => {
-    const rawReport = await apiRequest<RawReport>(`/reports/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-    return transformReport(rawReport);
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>(`/reports/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+      return transformReport(rawReport);
+    }, 'UPDATE_REPORT');
   },
 
   /**
    * Delete a report
    */
   delete: async (id: string): Promise<void> => {
-    return apiRequest<void>(`/reports/${id}`, {
-      method: 'DELETE',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/reports/${id}`, {
+        method: 'DELETE',
+      });
+    }, 'DELETE_REPORT');
   },
 
   /**
@@ -452,35 +469,41 @@ export const reportsApi = {
    * Register a share event
    */
   registerShare: async (id: string): Promise<void> => {
-    await apiRequest(`/reports/${id}/share`, { method: 'POST' });
+    return trafficController.enqueueSerial(async () => {
+      await apiRequest(`/reports/${id}/share`, { method: 'POST' });
+    }, 'REGISTER_SHARE');
   },
 
   /**
    * Toggle favorite status for a report
    */
   toggleFavorite: async (reportId: string): Promise<{ is_favorite: boolean }> => {
-    // apiRequest already extracts data.data, so response is already { is_favorite: boolean }
-    const response = await apiRequest<{ is_favorite: boolean }>(
-      `/reports/${reportId}/favorite`,
-      {
-        method: 'POST',
-      }
-    );
-    return response;
+    return trafficController.enqueueSerial(async () => {
+      // apiRequest already extracts data.data, so response is already { is_favorite: boolean }
+      const response = await apiRequest<{ is_favorite: boolean }>(
+        `/reports/${reportId}/favorite`,
+        {
+          method: 'POST',
+        }
+      );
+      return response;
+    }, 'TOGGLE_FAVORITE');
   },
 
   /**
    * Flag a report as inappropriate
    */
   flag: async (reportId: string, reason?: string): Promise<{ is_flagged: boolean; flag_id: string }> => {
-    const response = await apiRequest<{ is_flagged: boolean; flag_id: string }>(
-      `/reports/${reportId}/flag`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      }
-    );
-    return response;
+    return trafficController.enqueueSerial(async () => {
+      const response = await apiRequest<{ is_flagged: boolean; flag_id: string }>(
+        `/reports/${reportId}/flag`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        }
+      );
+      return response;
+    }, 'FLAG_REPORT');
   },
 };
 
@@ -535,11 +558,13 @@ export const commentsApi = {
    * If parent_id is provided, creates a reply to that comment
    */
   create: async (data: CreateCommentData): Promise<Comment> => {
-    const raw = await apiRequest<RawComment>('/comments', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    return transformComment(raw);
+    return trafficController.enqueueSerial(async () => {
+      const raw = await apiRequest<RawComment>('/comments', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      return transformComment(raw);
+    }, 'CREATE_COMMENT');
   },
 
   /**
@@ -547,20 +572,24 @@ export const commentsApi = {
    * Only the creator can update their own comment
    */
   update: async (id: string, content: string): Promise<Comment> => {
-    const raw = await apiRequest<RawComment>(`/comments/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ content }),
-    });
-    return transformComment(raw);
+    return trafficController.enqueueSerial(async () => {
+      const raw = await apiRequest<RawComment>(`/comments/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      });
+      return transformComment(raw);
+    }, 'UPDATE_COMMENT');
   },
 
   /**
    * Delete a comment
    */
   delete: async (id: string): Promise<void> => {
-    return apiRequest<void>(`/comments/${id}`, {
-      method: 'DELETE',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/comments/${id}`, {
+        method: 'DELETE',
+      });
+    }, 'DELETE_COMMENT');
   },
 
   /**
@@ -568,14 +597,16 @@ export const commentsApi = {
    * Returns updated like status and count
    */
   like: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }> => {
-    // apiRequest already extracts data.data, so response is the final object
-    const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
-      `/comments/${commentId}/like`,
-      {
-        method: 'POST',
-      }
-    );
-    return response;
+    return trafficController.enqueueSerial(async () => {
+      // apiRequest already extracts data.data, so response is the final object
+      const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
+        `/comments/${commentId}/like`,
+        {
+          method: 'POST',
+        }
+      );
+      return response;
+    }, 'LIKE_COMMENT');
   },
 
   /**
@@ -583,46 +614,54 @@ export const commentsApi = {
    * Returns updated like status and count
    */
   unlike: async (commentId: string): Promise<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }> => {
-    // apiRequest already extracts data.data, so response is the final object
-    const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
-      `/comments/${commentId}/like`,
-      {
-        method: 'DELETE',
-      }
-    );
-    return response;
+    return trafficController.enqueueSerial(async () => {
+      // apiRequest already extracts data.data, so response is the final object
+      const response = await apiRequest<{ liked: boolean; upvotes_count: number; newBadges?: NewBadge[] }>(
+        `/comments/${commentId}/like`,
+        {
+          method: 'DELETE',
+        }
+      );
+      return response;
+    }, 'UNLIKE_COMMENT');
   },
 
   /**
    * Flag a comment as inappropriate
    */
   flag: async (commentId: string, reason?: string): Promise<{ flagged: boolean; flag_id: string }> => {
-    const response = await apiRequest<{ flagged: boolean; flag_id: string }>(
-      `/comments/${commentId}/flag`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      }
-    );
-    return response;
+    return trafficController.enqueueSerial(async () => {
+      const response = await apiRequest<{ flagged: boolean; flag_id: string }>(
+        `/comments/${commentId}/flag`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        }
+      );
+      return response;
+    }, 'FLAG_COMMENT');
   },
 
   /**
    * Pin a comment
    */
   pin: async (commentId: string): Promise<{ is_pinned: boolean }> => {
-    return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
-      method: 'POST',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
+        method: 'POST',
+      });
+    }, 'PIN_COMMENT');
   },
 
   /**
    * Unpin a comment
    */
   unpin: async (commentId: string): Promise<{ is_pinned: boolean }> => {
-    return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
-      method: 'DELETE',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ is_pinned: boolean }>(`/comments/${commentId}/pin`, {
+        method: 'DELETE',
+      });
+    }, 'UNPIN_COMMENT');
   },
 };
 
@@ -648,20 +687,24 @@ export const votesApi = {
    * Create a vote (upvote)
    */
   create: async (data: CreateVoteData): Promise<Vote> => {
-    return apiRequest<Vote>('/votes', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<Vote>('/votes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    }, 'CREATE_VOTE');
   },
 
   /**
    * Remove a vote (unvote)
    */
   remove: async (data: CreateVoteData): Promise<void> => {
-    return apiRequest<void>('/votes', {
-      method: 'DELETE',
-      body: JSON.stringify(data),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>('/votes', {
+        method: 'DELETE',
+        body: JSON.stringify(data),
+      });
+    }, 'REMOVE_VOTE');
   },
 
   /**
@@ -736,10 +779,12 @@ export const usersApi = {
     alias?: string,
     interest_radius_meters?: number
   }): Promise<UserProfile> => {
-    return apiRequest<UserProfile>('/users/profile', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<UserProfile>('/users/profile', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    }, 'UPDATE_PROFILE');
   },
 
   /**
@@ -752,38 +797,42 @@ export const usersApi = {
     lat?: number,
     lng?: number
   }): Promise<UserProfile> => {
-    return apiRequest<UserProfile>('/users/profile/location', {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<UserProfile>('/users/profile/location', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    }, 'UPDATE_LOCATION');
   },
 
   /**
    * Upload user avatar
    */
   uploadAvatar: async (file: File): Promise<{ avatar_url: string }> => {
-    const formData = new FormData();
-    formData.append('avatar', file);
+    return trafficController.enqueueSerial(async () => {
+      const formData = new FormData();
+      formData.append('avatar', file);
 
-    const anonymousId = ensureAnonymousId();
+      const anonymousId = ensureAnonymousId();
 
-    const response = await fetch(`${API_BASE_URL}/users/avatar`, {
-      method: 'POST',
-      headers: {
-        'X-Anonymous-Id': anonymousId, // Do NOT set Content-Type for FormData, browser does it with boundary
-      },
-      body: formData,
-    });
+      const response = await fetch(`${API_BASE_URL}/users/avatar`, {
+        method: 'POST',
+        headers: {
+          'X-Anonymous-Id': anonymousId, // Do NOT set Content-Type for FormData, browser does it with boundary
+        },
+        body: formData,
+      });
 
-    const data = await response.json().catch(() => ({
-      error: 'Unknown error',
-    }));
+      const data = await response.json().catch(() => ({
+        error: 'Unknown error',
+      }));
 
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Failed to upload avatar');
-    }
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Failed to upload avatar');
+      }
 
-    return data.data;
+      return data.data;
+    }, 'UPLOAD_AVATAR');
   },
 
   /**
@@ -825,18 +874,22 @@ export const usersApi = {
    * Follow a user
    */
   follow: async (followingId: string): Promise<{ success: boolean }> => {
-    return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
-      method: 'POST',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
+        method: 'POST',
+      });
+    }, 'FOLLOW_USER');
   },
 
   /**
    * Unfollow a user
    */
   unfollow: async (followingId: string): Promise<{ success: boolean }> => {
-    return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
-      method: 'DELETE',
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ success: boolean }>(`/users/follow/${followingId}`, {
+        method: 'DELETE',
+      });
+    }, 'UNFOLLOW_USER');
   },
 
   /**
@@ -913,25 +966,35 @@ export const notificationsApi = {
     return apiRequest<Notification[]>('/notifications');
   },
   markRead: async (id: string): Promise<void> => {
-    return apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' });
+    }, 'MARK_NOTIFICATION_READ');
   },
   markAllRead: async (): Promise<void> => {
-    return apiRequest<void>('/notifications/read-all', { method: 'PATCH' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>('/notifications/read-all', { method: 'PATCH' });
+    }, 'MARK_ALL_NOTIFICATIONS_READ');
   },
   deleteAll: async (): Promise<void> => {
-    return apiRequest<void>('/notifications', { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>('/notifications', { method: 'DELETE' });
+    }, 'DELETE_ALL_NOTIFICATIONS');
   },
   getSettings: async (): Promise<NotificationSettings> => {
     return apiRequest<NotificationSettings>('/notifications/settings');
   },
   updateSettings: async (settings: Partial<NotificationSettings>): Promise<NotificationSettings> => {
-    return apiRequest<NotificationSettings>('/notifications/settings', {
-      method: 'PATCH',
-      body: JSON.stringify(settings),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<NotificationSettings>('/notifications/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      });
+    }, 'UPDATE_NOTIFICATION_SETTINGS');
   },
   delete: async (id: string): Promise<void> => {
-    return apiRequest<void>(`/notifications/${id}`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/notifications/${id}`, { method: 'DELETE' });
+    }, 'DELETE_NOTIFICATION');
   }
 };
 
@@ -998,10 +1061,12 @@ export const chatsApi = {
     return apiRequest<ChatMessage[]>(`/chats/rooms/${roomId}/messages${query}`);
   },
   sendMessage: async (roomId: string, content: string, type = 'text', caption?: string, replyToId?: string, tempId?: string): Promise<ChatMessage> => {
-    return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, temp_id: tempId }),
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ content, type, caption, reply_to_id: replyToId, temp_id: tempId }),
+      });
+    }, 'SEND_MESSAGE');
   },
   createRoom: async (params: { reportId?: string; recipientId?: string }): Promise<ChatRoom> => {
     return apiRequest<ChatRoom>('/chats/rooms', {
@@ -1035,10 +1100,12 @@ export const chatsApi = {
     return json.data || json;
   },
   reactToMessage: async (roomId: string, messageId: string, emoji: string): Promise<{ success: boolean }> => {
-    return apiRequest(`chats/rooms/${roomId}/messages/${messageId}/reactions`, {
-      method: 'POST',
-      body: JSON.stringify({ emoji })
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest(`chats/rooms/${roomId}/messages/${messageId}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji })
+      });
+    }, 'REACT_TO_MESSAGE');
   },
   // ✅ FIX: Missing methods from build error
   notifyTyping: async (roomId: string, isTyping: boolean): Promise<void> => {
@@ -1049,16 +1116,24 @@ export const chatsApi = {
   },
   // Chat Actions
   pinChat: async (roomId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'POST' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'POST' });
+    }, 'PIN_CHAT');
   },
   unpinChat: async (roomId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/pin`, { method: 'DELETE' });
+    }, 'UNPIN_CHAT');
   },
   archiveChat: async (roomId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'POST' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'POST' });
+    }, 'ARCHIVE_CHAT');
   },
   unarchiveChat: async (roomId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/archive`, { method: 'DELETE' });
+    }, 'UNARCHIVE_CHAT');
   },
   markChatUnread: async (roomId: string, unread: boolean): Promise<void> => {
     return apiRequest<void>(`/chats/rooms/${roomId}/unread`, {
@@ -1072,25 +1147,37 @@ export const chatsApi = {
 
   // Message Actions
   pinMessage: async (roomId: string, messageId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'POST' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'POST' });
+    }, 'PIN_MESSAGE');
   },
   unpinMessage: async (roomId: string, messageId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'DELETE' });
+    }, 'UNPIN_MESSAGE');
   },
   starMessage: async (roomId: string, messageId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'POST' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'POST' });
+    }, 'STAR_MESSAGE');
   },
   unstarMessage: async (roomId: string, messageId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/star`, { method: 'DELETE' });
+    }, 'UNSTAR_MESSAGE');
   },
   editMessage: async (roomId: string, messageId: string, content: string): Promise<ChatMessage> => {
-    return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages/${messageId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ content })
-    });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<ChatMessage>(`/chats/rooms/${roomId}/messages/${messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content })
+      });
+    }, 'EDIT_MESSAGE');
   },
   deleteMessage: async (roomId: string, messageId: string): Promise<void> => {
-    return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}`, { method: 'DELETE' });
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}`, { method: 'DELETE' });
+    }, 'DELETE_MESSAGE');
   }
 };
 

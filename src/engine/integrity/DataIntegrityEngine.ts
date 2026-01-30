@@ -123,7 +123,7 @@ class DataIntegrityEngine {
     private readonly DEGRADED_THRESHOLD_MS = 30_000; // 30s in DEGRADED triggers suspect
 
     constructor() {
-        console.log('[Integrity] Motor 4 initialized');
+        console.debug('[Integrity] Motor 4 initialized');
     }
 
     // ===========================================
@@ -142,7 +142,7 @@ class DataIntegrityEngine {
             }
         }, this.TICK_INTERVAL_MS);
 
-        console.log('[Integrity] ✅ Engine started with 60s tick');
+        console.debug('[Integrity] ✅ Engine started with 60s tick');
     }
 
     /**
@@ -164,7 +164,7 @@ class DataIntegrityEngine {
      * Punto de entrada principal para eventos
      */
     public processEvent(event: IntegrityEvent): void {
-        console.log(`[Integrity] EVENT: ${event.type}`);
+        console.debug(`[Integrity] EVENT: ${event.type}`);
 
         switch (event.type) {
             case 'lifecycle:running':
@@ -222,7 +222,7 @@ class DataIntegrityEngine {
     private onLifecycleRunning(): void {
         // ⚠️ AJUSTE 3: reanudar tick
         this.isTickPaused = false;
-        console.log('[Integrity] Tick resumed (lifecycle running)');
+        console.debug('[Integrity] Tick resumed (lifecycle running)');
     }
 
     private onLifecycleRecovered(): void {
@@ -230,14 +230,14 @@ class DataIntegrityEngine {
         this.isTickPaused = false;
 
         // Forzar verificación de todas las queries trackeadas
-        console.log('[Integrity] 🚑 Post-recovery verification triggered');
+        console.debug('[Integrity] 🚑 Post-recovery verification triggered');
         this.verifyAllTrackedQueries();
     }
 
     private onLifecycleSuspended(): void {
         // ⚠️ AJUSTE 3: pausar tick en SUSPENDED
         this.isTickPaused = true;
-        console.log('[Integrity] Tick paused (lifecycle suspended)');
+        console.debug('[Integrity] Tick paused (lifecycle suspended)');
     }
 
     private onRealtimeStatus(status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED'): void {
@@ -262,7 +262,7 @@ class DataIntegrityEngine {
             }
         }
 
-        console.log(`[Integrity] Realtime status: ${prevStatus} → ${status}`);
+        console.debug(`[Integrity] Realtime status: ${prevStatus} → ${status}`);
     }
 
     private onQueryError(queryKey: unknown[]): void {
@@ -337,7 +337,7 @@ class DataIntegrityEngine {
                 errorCount: 0,
                 threshold,
             });
-            console.log(`[Integrity] Tracking query: ${keyStr} (threshold: ${threshold / 1000}s)`);
+            console.debug(`[Integrity] Tracking query: ${keyStr} (threshold: ${threshold / 1000}s)`);
         }
     }
 
@@ -370,7 +370,7 @@ class DataIntegrityEngine {
         }
 
         if (staleQueries.length > 0) {
-            console.log(`[Integrity] Found ${staleQueries.length} stale queries`);
+            console.debug(`[Integrity] Found ${staleQueries.length} stale queries`);
 
             if (this.state === DataIntegrityState.DATA_HEALTHY) {
                 this.setState(DataIntegrityState.DATA_STALE);
@@ -498,7 +498,7 @@ class DataIntegrityEngine {
         this.isHealingInProgress = false;
 
         if (success) {
-            console.log('[Integrity] ✅ Healing completed successfully');
+            console.debug('[Integrity] ✅ Healing completed successfully');
             this.setState(DataIntegrityState.DATA_HEALTHY);
         } else {
             console.warn('[Integrity] ⚠️ Healing completed with issues');
@@ -514,7 +514,7 @@ class DataIntegrityEngine {
     private setState(newState: DataIntegrityState): void {
         if (this.state === newState) return;
 
-        console.info(`[Integrity] STATE_TRANSITION from=${this.state} to=${newState}`);
+        console.debug(`[Integrity] STATE_TRANSITION from=${this.state} to=${newState}`);
 
         this.state = newState;
         this.stateListeners.forEach(fn => fn(newState));
@@ -528,7 +528,7 @@ class DataIntegrityEngine {
             ? decision.message
             : `${'queryKey' in decision ? JSON.stringify(decision.queryKey) : ''} reason=${decision.reason}`;
 
-        console.log(`[Integrity] DECISION: ${decision.type}`, logDetails);
+        console.debug(`[Integrity] DECISION: ${decision.type}`, logDetails);
 
         // Notificar listeners (para testing/telemetría/override)
         this.decisionListeners.forEach(fn => fn(decision));

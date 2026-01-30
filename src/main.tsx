@@ -40,14 +40,14 @@ const CACHE_VERSION_KEY = 'ss_cache_schema_version';
         for (const registration of registrations) {
           await registration.unregister();
         }
-        console.log('[SecureBoot] ✅ Unregistered all Service Workers');
+        console.debug('[SecureBoot] ✅ Unregistered all Service Workers');
       }
 
       // 2. Clear ALL browser caches (Cache API)
       if ('caches' in window) {
         const cacheNames = await caches.keys();
         await Promise.all(cacheNames.map(name => caches.delete(name)));
-        console.log('[SecureBoot] ✅ Cleared all Cache API entries');
+        console.debug('[SecureBoot] ✅ Cleared all Cache API entries');
       }
 
       // 3. Clear localStorage (except auth & identity)
@@ -61,11 +61,11 @@ const CACHE_VERSION_KEY = 'ss_cache_schema_version';
       if (identityBackup) localStorage.setItem('safespot_anonymous_id', identityBackup);
       if (sessionV2Backup) localStorage.setItem('safespot_session_v2', sessionV2Backup);
 
-      console.log('[SecureBoot] ✅ Cleared localStorage (Identity & Auth preserved)');
+      console.debug('[SecureBoot] ✅ Cleared localStorage (Identity & Auth preserved)');
 
       // 4. Clear sessionStorage
       sessionStorage.clear();
-      console.log('[SecureBoot] ✅ Cleared sessionStorage');
+      console.debug('[SecureBoot] ✅ Cleared sessionStorage');
 
       // 5. Mark new schema version
       localStorage.setItem(CACHE_VERSION_KEY, CACHE_SCHEMA_VERSION);

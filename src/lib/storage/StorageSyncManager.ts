@@ -34,7 +34,7 @@ export class StorageSyncManager {
         if (this.isSupported) {
             this.channel = new BroadcastChannel('safespot-storage-sync');
             this.listenBroadcast();
-            console.log('[StorageSync] ✅ BroadcastChannel initialized (tabId:', this.tabId.substring(0, 8) + ')');
+            console.debug('[StorageSync] ✅ BroadcastChannel initialized (tabId:', this.tabId.substring(0, 8) + ')');
         } else {
             console.warn('[StorageSync] BroadcastChannel not supported, using storage events fallback');
         }

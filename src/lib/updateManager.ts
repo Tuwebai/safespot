@@ -45,7 +45,7 @@ class UpdateManager {
                 this.checkForDeployUpdate();
             }, POLLING_INTERVAL_PROD);
         } else {
-            console.info('[UpdateManager] DEV mode → silent updates DISABLED, but SW registration allowed.');
+            console.debug('[UpdateManager] DEV mode → silent updates DISABLED, but SW registration allowed.');
         }
 
         // 2. Core SW Registration (Needed for Push/PWA in both Dev & Prod)
