@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomContr
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
 import { ZoneType } from '@/lib/constants'
-import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2 } from 'lucide-react'
+import { Navigation, Search, ShieldAlert, Home, Briefcase, MapPin, X, Trash2, Check } from 'lucide-react'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useUserZones } from '@/hooks/useUserZones'
 import { useReport, useReportsBatch } from '@/hooks/queries/useReportsQuery'
@@ -274,16 +274,26 @@ const ZoneMarkers = () => {
     )
 }
 
-const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType | null, setActiveType: (t: ZoneType | null) => void }) => {
+const AlertZoneControl = ({
+    activeType,
+    setActiveType,
+    zones = []
+}: {
+    activeType: ZoneType | null,
+    setActiveType: (t: ZoneType | null) => void,
+    zones?: any[]
+}) => {
+    const hasZone = (type: string) => zones.some(z => z.type === type);
+
     return (
         <div className="absolute top-2 sm:top-20 left-2 sm:left-4 z-[1000] flex flex-col gap-2 scale-90 sm:scale-100 origin-top-left">
             <div className="bg-zinc-950 p-2 sm:p-3 rounded-2xl border border-zinc-800 shadow-[0_0_30px_rgba(0,0,0,0.6)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px]">
                 <div className="flex items-center justify-between gap-2 sm:gap-4 px-1">
                     <div className="flex items-center gap-2">
                         <div className="p-1 sm:p-1.5 bg-neon-green/10 rounded-lg">
-                            <ShieldAlert className="w-3.5 h-3.5 sm:w-4 h-4 text-neon-green" />
+                            <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neon-green" />
                         </div>
-                        <span className="font-bold text-[10px] sm:text-xs text-white tracking-tight">MODO ALERTA</span>
+                        <span className="font-bold text-[10px] sm:text-xs text-white tracking-tight">MIS ZONAS</span>
                     </div>
                     {activeType && (
                         <Button
@@ -304,8 +314,14 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                         className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'home' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-emerald-500'}`}
                         onClick={() => setActiveType(activeType === 'home' ? null : 'home')}
                     >
-                        <Home className="w-4 h-4" />
-                        <span className="text-xs font-semibold">Casa</span>
+                        <div className="relative">
+                            <Home className="w-4 h-4" />
+                            {hasZone('home') && (
+                                <div className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border border-zinc-950 shadow-[0_0_5px_rgba(16,185,129,0.8)]" />
+                            )}
+                        </div>
+                        <span className="text-xs font-semibold flex-1">Casa</span>
+                        {hasZone('home') && <Check className="w-3 h-3 text-emerald-500" />}
                     </Button>
                     <Button
                         variant={activeType === 'work' ? 'default' : 'ghost'}
@@ -313,8 +329,14 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                         className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'work' ? 'bg-blue-500 hover:bg-blue-600 shadow-[0_0_15px_rgba(59,130,246,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-blue-500'}`}
                         onClick={() => setActiveType(activeType === 'work' ? null : 'work')}
                     >
-                        <Briefcase className="w-4 h-4" />
-                        <span className="text-xs font-semibold">Trabajo</span>
+                        <div className="relative">
+                            <Briefcase className="w-4 h-4" />
+                            {hasZone('work') && (
+                                <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full border border-zinc-950 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />
+                            )}
+                        </div>
+                        <span className="text-xs font-semibold flex-1">Trabajo</span>
+                        {hasZone('work') && <Check className="w-3 h-3 text-blue-500" />}
                     </Button>
                     <Button
                         variant={activeType === 'frequent' ? 'default' : 'ghost'}
@@ -322,8 +344,14 @@ const AlertZoneControl = ({ activeType, setActiveType }: { activeType: ZoneType 
                         className={`justify-start gap-3 h-10 px-3 rounded-xl transition-all duration-200 ${activeType === 'frequent' ? 'bg-amber-500 hover:bg-amber-600 shadow-[0_0_15px_rgba(245,158,11,0.3)] text-white' : 'hover:bg-zinc-800 text-zinc-300 hover:text-amber-500'}`}
                         onClick={() => setActiveType(activeType === 'frequent' ? null : 'frequent')}
                     >
-                        <MapPin className="w-4 h-4" />
-                        <span className="text-xs font-semibold">Zona Frecuente</span>
+                        <div className="relative">
+                            <MapPin className="w-4 h-4" />
+                            {hasZone('frequent') && (
+                                <div className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full border border-zinc-950 shadow-[0_0_5px_rgba(245,158,11,0.8)]" />
+                            )}
+                        </div>
+                        <span className="text-xs font-semibold flex-1">Zona Frecuente</span>
+                        {hasZone('frequent') && <Check className="w-3 h-3 text-amber-500" />}
                     </Button>
                 </div>
 
@@ -615,7 +643,13 @@ export function SafeSpotMapClient({
             className={`relative w-full h-full min-h-[500px] bg-dark-bg z-0 ${className} ${activeZoneType ? 'map-placement-mode' : ''}`}
         >
             {/* Zone Management UI */}
-            {!hideControls && <AlertZoneControl activeType={activeZoneType} setActiveType={setActiveZoneType} />}
+            {!hideControls && (
+                <AlertZoneControl
+                    activeType={activeZoneType}
+                    setActiveType={setActiveZoneType}
+                    zones={zones}
+                />
+            )}
 
 
             <MapContainer

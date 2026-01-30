@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { MapPin, Navigation, ArrowRight } from 'lucide-react'
+import { MapPin, ArrowRight } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { Button } from '@/components/ui/button'
 import { FavoriteButton } from '@/components/FavoriteButton'
@@ -29,13 +29,14 @@ export function ReportMapCard({ report: rawReport }: ReportMapCardProps) {
         )
         : null
 
+    // 📌 PRIVACY-FIRST: Round distance to nearest 50m for meters, or 0.1km for km
     const formattedDistance = distanceMeters !== null
         ? distanceMeters < 1000
-            ? `${Math.round(distanceMeters)} m`
-            : `${(distanceMeters / 1000).toFixed(1)} km`
+            ? `${Math.round(distanceMeters / 50) * 50} m`
+            : `${(Math.round(distanceMeters / 100) / 10).toFixed(1)} km`
         : null
 
-    const timeAgo = formatDistanceToNow(new Date(report.created_at), { addSuffix: true, locale: es })
+    const timeAgo = formatDistanceToNow(new Date(report.createdAt), { addSuffix: true, locale: es })
 
     return (
         <div className="flex flex-col gap-4 p-4 min-w-[260px] max-w-[300px] bg-card text-foreground rounded-lg">
@@ -43,7 +44,7 @@ export function ReportMapCard({ report: rawReport }: ReportMapCardProps) {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Avatar className="h-8 w-8 border border-border shrink-0 shadow-sm">
-                        <AvatarImage src={report.author.avatarUrl} alt={report.author.alias} />
+                        <AvatarImage src={report.authorAvatar} alt={report.authorAlias} />
                         <AvatarFallback className="bg-muted text-[10px] text-muted-foreground font-bold">
                             {report.avatarFallback}
                         </AvatarFallback>
@@ -73,13 +74,13 @@ export function ReportMapCard({ report: rawReport }: ReportMapCardProps) {
                 <div className="flex flex-wrap gap-2">
                     {formattedDistance && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-neon-green text-black text-[10px] font-bold shadow-sm">
-                            <Navigation className="w-3 h-3 fill-current rotate-[45deg]" />
-                            A {formattedDistance} de vos
+                            <MapPin className="w-3 h-3 text-black" />
+                            A {formattedDistance} de tu ubicación
                         </div>
                     )}
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-dark-bg border border-dark-border text-[10px] text-muted-foreground font-medium">
-                        <MapPin className="w-3 h-3 text-neon-green" />
-                        {report.zone || "Zona detectada"}
+                        <span className="text-neon-green font-bold mr-0.5">Zona:</span>
+                        {report.zoneName}
                     </div>
                 </div>
             </div>

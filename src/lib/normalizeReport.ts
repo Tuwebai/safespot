@@ -14,6 +14,12 @@ export interface NormalizedReport extends Report {
     displayAuthor: string     // "@alias" or "Usuario {shortId}"
     avatarFallback: string    // First 2 chars of author.id for avatar
     formattedDate: string     // Formatted created_at
+    authorAlias: string       // Flat alias for UI
+    authorAvatar: string      // Flat avatar URL
+    createdAt: string         // Original created_at preserved
+    latitude: number | null
+    longitude: number | null
+    zoneName: string          // Flat zone name fallback
     _isOptimistic?: boolean   // Flag to prevent premature fetching
 }
 
@@ -41,6 +47,12 @@ export function normalizeReportForUI(report: Report): NormalizedReport {
                 ? `@${authorAlias}`
                 : `Usuario ${safeAuthorId.substring(0, 6)}`,
         formattedDate: formatDate(report.created_at),
+        authorAlias: isDeletedUser ? 'Usuario' : (authorAlias || 'Anónimo'),
+        authorAvatar: report.author?.avatarUrl || '',
+        createdAt: report.created_at,
+        latitude: report.latitude ? Number(report.latitude) : null,
+        longitude: report.longitude ? Number(report.longitude) : null,
+        zoneName: report.zone || 'Zona detectada',
         _isOptimistic: report._isOptimistic // ✅ EXPLICIT PRESERVATION
     };
 }
