@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/store/authStore';
-import { getAnonymousIdSafe } from '@/lib/identity';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
 
 /**
  * 🔴 ENTERPRISE FIX: Resolve Creator Identity (SSOT)
@@ -11,6 +11,7 @@ import { getAnonymousIdSafe } from '@/lib/identity';
  * - Si anónimo → creator = anonymous_id (identity dispositiva)
  * 
  * Esto asegura que el ID local coincida con lo que el servidor guardará.
+ * CENTRALIZADO: Ahora usa SessionAuthority para evitar fractura de identidad.
  */
 
 export interface CreatorInfo {
@@ -37,7 +38,6 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
     // CASO 1: Usuario autenticado (PRIORIDAD ABSOLUTA DE ID)
     if (auth.token && auth.user?.auth_id) {
         // Smart Merge: Prefer Cached Alias > Auth Store Alias > 'Usuario'
-        // This handles cases where auth store has stale login snapshot but profile query is fresh
         const authAlias = auth.user.alias;
 
         let finalAlias = 'Usuario';
@@ -51,12 +51,20 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
             creator_id: auth.user.auth_id,
             creator_type: 'user',
             displayAlias: finalAlias,
-            avatarUrl: cachedAvatar || auth.user.avatar_url // Prefer fresh avatar too
+            avatarUrl: cachedAvatar || auth.user.avatar_url
         };
     }
 
-    // CASO 2: Usuario anónimo (Fallback a Device ID)
-    const anonymousId = getAnonymousIdSafe();
+    // CASO 2: Usuario anónimo (Fallback a Device ID vía SSOT Authority)
+    const anonymousId = sessionAuthority.getAnonymousId();
+
+    if (!anonymousId) {
+        console.warn('[resolveCreator] Identity not ready in SessionAuthority. Falling back to local identity.');
+        // If authority is not ready, we can't block, so we use a safe fallback but log it.
+        // This should be rare if UI guards are active.
+    }
+
+    const finalId = anonymousId || 'unknown';
     const localAlias = localStorage.getItem('anonymous_alias');
 
     // Priority: Cache > LocalStorage > Default
@@ -64,7 +72,7 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
     const finalAvatar = cachedAvatar || undefined;
 
     return {
-        creator_id: anonymousId,
+        creator_id: finalId,
         creator_type: 'anonymous',
         displayAlias: finalAlias,
         avatarUrl: finalAvatar

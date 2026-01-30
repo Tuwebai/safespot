@@ -75,7 +75,7 @@ class LocationAuthorityEngine {
     private fallbacks: LocationFallbacks = {}
 
     private constructor() {
-        console.log('[Location] Engine initialized')
+        console.debug('[Location] Engine initialized')
     }
 
     // ===========================================
@@ -134,7 +134,7 @@ class LocationAuthorityEngine {
         // Merge new fallbacks
         this.fallbacks = { ...this.fallbacks, ...fallbacks }
 
-        console.log('[Location] setFallbacks called', {
+        console.debug('[Location] setFallbacks called', {
             state: this.state,
             hasLastKnown: !!this.fallbacks.lastKnown,
             hasZones: !!(this.fallbacks.zones && this.fallbacks.zones.length > 0),
@@ -147,7 +147,7 @@ class LocationAuthorityEngine {
             this.hasFallbacks()
 
         if (shouldAutoResolve) {
-            console.log('[Location] Have fallbacks + state is RESOLVING/UNAVAILABLE → resolving immediately!')
+            console.debug('[Location] Have fallbacks + state is RESOLVING/UNAVAILABLE → resolving immediately!')
             this.abort() // Cancel any pending GPS request
             this.resolveFromFallbacksOnly()
         }
@@ -197,7 +197,7 @@ class LocationAuthorityEngine {
         }
 
         // No valid fallbacks found
-        console.log('[Location] No valid fallbacks to resolve from')
+        console.debug('[Location] No valid fallbacks to resolve from')
     }
 
     /**
@@ -207,7 +207,7 @@ class LocationAuthorityEngine {
     public async requestLocation(mode: 'auto' | 'manual' = 'auto'): Promise<void> {
         // Prevent concurrent resolutions
         if (this.isResolving) {
-            console.log('[Location] Already resolving, ignoring request')
+            console.debug('[Location] Already resolving, ignoring request')
             return
         }
 
@@ -236,7 +236,7 @@ class LocationAuthorityEngine {
         if (this.abortController) {
             this.abortController.abort()
             this.isResolving = false
-            console.log('[Location] Resolution aborted')
+            console.debug('[Location] Resolution aborted')
         }
     }
 
@@ -264,7 +264,7 @@ class LocationAuthorityEngine {
         if (previousState === newState && this.position === position) return
 
         // ✅ LOGGING TRANSICIONES (Recomendación Staff)
-        console.log(`[Location] STATE_CHANGE: ${previousState} → ${newState}`,
+        console.debug(`[Location] STATE_CHANGE: ${previousState} → ${newState}`,
             position ? `(${position.lat.toFixed(4)}, ${position.lng.toFixed(4)} via ${position.source})` : '')
 
         this.state = newState

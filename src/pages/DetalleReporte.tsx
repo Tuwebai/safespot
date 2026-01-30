@@ -102,8 +102,11 @@ export function DetalleReporte() {
   // REALTIME: Subscribe to instant comment updates via SSE
   useRealtimeComments(id)
 
+  // ✅ ENTERPRISE FIX: Identity check must come before reactive listeners
+  const isOwner = useIsOwner(initialReport?.author?.id);
+
   // REALTIME: Listen for report deletion to redirect
-  useReportDeletionListener(id)
+  useReportDeletionListener(id, isOwner)
 
   // HIGHLIGHT: Auto-scroll to comment if param exists
   useHighlightContext({
@@ -128,8 +131,6 @@ export function DetalleReporte() {
     }
   };
 
-  // ✅ ENTERPRISE FIX #1: Use SSOT for identity via centralized permissions (Reactive)
-  const isOwner = useIsOwner(report?.author?.id);
 
 
 

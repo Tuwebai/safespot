@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryKeys';
-import type { Report } from '@/lib/schemas';
+import type { Report, ReportFilters } from '@/lib/api';
 import type { Comment } from '@/lib/api';
 import type { NormalizedReport } from '@/lib/normalizeReport';
 import { normalizeReportForUI } from '@/lib/normalizeReport';
@@ -127,9 +127,10 @@ export const reportsCache = {
         queryClient.setQueriesData<Report[]>(
             { queryKey: ['reports', 'list'], exact: false },
             (oldList) => {
-                if (!Array.isArray(oldList)) return []
+                // ✅ ENTERPRISE FIX: Preserve undefined/loading state. NUNCA retornar [] si no hay lista.
+                if (!Array.isArray(oldList)) return oldList;
                 // Filter objects by ID
-                return oldList.filter(report => report.id !== reportId)
+                return oldList.filter(report => report.id !== reportId);
             }
         );
     },
@@ -166,40 +167,57 @@ export const reportsCache = {
         );
     },
 
-    /**
-     * Add a report ID to the TOP of the lists (New Report)
-     * ✅ ENTERPRISE FIX: Uses prefix match to prepend to ALL list queries
-     * ✅ STRICT DEDUPLICATION: Ensures no unique key warnings
-     */
     prepend: (queryClient: QueryClient, newReport: Report) => {
         // ✅ ENTERPRISE: Normalize for UI before storing
         const normalizedReport = normalizeReportForUI(newReport);
 
-        // 1. Store Canonical
+        // 1. Store Canonical (Essential for detail view)
         queryClient.setQueryData(queryKeys.reports.detail(normalizedReport.id), normalizedReport);
 
-        // 2. Update ALL matching lists (with or without filters)
-        queryClient.setQueriesData<Report[]>(
-            { queryKey: ['reports', 'list'], exact: false },
-            (old) => {
-                // Ensure we are working with an array of objects
-                const list = Array.isArray(old) ? old : [];
+        // 2. Update matching lists surgically
+        // Use getQueriesData to identify existing lists in cache
+        const queries = queryClient.getQueriesData<Report[]>({ queryKey: ['reports', 'list'], exact: false });
 
-                // Strict Deduplication using ID check on objects
-                // Filter out the new ID if it already exists to move it to top
-                const uniqueOld = list.filter(r => r.id !== normalizedReport.id);
+        queries.forEach(([queryKey, oldData]) => {
+            // ✅ ENTERPRISE FIX: Skip lists that are not yet hydrated or are loading
+            if (!Array.isArray(oldData)) return;
 
+            const filters = queryKey[2] as ReportFilters | undefined;
+
+            // Verify if the report matches the specific query filters
+            const matches = !filters || reportsCache.matchesFilters(normalizedReport, filters);
+            if (!matches) return;
+
+            // Apply update ONLY to that specific query, preserving rest of state
+            queryClient.setQueryData<Report[]>(queryKey, (old) => {
+                if (!Array.isArray(old)) return old; // redundant but safe
+                const uniqueOld = old.filter(r => r.id !== normalizedReport.id);
                 return [normalizedReport, ...uniqueOld];
-            }
-        );
+            });
+        });
 
-        // 3. Explicitly initialize default list if it doesn't exist
-        const defaultKey = queryKeys.reports.list();
-        const existingDefault = queryClient.getQueryData(defaultKey);
-        if (!existingDefault) {
-            // Initialize with full object array
-            queryClient.setQueryData(defaultKey, [normalizedReport]);
-        }
+        // ✅ REDESIGN: Step 3 Fallback REMOVED. 
+        // We never seed a list with incomplete data. If it doesn't exist, the UI will fetch it.
+    },
+
+    /**
+     * Internal filter matcher for surgical cache updates
+     */
+    matchesFilters: (report: NormalizedReport, filters: ReportFilters): boolean => {
+        // Filter by category
+        if (filters.category && report.category !== filters.category) return false;
+
+        // Filter by status
+        if (filters.status && report.status !== filters.status) return false;
+
+        // Filter by zone
+        if (filters.zone && report.zone !== filters.zone) return false;
+
+        // Search filters and location-radius filters are harder to match client-side 
+        // without heavy logic, so we remain conservative to avoid false positives.
+        if (filters.search || filters.radius) return false;
+
+        return true;
     },
 
     /**

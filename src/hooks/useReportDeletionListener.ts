@@ -2,8 +2,18 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { API_BASE_URL } from '@/lib/api'
 import { useToast } from '@/components/ui/toast/useToast'
+import { ssePool } from '@/lib/ssePool'
+import { getClientId } from '@/lib/clientId'
 
-export function useReportDeletionListener(reportId?: string) {
+/**
+ * Real-time Deletion Listener
+ * 
+ * RESPONSIBILITY: Handle redirections and notifications when a report is deleted.
+ * 
+ * @param reportId ID of the report being viewed
+ * @param isOwner Whether the current user is the owner of this report
+ */
+export function useReportDeletionListener(reportId?: string, isOwner: boolean = false) {
     const navigate = useNavigate()
     const { error } = useToast()
 
@@ -11,19 +21,24 @@ export function useReportDeletionListener(reportId?: string) {
         if (!reportId) return
 
         const url = `${API_BASE_URL}/realtime/feed`
-        const eventSource = new EventSource(url)
+        const myClientId = getClientId()
 
-        eventSource.onmessage = null // Explicitly nullify default handler
-
-        eventSource.addEventListener('report-delete', (event: MessageEvent) => {
+        const unsub = ssePool.subscribe(url, 'report-delete', (event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data)
 
                 if (data.id === reportId) {
-                    // Show toast
-                    error("Reporte eliminado: El autor ha eliminado este reporte.", 5000);
+                    // SILENCE POLICY: 
+                    // 1. If it's my own deletion action (same tab/client), I already showed a success toast.
+                    // 2. If I'm the owner (different tab/client), I don't need the "author deleted" message.
+                    const isMyAction = data.originClientId === myClientId
+                    const shouldNotify = !isMyAction && !isOwner
 
-                    // Redirect to home/reports
+                    if (shouldNotify) {
+                        error("Reporte eliminado: El autor ha eliminado este reporte.", 5000)
+                    }
+
+                    // REDIRECT POLICY: Always redirect everyone to home/reports to maintain consistency
                     navigate('/reportes', { replace: true })
                 }
             } catch (err) {
@@ -32,7 +47,7 @@ export function useReportDeletionListener(reportId?: string) {
         })
 
         return () => {
-            eventSource.close()
+            unsub()
         }
-    }, [reportId, navigate, error])
+    }, [reportId, isOwner, navigate, error])
 }
