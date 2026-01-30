@@ -410,13 +410,18 @@ export function useToggleFavoriteMutation() {
             }
             return { previousDetail }
         },
+        onSuccess: (result, reportId) => {
+            // SERVER RECONCILIATION: Ensure cache matches server reality
+            if (result && typeof result.is_favorite === 'boolean') {
+                reportsCache.patch(queryClient, reportId, { is_favorite: result.is_favorite })
+            }
+        },
         onError: (_, reportId, context) => {
             if (context?.previousDetail) {
                 queryClient.setQueryData(queryKeys.reports.detail(reportId), context.previousDetail)
             }
         },
-        onSettled: (_, __, reportId) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.user.favorites })
             triggerBadgeCheck()
         },
@@ -440,14 +445,18 @@ export function useFlagReportMutation() {
             }
             return { previousDetail, reportId }
         },
+        onSuccess: (result, { reportId }) => {
+            // SERVER RECONCILIATION
+            if (result && typeof result.is_flagged === 'boolean') {
+                reportsCache.patch(queryClient, reportId, { is_flagged: result.is_flagged })
+            }
+        },
         onError: (_, __, context) => {
             if (context?.reportId && context.previousDetail) {
                 queryClient.setQueryData(queryKeys.reports.detail(context.reportId), context.previousDetail)
             }
         },
-        onSettled: (_, __, { reportId }) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
-            queryClient.invalidateQueries({ queryKey: ['reports', 'list'] })
+        onSettled: () => {
             triggerBadgeCheck()
         },
     })

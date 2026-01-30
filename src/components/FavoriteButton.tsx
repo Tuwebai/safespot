@@ -1,4 +1,4 @@
-import { Heart } from 'lucide-react'
+import { Heart, Star } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ interface FavoriteButtonProps {
     count?: number
     label?: string
     disabled?: boolean
+    useStar?: boolean
 }
 
 export function FavoriteButton({
@@ -28,7 +29,8 @@ export function FavoriteButton({
     showCount = false,
     count = 0,
     label,
-    disabled = false
+    disabled = false,
+    useStar = false
 }: FavoriteButtonProps) {
     const toast = useToast()
     const { mutate: toggleFavorite } = useToggleFavoriteMutation()
@@ -75,7 +77,11 @@ export function FavoriteButton({
                     ease: "easeOut"
                 }}
             >
-                <Heart className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} aria-hidden="true" />
+                {useStar ? (
+                    <Star className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} aria-hidden="true" />
+                ) : (
+                    <Heart className={cn("h-4 w-4", label ? "mr-2" : "", isFavorite ? 'fill-current' : '')} aria-hidden="true" />
+                )}
             </motion.div>
             {label && <span>{label}</span>}
             {showCount && !label && <span className="ml-1">{count}</span>}

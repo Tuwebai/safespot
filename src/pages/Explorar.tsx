@@ -124,7 +124,7 @@ export function Explorar() {
         <div className="absolute bottom-20 left-4 z-[1000] md:bottom-6 md:left-6">
           <Button
             onClick={() => navigate('/reportes')}
-            className="bg-dark-card hover:bg-dark-card/90 text-foreground shadow-lg h-12"
+            className="bg-black hover:bg-gray-900 text-white shadow-2xl h-12 border-2 border-neon-green font-semibold"
           >
             <List className="h-5 w-5 mr-2" />
             Ver Lista
