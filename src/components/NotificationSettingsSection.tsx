@@ -283,7 +283,7 @@ export function NotificationSettingsSection() {
     );
 
     if (loadError) return (
-        <Card className="bg-dark-card border-dark-border border-red-900/20">
+        <Card className="bg-dark-card border-red-900/20">
             <CardContent className="p-6 text-center">
                 <p className="text-red-400 mb-2">No se pudieron cargar tus ajustes</p>
                 <Button
