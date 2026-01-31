@@ -1,0 +1,80 @@
+--- Triggers on report_flags ---
+--- Function: calculate_trust_score ---
+
+DECLARE
+    -- Factors
+    base_score DECIMAL := 50.0;
+    
+    -- Metrics
+    v_votes_received INTEGER;
+    v_reports_verified INTEGER;
+    v_flags_received INTEGER;
+    v_reports_deleted INTEGER;
+    v_comments_deleted INTEGER;
+    v_antiquity_weeks INTEGER;
+    v_flags_given_false INTEGER;
+    
+    -- Calculation
+    calculated_score DECIMAL;
+BEGIN
+    -- Fetch metrics from table
+    SELECT 
+        votes_received_up,
+        reports_verified,
+        flags_received_count,
+        reports_deleted,
+        comments_deleted,
+        EXTRACT(EPOCH FROM (NOW() - created_at)) / 604800, -- Weeks active
+        flags_given_false -- Placeholder for future use
+    INTO 
+        v_votes_received,
+        v_reports_verified,
+        v_flags_received,
+        v_reports_deleted,
+        v_comments_deleted,
+        v_antiquity_weeks,
+        v_flags_given_false
+    FROM anonymous_trust_scores
+    WHERE anonymous_id = target_id;
+
+    -- Handle case where user not found
+    IF NOT FOUND THEN
+        RETURN 50.0;
+    END IF;
+
+    -- Apply Formula
+    -- 1. Positive Factors
+    -- Upvotes: +0.1 per upvote (so +1 per 10 upvotes), Max +20 pts total
+    calculated_score := base_score + LEAST(20.0, (v_votes_received * 0.1));
+    
+    -- Verified Reports: +5 per report
+    calculated_score := calculated_score + (v_reports_verified * 5.0);
+    
+    -- Antiquity: +1 per week, Max +10 pts
+    calculated_score := calculated_score + LEAST(10.0, (v_antiquity_weeks * 1.0));
+
+    -- 2. Negative Factors (Penalties)
+    -- Flags Received: -5 points per flag (Assuming raw flags are somewhat noisy, unverified)
+    -- *Correction*: Design said -15 for VALIDATED flags. 
+    -- Since we only have raw flags_received_count right now, let's use a softer penalty 
+    -- or assume application logic increments 'flags_received_count' ONLY for valid flags.
+    -- For this implementation, we'll treat 'flags_received_count' as "Flags that haven't been dismissed"
+    -- Let's apply -2 points per raw flag received (precautionary) and heavier for deleted content.
+    calculated_score := calculated_score - (v_flags_received * 2.0);
+    
+    -- Reports Deleted (Spam/TOS): -20 points (Severe)
+    calculated_score := calculated_score - (v_reports_deleted * 20.0);
+    
+    -- Comments Deleted: -5 points
+    calculated_score := calculated_score - (v_comments_deleted * 5.0);
+
+    -- 3. Clamp Result (0 to 100)
+    IF calculated_score > 100.0 THEN
+        calculated_score := 100.0;
+    ELSIF calculated_score < 0.0 THEN
+        calculated_score := 0.0;
+    END IF;
+
+    RETURN calculated_score;
+END;
+

@@ -5,7 +5,6 @@ import type { Comment } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
-import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { getPlainTextFromTipTap } from '@/lib/tiptap-content'
 import {
     useCommentsQuery,
@@ -236,12 +235,11 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
         try {
             await createMutation.mutateAsync({
                 report_id: reportId,
-                content: rich || plain, // Try rich first, fallback to plain
+                content: rich || plain,
             })
-
-            triggerBadgeCheck()
+            // toast.success removed as per user request
         } catch (error) {
-            handleErrorWithMessage(error, 'Error al crear comentario', toast.error, 'useCommentsManager.submitComment')
+            handleErrorWithMessage(error, 'Error al comentar', toast.error, 'useCommentsManager.submitComment')
             dispatch({ type: 'END_SUBMIT' })
         }
     }, [reportId, state.commentText, state.submitting, normalizeCommentPayload, createMutation, toast])
@@ -271,7 +269,6 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
                 parent_id: parentId,
             })
 
-            triggerBadgeCheck()
         } catch (error) {
             handleErrorWithMessage(error, 'Error al responder', toast.error, 'useCommentsManager.submitReply')
             dispatch({ type: 'END_SUBMIT' })
@@ -301,7 +298,6 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
             })
 
             dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'thread' })
-            triggerBadgeCheck()
             // toast.success removed as per user request
         } catch (error) {
             handleErrorWithMessage(error, 'Error al crear hilo', toast.error, 'useCommentsManager.submitThread')

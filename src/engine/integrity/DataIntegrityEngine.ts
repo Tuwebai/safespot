@@ -15,6 +15,8 @@
  */
 
 import { queryClient } from '@/lib/queryClient';
+import { leaderElection, LeadershipState } from '@/lib/realtime/LeaderElection';
+import { telemetry, TelemetryEnvelope, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 // ===========================================
 // TYPES & INTERFACES
@@ -51,7 +53,10 @@ export type IntegrityEvent =
     | { type: 'realtime:status'; status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED' }
     | { type: 'query:error'; queryKey: unknown[] }
     | { type: 'storage:corrupt'; key: string }
-    | { type: 'integrity:tick' };
+    | { type: 'integrity:tick' }
+    // 🚀 PROACTIVE TRIGGERS (Fase E)
+    | { type: 'leader:failover_completed' }
+    | { type: 'telemetry:anomaly'; envelope: TelemetryEnvelope };
 
 /**
  * Metadata de una query trackeada
@@ -142,7 +147,25 @@ class DataIntegrityEngine {
             }
         }, this.TICK_INTERVAL_MS);
 
-        console.debug('[Integrity] ✅ Engine started with 60s tick');
+        // 🚀 PROACTIVE SUBSCRIPTIONS (M11 + M8)
+
+        // 1. Leader Failover (P1)
+        leaderElection.onChange((state) => {
+            if (state === LeadershipState.LEADING) {
+                this.processEvent({ type: 'leader:failover_completed' });
+            }
+        });
+
+        // 2. Telemetry Anomalies (P3)
+        telemetry.subscribe((env) => {
+            // Only care about SYSTEM signals or ERRORs that might indicate data loss
+            if (env.severity === TelemetrySeverity.ERROR ||
+                (env.severity === TelemetrySeverity.WARN && env.engine === 'SSE')) {
+                this.processEvent({ type: 'telemetry:anomaly', envelope: env });
+            }
+        });
+
+        console.debug('[Integrity] ✅ Engine started with Proactive Triggers (M11, M8)');
     }
 
     /**
@@ -187,6 +210,12 @@ class DataIntegrityEngine {
                 break;
             case 'integrity:tick':
                 this.onTick();
+                break;
+            case 'leader:failover_completed':
+                this.onLeaderFailover();
+                break;
+            case 'telemetry:anomaly':
+                this.onTelemetryAnomaly(event.envelope);
                 break;
         }
     }
@@ -314,6 +343,21 @@ class DataIntegrityEngine {
 
         // Verificar age de queries
         this.checkQueryAges();
+    }
+
+    private onLeaderFailover(): void {
+        console.log('[Integrity] 👑 Leader Failover detected. Verifying consistency...');
+        // Force immediate verification regardless of state
+        // This is P1 Priority
+        this.verifyAllTrackedQueries();
+    }
+
+    private onTelemetryAnomaly(env: TelemetryEnvelope): void {
+        // P3 Priority - Reactive check
+        if (this.state === DataIntegrityState.DATA_HEALTHY) {
+            console.warn(`[Integrity] Telemetry Anomaly detected (${env.engine}), entering SUSPECT.`);
+            this.setState(DataIntegrityState.DATA_SUSPECT);
+        }
     }
 
     // ===========================================

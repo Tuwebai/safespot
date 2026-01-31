@@ -72,7 +72,7 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     // Get user stats
     const userResult = await queryWithRLS(
       anonymousId,
-      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url, alias 
+      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url, alias, is_official, role
        FROM anonymous_users WHERE anonymous_id = $1`,
       [anonymousId]
     ).catch(e => {
@@ -432,10 +432,10 @@ router.get('/public/:alias', async (req, res) => {
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(alias);
 
     const query = isUUID
-      ? `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
+      ? `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at, role, is_official
          FROM anonymous_users 
          WHERE anonymous_id = $1`
-      : `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at
+      : `SELECT anonymous_id, alias, avatar_url, level, points, total_reports, created_at, role, is_official
          FROM anonymous_users 
          WHERE LOWER(alias) = LOWER($1)`;
 

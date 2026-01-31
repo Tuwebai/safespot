@@ -26,6 +26,10 @@ export class Backoff {
         this.attempt = 0;
     }
 
+    setAttempt(count: number) {
+        this.attempt = count;
+    }
+
     get count() {
         return this.attempt;
     }

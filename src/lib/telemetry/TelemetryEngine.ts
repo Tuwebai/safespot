@@ -110,7 +110,12 @@ class TelemetryEngine {
     }
 
     private logToConsole(env: TelemetryEnvelope) {
-        if (!import.meta.env.DEV && env.severity === TelemetrySeverity.DEBUG) return;
+        // M8 Fix: Strict Production Silence (Phase F)
+        if (!import.meta.env.DEV && (
+            env.severity === TelemetrySeverity.DEBUG ||
+            env.severity === TelemetrySeverity.INFO ||
+            env.severity === TelemetrySeverity.SIGNAL
+        )) return;
 
         const icon = this.getSeverityIcon(env.severity);
         const prefix = `[${env.instanceId}] [${env.traceId}] [${env.engine}]`;

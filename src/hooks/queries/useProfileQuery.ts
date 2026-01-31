@@ -30,7 +30,7 @@ export function useFavoritesQuery() {
     const anonymousId = useAnonymousId();  // ✅ SSOT
 
     return useQuery({
-        queryKey: ['user', 'favorites', anonymousId],  // ✅ Include ID
+        queryKey: queryKeys.user.favorites,  // ✅ Use standard key from factory
         queryFn: () => favoritesApi.getAll(),
         enabled: !!anonymousId,  // ✅ CRITICAL
         staleTime: 60 * 1000,

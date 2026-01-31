@@ -92,6 +92,13 @@ export class StorageSyncManager {
 
             const operation: 'set' | 'remove' = event.newValue === null ? 'remove' : 'set';
 
+            // Filter out internal high-frequency noise
+            if (event.key === 'safespot_leader_lease' || event.key.startsWith('safespot_heartbeat_')) {
+                // Do not log these, they are too frequent
+                this.handleStorageChange(event.key, operation);
+                return;
+            }
+
             console.log(`[StorageSync] Native storage event: ${operation} ${event.key}`);
             this.handleStorageChange(event.key, operation);
         });
@@ -170,10 +177,20 @@ export class StorageSyncManager {
             return [];  // Already handled
         }
 
+        // Internal System Keys - Ignore silently
+        if (
+            storageKey === 'safespot_leader_lease' ||
+            storageKey.startsWith('safespot_heartbeat_') ||
+            storageKey.startsWith('safespot_debug_')
+        ) {
+            return [];
+        }
+
         // If no specific mapping, be conservative and don't invalidate
         // (Better to have stale data than unnecessary refetches)
         if (queryKeys.length === 0) {
-            console.log(`[StorageSync] No query mapping for: ${storageKey}`);
+            // Only warn for unknown keys that might be important
+            console.debug(`[StorageSync] No query mapping for: ${storageKey}`);
         }
 
         return queryKeys;

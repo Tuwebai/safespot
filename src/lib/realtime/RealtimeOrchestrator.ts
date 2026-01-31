@@ -5,6 +5,13 @@ import { queryClient } from '../queryClient';
 import { getClientId } from '../clientId';
 import { dataIntegrityEngine } from '@/engine/integrity';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
+import { reportsCache, statsCache, commentsCache } from '../cache-helpers';
+import { reportSchema } from '../schemas';
+import { upsertInList } from '@/lib/realtime-utils';
+import { NOTIFICATIONS_QUERY_KEY } from '@/hooks/queries/useNotificationsQuery';
+import { eventAuthorityLog } from './EventAuthorityLog';
+import { queryKeys } from '../queryKeys';
+import { leaderElection, LeadershipState } from './LeaderElection';
 
 /**
  * 👑 RealtimeOrchestrator
@@ -42,12 +49,45 @@ const CONTROL_EVENTS = ['connected', 'heartbeat', 'presence', 'presence-update',
 // pero SÍ necesitan notificar a los listeners para actualizar UI
 const STATUS_EVENTS = ['message.delivered', 'message.read'];
 
+const FEED_EVENTS = [
+    'report-create',
+    'report-update',
+    'status-change',
+    'report-delete',
+    'user-create'
+];
+
 class RealtimeOrchestrator {
     private listeners: Set<EventCallback> = new Set();
     private activeSubscriptions: string[] = [];
+    private dynamicSubscriptions: Map<string, () => void> = new Map();
     private userId: string | null = null;
     private myClientId: string = getClientId();
     private status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
+    private syncChannel: BroadcastChannel;
+
+    constructor() {
+        this.syncChannel = new BroadcastChannel('safespot-m11-events');
+        this.syncChannel.onmessage = (e) => this.handleSyncEvent(e.data);
+
+        // 👑 Leadership Failover handler
+        leaderElection.onChange((state) => {
+            if (state === LeadershipState.LEADING) {
+                console.log('[Orchestrator] 👑 Leadership assumed. Waking up context...');
+                this.wake('leadership_assumed');
+            } else {
+                // Too noisy
+                console.debug('[Orchestrator] 👥 Following active leader.');
+            }
+        });
+    }
+
+    // 🚥 PHASE D TELEMETRY
+    private stats = {
+        received: 0,
+        processed: 0,
+        dropped: 0
+    };
 
     public getHealthStatus() {
         return this.status;
@@ -58,20 +98,26 @@ class RealtimeOrchestrator {
      */
     async connect(userId: string): Promise<void> {
         this.userId = userId;
-        const url = `${API_BASE_URL}/realtime/user/${userId}`;
+        const userUrl = `${API_BASE_URL}/realtime/user/${userId}`;
+        const feedUrl = `${API_BASE_URL}/realtime/feed`;
 
-        if (this.activeSubscriptions.includes(url)) return;
+        // 1. User Stream (Domain Events: Chats, Notifications, Presence)
+        if (!this.activeSubscriptions.includes(userUrl)) {
+            console.debug('[Orchestrator] 🚀 Connecting to user stream...');
+            ssePool.subscribe(userUrl, 'message', (event) => this.processRawEvent(event, 'user'));
+            ssePool.subscribe(userUrl, 'notification', (event) => this.processRawEvent(event, 'user'));
+            ssePool.subscribe(userUrl, 'presence-update', (event) => this.processRawEvent(event, 'user'));
+            this.activeSubscriptions.push(userUrl);
+        }
 
-        console.debug('[Orchestrator] 🚀 Connecting to user stream...');
-
-        // Subscribe to ssePool with a generic handler that we control
-        ssePool.subscribe(url, 'message', (event) => this.processRawEvent(event, 'user'));
-
-        // We also need to catch named events if the backend doesn't use standard Message format
-        // But ssePool proxies names to 'message' if requested, or we add listeners here.
-        // For robustness, ssePool is built to proxy everything to the registered handlers.
-
-        this.activeSubscriptions.push(url);
+        // 2. Global Feed Stream (Community Events: Reports, Stats)
+        if (!this.activeSubscriptions.includes(feedUrl)) {
+            console.debug('[Orchestrator] 🌐 Connecting to global feed...');
+            FEED_EVENTS.forEach(eventName => {
+                ssePool.subscribe(feedUrl, eventName, (event) => this.processRawEvent(event, 'feed'));
+            });
+            this.activeSubscriptions.push(feedUrl);
+        }
     }
 
     /**
@@ -87,17 +133,17 @@ class RealtimeOrchestrator {
         }
 
         const type = data.type || event.type;
+        const traceId = (event as any).traceId || telemetry.getTraceId();
 
-        // 📡 MOTOR 8: Start Root Trace for Incoming Message
-        const traceId = telemetry.startTrace();
+        // 📡 MOTOR 8: Propagate Root Trace
         telemetry.emit({
             engine: 'Orchestrator',
             severity: TelemetrySeverity.DEBUG,
             traceId,
-            payload: { action: 'raw_event_received', type, channel }
+            payload: { action: 'raw_event_processing_start', type, channel }
         });
 
-        return this.processValidatedData(data, type, channel);
+        return telemetry.runInContext(traceId, () => this.processValidatedData(data, type, channel));
     }
 
     /**
@@ -109,7 +155,17 @@ class RealtimeOrchestrator {
 
         // 1. Classification & Control Bypass
         if (CONTROL_EVENTS.includes(type)) {
-            // console.debug(`[Orchestrator] 🧊 Control event received: ${type}`);
+            // 📡 MOTOR 8: Signal Control Event Bypass
+            telemetry.emit({
+                engine: 'Orchestrator',
+                severity: TelemetrySeverity.DEBUG,
+                payload: {
+                    action: 'event_discarded_by_filter',
+                    type,
+                    reason: 'control_event',
+                    context: { route: window.location.pathname }
+                }
+            });
             return;
         }
 
@@ -133,52 +189,79 @@ class RealtimeOrchestrator {
 
         // 2. Contract Verification (ONLY for Domain Events)
         if (!eventId || !serverTimestamp) {
-            // SILENT FAIL for system events that might have slipped through CONTROL_EVENTS list
-            return;
-        }
-
-        // 2. Suppression (Echo & Local Duplication)
-        if (originClientId === this.myClientId) {
-            // console.debug('[Orchestrator] 🔂 Echo suppressed:', eventId);
-            return;
-        }
-
-        const alreadyProcessed = await localProcessedLog.isEventProcessed(eventId);
-        if (alreadyProcessed) {
-            // console.debug('[Orchestrator] 🛡️ Duplicate suppressed (IndexedDB):', eventId);
-
-            // 📡 MOTOR 8: Trace Duplication
+            // 📡 MOTOR 8: Signal Invalid Contract
             telemetry.emit({
                 engine: 'Orchestrator',
-                severity: TelemetrySeverity.DEBUG,
-                payload: { action: 'event_suppressed_duplicate', eventId }
+                severity: TelemetrySeverity.WARN,
+                payload: { action: 'event_discarded_by_filter', type, reason: 'missing_contract_fields' }
             });
             return;
         }
 
-        // 3. Persist (INVARIANTE 1)
-        try {
-            await localProcessedLog.markEventAsProcessed(eventId, serverTimestamp);
-            if (this.userId) {
-                await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
+        // 2. Suppression (Authority Log + Echo Suppression)
+        this.stats.received++;
+
+        if (!eventAuthorityLog.shouldProcess(eventId, originClientId, this.myClientId)) {
+            this.stats.dropped++;
+
+            return;
+        }
+
+        // 2.5 Secondary check (IndexedDB) - Rare but safe for cold boot
+        const alreadyInIDB = await localProcessedLog.isEventProcessed(eventId);
+        if (alreadyInIDB) {
+            this.stats.dropped++;
+            eventAuthorityLog.record({
+                eventId,
+                type,
+                domain: (channel.startsWith('social') ? 'social' : channel) as any,
+                serverTimestamp,
+                processedAt: Date.now(),
+                originClientId: originClientId || 'unknown'
+            });
+            return;
+        }
+
+        // 3. Persist (INVARIANTE 1) - ONLY LEADERS PERSIST TO DB
+        if (leaderElection.isLeader()) {
+            try {
+                await localProcessedLog.markEventAsProcessed(eventId, serverTimestamp);
+                if (this.userId) {
+                    await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
+                }
+                console.debug(`[Orchestrator] ✅ Persisted event: ${eventId}`);
+
+                // 📡 MOTOR 8: Trace Persistence
+                telemetry.emit({
+                    engine: 'Orchestrator',
+                    severity: TelemetrySeverity.DEBUG,
+                    payload: { action: 'event_persisted', eventId, channel }
+                });
+            } catch (err) {
+                console.error('[Orchestrator] ❌ Persistence failure. Aborting notify/ack.', err);
+                return;
             }
-            console.debug(`[Orchestrator] ✅ Persisted event: ${eventId}`);
+        }
 
-            // 📡 MOTOR 8: Trace Persistence
-            telemetry.emit({
-                engine: 'Orchestrator',
-                severity: TelemetrySeverity.DEBUG,
-                payload: { action: 'event_persisted', eventId, channel }
-            });
-        } catch (err) {
-            console.error('[Orchestrator] ❌ Persistence failure. Aborting notify/ack.', err);
-            return;
+        // 1.1 COMMUNITY FEED HANDLER (New Authority)
+        if (channel === 'feed') {
+            await this.processFeedDomainLogic(type, data);
+        }
+
+        // 1.2 USER DOMAIN HANDLER (Centralized Authority)
+        if (channel === 'user') {
+            await this.processUserDomainLogic(type, data);
+        }
+
+        // 1.3 SOCIAL DOMAIN HANDLER (Dynamic Authority)
+        if (channel.startsWith('social:')) {
+            await this.processSocialDomainLogic(type, data);
         }
 
         // 🏛️ ARCHITECTURAL FIX: ACK de mensaje (INVARIANTE 1.5 - Después de PERSIST)
         // SOLO el Orchestrator puede marcar mensajes como delivered
-        // Esto reemplaza los 3 ACK paths anteriores (SW, Hook, Backend proactivo)
-        if (type === 'new-message' || type === 'chat-update') {
+        // Motor 11: SOLO el líder envía ACKs al backend
+        if (leaderElection.isLeader() && (type === 'new-message' || type === 'chat-update')) {
             const message = data.payload?.message || data.message;
             const messageId = message?.id;
             const senderId = message?.sender_id;
@@ -192,6 +275,9 @@ class RealtimeOrchestrator {
         }
 
         // 4. Notify Consumers (INVARIANTE 2)
+        // Motor 11 Invariant: Listeners called in followers must be idempotent 
+        // and without persistent side effects (e.g., no duplicate sounds or toasts).
+        // The View Reconciliation Engine (Motor 10) governs UI state.
         const realtimeEvent: RealtimeEvent = {
             eventId,
             serverTimestamp,
@@ -209,13 +295,200 @@ class RealtimeOrchestrator {
             }
         });
 
-        // 5. ACK (INVARIANTE 3)
-        this.acknowledge(eventId).catch(err => {
-            console.error('[Orchestrator] ⚠️ ACK failed for:', eventId, err);
+        // 5. ACK & Record Authority (INVARIANTE 3)
+        // Motor 11: SOLO el líder envía ACKs de evento
+        if (leaderElection.isLeader()) {
+            await this.acknowledge(eventId);
+
+            // 🛰️ MOTOR 11: Shared Broadcast to Followers
+            this.syncChannel.postMessage({ data, type, channel });
+        }
+
+        eventAuthorityLog.record({
+            eventId,
+            type,
+            domain: (channel.startsWith('social') ? 'social' : channel) as any,
+            serverTimestamp,
+            processedAt: Date.now(),
+            originClientId: originClientId || 'unknown'
         });
+
+        this.stats.processed++;
+    }
+
+    /**
+     * handleSyncEvent() - Entry for events received from the Leader
+     */
+    private handleSyncEvent(sync: { data: any, type: string, channel: string }) {
+        if (leaderElection.isLeader()) return; // Leaders ignore their own (or others') broadcast
+
+        console.debug(`[Orchestrator] 🛰️ Processing sync event from leader: ${sync.type}`);
+        this.processValidatedData(sync.data, sync.type, sync.channel);
+    }
+
+    /**
+     * processSocialDomainLogic() - Authoritative state changes for comments and likes
+     */
+    private async processSocialDomainLogic(type: string, data: any) {
+        const payload = data.payload || data;
+        const reportId = payload.reportId || payload.report_id;
+
+        try {
+            switch (type) {
+                case 'new-comment': {
+                    if (payload.partial || payload.comment) {
+                        commentsCache.append(queryClient, payload.partial || payload.comment);
+                    }
+                    break;
+                }
+                case 'comment-update': {
+                    if (payload.isLikeDelta) {
+                        commentsCache.applyLikeDelta(queryClient, payload.id, payload.delta);
+                    } else {
+                        commentsCache.patch(queryClient, payload.id, payload.partial || payload.comment);
+                    }
+                    break;
+                }
+                case 'comment-delete': {
+                    if (payload.id && reportId) {
+                        commentsCache.remove(queryClient, payload.id, reportId);
+                    }
+                    break;
+                }
+                case 'report-update': {
+                    if (payload.id) {
+                        reportsCache.patch(queryClient, payload.id, payload.partial);
+                    }
+                    break;
+                }
+            }
+        } catch (err) {
+            console.error(`[Orchestrator] ❌ Error applying social logic for ${type}:`, err);
+        }
+    }
+
+    /**
+     * processUserDomainLogic() - Authoritative state changes for the personal user stream
+     */
+    private async processUserDomainLogic(type: string, data: any) {
+        const payload = data.payload || data;
+
+        try {
+            switch (type) {
+                case 'notification': {
+                    if (payload.notification) {
+                        upsertInList(queryClient, NOTIFICATIONS_QUERY_KEY, payload.notification);
+                    }
+                    if (payload.type === 'notifications-read-all') {
+                        queryClient.setQueryData(['notifications', 'list', this.userId], (old: any) =>
+                            Array.isArray(old) ? old.map((n: any) => ({ ...n, is_read: true })) : []
+                        );
+                    }
+                    if (payload.type === 'notifications-deleted-all') {
+                        queryClient.setQueryData(['notifications', 'list', this.userId], []);
+                    }
+                    if (payload.type === 'follow') {
+                        queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
+                    }
+                    if (payload.type === 'achievement' && payload.notification) {
+                        const badgeId = payload.notification.code || payload.notification.id;
+                        if (this.userId && badgeId) {
+                            // 🏅 Idempotencia Semántica (Fase C½ / Hardening de Dominio):
+                            // Protección de negocio para evitar duplicados en la UX incluso si el eventId varía.
+                            if (eventAuthorityLog.isBadgeProcessed(this.userId, badgeId)) {
+                                console.debug(`[Orchestrator] 🛡️ Semantic duplicate suppressed (Badge): ${badgeId}`);
+                                return;
+                            }
+
+                            // Registrar la insignia en la autoridad para futuras deduplicaciones
+                            eventAuthorityLog.record({
+                                eventId: data.eventId,
+                                type: data.type,
+                                domain: 'user',
+                                serverTimestamp: data.serverTimestamp,
+                                processedAt: Date.now(),
+                                originClientId: data.originClientId || 'unknown'
+                            }, `badge_${this.userId}_${badgeId}`);
+                        }
+
+                        // 🏅 SOCIAL SSOT: Update gamification cache and profile
+                        queryClient.setQueryData(queryKeys.gamification.summary, (old: any) => {
+                            if (!old) return old;
+                            return {
+                                ...old,
+                                newBadges: [...(old.newBadges || []), payload.notification]
+                            };
+                        });
+                        // Points/Level sync
+                        queryClient.invalidateQueries({ queryKey: queryKeys.user.profile });
+                    }
+                    break;
+                }
+                case 'presence-update': {
+                    if (payload.userId) {
+                        queryClient.setQueryData(['users', 'presence', payload.userId], payload.partial || payload);
+                    }
+                    break;
+                }
+            }
+        } catch (err) {
+            console.error(`[Orchestrator] ❌ Error applying user logic for ${type}:`, err);
+        }
+    }
+
+    /**
+     * processFeedDomainLogic() - Authoritative state changes for the global feed
+     */
+    private async processFeedDomainLogic(type: string, data: any) {
+        const payload = data.payload || data;
+
+        try {
+            switch (type) {
+                case 'report-create': {
+                    const parsed = reportSchema.safeParse(payload.partial || payload);
+                    if (parsed.success) {
+                        reportsCache.prepend(queryClient, parsed.data);
+                        statsCache.applyReportCreate(queryClient, parsed.data.category, parsed.data.status);
+                    }
+                    break;
+                }
+                case 'report-update': {
+                    if (payload.isLikeDelta) {
+                        reportsCache.applyLikeDelta(queryClient, payload.id, payload.delta);
+                    } else if (payload.isCommentDelta) {
+                        reportsCache.applyCommentDelta(queryClient, payload.id, payload.delta);
+                    } else {
+                        const parsed = reportSchema.partial().safeParse(payload.partial || payload);
+                        if (parsed.success) {
+                            reportsCache.patch(queryClient, payload.id, parsed.data);
+                        }
+                    }
+                    break;
+                }
+                case 'status-change': {
+                    statsCache.applyStatusChange(queryClient, payload.prevStatus, payload.newStatus);
+                    reportsCache.patch(queryClient, payload.id, { status: payload.newStatus });
+                    break;
+                }
+                case 'report-delete': {
+                    reportsCache.remove(queryClient, payload.id);
+                    if (payload.category) {
+                        statsCache.applyReportDelete(queryClient, payload.category, payload.status);
+                    }
+                    break;
+                }
+                case 'user-create': {
+                    statsCache.incrementUsers(queryClient);
+                    break;
+                }
+            }
+        } catch (err) {
+            console.error(`[Orchestrator] ❌ Error applying feed logic for ${type}:`, err);
+        }
     }
 
     async acknowledge(eventId: string): Promise<void> {
+        // ... (rest same, omitting unchanged)
         // console.debug('[Orchestrator] 📡 Sending ACK:', eventId);
         await fetch(`${API_BASE_URL}/realtime/ack/${eventId}`, {
             method: 'POST',
@@ -336,9 +609,48 @@ class RealtimeOrchestrator {
         return localProcessedLog.isEventProcessed(eventId);
     }
 
+    /**
+     * watchReportComments() - Dyamic subscription for a report's social feed
+     */
+    watchReportComments(reportId: string): void {
+        const url = `${API_BASE_URL}/realtime/comments/${reportId}`;
+        const channelId = `social:${reportId}`;
+
+        if (this.dynamicSubscriptions.has(channelId)) return;
+
+        console.debug(`[Orchestrator] 👁️ Watching social feed for report: ${reportId}`);
+
+        const unsubNew = ssePool.subscribe(url, 'new-comment', (event) => this.processRawEvent(event, channelId));
+        const unsubUpdate = ssePool.subscribe(url, 'comment-update', (event) => this.processRawEvent(event, channelId));
+        const unsubDelete = ssePool.subscribe(url, 'comment-delete', (event) => this.processRawEvent(event, channelId));
+        const unsubReport = ssePool.subscribe(url, 'report-update', (event) => this.processRawEvent(event, channelId));
+
+        this.dynamicSubscriptions.set(channelId, () => {
+            unsubNew();
+            unsubUpdate();
+            unsubDelete();
+            unsubReport();
+        });
+    }
+
+    /**
+     * unwatchReportComments() - Cleanup dynamic social subscription
+     */
+    unwatchReportComments(reportId: string): void {
+        const channelId = `social:${reportId}`;
+        const unsub = this.dynamicSubscriptions.get(channelId);
+        if (unsub) {
+            console.debug(`[Orchestrator] 🙈 Unwatching social feed for report: ${reportId}`);
+            unsub();
+            this.dynamicSubscriptions.delete(channelId);
+        }
+    }
+
     destroy(): void {
         this.listeners.clear();
         this.activeSubscriptions = [];
+        this.dynamicSubscriptions.forEach(unsub => unsub());
+        this.dynamicSubscriptions.clear();
         console.debug('[Orchestrator] ⚰️ Destroyed');
     }
 }

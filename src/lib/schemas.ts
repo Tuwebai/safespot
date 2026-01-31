@@ -6,7 +6,9 @@ export const authorSchema = z.object({
     id: z.string(),
     alias: z.string(),
     avatarUrl: z.string(),
-    isAuthor: z.boolean().default(false)
+    isAuthor: z.boolean().default(false),
+    is_official: z.boolean().optional(),
+    role: z.string().optional()
 });
 
 export type Author = z.infer<typeof authorSchema>;

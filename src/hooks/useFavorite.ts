@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import { reportsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
-import { triggerBadgeCheck } from './useBadgeNotifications'
 
 interface UseFavoriteProps {
     reportId: string
@@ -45,7 +44,6 @@ export function useFavorite({ reportId, initialState = false, onToggle }: UseFav
             }
 
             // Trigger badge check after success
-            triggerBadgeCheck()
         } catch (error) {
             // Revert on error
             setIsFavorite(previousState)

@@ -1,55 +1,24 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { favoritesApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MapPin, GitBranch, MessageCircle, Heart, AlertCircle } from 'lucide-react'
-import type { Report } from '@/lib/api'
+import { MapPin, GitBranch, MessageCircle, Star, AlertCircle } from 'lucide-react'
+import { useFavoritesQuery } from '@/hooks/queries/useProfileQuery'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { prefetchReport, prefetchRouteChunk } from '@/lib/prefetch'
 import { OptimizedImage } from '@/components/OptimizedImage'
-import { useRef } from 'react'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { EmptyState } from '@/components/ui/empty-state'
 
 export function MisFavoritos() {
   const navigate = useNavigate()
-  const toast = useToast()
-  const [reports, setReports] = useState<Report[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
-  // Update local state when a favorite is toggled (removed)
-  const handleFavoriteToggle = useCallback((reportId: string, isFavorite: boolean) => {
-    if (!isFavorite) {
-      // If unfavorited, remove from list immediately
-      setReports(prev => prev.filter(r => r.id !== reportId))
-    }
-  }, [])
+  // ✅ SSOT: Consuming global cache instead of local state
+  const { data: reports = [], isLoading, error, refetch } = useFavoritesQuery()
 
-  const loadFavorites = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await favoritesApi.getAll()
-      setReports(data)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error al cargar favoritos'
-      setError(errorMessage)
-      toast.error(errorMessage)
-    } finally {
-      setLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => {
-    loadFavorites()
-  }, [loadFavorites])
-
-  const getStatusColor = (status: Report['status']) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'pendiente':
         return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
@@ -64,8 +33,8 @@ export function MisFavoritos() {
     }
   }
 
-  const getStatusLabel = (status: Report['status']) => {
-    const labelMap: Record<Report['status'], string> = {
+  const getStatusLabel = (status: string) => {
+    const labelMap: Record<string, string> = {
       'pendiente': 'Buscando',
       'en_proceso': 'En Proceso',
       'resuelto': 'Recuperado',
@@ -95,12 +64,12 @@ export function MisFavoritos() {
     })
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
           <h1 className="text-3xl font-bold gradient-text mb-2">Mis Favoritos</h1>
-          <p className="text-foreground/70">Cargando...</p>
+          <p className="text-foreground/70">Cargando colección estelar...</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -119,9 +88,9 @@ export function MisFavoritos() {
             <CardContent className="p-6 text-center">
               <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
               <h2 className="text-xl font-semibold text-foreground mb-2">Error al cargar favoritos</h2>
-              <p className="text-foreground/70 mb-4">{error}</p>
+              <p className="text-foreground/70 mb-4">{error instanceof Error ? error.message : 'Error desconocido'}</p>
               <Button
-                onClick={loadFavorites}
+                onClick={() => refetch()}
                 className="bg-neon-green hover:bg-neon-green/90 text-dark-bg"
               >
                 Reintentar
@@ -143,7 +112,7 @@ export function MisFavoritos() {
 
         <EmptyState
           variant="default"
-          icon={Heart}
+          icon={Star}
           title="Aún no tienes favoritos"
           description="Guarda los reportes que te interesan para hacerles seguimiento rápido. Aparecerán aquí."
           action={{
@@ -170,13 +139,8 @@ export function MisFavoritos() {
       }
     }
 
-    // Calcular inicial
     handleLayoutUpdate()
-
-    // Observar cambios de tamaño
     window.addEventListener('resize', handleLayoutUpdate)
-
-    // Pequeño delay para asegurar que el DOM se ha asentado
     const timeout = setTimeout(handleLayoutUpdate, 100)
 
     return () => {
@@ -220,18 +184,8 @@ export function MisFavoritos() {
         >
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const startIndex = virtualRow.index * columns
-            const rowItems = reports
-              .filter((report) => {
-                return (
-                  report != null &&
-                  typeof report === 'object' &&
-                  report.id != null &&
-                  typeof report.id === 'string' &&
-                  report.title != null &&
-                  typeof report.title === 'string'
-                )
-              })
-              .slice(startIndex, startIndex + columns)
+            // Reports are already filtered and valid from hook
+            const rowItems = reports.slice(startIndex, startIndex + columns)
 
             return (
               <div
@@ -249,7 +203,7 @@ export function MisFavoritos() {
                 {rowItems.map((report) => (
                   <Card
                     key={report.id}
-                    className="card-glow bg-dark-card border-dark-border hover:border-neon-green/50 transition-colors overflow-hidden cursor-pointer"
+                    className="card-glow bg-dark-card border-dark-border hover:border-yellow-400/50 transition-colors overflow-hidden cursor-pointer"
                     onMouseEnter={() => {
                       prefetchRouteChunk('DetalleReporte')
                       prefetchReport(report.id)
@@ -316,7 +270,7 @@ export function MisFavoritos() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="border-neon-green text-neon-green hover:bg-neon-green/10"
+                          className="border-yellow-400 text-yellow-400 hover:bg-yellow-400/10"
                           onClick={(e) => {
                             e.preventDefault()
                             navigate(`/reporte/${report.id}`)
@@ -328,7 +282,6 @@ export function MisFavoritos() {
                           <FavoriteButton
                             reportId={report.id}
                             isFavorite={true}
-                            onToggle={(newState) => handleFavoriteToggle(report.id, newState)}
                           />
                         </div>
                       </div>
@@ -343,4 +296,3 @@ export function MisFavoritos() {
     </div>
   )
 }
-

@@ -20,6 +20,7 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { SEO } from '@/components/SEO'
 // 🔴 CRITICAL FIX: Auth guard for chat creation
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 
 interface PublicUserProfile {
     anonymous_id: string
@@ -53,6 +54,8 @@ interface PublicUserProfile {
         created_at: string
         category: string
     }>
+    is_official?: boolean
+    role?: string
 }
 
 export function PublicProfile() {
@@ -246,6 +249,7 @@ export function PublicProfile() {
                             <div>
                                 <h1 className="text-3xl sm:text-4xl font-black text-foreground tracking-tight mb-1 flex items-center justify-center md:justify-start gap-3">
                                     @{profile.alias}
+                                    {profile.is_official && <VerifiedBadge size={28} className="text-blue-400" />}
                                     {profile.stats.trust_score >= 90 && <Shield className="w-6 h-6 text-green-400 fill-green-400/20" />}
                                 </h1>
                                 <p className="text-muted-foreground text-sm flex items-center justify-center md:justify-start gap-2 mb-4">
@@ -259,13 +263,10 @@ export function PublicProfile() {
                                         <Button
                                             onClick={handleFollowToggle}
                                             variant={profile.stats.is_following ? "outline" : "default"}
-                                            className={`
-rounded - full px - 8 font - bold transition - all duration - 300
-                                                ${profile.stats.is_following
+                                            className={`rounded-full px-8 font-bold transition-all duration-300 ${profile.stats.is_following
                                                     ? 'border-white/10 hover:border-red-500/50 hover:text-red-500 hover:bg-red-500/5'
                                                     : 'bg-neon-green text-black hover:bg-neon-green/90 shadow-[0_0_15px_rgba(33,255,140,0.3)]'
-                                                }
-`}
+                                                }`}
                                         >
                                             <Users className="w-4 h-4 mr-2" />
                                             {profile.stats.is_following ? 'Siguiendo' : 'Seguir'}
@@ -354,7 +355,7 @@ rounded - full px - 8 font - bold transition - all duration - 300
                             </div>
                             <div className="grid grid-cols-2 divide-x divide-border">
                                 <div className="p-6 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors">
-                                    <div className={`text - 2xl font - black ${trustColor} mb - 1 shadow - current drop - shadow - sm`}>
+                                    <div className={`text-2xl font-black ${trustColor} mb-1 drop-shadow-sm`}>
                                         {profile.stats.trust_score}%
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Confianza</div>
@@ -369,13 +370,13 @@ rounded - full px - 8 font - bold transition - all duration - 300
                             <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
                                 <div
                                     className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
-                                    onClick={() => navigate(`/ usuario / @${profile.alias}/seguidores`)}
+                                    onClick={() => navigate(`/usuario/@${profile.alias}/seguidores`)}
                                 >
                                     <div className="text-xl font-bold text-foreground mb-0.5 group-hover:text-neon-green transition-colors">
                                         {profile.stats.followers_count || 0}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Seguidores</div>
-                                </div >
+                                </div>
                                 <div
                                     className="p-4 flex flex-col items-center text-center hover:bg-foreground/5 transition-colors cursor-pointer group"
                                     onClick={() => navigate(`/usuario/@${profile.alias}/seguidos`)}
@@ -385,7 +386,7 @@ rounded - full px - 8 font - bold transition - all duration - 300
                                     </div>
                                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Siguiendo</div>
                                 </div>
-                            </div >
+                            </div>
                         </CardContent >
                     </Card >
 
@@ -463,9 +464,9 @@ rounded - full px - 8 font - bold transition - all duration - 300
                                             </div>
 
                                             <div className="flex flex-col items-end gap-2">
-                                                <Badge className={`
-                                            ${report.status === 'resuelto' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-muted text-muted-foreground border-border'}
-                                        `}>
+                                                <Badge className={
+                                                    report.status === 'resuelto' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-muted text-muted-foreground border-border'
+                                                }>
                                                     {report.status}
                                                 </Badge>
                                                 <div className="flex items-center gap-1 text-xs text-muted-foreground">

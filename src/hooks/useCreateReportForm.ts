@@ -8,7 +8,6 @@ import { useToast } from '@/components/ui/toast'
 import { useCreateReportMutation } from '@/hooks/queries/useReportsQuery'
 import { reportsApi } from '@/lib/api'
 import { handleErrorSilently } from '@/lib/errorHandler'
-import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useNavigate } from 'react-router-dom'
 import { compressImage, formatFileSize } from '@/lib/imageCompression'
 import { queryClient } from '@/lib/queryClient'
@@ -213,8 +212,7 @@ export function useCreateReportForm() {
                 // No redirection to detail, stay in list as requested
 
 
-                // Trigger badge check
-                triggerBadgeCheck((newReport as any).newBadges)
+                // Trigger badge check (Passivized: Orchestrator will handle this via SSE)
                 queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
 
                 // Background Image Upload

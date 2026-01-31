@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient, useQueries, useIsMutating } from
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type CreateReportData } from '@/lib/api'
 import { type Report, type ReportFilters } from '@/lib/schemas'
-import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard'
@@ -71,28 +70,25 @@ export function useReportsQuery(filters?: ReportFilters) {
     // ✅ ENTERPRISE FIX: Block refetches while creating to prevent Optimistic Rollback
     const isCreating = useIsMutating({ mutationKey: ['createReport'] }) > 0;
 
-    return useQuery<Report[], Error, NormalizedReport[]>({
+    return useQuery<string[], Error, NormalizedReport[]>({
         queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
         queryFn: async () => {
-            // Adapter handles transformation to Strict Report[]
-            return await reportsApi.getAll(filters)
+            // 1. Fetch RAW data
+            const data = await reportsApi.getAll(filters);
+
+            // 2. Store in Canonical Detail Cache
+            return reportsCache.store(queryClient, data);
         },
         enabled: !!anonymousId,
         staleTime: 30 * 1000, // 30s
         refetchOnWindowFocus: !isCreating, // Block refetch if creating
         refetchOnMount: !isCreating ? 'always' : false, // Block refetch if creating
-        select: (data) => {
-            if (!Array.isArray(data)) {
-                return [] // Fallback
-            }
-
-            // Store in SSOT
-            reportsCache.store(queryClient, data)
-
-            // ✅ Return Objects for UI (enables initialData injection)
-            return data.map(normalizeReportForUI)
+        select: (ids) => {
+            if (!Array.isArray(ids)) return [];
+            // 3. Hydrate from Canonical Cache
+            return reportsCache.hydrate(queryClient, ids);
         },
-        placeholderData: (previousData) => previousData,
+        placeholderData: (previousData) => previousData as unknown as string[],
     })
 }
 
@@ -416,14 +412,18 @@ export function useToggleFavoriteMutation() {
                 reportsCache.patch(queryClient, reportId, { is_favorite: result.is_favorite })
             }
         },
-        onError: (_, reportId, context) => {
+        onError: (_err, reportId, context) => {
             if (context?.previousDetail) {
                 queryClient.setQueryData(queryKeys.reports.detail(reportId), context.previousDetail)
             }
         },
-        onSettled: () => {
+        onSettled: (_data, _error, _reportId) => {
+            // ✅ ENTERPRISE RULE: Never invalidate global reports list. Use Optimistic + SSE.
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.all }) 
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
+
+            // Only invalidate user-specific favorites list if it exists separate from main feed
             queryClient.invalidateQueries({ queryKey: queryKeys.user.favorites })
-            triggerBadgeCheck()
         },
     })
 }
@@ -433,9 +433,9 @@ export function useFlagReportMutation() {
     const { checkAuth } = useAuthGuard()
 
     return useMutation({
-        mutationFn: async ({ reportId, reason }: { reportId: string; reason?: string }) => {
+        mutationFn: async ({ reportId, reason, comment }: { reportId: string; reason?: string; comment?: string }) => {
             if (!checkAuth()) throw new Error('AUTH_REQUIRED');
-            return reportsApi.flag(reportId, reason);
+            return reportsApi.flag(reportId, reason, comment);
         },
         onMutate: async ({ reportId }) => {
             await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
@@ -457,7 +457,8 @@ export function useFlagReportMutation() {
             }
         },
         onSettled: () => {
-            triggerBadgeCheck()
+            // ✅ ENTERPRISE RULE: Never invalidate global reports list. Use Optimistic + SSE.
+            // Invalidations here cause UI flickering and race conditions.
         },
     })
 }

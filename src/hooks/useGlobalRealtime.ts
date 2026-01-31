@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { viewReconciliationEngine } from '@/lib/view-reconciliation/ViewReconciliationEngine';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { useToast } from '@/components/ui/toast/useToast';
-import { getClientId } from '@/lib/clientId';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 /**
@@ -22,26 +22,19 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
     useEffect(() => {
         if (!userId || !enabled) return;
 
-        const myClientId = getClientId();
 
-        // 👑 NEW: Unified Orchestrator Authority for Global Events
-        const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
-            const { type, payload } = event;
+        // 👑 NEW: Subscription to Motor 10 (View Reconciliation) for Visual Logic
+        const unsubReconciliation = viewReconciliationEngine.onVisualIntent((reaction) => {
+            const { type, payload } = reaction;
 
-            if (type === 'new-message') {
-                if (payload.originClientId === myClientId) return;
-
-                // Don't show toast if we are already in the chat room!
-                const isInRoom = location.pathname.includes(`/mensajes/${payload.message?.conversation_id}`);
-                if (isInRoom) return;
-
-                // Invalidate query to update badge count if we have one
+            if (type === 'toast') {
+                // Invalidate query to update badge count
                 queryClient.invalidateQueries({ queryKey: ['unread-messages'] });
 
                 // Show In-App Toast
                 const senderAlias = payload.message?.sender_alias || payload.senderAlias || 'Usuario';
                 toast.info(`💬 ${senderAlias}: ${payload.message?.content || payload.content}`);
-            } else if (type === 'security-alert' || type === 'activity') {
+            } else if (type === 'alert') {
                 toast.error(`⚠️ ${payload.message || 'Alerta de seguridad'}`, 10000);
             }
         });
@@ -61,7 +54,7 @@ export function useGlobalRealtime(userId: string | undefined, enabled = true) {
         window.navigator.serviceWorker?.addEventListener('message', handleSWMessage);
 
         return () => {
-            unsubOrchestrator();
+            unsubReconciliation();
             window.navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
         };
     }, [userId, enabled, queryClient, toast, location, navigate]);

@@ -114,6 +114,7 @@ export function generateReportStructuredData(report: {
     locality?: string
     zone?: string
     province?: string
+    address?: string
 }) {
     return {
         "@context": "https://schema.org",
@@ -139,6 +140,7 @@ export function generateReportStructuredData(report: {
             "@type": "Place",
             "address": {
                 "@type": "PostalAddress",
+                "streetAddress": report.address, // ✅ Enterprise Address
                 "addressLocality": report.locality || report.zone,
                 "addressRegion": report.province || "Argentina"
             },

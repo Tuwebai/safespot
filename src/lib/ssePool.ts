@@ -1,5 +1,6 @@
 import { Backoff } from '@/engine/traffic/Backoff';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
+import { leaderElection, LeadershipState } from './realtime/LeaderElection';
 
 type SSEListener = (event: MessageEvent) => void;
 type ReconnectCallback = (lastEventId: string | null) => void;
@@ -15,7 +16,27 @@ class SSEPool {
         url: string; // Store URL for reconnection
     }>();
 
-    // private isGlobalSleep = false; // Removed unused variable
+    constructor() {
+        // 🔄 Sync connections when leadership changes
+        leaderElection.onChange((state) => {
+            if (state === LeadershipState.LEADING) {
+                console.debug('[SSEPool] 👑 Became Leader. Activating connections...');
+                this.connections.forEach(entry => {
+                    if (!entry.source && entry.refCount > 0) {
+                        this.connect(entry);
+                    }
+                });
+            } else {
+                console.debug('[SSEPool] 👥 Became Follower. Closing connections...');
+                this.connections.forEach(entry => {
+                    if (entry.source) {
+                        entry.source.close();
+                        entry.source = null;
+                    }
+                });
+            }
+        });
+    }
 
     subscribe(url: string, eventName: string, listener: SSEListener) {
         let entry = this.connections.get(url);
@@ -60,12 +81,18 @@ class SSEPool {
     }
 
     private connect(entry: any) {
-        if (!navigator.onLine) {
-            // Wait for online event handled by Bootstrap
+        if (!navigator.onLine || !leaderElection.isLeader()) {
             return;
         }
 
         const url = entry.url;
+        const SHARED_BACKOFF_KEY = `safespot_backoff_${url}`;
+
+        // Restore backoff state from shared storage if available
+        const storedAttempt = localStorage.getItem(SHARED_BACKOFF_KEY);
+        if (storedAttempt) {
+            entry.backoff.setAttempt(parseInt(storedAttempt, 10));
+        }
         // console.debug(`[SSE] Connecting to ${url}...`);
 
         try {
@@ -83,6 +110,7 @@ class SSEPool {
                 });
 
                 entry.backoff.reset();
+                localStorage.removeItem(SHARED_BACKOFF_KEY);
                 entry.reconnectCallbacks.forEach((cb: any) => cb(null));
             };
 
@@ -102,6 +130,9 @@ class SSEPool {
                         payload: { action: 'connection_lost', url, retryIn: delay, attempt: entry.backoff.count }
                     });
 
+                    // Persist backoff state for other tabs (failover sync)
+                    localStorage.setItem(SHARED_BACKOFF_KEY, entry.backoff.count.toString());
+
                     if (entry.backoff.count % 5 === 0) {
                         console.warn(`[SSE] Connection struggling for ${url}. Next retry in ${delay}ms. (Attempt ${entry.backoff.count})`);
                         // Notify Lifecycle Engine of persistent failure
@@ -116,6 +147,23 @@ class SSEPool {
 
             // Proxy all events to listeners
             const dispatch = (e: MessageEvent) => {
+                // 📡 MOTOR 8: Root Trace Generation (Fase D/Motor 8 Completion)
+                // We stamp the event to propagate the traceId without breaking the public SSEListener contract
+                const traceId = telemetry.startTrace();
+                (e as any).traceId = traceId;
+
+                telemetry.emit({
+                    engine: 'SSE',
+                    severity: TelemetrySeverity.DEBUG,
+                    traceId,
+                    payload: {
+                        action: 'event_received',
+                        type: e.type,
+                        url: entry.url,
+                        timestamp: Date.now()
+                    }
+                });
+
                 // 1. Specific listeners for this event type
                 const specificListeners = entry.listeners.get(e.type);
                 specificListeners?.forEach((fn: any) => fn(e));

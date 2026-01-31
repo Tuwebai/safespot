@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, User, Heart, MessageSquare, Users, Settings } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Star, MessageSquare, Users, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -36,7 +36,7 @@ export function Header() {
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home },
     { path: '/reportes', label: 'Reportes', icon: FileBarChart },
-    { path: '/favoritos', label: 'Favoritos', icon: Heart },
+    { path: '/favoritos', label: 'Favoritos', icon: Star },
     { path: '/explorar', label: 'Mapa', icon: MapPin },
     { path: '/gamificacion', label: 'Gamificación', icon: Trophy },
   ]

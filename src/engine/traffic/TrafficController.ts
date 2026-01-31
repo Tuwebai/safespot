@@ -28,6 +28,8 @@ class TrafficController {
 
     // Serial queue for sensitive actions
     private serialQueue: Promise<any> = Promise.resolve();
+    private queueDepth = 0;
+    private readonly MAX_QUEUE_DEPTH = 50; // 🛑 Bounded Queue Limit (Phase F)
 
     /**
      * Semáforo: Wait until traffic is allowed
@@ -94,8 +96,16 @@ class TrafficController {
      * Execute sensitive action in serial queue (Concurrency: 1)
      */
     async enqueueSerial<T>(action: () => Promise<T>, label = 'anonymous'): Promise<T> {
+        // 🛑 Bounded Queue Check (M7 Fix)
+        if (this.queueDepth >= this.MAX_QUEUE_DEPTH) {
+            console.error(`[Traffic] 🛑 SERIAL_QUEUE FULL (${this.queueDepth}). Rejecting: ${label}`);
+            throw new Error('Traffic Congestion: Serial Queue Full');
+        }
+
+        this.queueDepth++;
+
         const result = this.serialQueue.then(async () => {
-            console.debug(`[Traffic] 🔄 SERIAL_QUEUE_EXECUTING: ${label}`);
+            console.debug(`[Traffic] 🔄 SERIAL_QUEUE_EXECUTING: ${label} (Pending: ${this.queueDepth})`);
 
             // 📡 MOTOR 8: Trace Execution
             const spanId = `span_${self.crypto.randomUUID().substring(0, 8)}`;
@@ -103,7 +113,7 @@ class TrafficController {
                 engine: 'Traffic',
                 severity: TelemetrySeverity.DEBUG,
                 spanId,
-                payload: { action: 'serial_queue_executing', label }
+                payload: { action: 'serial_queue_executing', label, queueDepth: this.queueDepth }
             });
 
             try {
@@ -117,6 +127,7 @@ class TrafficController {
                 return result;
             } finally {
                 console.debug(`[Traffic] ✅ SERIAL_QUEUE_FINISHED: ${label}`);
+                this.queueDepth--; // Release slot
             }
         });
 

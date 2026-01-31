@@ -100,16 +100,41 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
         let updateData = {};
 
         if (action === 'approve') {
-            // Unhide and maybe reset flags?
+            // Restore visibility
             updateData = { is_hidden: false };
-            // Optional: Reset flags count?
-            // updateData.flags_count = 0; 
+
+            // Resolve flags as "Resolved" (Action Taken / Restored)
+            // Or if restoring means "It was fine", maybe "Dismissed"? 
+            // "Approve" usually means "Approve the content", so flags were false alarms -> "Dismissed"
+            // Let's assume Approve = Content is Safe -> Flags were wrong -> Dismissed
+            await supabaseAdmin
+                .from('report_flags')
+                .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
+                .eq('report_id', id);
+
         } else if (action === 'reject') {
             // Soft delete
             updateData = { deleted_at: new Date().toISOString() };
+
+            // Resolve flags as "Resolved" (Action Taken)
+            await supabaseAdmin
+                .from('report_flags')
+                .update({ status: 'resolved', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
+                .eq('report_id', id);
+
         } else if (action === 'dismiss') {
-            // Keep visible but clear flags
-            updateData = { flags_count: 0 };
+            // Keep visible, but mark flags as ignored
+            // Do NOT touch reports table directly (trigger handles it)
+            // Just mark flags as dismissed
+
+            await supabaseAdmin
+                .from('report_flags')
+                .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
+                .eq('report_id', id);
+
+            // No update to report needed directly if trigger works, 
+            // but we might want to unhide if it was auto-hidden?
+            updateData = { is_hidden: false };
         } else {
             return res.status(400).json({ error: 'Invalid action' });
         }
@@ -148,6 +173,72 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
     } catch (error) {
         console.error('Moderation Action Error:', error);
         res.status(500).json({ error: 'Failed to resolve moderation case' });
+    }
+});
+
+
+/**
+ * GET /api/admin/moderation/:type/:id/notes
+ * Fetch internal moderation notes
+ */
+router.get('/:type/:id/notes', verifyAdminToken, async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const normalizedType = type === 'reports' ? 'report' : type === 'comments' ? 'comment' : type;
+
+        const { data, error } = await supabaseAdmin
+            .from('moderation_notes')
+            .select(`
+                *,
+                admin_users:created_by (
+                    alias,
+                    email
+                )
+            `)
+            .eq('entity_type', normalizedType)
+            .eq('entity_id', id)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Fetch Notes Error:', error);
+        res.status(500).json({ error: 'Failed to fetch notes' });
+    }
+});
+
+/**
+ * POST /api/admin/moderation/:type/:id/notes
+ * Add a new internal note (Append Only)
+ */
+router.post('/:type/:id/notes', verifyAdminToken, async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const { note } = req.body;
+        const normalizedType = type === 'reports' ? 'report' : type === 'comments' ? 'comment' : type;
+
+        if (!note || note.trim().length < 3) {
+            return res.status(400).json({ error: 'Note is too short' });
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('moderation_notes')
+            .insert({
+                entity_type: normalizedType,
+                entity_id: id,
+                note: note.trim(),
+                created_by: req.adminUser.id
+            })
+            .select() // Return the created item
+            .single();
+
+        if (error) throw error;
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Create Note Error:', error);
+        res.status(500).json({ error: 'Failed to create note' });
     }
 });
 

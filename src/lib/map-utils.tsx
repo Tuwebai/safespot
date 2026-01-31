@@ -86,3 +86,23 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
     return R * c // Distance in meters
 }
 
+/**
+ * Checks if a coordinate is within a bounding box
+ */
+export function isPointInBounds(lat: number, lng: number, bounds: { north: number, south: number, east: number, west: number }): boolean {
+    return (
+        lat >= bounds.south &&
+        lat <= bounds.north &&
+        lng >= bounds.west &&
+        lng <= bounds.east
+    )
+}
+
+/**
+ * Checks if a coordinate is within a radius of another coordinate
+ */
+export function isPointInRadius(lat: number, lng: number, centerLat: number, centerLng: number, radiusMeters: number): boolean {
+    const distance = calculateDistance(lat, centerLat, lng, centerLng)
+    return distance <= radiusMeters
+}
+

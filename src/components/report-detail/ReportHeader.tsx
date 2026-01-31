@@ -1,7 +1,6 @@
 import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
-import { MapPin } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -59,11 +58,6 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 <Badge className={cn("px-2.5 py-0.5 text-xs font-semibold", getStatusColor(report.status))}>
                     {getStatusLabel(report.status)}
                 </Badge>
-            </div>
-
-            <div className="flex items-center text-foreground/50 text-sm md:text-base bg-muted w-fit px-3 py-1.5 rounded-full border border-border/30">
-                <MapPin className="h-4 w-4 mr-2 text-neon-green/70" />
-                <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
             </div>
 
             {/* 🛡️ DEFENSIVE CODING: Don't link to deleted users */}

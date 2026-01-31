@@ -1,6 +1,6 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Edit, Trash2, Flag, Save, X, FileText, MoreVertical, Heart } from 'lucide-react'
+import { Edit, Trash2, Flag, Save, X, FileText, MoreVertical, Star } from 'lucide-react'
 // ✅ SSOT: Centralized permissions (Replaced getAnonymousIdSafe)
 import { useIsOwner } from '@/hooks/useIsOwner' // ✅ Reactive Hook
 import { cn } from '@/lib/utils'
@@ -147,7 +147,7 @@ export const ReportActions = memo(function ReportActions({
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left text-sm text-foreground"
                             >
-                                <Heart className={cn("h-4 w-4", isFavorite ? "fill-red-500 text-red-500" : "text-foreground/70")} />
+                                <Star className={cn("h-4 w-4", isFavorite ? "fill-yellow-400 text-yellow-400" : "text-foreground/70")} />
                                 <span>{isFavorite ? 'Quitar de favoritos' : 'Guardar reporte'}</span>
                             </button>
 

@@ -899,13 +899,15 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       });
     }
 
+    const flagComment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
+
     // Create flag using queryWithRLS for RLS enforcement
     const insertResult = await queryWithRLS(
       anonymousId,
-      `INSERT INTO comment_flags (anonymous_id, comment_id, reason)
-       VALUES ($1, $2, $3)
+      `INSERT INTO comment_flags (anonymous_id, comment_id, reason, comment)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, anonymous_id, comment_id, reason, created_at`,
-      [anonymousId, id, reason]
+      [anonymousId, id, reason, flagComment]
     );
 
     if (insertResult.rows.length === 0) {

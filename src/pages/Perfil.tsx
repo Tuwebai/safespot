@@ -27,6 +27,7 @@ import { PencilIcon } from 'lucide-react'
 import { queryKeys } from '@/lib/queryKeys'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { useAuthStore } from '@/store/authStore'
+import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 
 // ✅ PERFORMANCE FIX: Lazy load LoginModal (7 KB gzip) - only loads when user clicks "Guardar Progreso"
 const LoginModal = lazy(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })))
@@ -271,6 +272,7 @@ export function Perfil() {
                       <span className={profile?.alias ? "text-neon-green" : ""}>
                         {profile?.alias ? `@${profile.alias}` : 'Usuario Anónimo'}
                       </span>
+                      {profile?.is_official && <VerifiedBadge size={20} className="text-blue-400" />}
 
                       <Button
                         variant="ghost"
@@ -517,7 +519,7 @@ export function Perfil() {
             </Link>
 
             {/* CTA Crear Reporte */}
-            <Card className="bg-card border-border border-neon-green/20">
+            <Card className="bg-card border-neon-green/20">
               <CardContent className="pt-6">
                 <div className="text-center">
                   <h3 className="font-semibold mb-2">¿Viste un problema?</h3>

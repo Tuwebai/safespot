@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { commentsApi, type CreateCommentData, type Comment } from '@/lib/api'
-import { triggerBadgeCheck } from '@/hooks/useBadgeNotifications'
 import { commentsCache } from '@/lib/cache-helpers'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
@@ -163,9 +162,6 @@ export function useCreateCommentMutation() {
             if (context?.optimisticComment?.id) {
                 queryClient.removeQueries({ queryKey: queryKeys.comments.detail(context.optimisticComment.id) })
             }
-
-            // Check for badges
-            triggerBadgeCheck(newComment.newBadges)
         },
         onSettled: () => {
         },
@@ -295,7 +291,6 @@ export function useToggleLikeCommentMutation() {
             }
         },
         onSettled: () => {
-            triggerBadgeCheck()
             // SSE will handle the final sync via comment-update event
         },
     })

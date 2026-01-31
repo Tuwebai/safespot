@@ -13,6 +13,8 @@
 
 import { versionedStorage } from './storage/VersionedStorageManager';
 import { notifyStorageChange } from './storage/StorageSyncManager';
+import { telemetry, TelemetrySeverity } from './telemetry/TelemetryEngine';
+import { leaderElection } from './realtime/LeaderElection';
 
 // ============================================
 // CONSTANTS & CONFIG
@@ -265,6 +267,9 @@ export async function initializeIdentity(): Promise<string> {
     return winner;
   }
 
+  // 1.5 Start WATCHDOG (Enterprise Shielding)
+  startSessionWatchdog();
+
   // 2. SLOW PATH: If not in sync layers, check IndexedDB (L3)
   console.log('[Identity] Not found in Sync layers, checking IDB...');
 
@@ -447,6 +452,56 @@ export function ensureAnonymousId(): string {
   }
 
   return emergencyId;
+}
+
+// ============================================
+// ENTERPRISE WATCHDOG (M2 + M8 + M11)
+// ============================================
+
+let watchdogInterval: any = null;
+
+function startSessionWatchdog() {
+  if (watchdogInterval || typeof window === 'undefined') return;
+
+  console.log('[Identity] 🛡️ Watchdog activated');
+
+  watchdogInterval = setInterval(async () => {
+    // Check if L1 is missing but we have a cachedId in memory
+    const rawL1 = localStorage.getItem(L1_KEY);
+
+    if (!rawL1 && cachedId) {
+      console.warn('[Identity] 🚨 L1 Missing! Attempting L3 Restore...');
+
+      try {
+        const l3 = await getIDB('current_id');
+
+        if (l3 && isValidUUID(l3)) {
+          // RESTORE L1 FROM L3
+          const cleanId = l3.includes('|') ? l3.split('|')[1] : l3;
+
+          if (cleanId === cachedId) {
+            versionedStorage.putVersioned(L1_KEY, cleanId, 365);
+
+            // 📡 TELEMETRY DIAGNOSTIC
+            telemetry.emit({
+              engine: 'Identity',
+              severity: TelemetrySeverity.WARN,
+              payload: {
+                action: 'identity_restored_from_idb',
+                reason: 'localStorage_missing',
+                restoredLayer: 'IDB',
+                wasLeader: leaderElection.isLeader()
+              }
+            });
+
+            console.log('[Identity] ✅ Identity restored from IDB (Watchdog)');
+          }
+        }
+      } catch (e) {
+        console.error('[Identity] Watchdog restore failed', e);
+      }
+    }
+  }, 5000); // Check every 5s
 }
 
 /** Legacy support */

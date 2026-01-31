@@ -2,17 +2,22 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar'
-import { MapPin, Eye, MessageCircle, ArrowUp, Shield } from 'lucide-react'
+import { MapPin, Eye, MessageCircle, ArrowUp, Shield, Flag } from 'lucide-react'
 import { SmartLink } from '@/components/SmartLink'
 import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/LazyReportMapFallback'
 import { useReport } from '@/hooks/queries/useReportsQuery'
 import { getAvatarUrl } from '@/lib/avatar'
+import { FavoriteButton } from '@/components/FavoriteButton'
+import { useIsOwner } from '@/hooks/useIsOwner'
 
 import { getDeterministicScore } from '@/lib/utils-score'
 
 interface HighlightedReportCardProps {
     reportId: string
     initialData?: import('@/lib/normalizeReport').NormalizedReport
+    onToggleFavorite: (newState: boolean) => void
+    onFlag: (e: React.MouseEvent) => void
+    isFlagging?: boolean
 }
 
 /**
@@ -20,7 +25,13 @@ interface HighlightedReportCardProps {
  * Card más grande para el reporte más urgente/relevante
  * Incluye mapa estático optimizado (120x120px)
  */
-export function HighlightedReportCard({ reportId, initialData }: HighlightedReportCardProps) {
+export function HighlightedReportCard({
+    reportId,
+    initialData,
+    onToggleFavorite,
+    onFlag,
+    isFlagging = false
+}: HighlightedReportCardProps) {
     const { data: report } = useReport(reportId, initialData, {
         enabled: !initialData?._isOptimistic, // ✅ Prevent 404s on optimistic items
         isOptimistic: initialData?._isOptimistic // ✅ Explicit flag for hook logic
@@ -32,6 +43,9 @@ export function HighlightedReportCard({ reportId, initialData }: HighlightedRepo
 
     // SafeScore Determinístico (Estable entre renders)
     const safeScore = getDeterministicScore(report.id)
+
+    const isOwner = useIsOwner(report?.author?.id)
+    const isFlagged = report?.is_flagged ?? false
 
     return (
         <SmartLink
@@ -103,7 +117,7 @@ export function HighlightedReportCard({ reportId, initialData }: HighlightedRepo
                                 </div>
                             </div>
 
-                            {/* Footer: Autor + CTA */}
+                            {/* Footer: Autor + CTA + Actions */}
                             <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
                                 <div className="flex items-center gap-2">
                                     <Avatar className="h-8 w-8 border border-white/10">
@@ -120,13 +134,59 @@ export function HighlightedReportCard({ reportId, initialData }: HighlightedRepo
                                     </span>
                                 </div>
 
-                                <Button
-                                    variant="neon"
-                                    size="sm"
-                                    className="shadow-[0_0_15px_rgba(33,255,140,0.3)]"
-                                >
-                                    Ver Detalles Completos →
-                                </Button>
+                                <div className="flex items-center gap-3">
+                                    {/* Actions Inline */}
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <FavoriteButton
+                                            reportId={report.id}
+                                            isFavorite={report.is_favorite ?? false}
+                                            onToggle={onToggleFavorite}
+                                            variant="ghost"
+                                            className="hover:bg-white/10"
+                                        />
+
+                                        {!isOwner && (
+                                            isFlagged ? (
+                                                <div className="px-2 py-1 bg-yellow-500/10 text-yellow-500 text-xs rounded-md border border-yellow-500/20 flex items-center gap-1" title="Reporte enviado">
+                                                    <Flag className="h-3 w-3 fill-current" />
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        onFlag(e);
+                                                    }}
+                                                    disabled={isFlagging}
+                                                    className="hover:bg-white/10 hover:text-yellow-400 text-foreground/70 h-9 w-9"
+                                                    title="Reportar contenido"
+                                                >
+                                                    {isFlagging ? (
+                                                        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                                                    ) : (
+                                                        <Flag className="h-4 w-4" />
+                                                    )}
+                                                </Button>
+                                            )
+                                        )}
+                                    </div>
+
+                                    <Button
+                                        variant="neon"
+                                        size="sm"
+                                        className="shadow-[0_0_15px_rgba(33,255,140,0.3)] hidden sm:flex"
+                                    >
+                                        Ver Detalles →
+                                    </Button>
+                                    <Button
+                                        variant="neon"
+                                        size="sm"
+                                        className="shadow-[0_0_15px_rgba(33,255,140,0.3)] sm:hidden"
+                                    >
+                                        Ver →
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                     </div>

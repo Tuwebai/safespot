@@ -20,6 +20,9 @@ export interface NormalizedReport extends Report {
     latitude: number | null
     longitude: number | null
     zoneName: string          // Flat zone name fallback
+    fullAddress: string       // Enterprise standard: Calle N°, Barrio, Ciudad, Provincia
+    isOfficial: boolean       // UI indicator for staff/official accounts
+    role: string              // User role (citizen, official, moderator)
     _isOptimistic?: boolean   // Flag to prevent premature fetching
 }
 
@@ -35,6 +38,24 @@ export function normalizeReportForUI(report: Report): NormalizedReport {
     // Explicitly check for 'Anónimo' string or falsy values
     const authorAlias = report.author?.alias;
     const isAnonymousAlias = authorAlias === 'Anónimo' || !authorAlias;
+
+    // Enterprise address formatting: Calle N°, Barrio, Ciudad, Provincia
+    // Backend format: N°,Calle,Barrio,Ciudad,Localidad,Provincia,CP
+    const parts = (report.address || '').split(',').map(p => p.trim());
+    let formattedAddress = '';
+
+    if (parts.length >= 2) {
+        const nro = parts[0];
+        const calle = parts[1];
+        const barrio = parts[2] || '';
+        const ciudad = parts[3] || report.locality || '';
+        const provincia = parts[5] || report.province || '';
+
+        formattedAddress = `${calle} ${nro}${barrio ? `, ${barrio}` : ''}${ciudad ? `, ${ciudad}` : ''}${provincia ? `, ${provincia}` : ''}`;
+    } else {
+        // Fallback if not standard CSV
+        formattedAddress = report.address || report.zone || 'Ubicación detectada';
+    }
 
     return {
         ...report,
@@ -53,6 +74,9 @@ export function normalizeReportForUI(report: Report): NormalizedReport {
         latitude: report.latitude ? Number(report.latitude) : null,
         longitude: report.longitude ? Number(report.longitude) : null,
         zoneName: report.zone || 'Zona detectada',
+        fullAddress: formattedAddress,
+        isOfficial: report.author?.is_official ?? false,
+        role: report.author?.role ?? 'citizen',
         _isOptimistic: report._isOptimistic // ✅ EXPLICIT PRESERVATION
     };
 }

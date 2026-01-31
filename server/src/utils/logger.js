@@ -108,12 +108,20 @@ export const requestLogger = (req, res, next) => {
     const isSlow = duration > 500;
 
     if (!isSuccessGet || isSlow) {
-      logger[level](`${req.method} ${req.url}`, {
+      const meta = {
         statusCode: status,
         duration: `${duration}ms`,
         ip: req.ip,
         anonymousId: req.headers['x-anonymous-id']
-      });
+      };
+
+      if (level === 'error') {
+        // Standard Logger.error signature: (message, error, context)
+        logger.error(`${req.method} ${req.url}`, null, meta);
+      } else {
+        // Info/Warn signature: (message, context)
+        logger[level](`${req.method} ${req.url}`, meta);
+      }
     }
   });
 

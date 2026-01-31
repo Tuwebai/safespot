@@ -8,6 +8,7 @@ import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/Lazy
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { AnimatedCard } from '@/components/ui/animated'
 import { SmartLink } from '@/components/SmartLink'
+import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { useReport } from '@/hooks/queries/useReportsQuery'
 import { isOwner } from '@/lib/permissions' // ✅ Correct Import
 
@@ -172,9 +173,9 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex flex-col">
-                                    <span className="text-xs font-medium text-neon-green break-words whitespace-normal">
-                                        {/* DEBUG VISUAL: Force Render */}
+                                    <span className="text-xs font-medium text-neon-green break-words whitespace-normal flex items-center gap-1">
                                         {report.displayAuthor || 'Sin Alias'}
+                                        {report.isOfficial && <VerifiedBadge size={14} />}
                                     </span>
                                     <span className="text-xs text-foreground/60">{report.formattedDate}</span>
                                 </div>

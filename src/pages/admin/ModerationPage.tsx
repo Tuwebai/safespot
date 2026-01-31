@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
-    AlertTriangle, Check, X, EyeOff, MessageSquare, FileText,
+    AlertTriangle, Check, EyeOff, MessageSquare, FileText,
     ShieldAlert, Trash2, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAvatarUrl } from '@/lib/avatar';
 import { useConfirm } from '@/components/ui/confirmation-manager';
+import { ModerationNotes } from '@/components/admin/ModerationNotes';
 
 interface ModerationItem {
     id: string;
@@ -33,6 +34,7 @@ interface ModerationItem {
 
 export function ModerationPage() {
     const [activeTab, setActiveTab] = useState<'report' | 'comment'>('report');
+    const [visibleNotes, setVisibleNotes] = useState<Set<string>>(new Set());
     const queryClient = useQueryClient();
     const { confirm } = useConfirm();
 
@@ -211,26 +213,48 @@ export function ModerationPage() {
                                     <button
                                         onClick={() => handleAction(item, 'approve')}
                                         className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-400 rounded hover:bg-green-500/20 transition-colors text-xs font-medium border border-green-500/20"
+                                        title="El contenido cumple las normas (Falsa alarma)"
                                     >
                                         <Check className="h-3.5 w-3.5" />
-                                        Aprobar
-                                    </button>
-                                    <button
-                                        onClick={() => handleAction(item, 'dismiss')}
-                                        className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 text-slate-400 rounded hover:bg-slate-700 transition-colors text-xs font-medium border border-slate-700"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                        Ignorar
+                                        Mantener
                                     </button>
                                     <button
                                         onClick={() => handleAction(item, 'reject')}
                                         className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 transition-colors text-xs font-medium border border-red-500/20"
+                                        title="El contenido viola las normas (Eliminar)"
                                     >
                                         <Trash2 className="h-3.5 w-3.5" />
-                                        Eliminar
+                                        Remover
+                                    </button>
+
+                                    <div className="h-px bg-slate-800 my-1" />
+
+                                    <button
+                                        onClick={() => setVisibleNotes(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(item.id)) next.delete(item.id);
+                                            else next.add(item.id);
+                                            return next;
+                                        })}
+                                        className={cn(
+                                            "flex items-center gap-2 px-3 py-1.5 rounded transition-colors text-xs font-medium border",
+                                            visibleNotes.has(item.id)
+                                                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+                                                : "bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700"
+                                        )}
+                                    >
+                                        <FileText className="h-3.5 w-3.5" />
+                                        {visibleNotes.has(item.id) ? 'Ocultar Notas' : 'Notas Internas'}
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Moderation Notes Section */}
+                            {visibleNotes.has(item.id) && (
+                                <div className="mt-4 border-t border-slate-800 pt-4 animate-in fade-in slide-in-from-top-2">
+                                    <ModerationNotes entityId={item.id} entityType={item.type} />
+                                </div>
+                            )}
                         </div>
                     ))
                 )}

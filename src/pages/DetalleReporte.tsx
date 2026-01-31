@@ -28,6 +28,7 @@ import {
   ReportActions,
   ReportDescription,
   ReportImages,
+  ReportLocation,
   ReportMeta,
   CommentsSection,
   DeleteReportDialog,
@@ -95,7 +96,7 @@ export function DetalleReporte() {
       }
     },
     onReportDeleted: () => {
-      navigate('/')
+      navigate('/reportes')
     },
   })
 
@@ -195,7 +196,7 @@ export function DetalleReporte() {
 
   // Extract data for SEO
   const category = report.category
-  const zone = report.address || report.zone
+  const zone = report.fullAddress // ✅ SSOT: Use Enterprise formatted address
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === report.status)?.label || report.status
   const formattedDate = new Date(report.created_at).toLocaleDateString()
 
@@ -213,8 +214,9 @@ export function DetalleReporte() {
     latitude: report.latitude ?? undefined,
     longitude: report.longitude ?? undefined,
     locality: report.locality ?? undefined,
-    zone: report.zone ?? undefined,
-    province: report.province ?? undefined
+    zone: report.zone ?? undefined, // Keep zone for locality fallback
+    province: report.province ?? undefined,
+    address: report.fullAddress // ✅ Pass full address
   })
 
   return (
@@ -223,7 +225,7 @@ export function DetalleReporte() {
       onReset={() => reportDetail.refetch()}
     >
       <SEO
-        title={`${category} en ${zone}`}
+        title={`Robo de ${category} en ${zone}`}
         description={`Reporte de ${category} en ${zone}. Estado: ${statusLabel}. Publicado el ${formattedDate}.`}
         url={`https://safespot.tuweb-ai.com/reporte/${report.id}`}
         image={imageUrls.length > 0 ? imageUrls[0] : undefined}
@@ -290,11 +292,16 @@ export function DetalleReporte() {
             {/* 2. Description (includes edit form) */}
             <ReportDescription report={report} editor={editor} />
 
-            {/* 3. Images Section */}
-            <ReportImages
-              imageUrls={imageUrls}
+            {/* 3. Location Section (Always visible) */}
+            <ReportLocation
+              address={report.fullAddress}
               lat={report.latitude ?? undefined}
               lng={report.longitude ?? undefined}
+            />
+
+            {/* 4. Images Section (Media only) */}
+            <ReportImages
+              imageUrls={imageUrls}
             />
 
             {/* 4. Stats Section */}

@@ -1299,6 +1299,8 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       });
     }
 
+    const comment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
+
     // Check if already flagged
     // Return 200 OK instead of 409 - user's intent is satisfied (report is flagged)
     const checkResult = await queryWithRLS(anonymousId, `
@@ -1319,10 +1321,10 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
 
     // Create flag using queryWithRLS for RLS consistency
     const insertResult = await queryWithRLS(anonymousId, `
-      INSERT INTO report_flags (anonymous_id, report_id, reason)
-      VALUES ($1, $2, $3)
+      INSERT INTO report_flags (anonymous_id, report_id, reason, comment)
+      VALUES ($1, $2, $3, $4)
       RETURNING id, report_id, reason
-    `, [anonymousId, id, reason]);
+    `, [anonymousId, id, reason, comment]);
 
     if (insertResult.rows.length === 0) {
       logError(new Error('Insert returned no data'), req);

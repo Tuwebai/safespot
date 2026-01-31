@@ -12,6 +12,7 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 
 
 import { Button } from '@/components/ui/button'
@@ -122,6 +123,13 @@ export function Reportes() {
   // Flag dialog state
   const [isFlagDialogOpen, setIsFlagDialogOpen] = useState(false)
   const [flaggingReportId, setFlaggingReportId] = useState<string | null>(null)
+  // Store the active reason to spin ONLY the clicked button
+  // Format: "reportId:reason" or separate state. Since dialog is modal for 1 report, just reason is enough.
+  const [processingReason, setProcessingReason] = useState<string | null>(null)
+  const [flagComment, setFlagComment] = useState('')
+
+  // Keep usage of Set for global "is processing" check if needed, OR simplify.
+  // Using Set to prevent multiple flags on different reports is fine, but for the dialog UI we need granularity.
   const [flaggingReports, setFlaggingReports] = useState<Set<string>>(new Set())
 
   // Debounce search term to avoid excessive API calls
@@ -300,6 +308,8 @@ export function Reportes() {
 
     // Abrir modal
     setFlaggingReportId(reportId)
+    setProcessingReason(null) // Reset reason
+    setFlagComment('') // Reset comment
     setIsFlagDialogOpen(true)
   }, [flaggingReports, queryClient]) // Removed 'reports' dependency
 
@@ -327,9 +337,10 @@ export function Reportes() {
 
     // Marcar como en proceso
     setFlaggingReports(prev => new Set(prev).add(reportId))
+    setProcessingReason(reason)
 
     try {
-      await flagReport({ reportId, reason: reason.trim() })
+      await flagReport({ reportId, reason: reason.trim(), comment: flagComment.trim() || undefined })
 
       // Cerrar modal
       setIsFlagDialogOpen(false)
@@ -352,6 +363,7 @@ export function Reportes() {
         newSet.delete(reportId)
         return newSet
       })
+      setProcessingReason(null)
     }
   }, [flaggingReportId, toast, queryClient, flagReport])
 
@@ -763,6 +775,9 @@ export function Reportes() {
           <HighlightedReportCard
             reportId={highlightedReport.id}
             initialData={highlightedReport}
+            onToggleFavorite={(newState) => handleFavoriteUpdate(highlightedReport.id, newState)}
+            onFlag={(e) => handleFlag(e, highlightedReport.id)}
+            isFlagging={flaggingReports.has(highlightedReport.id)}
           />
         )}
 
@@ -855,39 +870,60 @@ export function Reportes() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
-                    const isFlagging = flaggingReports.has(flaggingReportId ?? '')
-                    return (
-                      <Button
-                        key={reason}
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => handleFlagSubmit(reason)}
-                        disabled={isFlagging}
-                      >
-                        {isFlagging ? (
-                          <>
-                            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
-                            Reportando...
-                          </>
-                        ) : (
-                          reason
-                        )}
-                      </Button>
-                    )
-                  })}
-                  <Button
-                    variant="ghost"
-                    className="w-full mt-4"
-                    onClick={() => {
-                      setIsFlagDialogOpen(false)
-                      setFlaggingReportId(null)
-                    }}
-                    disabled={flaggingReports.has(flaggingReportId ?? '')}
-                  >
-                    Cancelar
-                  </Button>
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-muted-foreground">
+                      Comentario adicional (opcional)
+                    </label>
+                    <Textarea
+                      placeholder="Añadir contexto extra..."
+                      value={flagComment}
+                      onChange={(e) => setFlagComment(e.target.value)}
+                      maxLength={300}
+                      className="resize-none bg-zinc-900/50 border-zinc-800 focus:border-neon-green/50 min-h-[80px]"
+                    />
+                    <div className="text-xs text-right text-muted-foreground">
+                      {flagComment.length}/300
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
+                      // Check if THIS specific reason is processing
+                      const isProcessingThis = processingReason === reason
+                      // Disable all if ANY is processing
+                      const isAnyProcessing = processingReason !== null
+
+                      return (
+                        <Button
+                          key={reason}
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => handleFlagSubmit(reason)}
+                          disabled={isAnyProcessing}
+                        >
+                          {isProcessingThis ? (
+                            <>
+                              <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                              Reportando...
+                            </>
+                          ) : (
+                            reason
+                          )}
+                        </Button>
+                      )
+                    })}
+                    <Button
+                      variant="ghost"
+                      className="w-full mt-4"
+                      onClick={() => {
+                        setIsFlagDialogOpen(false)
+                        setFlaggingReportId(null)
+                      }}
+                      disabled={flaggingReports.has(flaggingReportId ?? '')}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

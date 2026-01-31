@@ -28,7 +28,7 @@ router.post('/login', loginLimiter, async (req, res) => {
         if (envEmail && envPassword && email === envEmail && password === envPassword) {
             console.log('[AdminAuth] Login successful via .env master credentials');
             const token = jwt.sign(
-                { id: 'master-admin', email: envEmail, role: 'admin' },
+                { id: '00000000-0000-0000-0000-000000000000', email: envEmail, role: 'admin' },
                 JWT_SECRET,
                 { expiresIn: '24h' }
             );

@@ -505,13 +505,13 @@ export const reportsApi = {
   /**
    * Flag a report as inappropriate
    */
-  flag: async (reportId: string, reason?: string): Promise<{ is_flagged: boolean; flag_id: string }> => {
+  flag: async (reportId: string, reason?: string, comment?: string): Promise<{ is_flagged: boolean; flag_id: string }> => {
     return trafficController.enqueueSerial(async () => {
       const response = await apiRequest<{ is_flagged: boolean; flag_id: string }>(
         `/reports/${reportId}/flag`,
         {
           method: 'POST',
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason, comment }),
         }
       );
       return response;
@@ -641,13 +641,13 @@ export const commentsApi = {
   /**
    * Flag a comment as inappropriate
    */
-  flag: async (commentId: string, reason?: string): Promise<{ flagged: boolean; flag_id: string }> => {
+  flag: async (commentId: string, reason?: string, comment?: string): Promise<{ flagged: boolean; flag_id: string }> => {
     return trafficController.enqueueSerial(async () => {
       const response = await apiRequest<{ flagged: boolean; flag_id: string }>(
         `/comments/${commentId}/flag`,
         {
           method: 'POST',
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason, comment }),
         }
       );
       return response;
@@ -755,6 +755,8 @@ export interface UserProfile {
   following_count?: number;
   is_following?: boolean;
   interest_radius_meters?: number;
+  is_official?: boolean;
+  role?: string;
 }
 
 export interface GlobalStats {
@@ -1287,7 +1289,7 @@ export const gamificationApi = {
 
 export const favoritesApi = {
   getAll: async (): Promise<Report[]> => {
-    const raw = await apiRequest<RawReport[]>('/users/favorites');
+    const raw = await apiRequest<RawReport[]>('/favorites');
     return raw.map(r => transformReport(r));
   }
 }

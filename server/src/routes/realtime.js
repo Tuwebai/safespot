@@ -479,12 +479,25 @@ router.get('/feed', (req, res) => {
     const handleGlobalUpdate = (data) => {
         // Demultiplex global events into specific strict events:
 
+        // 🛡️ Enterprise Invariant: Hard Guard for Contract Fields
+        if (!data.eventId || !data.serverTimestamp) {
+            console.error('[SSE] ❌ INVARIANT VIOLATION: Event missing contract fields', data);
+            return; // Dropping invalid event at source rather than sending broken contract
+        }
+
+        // Common contract fields
+        const contract = {
+            eventId: data.eventId,
+            serverTimestamp: data.serverTimestamp,
+            originClientId: data.originClientId
+        };
+
         // 1. New Report
         if (data.type === 'new-report') {
             stream.send('report-create', {
                 id: data.report.id,
                 partial: data.report,
-                originClientId: data.originClientId
+                ...contract
             });
         }
         // 2. Report/Stats Update
@@ -492,7 +505,7 @@ router.get('/feed', (req, res) => {
             stream.send('report-update', {
                 id: data.reportId || data.id,
                 partial: data.updates || data.partial,
-                originClientId: data.originClientId
+                ...contract
             });
         }
         // 3. Status Change (Counters)
@@ -501,13 +514,14 @@ router.get('/feed', (req, res) => {
                 id: data.reportId,
                 prevStatus: data.prevStatus,
                 newStatus: data.newStatus,
-                originClientId: data.originClientId
+                ...contract
             });
         }
         // 4. New User (Counters)
         else if (data.type === 'new-user') {
             stream.send('user-create', {
-                anonymousId: data.anonymousId
+                anonymousId: data.anonymousId,
+                ...contract
             });
         }
         // 5. Deletion
@@ -516,7 +530,7 @@ router.get('/feed', (req, res) => {
                 id: data.reportId,
                 category: data.category,
                 status: data.status,
-                originClientId: data.originClientId
+                ...contract
             });
         }
     };
