@@ -6,6 +6,7 @@ import { reportsCache, statsCache } from '@/lib/cache-helpers'
 import { getClientId } from '@/lib/clientId'
 import { ssePool } from '@/lib/ssePool'
 import { reportSchema } from '@/lib/schemas' // Import Schema
+import { useEventDeduplication } from './useEventDeduplication'
 
 /**
  * Global Real-time Feed Hook
@@ -20,16 +21,15 @@ export function useGlobalFeed() {
     // In-memory idempotency guards to avoid double-processing during session
     const processedReports = useRef(new Set<string>())
     const processedUsers = useRef(new Set<string>())
+    const { shouldProcess: shouldProcessEvent } = useEventDeduplication()
 
     useEffect(() => {
         const url = `${API_BASE_URL}/realtime/feed`
         const myClientId = getClientId()
 
-        // Helper to handle idempotency
-        const shouldProcess = (eventId?: string) => {
-            if (!eventId) return true;
-            if (processedReports.current.has(eventId) || processedUsers.current.has(eventId)) return false;
-            return true;
+        // Helper to handle idempotency (Enterprise Refactor: Use global deduplicator)
+        const shouldProcess = (eventId?: string, context = 'Feed') => {
+            return shouldProcessEvent(eventId, context);
         };
 
         // 1. Report Creation
@@ -38,7 +38,7 @@ export function useGlobalFeed() {
                 const data = JSON.parse(event.data)
                 const reportId = data.partial?.id
                 if (data.originClientId === myClientId) return
-                if (!shouldProcess(data.eventId)) return
+                if (!shouldProcess(data.eventId, 'FeedCreate')) return
                 if (reportId && processedReports.current.has(reportId)) return
                 if (reportId) processedReports.current.add(reportId)
 
@@ -62,7 +62,7 @@ export function useGlobalFeed() {
             try {
                 const data = JSON.parse(event.data)
                 if (data.originClientId === myClientId) return
-                if (!shouldProcess(data.eventId)) return
+                if (!shouldProcess(data.eventId, 'FeedUpdate')) return
 
                 if (data.isLikeDelta) {
                     reportsCache.applyLikeDelta(queryClient, data.id, data.delta);
@@ -86,7 +86,7 @@ export function useGlobalFeed() {
             try {
                 const data = JSON.parse(event.data)
                 if (data.originClientId === myClientId) return
-                if (!shouldProcess(data.eventId)) return
+                if (!shouldProcess(data.eventId, 'FeedStatus')) return
 
                 statsCache.applyStatusChange(queryClient, data.prevStatus, data.newStatus)
                 reportsCache.patch(queryClient, data.id, { status: data.newStatus })
@@ -115,6 +115,7 @@ export function useGlobalFeed() {
             try {
                 const data = JSON.parse(event.data)
                 if (data.anonymousId && processedUsers.current.has(data.anonymousId)) return
+                if (!shouldProcess(data.eventId, 'UserCreate')) return
                 if (data.anonymousId) processedUsers.current.add(data.anonymousId)
                 statsCache.incrementUsers(queryClient)
             } catch (e) {

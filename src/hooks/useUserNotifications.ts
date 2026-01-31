@@ -5,12 +5,17 @@ import { API_BASE_URL } from '@/lib/api';
 import { upsertInList } from '@/lib/realtime-utils';
 import { NOTIFICATIONS_QUERY_KEY } from './queries/useNotificationsQuery';
 import { ssePool } from '@/lib/ssePool';
+import { useEventDeduplication } from './useEventDeduplication';
+import { getClientId } from '@/lib/clientId';
 
 // ... (inside component)
 
 
 
 interface NotificationPayload {
+    id?: string; // Add ID field if possible from backend
+    eventId?: string; // Deterministic event ID
+    originClientId?: string; // To avoid self-notifying
     type: string;
     followerId?: string;
     followerAlias?: string;
@@ -25,6 +30,8 @@ interface NotificationPayload {
 export function useUserNotifications(onNotification?: (data: NotificationPayload) => void) {
     const queryClient = useQueryClient();
     const anonymousId = getAnonymousIdSafe();
+    const { shouldProcess } = useEventDeduplication();
+    const myClientId = getClientId();
 
     useEffect(() => {
         if (!anonymousId) return;
@@ -64,17 +71,34 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
             try {
                 const data = JSON.parse(event.data) as NotificationPayload;
 
+                // 🏛️ ENTERPRISE GUARD: Deduplication & Origin Check
+                // 1. Origin check: Don't process events I triggered myself
+                if (data.originClientId === myClientId) return;
+
+                // 2. Idempotency check: Process each specific event only once
+                // Use data.eventId or data.notification.id or a hash of the content
+                const eventId = data.eventId || data.notification?.id;
+                if (!shouldProcess(eventId, 'Notification')) return;
+
                 // 1. Patch notifications list if full object is provided
                 if (data.notification) {
                     upsertInList(queryClient, NOTIFICATIONS_QUERY_KEY, data.notification);
 
                     // 1.5 Play sound for new notification
+                    // 🏛️ ENTERPRISE FIX: Skip sound for 'badge' type here, as useBadgeNotifications handles it
+                    const isBadgeNotification = data.notification.type === 'badge';
+
                     const notified = JSON.parse(localStorage.getItem('safespot_seen_sse_ids') || '[]');
-                    if (!notified.includes(data.notification.id)) {
+                    if (!notified.includes(data.notification.id) && !isBadgeNotification) {
                         import('./useBadgeNotifications').then(({ playBadgeSound }) => playBadgeSound());
                         notified.push(data.notification.id);
                         if (notified.length > 50) notified.shift();
                         localStorage.setItem('safespot_seen_sse_ids', JSON.stringify(notified));
+                    }
+
+                    // Trigger badge check if it's a badge notification to update UI
+                    if (isBadgeNotification) {
+                        import('./useBadgeNotifications').then(({ triggerBadgeCheck }) => triggerBadgeCheck());
                     }
                 }
 

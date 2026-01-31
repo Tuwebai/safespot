@@ -1,4 +1,5 @@
 import { Backoff } from './Backoff';
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 /**
  * Traffic State Definition
@@ -36,6 +37,15 @@ class TrafficController {
 
         if (this.resumePromise) {
             console.debug(`[Traffic] 🚦 Request paused. Current state: ${this.state}`);
+
+            // 📡 MOTOR 8: Trace Pause
+            telemetry.emit({
+                engine: 'Traffic',
+                severity: TelemetrySeverity.DEBUG,
+                engineState: this.state,
+                payload: { action: 'wait_until_allowed' }
+            });
+
             await this.resumePromise;
         }
     }
@@ -86,8 +96,25 @@ class TrafficController {
     async enqueueSerial<T>(action: () => Promise<T>, label = 'anonymous'): Promise<T> {
         const result = this.serialQueue.then(async () => {
             console.debug(`[Traffic] 🔄 SERIAL_QUEUE_EXECUTING: ${label}`);
+
+            // 📡 MOTOR 8: Trace Execution
+            const spanId = `span_${self.crypto.randomUUID().substring(0, 8)}`;
+            telemetry.emit({
+                engine: 'Traffic',
+                severity: TelemetrySeverity.DEBUG,
+                spanId,
+                payload: { action: 'serial_queue_executing', label }
+            });
+
             try {
-                return await action();
+                const result = await action();
+                telemetry.emit({
+                    engine: 'Traffic',
+                    severity: TelemetrySeverity.DEBUG,
+                    spanId,
+                    payload: { action: 'serial_queue_finished', label }
+                });
+                return result;
             } finally {
                 console.debug(`[Traffic] ✅ SERIAL_QUEUE_FINISHED: ${label}`);
             }

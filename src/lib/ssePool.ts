@@ -1,4 +1,5 @@
 import { Backoff } from '@/engine/traffic/Backoff';
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 type SSEListener = (event: MessageEvent) => void;
 type ReconnectCallback = (lastEventId: string | null) => void;
@@ -73,6 +74,14 @@ class SSEPool {
 
             source.onopen = () => {
                 // console.debug(`[SSE] Connected to ${url}`);
+
+                // 📡 MOTOR 8: Trace Connection
+                telemetry.emit({
+                    engine: 'SSE',
+                    severity: TelemetrySeverity.SIGNAL,
+                    payload: { action: 'connected', url }
+                });
+
                 entry.backoff.reset();
                 entry.reconnectCallbacks.forEach((cb: any) => cb(null));
             };
@@ -85,6 +94,13 @@ class SSEPool {
                     // ENTERPRISE: Infinite Backoff (Never give up while visible)
                     // If we are visible, we must keep trying, but slowly.
                     const delay = entry.backoff.getDelay();
+
+                    // 📡 MOTOR 8: Trace Error/Retry
+                    telemetry.emit({
+                        engine: 'SSE',
+                        severity: TelemetrySeverity.WARN,
+                        payload: { action: 'connection_lost', url, retryIn: delay, attempt: entry.backoff.count }
+                    });
 
                     if (entry.backoff.count % 5 === 0) {
                         console.warn(`[SSE] Connection struggling for ${url}. Next retry in ${delay}ms. (Attempt ${entry.backoff.count})`);

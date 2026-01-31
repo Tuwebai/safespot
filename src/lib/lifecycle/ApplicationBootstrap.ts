@@ -16,6 +16,7 @@ import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthorit
 import { queryClient } from '@/lib/queryClient';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { dataIntegrityEngine } from '@/engine/integrity';
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 export enum BootstrapState {
     IDLE = 'idle',
@@ -62,6 +63,14 @@ class ApplicationBootstrapManager {
 
         // 🔴 ENTERPRISE LOGGING: Structured Trace (Debug only to keep console clean)
         console.debug(`[Lifecycle] STATE_TRANSITION from=${this.state} to=${newState} reason=${reason}`);
+
+        // 📡 MOTOR 8: Emit Unified Telemetry Signal
+        telemetry.emit({
+            engine: 'Bootstrap',
+            severity: TelemetrySeverity.SIGNAL,
+            engineState: newState,
+            payload: { from: this.state, to: newState, reason }
+        });
 
         this.state = newState;
         this.listeners.forEach(fn => fn(newState));

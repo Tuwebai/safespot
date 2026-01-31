@@ -125,7 +125,23 @@ app.use(cors({
   },
   credentials: true,
   method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Anonymous-Id', 'X-Client-ID', 'Cache-Control', 'Last-Event-ID', 'Authorization', 'Pragma', 'Expires', 'X-App-Version', 'baggage', 'traceparent', 'sentry-trace', 'x-request-id']
+  allowedHeaders: [
+    'Content-Type',
+    'X-Anonymous-Id',
+    'X-Client-ID',
+    'Cache-Control',
+    'Last-Event-ID',
+    'Authorization',
+    'Pragma',
+    'Expires',
+    'X-App-Version',
+    'baggage',
+    'traceparent',
+    'sentry-trace',
+    'X-Request-ID',
+    'X-Trace-ID',
+    'X-Instance-ID'
+  ]
 }));
 
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)

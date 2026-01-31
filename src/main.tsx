@@ -8,6 +8,7 @@ import { initSentry } from './lib/sentry'
 initSentry()
 
 import { AppVersion } from './lib/version'
+import { telemetryHub } from './lib/telemetry/TelemetryHub'
 
 // ✅ ENTERPRISE LOGGING: Identity
 console.info(
@@ -15,6 +16,12 @@ console.info(
   'background: #00ff88; color: #000; padding: 4px; font-weight: bold; border-radius: 4px;',
   'color: #94a3b8; margin-left: 5px;'
 );
+
+// ✅ MOTOR 8: Unified Telemetry Engine
+if (import.meta.env.DEV) {
+  const history = telemetryHub.getHistory();
+  console.debug(`[Telemetry] Hub initialized. Current history: ${history.length} signals.`);
+}
 
 // ============================================
 // ENTERPRISE SECURE BOOT (CACHE HYGIENE)

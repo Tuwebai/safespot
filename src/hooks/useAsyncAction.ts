@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 export type AsyncStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -33,6 +34,15 @@ export function useAsyncAction<TArgs extends unknown[] = unknown[], TResult = un
 
         setStatus('loading')
         setError(null)
+
+        // 📡 MOTOR 8: Start UI Action Trace
+        const traceId = telemetry.startTrace();
+        telemetry.emit({
+            engine: 'UI',
+            severity: TelemetrySeverity.INFO,
+            traceId,
+            payload: { action: 'async_action_start' }
+        });
 
         try {
             await action(...args)

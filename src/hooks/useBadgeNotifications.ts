@@ -12,6 +12,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { useToast } from '@/components/ui/toast'
 import { getGlobalAudioContext, isAudioEnabled } from './useAudioUnlock'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { queryClient as globalQueryClient } from '@/lib/queryClient'
 import type { NewBadge } from '@/lib/api'
 
 const NOTIFIED_BADGES_KEY = 'safespot_notified_badges'
@@ -28,6 +29,9 @@ let globalBadgeCheckCallback: ((badges?: NewBadge[]) => void) | null = null
 export function triggerBadgeCheck(badges?: NewBadge[]) {
   // Invalidate cache first so next request (if any) fetches fresh data
   invalidateCachePrefix('/gamification')
+
+  // ✅ ENTERPRISE FIX: Invalidate profile to sync points and badges count
+  globalQueryClient.invalidateQueries({ queryKey: queryKeys.user.profile })
 
   if (globalBadgeCheckCallback) {
     if (badges && badges.length > 0) {

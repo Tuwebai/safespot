@@ -49,6 +49,7 @@ export const API_BASE_URL = rawApiUrl.replace(/\/$/, '').endsWith('/api')
 
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
 import { trafficController } from '@/engine/traffic/TrafficController';
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 /**
  * Get headers with anonymous_id, client_id, and APP VERSION
@@ -56,7 +57,7 @@ import { trafficController } from '@/engine/traffic/TrafficController';
  * ✅ ENTERPRISE TRACING: Injects X-Request-ID for E2E Observability
  * ✅ MOTOR 2.1: Strict Session Boundary Contract
  */
-function getHeaders(requestId?: string): HeadersInit {
+function getHeaders(requestId?: string, traceId?: string): Record<string, string> {
   const sessionState = sessionAuthority.getState();
   const sessionToken = sessionAuthority.getToken();
 
@@ -69,6 +70,8 @@ function getHeaders(requestId?: string): HeadersInit {
     'X-Anonymous-Id': anonymousId,
     'X-App-Version': __SW_VERSION__,
     'X-Request-ID': requestId || self.crypto.randomUUID(),
+    'X-Trace-ID': traceId || telemetry.getTraceId(),
+    'X-Instance-ID': telemetry.getInstanceId(),
   };
 
   // ✅ MOTOR 2.1: Only inject JWT if Authority is READY
@@ -139,14 +142,23 @@ export async function apiRequest<T>(
   const finalEndpoint = cleanEndpoint.startsWith('/') ? cleanEndpoint : `/${cleanEndpoint}`;
   const url = `${API_BASE_URL}${finalEndpoint}`;
 
+  // 🔴 ENTERPRISE: Log request (Motor 8 Signal)
+  const traceId = telemetry.getTraceId();
+  telemetry.emit({
+    engine: 'API',
+    severity: TelemetrySeverity.DEBUG,
+    traceId,
+    payload: { action: 'request_init', method: options.method || 'GET', endpoint, requestId }
+  });
+
   // Log in development to catch issues fast
   if (import.meta.env.DEV) {
-    console.debug(`[API Request] [${requestId}] ${options.method || 'GET'} ${url}`);
+    console.debug(`[API Request] [${requestId}] [${traceId}] ${options.method || 'GET'} ${url}`);
   }
 
   try {
     const headers: HeadersInit = {
-      ...getHeaders(requestId), // Pass ID to headers generator
+      ...getHeaders(requestId, traceId), // Pass IDs to headers generator
       ...options.headers,
     };
 

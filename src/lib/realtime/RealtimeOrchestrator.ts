@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../api';
 import { queryClient } from '../queryClient';
 import { getClientId } from '../clientId';
 import { dataIntegrityEngine } from '@/engine/integrity';
+import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 /**
  * 👑 RealtimeOrchestrator
@@ -87,8 +88,14 @@ class RealtimeOrchestrator {
 
         const type = data.type || event.type;
 
-        // 🔍 DEBUG: Log all incoming events to diagnose message.delivered issue
-        console.debug(`[Orchestrator] 📥 RAW EVENT: type=${type} eventType=${event.type}`);
+        // 📡 MOTOR 8: Start Root Trace for Incoming Message
+        const traceId = telemetry.startTrace();
+        telemetry.emit({
+            engine: 'Orchestrator',
+            severity: TelemetrySeverity.DEBUG,
+            traceId,
+            payload: { action: 'raw_event_received', type, channel }
+        });
 
         return this.processValidatedData(data, type, channel);
     }
@@ -139,6 +146,13 @@ class RealtimeOrchestrator {
         const alreadyProcessed = await localProcessedLog.isEventProcessed(eventId);
         if (alreadyProcessed) {
             // console.debug('[Orchestrator] 🛡️ Duplicate suppressed (IndexedDB):', eventId);
+
+            // 📡 MOTOR 8: Trace Duplication
+            telemetry.emit({
+                engine: 'Orchestrator',
+                severity: TelemetrySeverity.DEBUG,
+                payload: { action: 'event_suppressed_duplicate', eventId }
+            });
             return;
         }
 
@@ -149,6 +163,13 @@ class RealtimeOrchestrator {
                 await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
             }
             console.debug(`[Orchestrator] ✅ Persisted event: ${eventId}`);
+
+            // 📡 MOTOR 8: Trace Persistence
+            telemetry.emit({
+                engine: 'Orchestrator',
+                severity: TelemetrySeverity.DEBUG,
+                payload: { action: 'event_persisted', eventId, channel }
+            });
         } catch (err) {
             console.error('[Orchestrator] ❌ Persistence failure. Aborting notify/ack.', err);
             return;
