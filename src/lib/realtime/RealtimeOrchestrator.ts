@@ -57,6 +57,19 @@ const FEED_EVENTS = [
     'user-create'
 ];
 
+const CHAT_EVENTS = [
+    'new-message',
+    'typing',
+    'message.read',
+    'message.delivered',
+    'presence',
+    'chat-update',
+    'chat-rollback',
+    'message-deleted',
+    'message-reaction',
+    'message-pinned'
+];
+
 class RealtimeOrchestrator {
     private listeners: Set<EventCallback> = new Set();
     private activeSubscriptions: string[] = [];
@@ -243,18 +256,32 @@ class RealtimeOrchestrator {
             }
         }
 
+        // 📡 MOTOR 9: Automatic Routing by Type (Domain Discovery)
+        let effectiveChannel = channel;
+        if (!effectiveChannel || effectiveChannel === 'user' || effectiveChannel === 'system') {
+            if (FEED_EVENTS.includes(type)) effectiveChannel = 'feed';
+            else if (CHAT_EVENTS.includes(type)) effectiveChannel = 'chat';
+            else if (type.startsWith('comment-') || type === 'new-comment') effectiveChannel = 'social';
+            else effectiveChannel = 'user';
+        }
+
         // 1.1 COMMUNITY FEED HANDLER (New Authority)
-        if (channel === 'feed') {
+        if (effectiveChannel === 'feed') {
             await this.processFeedDomainLogic(type, data);
         }
 
         // 1.2 USER DOMAIN HANDLER (Centralized Authority)
-        if (channel === 'user') {
+        if (effectiveChannel === 'user') {
             await this.processUserDomainLogic(type, data);
         }
 
-        // 1.3 SOCIAL DOMAIN HANDLER (Dynamic Authority)
-        if (channel.startsWith('social:')) {
+        // 1.3 CHAT DOMAIN HANDLER (Atomic Authority)
+        if (effectiveChannel === 'chat') {
+            await this.processChatDomainLogic(type, data);
+        }
+
+        // 1.4 SOCIAL DOMAIN HANDLER (Dynamic Authority)
+        if (effectiveChannel.startsWith('social')) {
             await this.processSocialDomainLogic(type, data);
         }
 
@@ -330,34 +357,35 @@ class RealtimeOrchestrator {
      * processSocialDomainLogic() - Authoritative state changes for comments and likes
      */
     private async processSocialDomainLogic(type: string, data: any) {
-        const payload = data.payload || data;
+        const payload = data.partial || data.payload || data;
+        const id = data.id || payload.id;
         const reportId = payload.reportId || payload.report_id;
 
         try {
             switch (type) {
                 case 'new-comment': {
-                    if (payload.partial || payload.comment) {
-                        commentsCache.append(queryClient, payload.partial || payload.comment);
+                    if (payload) {
+                        commentsCache.append(queryClient, payload);
                     }
                     break;
                 }
                 case 'comment-update': {
-                    if (payload.isLikeDelta) {
-                        commentsCache.applyLikeDelta(queryClient, payload.id, payload.delta);
+                    if (data.isLikeDelta || payload.isLikeDelta) {
+                        commentsCache.applyLikeDelta(queryClient, id, data.delta || payload.delta);
                     } else {
-                        commentsCache.patch(queryClient, payload.id, payload.partial || payload.comment);
+                        commentsCache.patch(queryClient, id, payload);
                     }
                     break;
                 }
                 case 'comment-delete': {
-                    if (payload.id && reportId) {
-                        commentsCache.remove(queryClient, payload.id, reportId);
+                    if (id && reportId) {
+                        commentsCache.remove(queryClient, id, reportId);
                     }
                     break;
                 }
                 case 'report-update': {
-                    if (payload.id) {
-                        reportsCache.patch(queryClient, payload.id, payload.partial);
+                    if (id) {
+                        reportsCache.patch(queryClient, id, payload);
                     }
                     break;
                 }
@@ -440,12 +468,14 @@ class RealtimeOrchestrator {
      * processFeedDomainLogic() - Authoritative state changes for the global feed
      */
     private async processFeedDomainLogic(type: string, data: any) {
-        const payload = data.payload || data;
+        // SSOT: Use partial for data, data.id for identity
+        const payload = data.partial || data.payload || data;
+        const id = data.id || payload.id;
 
         try {
             switch (type) {
                 case 'report-create': {
-                    const parsed = reportSchema.safeParse(payload.partial || payload);
+                    const parsed = reportSchema.safeParse(payload);
                     if (parsed.success) {
                         reportsCache.prepend(queryClient, parsed.data);
                         statsCache.applyReportCreate(queryClient, parsed.data.category, parsed.data.status);
@@ -453,25 +483,25 @@ class RealtimeOrchestrator {
                     break;
                 }
                 case 'report-update': {
-                    if (payload.isLikeDelta) {
-                        reportsCache.applyLikeDelta(queryClient, payload.id, payload.delta);
-                    } else if (payload.isCommentDelta) {
-                        reportsCache.applyCommentDelta(queryClient, payload.id, payload.delta);
+                    if (data.isLikeDelta || payload.isLikeDelta) {
+                        reportsCache.applyLikeDelta(queryClient, id, data.delta || payload.delta);
+                    } else if (data.isCommentDelta || payload.isCommentDelta) {
+                        reportsCache.applyCommentDelta(queryClient, id, data.delta || payload.delta);
                     } else {
-                        const parsed = reportSchema.partial().safeParse(payload.partial || payload);
+                        const parsed = reportSchema.partial().safeParse(payload);
                         if (parsed.success) {
-                            reportsCache.patch(queryClient, payload.id, parsed.data);
+                            reportsCache.patch(queryClient, id, parsed.data);
                         }
                     }
                     break;
                 }
                 case 'status-change': {
                     statsCache.applyStatusChange(queryClient, payload.prevStatus, payload.newStatus);
-                    reportsCache.patch(queryClient, payload.id, { status: payload.newStatus });
+                    reportsCache.patch(queryClient, id, { status: payload.newStatus });
                     break;
                 }
                 case 'report-delete': {
-                    reportsCache.remove(queryClient, payload.id);
+                    reportsCache.remove(queryClient, id);
                     if (payload.category) {
                         statsCache.applyReportDelete(queryClient, payload.category, payload.status);
                     }
@@ -634,16 +664,60 @@ class RealtimeOrchestrator {
     }
 
     /**
-     * unwatchReportComments() - Cleanup dynamic social subscription
+     * unwatchReportComments() - Cleanup social feed subscription for a report
      */
     unwatchReportComments(reportId: string): void {
         const channelId = `social:${reportId}`;
         const unsub = this.dynamicSubscriptions.get(channelId);
         if (unsub) {
-            console.debug(`[Orchestrator] 🙈 Unwatching social feed for report: ${reportId}`);
+            console.debug(`[Orchestrator] 🤫 Unwatching social feed for report: ${reportId}`);
             unsub();
             this.dynamicSubscriptions.delete(channelId);
         }
+    }
+
+    /**
+     * watchChatRoom() - Dynamic subscription for a chat room
+     */
+    watchChatRoom(roomId: string, anonymousId: string): void {
+        const url = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${roomId}?anonymousId=${anonymousId}`;
+        const channelId = `social:chat:${roomId}`; // Use social prefix for dynamic routing
+
+        if (this.dynamicSubscriptions.has(channelId)) return;
+
+        console.debug(`[Orchestrator] 💬 Watching chat room: ${roomId}`);
+
+        const unsubs: (() => void)[] = [];
+        CHAT_EVENTS.forEach(eventName => {
+            unsubs.push(ssePool.subscribe(url, eventName, (event) => this.processRawEvent(event, channelId)));
+        });
+
+        this.dynamicSubscriptions.set(channelId, () => {
+            unsubs.forEach(u => u());
+        });
+    }
+
+    /**
+     * unwatchChatRoom() - Cleanup chat room subscription
+     */
+    unwatchChatRoom(roomId: string): void {
+        const channelId = `social:chat:${roomId}`;
+        const unsub = this.dynamicSubscriptions.get(channelId);
+        if (unsub) {
+            console.debug(`[Orchestrator] 🤫 Unwatching chat room: ${roomId}`);
+            unsub();
+            this.dynamicSubscriptions.delete(channelId);
+        }
+    }
+
+    /**
+     * processChatDomainLogic() - Domain logic for chat events (presence, typing, etc.)
+     */
+    private async processChatDomainLogic(_type: string, _data: any) {
+        // Many chat events are ephemeral (typing) and don't need cache persistence
+        // but some (new-message, delivered) do.
+        // For now, Orchestrator focuses on side-effects and persistence.
+        // UI reflection is handled by hooks listening to onEvent.
     }
 
     destroy(): void {

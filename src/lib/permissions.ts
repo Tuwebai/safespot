@@ -11,18 +11,26 @@
  */
 
 import { getAnonymousIdSafe } from '@/lib/identity';
-import { useAuthStore } from '@/store/authStore'; // Access to Auth State
-import type { Report, Comment } from '@/lib/schemas'; // Strict models
+import { useAuthStore } from '@/store/authStore';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
+import type { Report, Comment } from '@/lib/schemas';
 
 /**
- * Obtiene el ID canónico del usuario actual (Auth > Device).
+ * Obtiene el ID canónico del usuario actual (SessionAuthority > Auth Store > Device Fallback).
  * Esta es la identidad contra la cual se comparan los recursos.
  */
 export function getCurrentUserId(): string {
+    // 1. Prioridad: SessionAuthority (Motor 2 SSOT)
+    const sessionId = sessionAuthority.getAnonymousId();
+    if (sessionId) return sessionId;
+
+    // 2. Fallback: Auth Store (Legacy / Durante transición)
     const auth = useAuthStore.getState();
     if (auth.token && auth.user?.auth_id) {
         return auth.user.auth_id;
     }
+
+    // 3. Última instancia: Identidad local (Anónimo puro)
     return getAnonymousIdSafe();
 }
 

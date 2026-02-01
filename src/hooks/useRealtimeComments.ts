@@ -22,8 +22,16 @@ export function useRealtimeComments(reportId: string | undefined, enabled = true
 
         return () => {
             // 3. Cleanup: Tell the Orchestrator we are done
-            realtimeOrchestrator.unwatchReportComments(reportId)
-            unsub()
+            // ⚠️ ARCHITECTURAL GUARD: Never throw in cleanup. 
+            // A throw here can break the render loop and reset global cache via ErrorBoundary.
+            try {
+                if (typeof (realtimeOrchestrator as any).unwatchReportComments === 'function') {
+                    realtimeOrchestrator.unwatchReportComments(reportId)
+                }
+                unsub()
+            } catch (err) {
+                console.error('[Realtime-Hook] Cleanup failed safely:', err)
+            }
         }
     }, [reportId, enabled])
 

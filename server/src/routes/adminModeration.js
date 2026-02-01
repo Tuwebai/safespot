@@ -95,7 +95,10 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
         const { type, id } = req.params;
         const { action, banUser } = req.body; // action: 'approve' | 'reject' | 'dismiss'
 
-        const table = type === 'reports' || type === 'report' ? 'reports' : 'comments';
+        const isReport = type === 'reports' || type === 'report';
+        const table = isReport ? 'reports' : 'comments';
+        const flagsTable = isReport ? 'report_flags' : 'comment_flags';
+        const foreignKey = isReport ? 'report_id' : 'comment_id';
 
         let updateData = {};
 
@@ -103,14 +106,11 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
             // Restore visibility
             updateData = { is_hidden: false };
 
-            // Resolve flags as "Resolved" (Action Taken / Restored)
-            // Or if restoring means "It was fine", maybe "Dismissed"? 
-            // "Approve" usually means "Approve the content", so flags were false alarms -> "Dismissed"
-            // Let's assume Approve = Content is Safe -> Flags were wrong -> Dismissed
+            // Resolve flags as "Dismissed" (False alarm)
             await supabaseAdmin
-                .from('report_flags')
+                .from(flagsTable)
                 .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq('report_id', id);
+                .eq(foreignKey, id);
 
         } else if (action === 'reject') {
             // Soft delete
@@ -118,22 +118,18 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
 
             // Resolve flags as "Resolved" (Action Taken)
             await supabaseAdmin
-                .from('report_flags')
+                .from(flagsTable)
                 .update({ status: 'resolved', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq('report_id', id);
+                .eq(foreignKey, id);
 
         } else if (action === 'dismiss') {
             // Keep visible, but mark flags as ignored
-            // Do NOT touch reports table directly (trigger handles it)
-            // Just mark flags as dismissed
-
             await supabaseAdmin
-                .from('report_flags')
+                .from(flagsTable)
                 .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq('report_id', id);
+                .eq(foreignKey, id);
 
-            // No update to report needed directly if trigger works, 
-            // but we might want to unhide if it was auto-hidden?
+            // Also unhide if it was auto-hidden
             updateData = { is_hidden: false };
         } else {
             return res.status(400).json({ error: 'Invalid action' });

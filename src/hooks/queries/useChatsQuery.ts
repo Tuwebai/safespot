@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi, ChatMessage, ChatRoom } from '../../lib/api';
 import { useEffect, useState, useRef } from 'react';
-import { API_BASE_URL } from '../../lib/api';
 import { getClientId } from '@/lib/clientId';
 import { useToast } from '../../components/ui/toast';
-import { ssePool } from '@/lib/ssePool';
+// Eliminado ssePool de aquí ya que se usa via Orchestrator
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { chatCache } from '../../lib/chatCache';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
@@ -70,50 +69,54 @@ export function useChatRooms() {
     useEffect(() => {
         if (!anonymousId) return;
 
-        const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/user/${anonymousId}`;
 
         // 👑 NEW: Unified Orchestrator Authority for Domain Events
         const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
             const { type, payload } = event;
+            const actualPayload = payload.partial || payload;
 
             if (type === 'chat-update') {
-                const convId = payload.roomId;
+                const convId = actualPayload.roomId;
                 if (!convId) return;
 
-                if (payload.message) {
-                    const message = payload.message;
+                if (actualPayload.message) {
+                    const message = actualPayload.message;
                     const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
-                } else if (payload.action === 'read') {
+                } else if (actualPayload.action === 'read') {
                     chatCache.markRoomAsRead(queryClient, convId, anonymousId);
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
-                }
-            } else if (type === 'message.delivered') {
-                const convId = payload.conversationId;
-                if (!convId) return;
-                console.log('[Orchestrator-Hook] message.delivered received:', payload);
-                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, payload);
-            } else if (type === 'message.read') {
-                if (payload.readerId !== anonymousId && payload.roomId) {
-                    chatCache.applyReadReceipt(queryClient, payload.roomId, anonymousId);
-                }
-            } else if (type === 'chat-rollback') {
-                if (payload.roomId && payload.messageId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(payload.roomId, anonymousId), (old) => {
-                        if (!old) return old;
-                        return old.filter(m => m.id !== payload.messageId);
+                } else if (actualPayload.action === 'typing') {
+                    queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
+                        if (!old || !Array.isArray(old)) return old;
+                        return old.map(r => r.id === convId ? { ...r, is_typing: actualPayload.isTyping } : r);
                     });
                 }
-            } else if (type === 'presence-update') {
-                if (payload.userId) {
-                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(payload.userId), payload.partial);
+            } else if (type === 'message.delivered') {
+                const convId = actualPayload.conversationId;
+                if (!convId) return;
+                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload);
+            } else if (type === 'message.read') {
+                if (actualPayload.readerId !== anonymousId && actualPayload.roomId) {
+                    chatCache.applyReadReceipt(queryClient, actualPayload.roomId, anonymousId);
+                }
+            } else if (type === 'chat-rollback') {
+                if (actualPayload.roomId && actualPayload.messageId) {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(actualPayload.roomId, anonymousId), (old) => {
+                        if (!old) return old;
+                        return old.filter(m => m.id !== actualPayload.messageId);
+                    });
+                }
+            } else if (type === 'presence-update' || type === 'presence') {
+                if (actualPayload.userId) {
+                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(actualPayload.userId), actualPayload);
                     queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
                         if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.other_participant_id === payload.userId
-                            ? { ...r, is_online: payload.partial.status === 'online', other_participant_last_seen: payload.partial.last_seen_at || r.other_participant_last_seen }
+                        return old.map(r => r.other_participant_id === actualPayload.userId
+                            ? { ...r, is_online: actualPayload.status === 'online', other_participant_last_seen: actualPayload.status === 'offline' ? new Date().toISOString() : r.other_participant_last_seen }
                             : r
                         );
                     });
@@ -121,22 +124,8 @@ export function useChatRooms() {
             }
         });
 
-        // ✅ KEEP ssePool ONLY for ephemeral UI states (Typing) or legacy compatibility
-        const unsubscribeUpdate = ssePool.subscribe(sseUrl, 'chat-update', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.action === 'typing') {
-                    queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
-                        if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.id === data.roomId ? { ...r, is_typing: data.isTyping } : r);
-                    });
-                }
-            } catch (err) { }
-        });
-
         return () => {
             unsubOrchestrator();
-            unsubscribeUpdate();
         };
 
     }, [anonymousId, queryClient]);
@@ -225,247 +214,87 @@ export function useChatMessages(convId: string | undefined) {
         }
     }, [convId, anonymousId, queryClient]);
 
-    // Integración SSE para tiempo real + Gap Recovery
+    // Integración Realtime via Orchestrator (SSOT)
     useEffect(() => {
         if (!convId || !anonymousId) return;
 
-        const sseUrl = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${convId}?anonymousId=${anonymousId}`;
+        // 1. Tell Orchestrator to watch this room
+        realtimeOrchestrator.watchChatRoom(convId, anonymousId);
 
-        // ✅ GAP RECOVERY: Watermark = ID of last message received via SSE
-        // Using a local variable instead of ref for this effect's scope
-        let watermark: string | null = null;
+        // 2. Listen for UI Side-Effects
+        const unsubscribe = realtimeOrchestrator.onEvent((event) => {
+            const { type, payload, originClientId } = event;
+            const actualPayload = payload.partial || payload;
 
-        // Initialize watermark from current cache
-        const currentMessages = queryClient.getQueryData<ChatMessage[]>(
-            CHATS_KEYS.messages(convId, anonymousId)
-        );
-        if (currentMessages && currentMessages.length > 0) {
-            watermark = currentMessages[currentMessages.length - 1].id;
-            console.log(`[GapRecovery] 🌊 Initialized watermark: ${watermark.substring(0, 8)}... (Last local msg)`);
-        } else {
-            console.log('[GapRecovery] 🌊 No local messages, watermark starts empty (Full sync via query)');
-        }
+            // Filter for THIS room
+            const roomId = actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId;
+            if (roomId !== convId) return;
 
-        // ============================================
-        // GAP RECOVERY: On SSE Reconnection
-        // ============================================
-        const unsubReconnect = ssePool.onReconnect(sseUrl, async () => {
-            // Use watermark instead of lastEventId (more reliable for app-level logic)
-            const since = watermark;
+            // Echo suppression
+            if (originClientId === getClientId()) return;
 
-            console.log(`[GapRecovery] 🔄 SSE Reconnected. Checking for gaps since: ${since ? since.substring(0, 8) : 'BEGINNING'}...`);
-
-            if (since) {
-                try {
-                    // Fetch missed messages from backend
-                    const missedMessages = await chatsApi.getMessages(convId, since);
-
-                    if (missedMessages && missedMessages.length > 0) {
-                        console.log(`[GapRecovery] ✅ Recovered ${missedMessages.length} missed messages. Merging...`);
-
-                        // Batch upsert for efficient merge (dedupe + sort)
-                        chatCache.upsertMessageBatch(queryClient, missedMessages, convId, anonymousId || '');
-
-                        // Update watermark to newest recovered message
-                        watermark = missedMessages[missedMessages.length - 1].id;
-                    } else {
-                        console.log('[GapRecovery] ✨ No messages missed during outage.');
+            switch (type) {
+                case 'new-message':
+                    chatCache.upsertMessage(queryClient, actualPayload, anonymousId);
+                    if (actualPayload.sender_id !== anonymousId) {
+                        playNotificationSound();
                     }
-                } catch (err: any) {
-                    // ✅ ENTERPRISE: Explicit Handling of 410 Gone (Phantom Reference)
-                    if (err.status === 410 || err.code === 'REF_GONE') {
-                        console.warn('[GapRecovery] 🛑 Phantom Reference Detected (410). Force full resync.');
-                        // Telemetry: logEvent('gap_recovery_failure', { reason: 'phantom_reference' });
-                    } else {
-                        console.error('[GapRecovery] ❌ Failed to recover gaps (Unknown):', err);
+                    break;
+                case 'typing':
+                    if (actualPayload.senderId !== anonymousId) {
+                        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                        setIsTyping(actualPayload.isTyping);
+                        if (actualPayload.isTyping) {
+                            typingTimeoutRef.current = setTimeout(() => setIsTyping(false), TYPING_TIMEOUT_MS);
+                        }
                     }
-
-                    // Fallback: Always invalidate to force self-healing
-                    queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
-                }
-            } else {
-                // If no watermark (empty chat), just invalidate to be safe
-                console.log('[GapRecovery] No watermark. Invalidation to ensure sync.');
-                queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
-            }
-
-            // ✅ RECONCILIATION: Force refresh of message statuses (DELIVERED/READ ticks)
-            // Even if we didn't miss *new* messages, old messages might have been read/delivered.
-            // This is "Eventual Consistency" in action.
-            console.log('[Reconciliation] 🧹 Refreshing message statuses (Ticks)...');
-            queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
-
-            // ✅ Clear any stale typing on reconnect
-            setIsTyping(false);
-            if (typingTimeoutRef.current) {
-                clearTimeout(typingTimeoutRef.current);
-                typingTimeoutRef.current = null;
-            }
-        });
-
-        // 🏛️ ARCHITECTURAL FIX (P0): Hook NO consume SSE directo para new-message
-        // RealtimeOrchestrator es la ÚNICA autoridad que procesa SSE crudo.
-        // El hook escucha eventos YA PROCESADOS (después de persist/ack)
-        const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
-            // Solo procesar eventos de mensaje para este chat
-            if (event.type !== 'new-message' && event.type !== 'chat-update') return;
-
-            const message = event.payload?.message || event.payload;
-            if (!message?.conversation_id || message.conversation_id !== convId) return;
-
-            // Echo suppression (ya hecho por Orchestrator, pero por seguridad)
-            if (event.originClientId === getClientId()) return;
-
-            console.log('[Hook] ✅ Received from Orchestrator:', {
-                id: message.id,
-                type: event.type,
-                sender: message.sender_id?.substring(0, 8)
-            });
-
-            // Actualizar cache SOLO con datos ya validados por Orchestrator
-            chatCache.upsertMessage(queryClient, message, anonymousId || '');
-
-            // 🏛️ ACK es responsabilidad EXCLUSIVA del Orchestrator (NO hacemos ACK aquí)
-
-            // Reproducir sonido para mensajes de otros
-            if (message.sender_id !== anonymousId) {
-                playNotificationSound();
-            }
-
-            // Actualizar watermark
-            watermark = message.id;
-        });
-
-        const unsubTyping = ssePool.subscribe(sseUrl, 'typing', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.senderId !== anonymousId) {
-                    // Clear any existing timeout
-                    if (typingTimeoutRef.current) {
-                        clearTimeout(typingTimeoutRef.current);
-                        typingTimeoutRef.current = null;
+                    break;
+                case 'message.read':
+                    if (actualPayload.readerId !== anonymousId) {
+                        chatCache.applyReadReceipt(queryClient, convId, anonymousId);
                     }
-
-                    setIsTyping(data.isTyping);
-
-                    // ✅ Anti-Stale: Auto-clear after 5s if typing started
-                    if (data.isTyping) {
-                        typingTimeoutRef.current = setTimeout(() => {
-                            setIsTyping(false);
-                            console.log('[Typing] Auto-cleared stale indicator');
-                        }, TYPING_TIMEOUT_MS);
+                    break;
+                case 'message.delivered':
+                    chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload);
+                    break;
+                case 'presence':
+                    if (actualPayload.userId) {
+                        queryClient.setQueryData(CHATS_KEYS.presence(actualPayload.userId), {
+                            status: actualPayload.status,
+                            last_seen_at: actualPayload.status === 'offline' ? new Date().toISOString() : null
+                        });
                     }
-                }
-            } catch (e) { }
-        });
-
-        const unsubRead = ssePool.subscribe(sseUrl, 'message.read', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.readerId !== anonymousId) {
-                    chatCache.applyReadReceipt(queryClient, convId, anonymousId);
-                }
-            } catch (e) { }
-        });
-
-        const unsubDelivered = ssePool.subscribe(sseUrl, 'message.delivered', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('[SSE] Room message.delivered received:', data);
-                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, data);
-            } catch (e) { }
-        });
-
-        const unsubPresence = ssePool.subscribe(sseUrl, 'presence', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.userId) {
-                    queryClient.setQueryData(CHATS_KEYS.presence(data.userId), {
-                        status: data.status,
-                        last_seen_at: data.status === 'offline' ? new Date().toISOString() : null
-                    });
-                }
-            } catch (e) { }
-        });
-
-        const unsubMessage = ssePool.subscribe(sseUrl, 'message', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.action === 'message-deleted') {
+                    break;
+                case 'message-deleted':
                     queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
-                        return old?.filter(m => m.id !== data.messageId) || [];
+                        return old?.filter(m => m.id === actualPayload.id || m.id === actualPayload.messageId ? false : true) || [];
                     });
-                }
-            } catch (e) { }
-        });
-
-        // ✅ WhatsApp-Grade: Realtime Reaction Updates
-        const unsubReaction = ssePool.subscribe(sseUrl, 'message-reaction', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.messageId && data.reactions) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                    break;
+                case 'message-reaction':
+                    if (actualPayload.messageId && actualPayload.reactions) {
+                        queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                            if (!old) return old;
+                            return old.map(m => m.id === actualPayload.messageId ? { ...m, reactions: actualPayload.reactions } : m);
+                        });
+                    }
+                    break;
+                case 'message-pinned':
+                    // Update cache... (logic same as before, but from actualPayload)
+                    queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
                         if (!old) return old;
-                        return old.map(m => m.id === data.messageId ? { ...m, reactions: data.reactions } : m);
+                        return old.map(r => r.id === convId ? { ...r, pinned_message_id: actualPayload.pinnedMessageId } : r);
                     });
-                }
-            } catch (e) { }
-        });
-
-        // ✅ WhatsApp-Grade: Realtime Pin Updates
-        const unsubPinned = ssePool.subscribe(sseUrl, 'message-pinned', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                // 1. Update global rooms list (sidebar)
-                queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
-                    if (!old) return old;
-                    return old.map(r => r.id === convId ? { ...r, pinned_message_id: data.pinnedMessageId } : r);
-                });
-                // 2. Update individual conversation detail (active window)
-                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId || ''), (old) => {
-                    if (!old) return old;
-                    return { ...old, pinned_message_id: data.pinnedMessageId };
-                });
-            } catch (e) { }
-        });
-
-        // ============================================
-        // MULTI-TAB SYNC: BroadcastChannel (L0 - Fastest)
-        // ============================================
-        const unsubBroadcast = chatBroadcast.subscribe((event) => {
-            if (event.type === 'new-message' && event.roomId === convId) {
-                // Upsert message from other tab (same logic as SSE)
-                chatCache.upsertMessage(queryClient, event.message, anonymousId || '');
-                console.log('[MultiTab] ✅ Received message from another tab');
-            } else if (event.type === 'message-deleted' && event.roomId === convId) {
-                queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId || ''), (old) => {
-                    return old?.filter(m => m.id !== event.messageId) || [];
-                });
-            } else if (event.type === 'message-pinned' && event.roomId === convId) {
-                // Cross-tab sync for pinning
-                const { pinnedMessageId } = event;
-                queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId || ''), (old) => {
-                    if (!old) return old;
-                    return old.map(r => r.id === convId ? { ...r, pinned_message_id: pinnedMessageId } : r);
-                });
-                queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId || ''), (old) => {
-                    if (!old) return old;
-                    return { ...old, pinned_message_id: pinnedMessageId };
-                });
+                    queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId), (old) => {
+                        if (!old) return old;
+                        return { ...old, pinned_message_id: actualPayload.pinnedMessageId };
+                    });
+                    break;
             }
         });
 
         return () => {
-            unsubReconnect();
-            unsubOrchestrator();
-            unsubTyping();
-            unsubRead();
-            unsubDelivered();
-            unsubPresence();
-            unsubMessage();
-            unsubReaction();
-            unsubPinned();
-            unsubBroadcast();
+            realtimeOrchestrator.unwatchChatRoom(convId);
+            unsubscribe();
         };
     }, [convId, anonymousId, queryClient]);
 

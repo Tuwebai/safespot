@@ -57,21 +57,44 @@ export function useCreateReportForm() {
     const [isCompressing, setIsCompressing] = useState(false)
     const [compressionProgress, setCompressionProgress] = useState<string>('')
 
-    // Form Initialization
+    const DRAFT_KEY = 'safespot_report_draft'
+
+    // Form Initialization with DRAFT recovery
     const form = useForm<CreateReportFormData>({
         resolver: zodResolver(createReportSchema),
-        defaultValues: {
-            location: {
-                location_name: '',
-                latitude: undefined,
-                longitude: undefined,
-            },
-            incidentDate: new Date().toISOString()
-        }
+        defaultValues: (() => {
+            try {
+                const saved = localStorage.getItem(DRAFT_KEY)
+                if (saved) {
+                    const parsed = JSON.parse(saved)
+                    return {
+                        ...parsed,
+                        // Incident date should be fresh if not in draft
+                        incidentDate: parsed.incidentDate || new Date().toISOString()
+                    }
+                }
+            } catch (e) { /* ignore */ }
+            return {
+                location: {
+                    location_name: '',
+                    latitude: undefined,
+                    longitude: undefined,
+                },
+                incidentDate: new Date().toISOString()
+            }
+        })()
     })
 
-    const { setValue, handleSubmit } = form
-    // const currentLocation = watch('location')
+    const { setValue, handleSubmit, watch, reset } = form
+    const formValues = watch()
+
+    // Autosave Draft
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(formValues))
+        }, 1000)
+        return () => clearTimeout(timer)
+    }, [formValues])
 
     // ============================================
     // HANDLERS
@@ -196,18 +219,32 @@ export function useCreateReportForm() {
             incident_date: data.incidentDate
         }
 
-        // INSTANT FEEDBACK - Clear form and navigate immediately
-        form.reset()
-        setImageFiles([])
-        setImagePreviews([])
-        toast.success('¡Reporte creado!')
-
-        // Navigate INSTANTLY to reports list (optimistic report already visible there)
+        // INSTANT FEEDBACK
+        // We navigate immediately to show the optimistic report in the list.
+        // We DON'T reset the form yet. 
+        toast.success('¡Creando reporte...!')
         navigate('/reportes')
 
-        // Fire mutation WITHOUT awaiting - let optimistic update handle it
+        // Fire mutation
         createReport(payload)
             .then((newReport) => {
+                // CLEANUP only on SUCCESS
+                localStorage.removeItem(DRAFT_KEY)
+                reset({
+                    title: '',
+                    description: '',
+                    category: undefined,
+                    location: {
+                        location_name: '',
+                        latitude: undefined,
+                        longitude: undefined,
+                    },
+                    incidentDate: new Date().toISOString()
+                })
+                setImageFiles([])
+                setImagePreviews([])
+
+                toast.success('¡Reporte publicado con éxito!')
                 // Background: Navigate to detail page after short delay
                 // No redirection to detail, stay in list as requested
 

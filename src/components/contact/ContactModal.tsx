@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Loader2 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ensureAnonymousId } from '@/lib/identity';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -47,10 +48,9 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
         try {
             // Use safe API request construction
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-            // ✅ ENTERPRISE FIX #2: Use SSOT for identity (not direct localStorage access)
-            // BEFORE: const anonymousId = localStorage.getItem('safespot_anonymous_id') || 'unknown-user';
-            // FIX: Use ensureAnonymousId() which guarantees valid ID and handles multi-layer storage
-            const anonymousId = ensureAnonymousId();
+            // ✅ ENTERPRISE FIX #2: Use SSOT for identity via SessionAuthority
+            // This ensures we use the same ID as the rest of the Motoring system.
+            const anonymousId = sessionAuthority.getAnonymousId() || ensureAnonymousId();
 
             // Normalize: Remove trailing slash and /api suffix if present to ensure clean base
             const cleanBase = apiUrl.replace(/\/$/, '').replace(/\/api$/, '');

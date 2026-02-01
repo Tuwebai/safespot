@@ -30,12 +30,15 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
 
             // 🏛️ Filter for User Domain Side-Effects
             if (type === 'notification' || type === 'presence-update') {
-                // Origin check (redundant but safe since Orchestrator already does it for state)
+                // Origin check
                 if (originClientId === myClientId) return;
 
+                // SSOT: Standardize access to partial data
+                const actualPayload = payload.partial || payload;
+
                 // 1. Notification Side-Effects
-                if (type === 'notification' && payload.notification) {
-                    const notif = payload.notification;
+                if (type === 'notification' && actualPayload.notification) {
+                    const notif = actualPayload.notification;
                     const isBadgeNotification = notif.type === 'badge';
 
                     // sound and tracking
@@ -46,12 +49,10 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                         if (notified.length > 50) notified.shift();
                         localStorage.setItem('safespot_seen_sse_ids', JSON.stringify(notified));
                     }
-
-
                 }
 
                 // 2. Custom Callbacks
-                if (onNotification) onNotification(payload);
+                if (onNotification) onNotification(actualPayload);
             }
         });
 

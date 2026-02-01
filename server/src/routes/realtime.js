@@ -40,19 +40,51 @@ router.get('/catchup', async (req, res) => {
         const sinceTs = parseInt(since);
 
         // 1. Fetch missed Chat Messages OR missed Delivery ACKs
-        // We look for messages created or DELIVERED after 'since'
-        const messagesResult = await pool.query(
-            `SELECT m.*, c.user_id as recipient_id
-					 FROM chat_messages m
-					 JOIN conversation_members c ON m.conversation_id = c.conversation_id
-					 WHERE (EXTRACT(EPOCH FROM m.created_at) * 1000 > $1)
-                     OR (EXTRACT(EPOCH FROM m.delivered_at) * 1000 > $1)
-					 ORDER BY GREATEST(m.created_at, m.delivered_at) ASC
-					 LIMIT 100`,
+        const messageTask = pool.query(
+            `SELECT m.* FROM chat_messages m
+             WHERE (EXTRACT(EPOCH FROM m.created_at) * 1000 > $1)
+             OR (EXTRACT(EPOCH FROM m.delivered_at) * 1000 > $1)
+             ORDER BY GREATEST(m.created_at, m.delivered_at) ASC LIMIT 50`,
             [sinceTs]
         );
 
+        // 2. Fetch missed Reports (New ones only for catchup feed)
+        const reportTask = pool.query(
+            `SELECT r.*, u.alias, u.avatar_url FROM reports r
+             LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+             WHERE (EXTRACT(EPOCH FROM r.created_at) * 1000 > $1)
+             ORDER BY r.created_at ASC LIMIT 50`,
+            [sinceTs]
+        );
+
+        const [messagesResult, reportsResult] = await Promise.all([messageTask, reportTask]);
+
         const events = [];
+
+        // Process Reports
+        reportsResult.rows.forEach(r => {
+            const ts = new Date(r.created_at).getTime();
+            events.push({
+                eventId: `rep_${r.id}`,
+                serverTimestamp: ts,
+                type: 'report-create',
+                payload: {
+                    id: r.id,
+                    partial: {
+                        ...r,
+                        author: {
+                            id: r.anonymous_id,
+                            alias: r.alias,
+                            avatarUrl: r.avatar_url
+                        }
+                    },
+                    originClientId: 'system_catchup'
+                },
+                isReplay: true
+            });
+        });
+
+        // Process Messages
         messagesResult.rows.forEach(m => {
             const createdAtTs = new Date(m.created_at).getTime();
             const deliveredAtTs = m.delivered_at ? new Date(m.delivered_at).getTime() : 0;
@@ -81,7 +113,6 @@ router.get('/catchup', async (req, res) => {
             }
 
             // B. If it's an OLD message that was DELIVERED after 'since'
-            // (Enterprise: We only send this to the SENDER of the message)
             if (deliveredAtTs > sinceTs) {
                 events.push({
                     eventId: `ack_${m.id}_${deliveredAtTs}`,
@@ -303,28 +334,47 @@ router.get('/chats/:roomId', (req, res) => {
     stream.send('connected', { roomId });
     stream.startHeartbeat(2000);
 
-    // Event Handlers
+    // Event Handlers - UNIFIED CONTRACT
     const handleNewMessage = (data) => {
-        stream.send('new-message', data);
+        const { message, originClientId, ...contract } = data;
+        stream.send('new-message', {
+            id: message.id,
+            partial: message,
+            originClientId,
+            ...contract
+        });
     };
 
     const handleTyping = (data) => {
-        stream.send('typing', data);
+        stream.send('typing', {
+            id: roomId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleRead = (data) => {
-        // Notificar que los mensajes fueron leídos (doble tilde vv)
-        stream.send('message.read', data);
+        stream.send('message.read', {
+            id: data.id || data.messageId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleMessageDelivered = (data) => {
-        // Notificar que los mensajes fueron entregados (doble tilde gris vv)
-        stream.send('message.delivered', data);
+        stream.send('message.delivered', {
+            id: data.id || data.messageId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handlePresence = (data) => {
-        // Notificar quién entró o salió de la sala
-        stream.send('presence', data);
+        stream.send('presence', {
+            id: data.userId,
+            partial: data,
+            originClientId: 'system'
+        });
     };
 
     // Suscribirse a eventos
@@ -412,28 +462,51 @@ router.get('/user/:anonymousId', (req, res) => {
     });
 
     const handleChatUpdate = (data) => {
-        stream.send('chat-update', data);
+        stream.send('chat-update', {
+            id: data.id || data.conversationId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleMessageDelivered = (data) => {
-        console.log(`[SSE] 📬 Sending message.delivered to client:`, data);
-        stream.send('message.delivered', data);
+        stream.send('message.delivered', {
+            id: data.id || data.messageId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleMessageRead = (data) => {
-        stream.send('message.read', data);
+        stream.send('message.read', {
+            id: data.id || data.messageId,
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleNotification = (data) => {
-        stream.send('notification', data);
+        stream.send('notification', {
+            id: data.id || (data.notification && data.notification.id),
+            partial: data,
+            originClientId: data.originClientId
+        });
     };
 
     const handleRollback = (data) => {
-        stream.send('chat-rollback', data);
+        stream.send('chat-rollback', {
+            id: data.id || data.conversationId,
+            partial: data,
+            originClientId: 'system'
+        });
     };
 
     const handlePresenceUpdate = (data) => {
-        stream.send('presence-update', data);
+        stream.send('presence-update', {
+            id: data.userId,
+            partial: data,
+            originClientId: 'system'
+        });
     };
 
     realtimeEvents.on(`user-chat-update:${anonymousId}`, handleChatUpdate);

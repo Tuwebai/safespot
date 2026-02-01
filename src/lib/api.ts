@@ -453,28 +453,10 @@ export const reportsApi = {
       formData.append('images', file);
     });
 
-    // Use ensureAnonymousId to guarantee we have a valid ID
-    const anonymousId = ensureAnonymousId();
-
-    const url = `${API_BASE_URL}/reports/${reportId}/images`;
-    const response = await fetch(url, {
+    return apiRequest<{ image_urls: string[] }>(`/reports/${reportId}/images`, {
       method: 'POST',
-      headers: {
-        'X-Anonymous-Id': anonymousId,
-      },
       body: formData,
     });
-
-    const data = await response.json().catch(() => ({
-      error: 'Unknown error',
-      message: `HTTP ${response.status}: ${response.statusText}`,
-    }));
-
-    if (!response.ok) {
-      throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return data.data;
   },
 
   /**
