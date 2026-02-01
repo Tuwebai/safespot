@@ -289,14 +289,25 @@ class RealtimeOrchestrator {
         // SOLO el Orchestrator puede marcar mensajes como delivered
         // Motor 11: SOLO el líder envía ACKs al backend
         if (leaderElection.isLeader() && (type === 'new-message' || type === 'chat-update')) {
-            const message = data.payload?.message || data.message;
-            const messageId = message?.id;
-            const senderId = message?.sender_id;
+            // Robust Message Resolution
+            // Try explicit 'message' field, or fallback to payload itself if it looks like a message
+            const payload = data.payload || data;
+            const message = payload.message || (payload.id && !payload.action ? payload : null);
 
-            // Solo ACK si: hay messageId, Y el mensaje NO fue enviado por nosotros
-            if (messageId && senderId && senderId !== this.userId) {
-                this.acknowledgeMessageDelivered(messageId).catch(err => {
-                    console.error('[Orchestrator] ⚠️ Message ACK failed for:', messageId, err);
+            // 🛡️ ACK DEFENSIVE GUARD
+            // Validate it is truly an ACK-able persistent message, NOT a control signal.
+            const isAckable = message?.id
+                && !payload.action // 'action' implies signal (typing, read, deleted) -> NO ACK
+                && !message.is_read // Optimization: don't ack read messages
+                && message.sender_id // Must have sender
+                && message.sender_id !== this.userId; // Don't ACK own messages
+
+            if (isAckable) {
+                this.acknowledgeMessageDelivered(message.id).catch(err => {
+                    // Suppress 404s from logs if they happen (race condition), but log others
+                    if (!String(err).includes('404')) {
+                        console.error('[Orchestrator] ⚠️ Message ACK failed for:', message.id, err);
+                    }
                 });
             }
         }
@@ -490,7 +501,13 @@ class RealtimeOrchestrator {
                     } else {
                         const parsed = reportSchema.partial().safeParse(payload);
                         if (parsed.success) {
-                            reportsCache.patch(queryClient, id, parsed.data);
+                            // SYSTEMIC FIX: If report is hidden, it must be removed from list caches immediately
+                            if (parsed.data.is_hidden === true) {
+                                console.debug(`[Orchestrator] 🛡️ Removing hidden report from cache: ${id}`);
+                                reportsCache.remove(queryClient, id);
+                            } else {
+                                reportsCache.patch(queryClient, id, parsed.data);
+                            }
                         }
                     }
                     break;

@@ -49,12 +49,16 @@ router.get('/catchup', async (req, res) => {
         );
 
         // 2. Fetch missed Reports (New ones only for catchup feed)
+        const anonymousId = req.headers['x-anonymous-id'] || '00000000-0000-0000-0000-000000000000';
+        const userRole = req.user?.role || 'citizen';
         const reportTask = pool.query(
             `SELECT r.*, u.alias, u.avatar_url FROM reports r
              LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
              WHERE (EXTRACT(EPOCH FROM r.created_at) * 1000 > $1)
+               AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
+               AND (r.is_hidden = false OR r.anonymous_id = $2 OR $3 = 'admin')
              ORDER BY r.created_at ASC LIMIT 50`,
-            [sinceTs]
+            [sinceTs, anonymousId, userRole]
         );
 
         const [messagesResult, reportsResult] = await Promise.all([messageTask, reportTask]);
@@ -462,10 +466,28 @@ router.get('/user/:anonymousId', (req, res) => {
     });
 
     const handleChatUpdate = (data) => {
+        // Enforce Enterprise Contract: eventId + serverTimestamp at ROOT level
+        const eventId = data.eventId || data.id || `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const serverTimestamp = data.serverTimestamp || Date.now();
+
+        // 1. Prepare base payload
+        const payload = {
+            ...data,
+            eventId,
+            serverTimestamp
+        };
+
+        // 2. Ensure critical fields are mapped for client
+        // 'id' is used by frontend caches
+        if (!payload.id && data.conversationId) payload.id = data.conversationId;
+
         stream.send('chat-update', {
-            id: data.id || data.conversationId,
-            partial: data,
-            originClientId: data.originClientId
+            id: payload.id,
+            partial: payload,
+            originClientId: data.originClientId,
+            // Explicit Contract Fields
+            eventId,
+            serverTimestamp
         });
     };
 

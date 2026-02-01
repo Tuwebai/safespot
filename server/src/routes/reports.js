@@ -58,6 +58,7 @@ import { encodeCursor, decodeCursor } from '../utils/cursor.js';
 router.get('/', async (req, res, next) => {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
+    const userRole = req.user?.role || 'citizen';
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
     // Parse limit
@@ -88,7 +89,7 @@ router.get('/', async (req, res, next) => {
         SELECT 
           r.id, r.title, r.description, r.category, r.zone, r.address,
           r.status, r.latitude, r.longitude, 
-          r.created_at, r.updated_at, r.is_hidden, r.anonymous_id,
+          r.created_at, r.updated_at, r.is_hidden, r.deleted_at, r.anonymous_id,
           r.upvotes_count, r.comments_count, r.image_urls,
           u.alias, u.avatar_url
         FROM reports r
@@ -96,14 +97,14 @@ router.get('/', async (req, res, next) => {
         WHERE 
           r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
           AND r.location IS NOT NULL
-          AND r.is_hidden = false
-          AND r.deleted_at IS NULL
+          AND (r.is_hidden = false OR r.anonymous_id = $5)
+          AND (r.deleted_at IS NULL OR r.anonymous_id = $5)
         ORDER BY r.created_at DESC
         LIMIT 100
       `;
       // ST_MakeEnvelope(xmin, ymin, xmax, ymax, srid) -> (west, south, east, north)
 
-      const boundsParams = [west, south, east, north];
+      const boundsParams = [west, south, east, north, anonymousId || '00000000-0000-0000-0000-000000000000'];
 
       const result = await queryWithRLS(anonymousId || '', boundsQuery, boundsParams);
 
@@ -156,8 +157,17 @@ router.get('/', async (req, res, next) => {
       const fetchLimit = limitNum + 1;
 
       // Build filters for geographic feed
-      const buildGeoFilters = (startIdx) => {
-        const conds = ['r.deleted_at IS NULL']; // Always filter out soft-deleted records
+      const buildGeoFilters = (startIdx, ownerIdIdx = null, roleIdx = null) => {
+        const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
+        const conds = ownerIdIdx
+          ? [
+            `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`,
+            `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`
+          ]
+          : [
+            `(r.deleted_at IS NULL${adminBypass})`,
+            `(r.is_hidden = false${adminBypass})`
+          ];
         const vals = [];
         let idx = startIdx;
 
@@ -203,7 +213,7 @@ router.get('/', async (req, res, next) => {
 
       if (anonymousId) {
         // Authenticated flow with favorites/flags
-        const f = buildGeoFilters(9); // $1-$8 reserved
+        const f = buildGeoFilters(10, 8, 9); // $1-$7 reserved, $8 is anonymousId, $9 is role
         const additionalWhere = f.conds.length > 0 ? `AND ${f.conds.join(' AND ')}` : '';
 
         dataQuery = `
@@ -213,7 +223,7 @@ router.get('/', async (req, res, next) => {
           SELECT 
             r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
             r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
-            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
+            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
@@ -240,11 +250,10 @@ router.get('/', async (req, res, next) => {
             LIMIT 1
           ) uz ON true
           WHERE 
-            r.deleted_at IS NULL
-            AND ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8), 1000))
+            ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8), 1000))
             AND r.location IS NOT NULL
-            AND (ts.trust_score IS NULL OR ts.trust_score >= 30)
-            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned'))
+            AND (ts.trust_score IS NULL OR ts.trust_score >= 30 OR r.anonymous_id = $8)
+            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned') OR r.anonymous_id = $8)
             ${additionalWhere}
             AND (
               $4::DECIMAL IS NULL OR
@@ -271,11 +280,12 @@ router.get('/', async (req, res, next) => {
           cursorId,          // $6
           fetchLimit,        // $7
           anonymousId,       // $8
-          ...f.vals          // $9+
+          userRole,          // $9
+          ...f.vals          // $10+
         ];
       } else {
         // Public flow
-        const f = buildGeoFilters(8);
+        const f = buildGeoFilters(9, null, 8); // $1-$7 reserved, $8 is role
         const additionalWhere = f.conds.length > 0 ? `AND ${f.conds.join(' AND ')}` : '';
 
         dataQuery = `
@@ -285,7 +295,7 @@ router.get('/', async (req, res, next) => {
           SELECT 
             r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
             r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
-            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
+            r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
             ST_Distance(r.location, ul.point) AS distance_meters,
             r.threads_count,
             u.avatar_url,
@@ -295,8 +305,7 @@ router.get('/', async (req, res, next) => {
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
           LEFT JOIN anonymous_trust_scores ts ON r.anonymous_id = ts.anonymous_id
           WHERE 
-            r.deleted_at IS NULL
-            AND ST_DWithin(r.location, ul.point, COALESCE($3, 1000))
+            ST_DWithin(r.location, ul.point, COALESCE($3, 1000))
             AND r.location IS NOT NULL
             AND (ts.trust_score IS NULL OR ts.trust_score >= 30)
             AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned'))
@@ -321,6 +330,7 @@ router.get('/', async (req, res, next) => {
           cursorDate,
           cursorId,
           fetchLimit,
+          userRole, // $8
           ...f.vals
         ];
       }
@@ -382,8 +392,17 @@ router.get('/', async (req, res, next) => {
 
     const { startDate, endDate, sortBy } = req.query;
 
-    const buildFilters = (startIndex) => {
-      const conds = ['r.deleted_at IS NULL']; // Always filter out soft-deleted records
+    const buildFilters = (startIndex, ownerIdIdx = null, roleIdx = null) => {
+      const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
+      const conds = ownerIdIdx
+        ? [
+          `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`,
+          `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`
+        ]
+        : [
+          `(r.deleted_at IS NULL${adminBypass})`,
+          `(r.is_hidden = false${adminBypass})`
+        ];
       const vals = [];
       let idx = startIndex;
       let searchIdx = null;
@@ -496,9 +515,9 @@ router.get('/', async (req, res, next) => {
 
     if (anonymousId) {
       // Authenticated flow
-      const f = buildFilters(2); // $1 is anonymousId
+      const f = buildFilters(3, 1, 2); // $1 is anonymousId, $2 is role, start from $3
       let whereConds = [...f.conds];
-      let queryParams = [anonymousId, ...f.vals];
+      let queryParams = [anonymousId, userRole, ...f.vals];
       let pIdx = f.nextIdx;
 
       const orderByClause = getOrderByClause(f.searchIdx);
@@ -546,9 +565,9 @@ router.get('/', async (req, res, next) => {
 
     } else {
       // Public flow
-      const f = buildFilters(1);
+      const f = buildFilters(2, null, 1); // $1 is role
       let whereConds = [...f.conds];
-      let queryParams = [...f.vals];
+      let queryParams = [userRole, ...f.vals];
       let pIdx = f.nextIdx;
 
       const orderByClause = getOrderByClause(f.searchIdx);
@@ -665,7 +684,9 @@ router.get('/:id', async (req, res, next) => {
       LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $2
       LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $2
       WHERE r.id = $1
-    `, [id, anonymousId || '']);
+      AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
+      AND (r.is_hidden = false OR r.anonymous_id = $2 OR $3 = 'admin')
+    `, [id, anonymousId || '00000000-0000-0000-0000-000000000000', req.user?.role || 'citizen']);
 
     if (reportResult.rows.length === 0) {
       throw new NotFoundError('Report not found');
@@ -941,6 +962,7 @@ router.get('/:id/related', async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.headers['x-anonymous-id'] || '';
+    const userRole = req.user?.role || 'citizen';
 
     // Graceful handling for temp IDs
     if (id.startsWith('temp-') || !isValidUuid(id)) {
@@ -972,15 +994,15 @@ router.get('/:id/related', async (req, res) => {
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
-          AND r.is_hidden = false
-          AND r.deleted_at IS NULL
+          AND (r.is_hidden = false OR r.anonymous_id = $6 OR $7 = 'admin')
+          AND (r.deleted_at IS NULL OR r.anonymous_id = $6 OR $7 = 'admin')
           AND r.locality = $5
         ORDER BY
           (r.category = $1) DESC, -- Best matches (same category) first
           r.location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC -- Then nearest within city
         LIMIT 5
       `;
-      params = [category, id, latitude || 0, longitude || 0, locality];
+      params = [category, id, latitude || 0, longitude || 0, locality, anonymousId || '00000000-0000-0000-0000-000000000000', userRole];
 
     } else if (latitude && longitude) {
       // PostGIS KNN search by location (Fallback if no locality data)
@@ -990,15 +1012,15 @@ router.get('/:id/related', async (req, res) => {
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
-          AND r.is_hidden = false
-          AND r.deleted_at IS NULL
+          AND (r.is_hidden = false OR r.anonymous_id = $5 OR $6 = 'admin')
+          AND (r.deleted_at IS NULL OR r.anonymous_id = $5 OR $6 = 'admin')
           AND r.location IS NOT NULL
         ORDER BY
           (r.category = $1) DESC, 
           r.location <-> ST_SetSRID(ST_MakePoint($4, $3), 4326) ASC 
         LIMIT 5
       `;
-      params = [category, id, latitude, longitude];
+      params = [category, id, latitude, longitude, anonymousId || '00000000-0000-0000-0000-000000000000', userRole];
     } else {
       // Fallback: Same zone (Text match)
       query = `
@@ -1007,15 +1029,15 @@ router.get('/:id/related', async (req, res) => {
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
-          AND r.is_hidden = false
-          AND r.deleted_at IS NULL
+          AND (r.is_hidden = false OR r.anonymous_id = $4 OR $5 = 'admin')
+          AND (r.deleted_at IS NULL OR r.anonymous_id = $4 OR $5 = 'admin')
           AND r.zone = $3
         ORDER BY 
           (r.category = $1) DESC,
           r.created_at DESC
         LIMIT 5
       `;
-      params = [category, id, zone];
+      params = [category, id, zone, anonymousId || '00000000-0000-0000-0000-000000000000', userRole];
     }
 
     const result = await queryWithRLS(anonymousId, query, params);
@@ -1335,6 +1357,18 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
     }
 
     const newFlag = insertResult.rows[0];
+
+    // SYSTEMIC FIX: Check for Auto-Hide (Realtime Consistency)
+    // If threshold met, trigger will set is_hidden = true. We must notify SSE clients.
+    const statusCheck = await queryWithRLS(anonymousId, `
+      SELECT is_hidden, category, status FROM reports WHERE id = $1
+    `, [id]);
+
+    if (statusCheck.rows.length > 0 && statusCheck.rows[0].is_hidden) {
+      const r = statusCheck.rows[0];
+      realtimeEvents.emitReportDelete(id, r.category, r.status);
+      console.log(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
+    }
 
     res.status(201).json({
       success: true,
