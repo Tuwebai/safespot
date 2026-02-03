@@ -1,6 +1,6 @@
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useAdminHeatmap } from '@/hooks/admin/useAdminHeatmap'
+import { useAdminHeatmap } from '../hooks/useAdminHeatmap'
 
 // Buenos Aires default center
 const DEFAULT_CENTER = [-34.6037, -58.3816] as [number, number]

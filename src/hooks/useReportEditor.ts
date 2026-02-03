@@ -13,7 +13,6 @@ interface ReportEditorState {
     isEditing: boolean
     title: string
     description: string
-    status: Report['status']
     updating: boolean
     newImages: File[]
     imageUploadError: string | null
@@ -35,7 +34,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         isEditing: false,
         title: '',
         description: '',
-        status: 'pendiente',
         updating: false,
         newImages: [],
         imageUploadError: null,
@@ -52,7 +50,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             isEditing: true,
             title: report.title,
             description: report.description,
-            status: report.status,
             updating: false,
             newImages: [],
             imageUploadError: null,
@@ -65,7 +62,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
             isEditing: false,
             title: '',
             description: '',
-            status: 'pendiente',
             newImages: [],
             imageUploadError: null,
         }))
@@ -79,9 +75,7 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         setState(prev => ({ ...prev, description }))
     }, [])
 
-    const setStatus = useCallback((status: Report['status']) => {
-        setState(prev => ({ ...prev, status }))
-    }, [])
+
 
     const setNewImages = useCallback((files: File[]) => {
         setState(prev => ({ ...prev, newImages: files }))
@@ -113,7 +107,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                 data: {
                     title: state.title.trim(),
                     description: state.description.trim(),
-                    status: state.status,
                 }
             })
 
@@ -134,7 +127,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
                 isEditing: false,
                 title: '',
                 description: '',
-                status: 'pendiente',
                 updating: false,
                 newImages: [],
                 imageUploadError: null,
@@ -152,7 +144,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         isEditing: state.isEditing,
         editTitle: state.title,
         editDescription: state.description,
-        editStatus: state.status,
         updating: state.updating,
         newImages: state.newImages,
         imageUploadError: state.imageUploadError,
@@ -163,7 +154,6 @@ export function useReportEditor({ report, onReportUpdate }: UseReportEditorProps
         cancelEditing,
         setTitle,
         setDescription,
-        setStatus,
         setNewImages,
         saveChanges,
     }

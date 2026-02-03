@@ -1,5 +1,6 @@
 import { validate as uuidValidate } from 'uuid';
 import { logError } from './logger.js';
+import { verifyAnonymousSignature } from './crypto.js';
 
 /**
  * Validates anonymous_id format (must be UUID v4)
@@ -25,6 +26,16 @@ export function validateAnonymousId(anonymousId) {
  */
 export function isValidUuid(id) {
   return typeof id === 'string' && uuidValidate(id);
+}
+
+/**
+ * Surgical sanitization for UUID parameters.
+ * Converts empty strings or undefined to null to prevent PostgreSQL type errors.
+ * Use ONLY for parameters targeting UUID columns.
+ */
+export function sanitizeUuidParam(value) {
+  if (value === '' || value === undefined) return null;
+  return value;
 }
 
 /**
@@ -61,15 +72,43 @@ export function validateCoordinates(lat, lng) {
 export function requireAnonymousId(req, res, next) {
   try {
     const anonymousId = req.headers['x-anonymous-id'];
+    const signature = req.headers['x-anonymous-signature'];
+
     validateAnonymousId(anonymousId);
+
+    // Identity Shield: Signature Verification (P1)
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+    const shouldEnforce = process.env.NODE_ENV === 'production' || process.env.ENFORCE_IDENTITY_SHIELD === 'true';
+
+    if (shouldEnforce) {
+      if (!signature) {
+        if (isMutation) {
+          throw new Error('SECURITY_ERROR: Missing identity signature for mutation');
+        } else {
+          // Soft failure for GET: Allow but log warning to detect outdated clients
+          console.warn(`[IDENTITY_SHIELD] [SOFT_FAIL] Missing signature for GET request on ${req.originalUrl} (ID: ${anonymousId})`);
+        }
+      } else if (!verifyAnonymousSignature(anonymousId, signature)) {
+        throw new Error('SECURITY_ERROR: Invalid identity signature. Spoofing attempt detected.');
+      }
+    } else {
+      // In development, we warn but allow to avoid breaking local testing if headers are missing
+      if (!signature) {
+        console.warn(`[IDENTITY_SHIELD] Missing signature for ID ${anonymousId}. In production this will be BLOCKED for mutations.`);
+      } else if (!verifyAnonymousSignature(anonymousId, signature)) {
+        console.error(`[IDENTITY_SHIELD] INVALID signature for ID ${anonymousId}. Spoofing attempt?`);
+      }
+    }
+
     req.anonymousId = anonymousId;
     next();
   } catch (error) {
-    // logError now handles the req object correctly
     logError(error, req);
-    return res.status(400).json({
+    const isSecurity = error.message.startsWith('SECURITY_ERROR');
+
+    return res.status(isSecurity ? 403 : 400).json({
       error: error.message,
-      code: 'ANONYMOUS_ID_VALIDATION_FAILED'
+      code: isSecurity ? 'IDENTITY_SPOOFING_DETECTED' : 'ANONYMOUS_ID_VALIDATION_FAILED'
     });
   }
 }

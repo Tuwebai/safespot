@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Card } from '@/components/ui/card'
-import { Calendar, GitBranch, MessageCircle } from 'lucide-react'
+import { Calendar, GitBranch, MessageCircle, ThumbsUp } from 'lucide-react'
 import type { Report } from '@/lib/schemas'
 import { formatReportDate } from '@/lib/dateUtils'
 
@@ -19,7 +19,7 @@ interface ReportMetaProps {
 
 export const ReportMeta = memo(function ReportMeta({ report, commentsCount }: ReportMetaProps) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {/* Date Card */}
             <Card className="p-4 bg-dark-card border-dark-border">
                 <div className="flex items-center gap-3">
@@ -29,6 +29,17 @@ export const ReportMeta = memo(function ReportMeta({ report, commentsCount }: Re
                         <div className="font-medium text-foreground">
                             {formatReportDate(report.incident_date || report.created_at)}
                         </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Likes Card */}
+            <Card className="p-4 bg-dark-card border-dark-border">
+                <div className="flex items-center gap-3">
+                    <ThumbsUp className="h-5 w-5 text-neon-blue" />
+                    <div>
+                        <div className="text-sm text-muted-foreground mb-1">Likes</div>
+                        <div className="font-medium text-foreground">{report.likes_count ?? 0}</div>
                     </div>
                 </div>
             </Card>

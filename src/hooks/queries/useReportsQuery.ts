@@ -71,7 +71,7 @@ export function useReportsQuery(filters?: ReportFilters) {
     const isCreating = useIsMutating({ mutationKey: ['createReport'] }) > 0;
 
     return useQuery<string[], Error, NormalizedReport[]>({
-        queryKey: queryKeys.reports.list(filters),  // Standard key for SSOT cache matching
+        queryKey: queryKeys.reports.list(filters, anonymousId || undefined),  // ✅ SSOT: Include identity in key to force fresh fetch on login
         queryFn: async () => {
             // 1. Fetch RAW data
             const data = await reportsApi.getAll(filters);
@@ -188,6 +188,7 @@ export function useCreateReportMutation() {
                 category: newReportData.category,
                 status: newReportData.status || 'pendiente',
                 upvotes_count: 0,
+                likes_count: 0,
                 comments_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -424,6 +425,50 @@ export function useToggleFavoriteMutation() {
 
             // Only invalidate user-specific favorites list if it exists separate from main feed
             queryClient.invalidateQueries({ queryKey: queryKeys.user.favorites })
+        },
+    })
+}
+
+export function useToggleReportLikeMutation() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ reportId, liked }: { reportId: string; liked: boolean }) => {
+            return reportsApi.toggleLike(reportId, liked);
+        },
+        onMutate: async ({ reportId, liked }) => {
+            await queryClient.cancelQueries({ queryKey: queryKeys.reports.detail(reportId) })
+
+            const previousDetail = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
+
+            if (previousDetail) {
+                // Optimistic UI: Update is_liked and likes_count
+                reportsCache.patch(queryClient, reportId, {
+                    is_liked: liked,
+                    likes_count: liked ? (previousDetail.likes_count || 0) + 1 : Math.max(0, (previousDetail.likes_count || 0) - 1)
+                })
+            }
+
+            return { previousDetail, reportId }
+        },
+        onSuccess: (result, { reportId }) => {
+            // SERVER RECONCILIATION: Authoritative state from backend
+            if (result && typeof result.is_liked === 'boolean') {
+                reportsCache.patch(queryClient, reportId, {
+                    is_liked: result.is_liked,
+                    likes_count: result.likes_count
+                })
+            }
+        },
+        onError: (_err, _variables, context) => {
+            // Rollback on failure
+            if (context?.previousDetail && context.reportId) {
+                queryClient.setQueryData(queryKeys.reports.detail(context.reportId), context.previousDetail)
+            }
+        },
+        onSettled: (_data, _error, { reportId: _reportId }) => {
+            // Optional: Background sync for specific report detail
+            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(reportId) })
         },
     })
 }

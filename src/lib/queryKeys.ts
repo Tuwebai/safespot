@@ -39,11 +39,17 @@ export const queryKeys = {
         // Base key for all report queries
         all: ['reports'] as const,
 
-        // List with filters
-        list: (filters?: ReportFilters) =>
-            filters
-                ? ['reports', 'list', filters] as const
-                : ['reports', 'list'] as const,
+        // List with filters & identity context
+        list: (filters?: ReportFilters, identity?: string) =>
+            // ✅ ENTERPRISE 11: Identity-scoped caching
+            // Adding identity prevents cache leakage between sessions
+            // and forces fresh fetch on login/logout
+            [
+                'reports',
+                'list',
+                filters || 'all',
+                identity || 'anon'
+            ] as const,
 
         // Single report detail
         detail: (id: string) => ['reports', 'detail', id] as const,

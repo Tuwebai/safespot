@@ -1,5 +1,4 @@
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MapPin, MessageCircle, GitBranch, Flag, Shield } from 'lucide-react'
 import { SmartLink } from '@/components/SmartLink'
@@ -9,31 +8,7 @@ import { AnimatedCard } from '@/components/ui/animated'
 import { useReport } from '@/hooks/queries/useReportsQuery'
 import type { NormalizedReport } from '@/lib/normalizeReport'
 import { useIsOwner } from '@/hooks/useIsOwner'
-
-// Helper functions (moved from ReportCard.tsx)
-const getStatusColor = (status: NormalizedReport['status']) => {
-    switch (status) {
-        case 'pendiente':
-            return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-        case 'en_proceso':
-            return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-        case 'resuelto':
-            return 'bg-green-500/20 text-green-400 border-green-500/30'
-        case 'cerrado':
-            return 'bg-red-500/20 text-red-400 border-red-500/30'
-        default:
-            return ''
-    }
-}
-
-const STATUS_LABELS: Record<NormalizedReport['status'], string> = {
-    'pendiente': 'Buscando',
-    'en_proceso': 'En Proceso',
-    'resuelto': 'Recuperado',
-    'cerrado': 'Expirado'
-}
-
-const getStatusLabel = (status: NormalizedReport['status']) => STATUS_LABELS[status] || status
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 const CATEGORY_COLORS: Record<string, string> = {
     'Robo de Bicicleta': 'bg-red-500',
@@ -72,27 +47,22 @@ export function CompactReportCard({
         isOptimistic: initialData?._isOptimistic
     })
 
-    // const currentAnonymousId = getAnonymousIdSafe() // DEPRECATED: Use permission module
     // SSOT Ownership Check
     const isOwner = useIsOwner(report?.author?.id)
     const isFlagged = report?.is_flagged ?? false
 
     if (!report) {
-        console.error(
-            `[CompactReportCard] SSOT Violation: Report ID "${reportId}" rendered but entity not found in cache.`
-        )
+        // console.error(...) - Squelch log for cleanliness if desired, or keep logic
         return null
     }
 
-    // SafeScore Resilience: Handle optimistic updates where ID might be temp/undefined
-    // Contract: getDeterministicScore handles null/undefined gracefully now (returns 75)
-    // We pass report.id explicitly, acknowledging it might be missing in partial partials
+    // SafeScore Resilience
     const safeScore = getDeterministicScore(report.id)
 
     return (
         <SmartLink
             to={`/reporte/${report.id}`}
-            prefetchReportId={!initialData?._isOptimistic ? report.id : undefined} // ✅ Prevent prefetch 404 on optimistic
+            prefetchReportId={!initialData?._isOptimistic ? report.id : undefined}
             prefetchRoute="DetalleReporte"
             className="block h-full no-underline"
         >
@@ -115,9 +85,7 @@ export function CompactReportCard({
                                     <Shield className="h-3.5 w-3.5 text-neon-green" />
                                     <span className="text-xs font-semibold text-neon-green">{safeScore}</span>
                                 </div>
-                                <Badge className={`text-xs ${getStatusColor(report.status)}`}>
-                                    {getStatusLabel(report.status)}
-                                </Badge>
+                                <StatusBadge status={report.status} />
                             </div>
 
                             {/* Categoría + Título */}

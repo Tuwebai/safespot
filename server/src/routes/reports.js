@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer, isValidUuid } from '../utils/validation.js';
+import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer, isValidUuid, sanitizeUuidParam } from '../utils/validation.js';
 import { validate } from '../utils/validateMiddleware.js';
 import { reportSchema, geoQuerySchema } from '../utils/schemas.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
@@ -20,6 +20,7 @@ import { sendNewReportNotification } from '../utils/whatsapp.js';
 import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
 import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
+import { executeUserAction } from '../utils/governance.js';
 
 const router = express.Router();
 
@@ -57,7 +58,8 @@ import { encodeCursor, decodeCursor } from '../utils/cursor.js';
  */
 router.get('/', async (req, res, next) => {
   try {
-    const anonymousId = req.headers['x-anonymous-id'];
+    const authHeader = req.headers['x-anonymous-id'];
+    const anonymousId = (authHeader && authHeader.trim() !== '') ? authHeader.trim() : null;
     const userRole = req.user?.role || 'citizen';
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
@@ -97,14 +99,15 @@ router.get('/', async (req, res, next) => {
         WHERE 
           r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
           AND r.location IS NOT NULL
-          AND (r.is_hidden = false OR r.anonymous_id = $5)
-          AND (r.deleted_at IS NULL OR r.anonymous_id = $5)
+          AND (r.is_hidden = false OR r.anonymous_id = $5::uuid)
+          AND (r.deleted_at IS NULL OR r.anonymous_id = $5::uuid)
         ORDER BY r.created_at DESC
         LIMIT 100
       `;
       // ST_MakeEnvelope(xmin, ymin, xmax, ymax, srid) -> (west, south, east, north)
 
-      const boundsParams = [west, south, east, north, anonymousId || '00000000-0000-0000-0000-000000000000'];
+      const safeBoundsId = (anonymousId && isValidUuid(anonymousId)) ? anonymousId : '00000000-0000-0000-0000-000000000000';
+      const boundsParams = [west, south, east, north, safeBoundsId];
 
       const result = await queryWithRLS(anonymousId || '', boundsQuery, boundsParams);
 
@@ -161,8 +164,8 @@ router.get('/', async (req, res, next) => {
         const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
         const conds = ownerIdIdx
           ? [
-            `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`,
-            `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`
+            `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`,
+            `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`
           ]
           : [
             `(r.deleted_at IS NULL${adminBypass})`,
@@ -211,8 +214,11 @@ router.get('/', async (req, res, next) => {
       let dataQuery = '';
       let dataParams = [];
 
-      if (anonymousId) {
+      const isSocialV2Enabled = process.env.ENABLE_SOCIAL_FEED_V2 !== 'false';
+
+      if (anonymousId && isSocialV2Enabled && isValidUuid(anonymousId)) {
         // Authenticated flow with favorites/flags
+        const sanitizedId = sanitizeUuidParam(anonymousId);
         const f = buildGeoFilters(10, 8, 9); // $1-$7 reserved, $8 is anonymousId, $9 is role
         const additionalWhere = f.conds.length > 0 ? `AND ${f.conds.join(' AND ')}` : '';
 
@@ -227,6 +233,7 @@ router.get('/', async (req, res, next) => {
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
+            CASE WHEN rl.id IS NOT NULL THEN true ELSE false END AS is_liked,
             r.threads_count,
             uz.type as priority_zone,
             u.avatar_url,
@@ -235,12 +242,13 @@ router.get('/', async (req, res, next) => {
           CROSS JOIN user_location ul
           LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
           LEFT JOIN anonymous_trust_scores ts ON r.anonymous_id = ts.anonymous_id
-          LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8
-          LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8
+          LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8::uuid
+          LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8::uuid
+          LEFT JOIN report_likes rl ON rl.report_id = r.id AND rl.anonymous_id = $8::uuid
           LEFT JOIN LATERAL (
             SELECT type 
             FROM user_zones 
-            WHERE anonymous_id = $8 
+            WHERE anonymous_id = $8::uuid 
             AND ST_DWithin(r.location, location, radius_meters)
             ORDER BY CASE 
                 WHEN type = 'home' THEN 1
@@ -250,10 +258,10 @@ router.get('/', async (req, res, next) => {
             LIMIT 1
           ) uz ON true
           WHERE 
-            ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8), 1000))
+            ST_DWithin(r.location, ul.point, COALESCE($3, (SELECT interest_radius_meters FROM anonymous_users WHERE anonymous_id = $8::uuid), 1000))
             AND r.location IS NOT NULL
-            AND (ts.trust_score IS NULL OR ts.trust_score >= 30 OR r.anonymous_id = $8)
-            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned') OR r.anonymous_id = $8)
+            AND (ts.trust_score IS NULL OR ts.trust_score >= 30 OR r.anonymous_id = $8::uuid)
+            AND (ts.moderation_status IS NULL OR ts.moderation_status NOT IN ('shadow_banned', 'banned') OR r.anonymous_id = $8::uuid)
             ${additionalWhere}
             AND (
               $4::DECIMAL IS NULL OR
@@ -279,7 +287,7 @@ router.get('/', async (req, res, next) => {
           cursorDate,        // $5
           cursorId,          // $6
           fetchLimit,        // $7
-          anonymousId,       // $8
+          sanitizedId,       // $8
           userRole,          // $9
           ...f.vals          // $10+
         ];
@@ -396,8 +404,8 @@ router.get('/', async (req, res, next) => {
       const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
       const conds = ownerIdIdx
         ? [
-          `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`,
-          `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}${adminBypass})`
+          `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`,
+          `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`
         ]
         : [
           `(r.deleted_at IS NULL${adminBypass})`,
@@ -469,7 +477,7 @@ router.get('/', async (req, res, next) => {
       // Filter by Followed Users ("Mi Círculo")
       const followedOnly = req.query.followed_only === 'true';
       if (followedOnly && anonymousId) {
-        conds.push(`r.anonymous_id IN (SELECT following_id FROM followers WHERE follower_id = $${idx})`);
+        conds.push(`r.anonymous_id IN (SELECT following_id FROM followers WHERE follower_id = $${idx}::uuid)`);
         vals.push(anonymousId);
         idx++;
       }
@@ -503,8 +511,8 @@ router.get('/', async (req, res, next) => {
 
       switch (sortBy) {
         case 'popular':
-          // Weight: Comments * 2 + Upvotes
-          return `ORDER BY (r.upvotes_count + (r.comments_count * 2)) DESC, r.created_at DESC`;
+          // Weight: Likes * 5 + Comments * 2 + Upvotes * 1
+          return `ORDER BY ((COALESCE(r.likes_count, 0) * 5) + (r.comments_count * 2) + COALESCE(r.upvotes_count, 0)) DESC, r.created_at DESC`;
         case 'oldest':
           return `ORDER BY r.created_at ASC, r.id ASC`;
         case 'recent':
@@ -513,15 +521,17 @@ router.get('/', async (req, res, next) => {
       }
     };
 
-    if (anonymousId) {
-      // Authenticated flow
+    const isSocialV2Enabled = process.env.ENABLE_SOCIAL_FEED_V2 !== 'false'; // Enabled by default in this phase
+
+    if (anonymousId && isSocialV2Enabled && isValidUuid(anonymousId)) {
+      // Authenticated flow: Includes personal signals (is_liked, is_favorite, etc.)
+      const sanitizedId = sanitizeUuidParam(anonymousId);
       const f = buildFilters(3, 1, 2); // $1 is anonymousId, $2 is role, start from $3
       let whereConds = [...f.conds];
-      let queryParams = [anonymousId, userRole, ...f.vals];
+      let queryParams = [sanitizedId, userRole, ...f.vals];
       let pIdx = f.nextIdx;
 
       const orderByClause = getOrderByClause(f.searchIdx);
-
       const isDefaultSort = (!sortBy || sortBy === 'recent') && !f.searchIdx;
 
       if (isDefaultSort && cursorDate && cursorId) {
@@ -537,17 +547,19 @@ router.get('/', async (req, res, next) => {
           r.*,
           u.avatar_url,
           u.alias,
-          CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite,
-          CASE WHEN rf.id IS NOT NULL THEN true ELSE false END as is_flagged,
+          CASE WHEN ($1::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END as is_favorite,
+          CASE WHEN ($1::uuid IS NOT NULL AND rf.id IS NOT NULL) THEN true ELSE false END as is_flagged,
+          CASE WHEN ($1::uuid IS NOT NULL AND rl.id IS NOT NULL) THEN true ELSE false END as is_liked,
           uz.type as priority_zone
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-        LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $1
-        LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $1
+        LEFT JOIN favorites f ON f.report_id = r.id AND ($1::uuid IS NOT NULL AND f.anonymous_id = $1::uuid)
+        LEFT JOIN report_flags rf ON rf.report_id = r.id AND ($1::uuid IS NOT NULL AND rf.anonymous_id = $1::uuid)
+        LEFT JOIN report_likes rl ON rl.report_id = r.id AND ($1::uuid IS NOT NULL AND rl.anonymous_id = $1::uuid)
         LEFT JOIN LATERAL (
           SELECT type 
           FROM user_zones 
-          WHERE anonymous_id = $1 
+          WHERE ($1::uuid IS NOT NULL AND anonymous_id = $1::uuid)
           AND ST_DWithin(r.location, location, radius_meters)
           ORDER BY CASE 
               WHEN type = 'home' THEN 1
@@ -564,7 +576,7 @@ router.get('/', async (req, res, next) => {
       dataParams = queryParams;
 
     } else {
-      // Public flow
+      // Public flow: Optmized, no social joins
       const f = buildFilters(2, null, 1); // $1 is role
       let whereConds = [...f.conds];
       let queryParams = [userRole, ...f.vals];
@@ -593,7 +605,7 @@ router.get('/', async (req, res, next) => {
       dataParams = queryParams;
     }
 
-    const dataResult = await queryWithRLS(anonymousId || '', dataQuery, dataParams);
+    const dataResult = await queryWithRLS(anonymousId, dataQuery, dataParams);
     const rawReports = dataResult.rows;
 
     // Check for next page
@@ -665,7 +677,9 @@ router.get('/:id/pdf', exportReportPDF);
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'] || '';
+    const authHeader = req.headers['x-anonymous-id'];
+    const anonymousId = (authHeader && authHeader.trim() !== '') ? authHeader.trim() : null;
+    const sanitizedId = sanitizeUuidParam(anonymousId);
 
     // Graceful handling for temp IDs
     if (id.startsWith('temp-') || !isValidUuid(id)) {
@@ -677,16 +691,18 @@ router.get('/:id', async (req, res, next) => {
       SELECT r.*, 
         u.avatar_url, 
         u.alias,
-        CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
-        CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged
+        CASE WHEN ($2::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END AS is_favorite,
+        CASE WHEN ($2::uuid IS NOT NULL AND rf.id IS NOT NULL) THEN true ELSE false END AS is_flagged,
+        CASE WHEN ($2::uuid IS NOT NULL AND rl.id IS NOT NULL) THEN true ELSE false END AS is_liked
       FROM reports r 
       LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-      LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $2
-      LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $2
+      LEFT JOIN favorites f ON f.report_id = r.id AND ($2::uuid IS NOT NULL AND f.anonymous_id = $2::uuid)
+      LEFT JOIN report_flags rf ON rf.report_id = r.id AND ($2::uuid IS NOT NULL AND rf.anonymous_id = $2::uuid)
+      LEFT JOIN report_likes rl ON rl.report_id = r.id AND ($2::uuid IS NOT NULL AND rl.anonymous_id = $2::uuid)
       WHERE r.id = $1
-      AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
-      AND (r.is_hidden = false OR r.anonymous_id = $2 OR $3 = 'admin')
-    `, [id, anonymousId || '00000000-0000-0000-0000-000000000000', req.user?.role || 'citizen']);
+      AND (r.deleted_at IS NULL OR r.anonymous_id = $2::uuid OR $3 = 'admin')
+      AND (r.is_hidden = false OR r.anonymous_id = $2::uuid OR $3 = 'admin')
+    `, [id, sanitizedId, req.user?.role || 'citizen']);
 
     if (reportResult.rows.length === 0) {
       throw new NotFoundError('Report not found');
@@ -1112,8 +1128,13 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     }
 
     if (req.body.status !== undefined) {
+      if (process.env.ENABLE_STRICT_REPORT_LIFECYCLE === 'true') {
+        return res.status(400).json({
+          error: 'Semantics Enforcement: Direct status update is forbidden. Use semantic endpoints (resolve, reject, close).'
+        });
+      }
       updates.push(`status = $${paramIndex}`);
-      params.push(req.body.status);  // Status is validated against enum, no sanitization needed
+      params.push(req.body.status);
       paramIndex++;
     }
 
@@ -1266,6 +1287,126 @@ router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, async (req, re
 });
 
 /**
+ * POST /api/reports/:id/like
+ * Add a like to a report
+ * Requires: X-Anonymous-Id header
+ */
+router.post('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    // Verify report exists
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id, category, status FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
+    const report = reportResult.rows[0];
+
+    // Atomic Like with M12 Governance
+    // Using CTE to insert into relation and update counter in a single M12 mutation
+    await executeUserAction({
+      actorId: anonymousId,
+      targetType: 'report',
+      targetId: id,
+      actionType: 'LIKE_REPORT',
+      updateQuery: `
+        WITH inserted AS (
+          INSERT INTO report_likes (anonymous_id, report_id)
+          VALUES ($1::uuid, $2)
+          ON CONFLICT (anonymous_id, report_id) DO NOTHING
+          RETURNING report_id
+        )
+        UPDATE reports 
+        SET likes_count = likes_count + 1 
+        WHERE id IN (SELECT report_id FROM inserted)
+      `,
+      updateParams: [anonymousId, id]
+    });
+
+    // Get updated count
+    const countResult = await pool.query('SELECT likes_count FROM reports WHERE id = $1', [id]);
+    const likesCount = countResult.rows[0]?.likes_count || 0;
+
+    // Realtime broadcast
+    realtimeEvents.emitLikeUpdate?.(id, likesCount, report.category, report.status);
+
+    res.json({
+      success: true,
+      data: {
+        is_liked: true,
+        likes_count: likesCount
+      },
+      message: 'Like added'
+    });
+  } catch (error) {
+    // Handle unique constraint manually if needed, though DO NOTHING handles it
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to like report' });
+  }
+});
+
+/**
+ * DELETE /api/reports/:id/like
+ * Remove a like from a report
+ */
+router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id, category, status FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const report = reportResult.rows[0];
+
+    await executeUserAction({
+      actorId: anonymousId,
+      targetType: 'report',
+      targetId: id,
+      actionType: 'UNLIKE_REPORT',
+      updateQuery: `
+        WITH deleted AS (
+          DELETE FROM report_likes 
+          WHERE anonymous_id = $1::uuid AND report_id = $2
+          RETURNING report_id
+        )
+        UPDATE reports 
+        SET likes_count = GREATEST(0, likes_count - 1)
+        WHERE id IN (SELECT report_id FROM deleted)
+      `,
+      updateParams: [anonymousId, id]
+    });
+
+    const countResult = await pool.query('SELECT likes_count FROM reports WHERE id = $1', [id]);
+    const likesCount = countResult.rows[0]?.likes_count || 0;
+
+    realtimeEvents.emitLikeUpdate?.(id, likesCount, report.category, report.status);
+
+    res.json({
+      success: true,
+      data: {
+        is_liked: false,
+        likes_count: likesCount
+      },
+      message: 'Like removed'
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to unlike report' });
+  }
+});
+
+/**
  * POST /api/reports/:id/flag
  * Flag a report as inappropriate
  * Requires: X-Anonymous-Id header
@@ -1396,41 +1537,24 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
 
-    // Check if report exists and belongs to user
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id, anonymous_id, category, status FROM reports WHERE id = $1 AND anonymous_id = $2
-    `, [id, anonymousId]);
+    // [M12 REFINEMENT] Use executeUserAction for Willpower Audit + Mutation
+    const result = await executeUserAction({
+      actorId: anonymousId,
+      targetType: 'report',
+      targetId: id,
+      actionType: 'USER_DELETE_SELF_REPORT',
+      updateQuery: `UPDATE reports SET deleted_at = NOW() WHERE id = $1 AND anonymous_id = $2 AND deleted_at IS NULL`,
+      updateParams: [id, anonymousId]
+    });
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found or you do not have permission to delete it'
-      });
-    }
-
-    // Soft Delete report using queryWithRLS for RLS consistency
-    const deleteResult = await queryWithRLS(anonymousId, `
-      UPDATE reports 
-      SET deleted_at = NOW() 
-      WHERE id = $1 AND anonymous_id = $2 
-      AND deleted_at IS NULL
-      RETURNING id
-    `, [id, anonymousId]);
-
-    if (deleteResult.rows.length === 0) {
-      return res.status(403).json({
-        error: 'Forbidden: You can only delete your own reports or report is already deleted'
-      });
-    }
-
-    logSuccess('Report deleted', { id, anonymousId });
-
-
+    const currentItem = result.snapshot;
+    logSuccess('Report deleted with Willpower Audit', { id, anonymousId });
 
     // REALTIME: Broadcast soft delete
     realtimeEvents.emitReportDelete(
       id,
-      checkResult.rows[0].category,
-      checkResult.rows[0].status,
+      currentItem.category,
+      currentItem.status,
       req.headers['x-client-id']
     );
 
@@ -1440,8 +1564,18 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
     });
   } catch (error) {
     logError(error, req);
+
+    // M12 Governance Errors
+    if (error.message === 'Target not found') {
+      return res.status(404).json({
+        error: 'Report not found',
+        message: 'El reporte no existe o ya fue eliminado'
+      });
+    }
+
     res.status(500).json({
-      error: 'Failed to delete report'
+      error: 'Failed to delete report',
+      message: error.message
     });
   }
 });

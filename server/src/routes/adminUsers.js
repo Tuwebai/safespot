@@ -10,7 +10,7 @@ const router = express.Router();
  * List users with pagination and search
  * Query: page, limit, search (alias/id)
  */
-router.get('/', verifyAdminToken, async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
@@ -57,17 +57,21 @@ router.get('/', verifyAdminToken, async (req, res) => {
             throw error;
         }
 
-        // Flatten logic for trust score
+        // Flatten logic for trust score & NORMALIZE DATA (Enterprise Integrity)
         const users = data.map(user => {
             const trustData = user.anonymous_trust_scores;
-            // Handle array or object response from join (usually array for 1:M, or object/null for 1:1 if configured)
-            // With Supabase, 1:1 returns object if 'single' not specified? Actually it usually returns an array.
-            // Let's assume array or object.
             const trustRecord = Array.isArray(trustData) ? trustData[0] : trustData;
+
+            // 🛡️ DATA INTEGRITY GUARDS
+            const safeLevel = Math.min(Math.max(0, user.level || 0), 100); // Cap at 100
+            const safePoints = Math.min(Math.max(0, user.points || 0), 1000000); // Cap at 1M
+            const safeTrust = trustRecord ? Math.min(Math.max(0, trustRecord.trust_score), 100) : 50;
 
             return {
                 ...user,
-                trust_score: trustRecord ? trustRecord.trust_score : 50,
+                level: safeLevel,
+                points: safePoints,
+                trust_score: safeTrust,
                 status: trustRecord ? trustRecord.moderation_status : 'active',
                 // remove nested object
                 anonymous_trust_scores: undefined

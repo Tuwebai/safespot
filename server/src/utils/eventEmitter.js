@@ -1,6 +1,8 @@
 import EventEmitter from 'events';
 import redis, { redisSubscriber } from '../config/redis.js';
 import crypto from 'crypto';
+import { eventStore } from '../services/eventStore.js';
+import { logError } from './logger.js';
 
 const REALTIME_CHANNEL = 'SAFESPOT_REALTIME_BUS';
 
@@ -57,18 +59,45 @@ class RealtimeEvents extends EventEmitter {
 
     /**
      * Publish an event to the Cluster (Redis) and Emit Locally
+     * Enhanced with Event Sourcing (M9/11)
      * @param {string} event - Event name
      * @param {object} payload - Event data
+     * @param {object} [options] - { aggregateType, aggregateId }
      */
-    broadcast(event, payload) {
-        // Enforce Enterprise Contract: eventId + serverTimestamp
-        // If the payload is already an object, we inject it. If not (primitive), we wrap it.
+    async broadcast(event, payload, options = {}) {
         const eventId = payload?.eventId || crypto.randomUUID();
         const serverTimestamp = payload?.serverTimestamp || Date.now();
+        let sequence_id = null;
 
         const enrichedPayload = (typeof payload === 'object' && payload !== null)
             ? { ...payload, eventId, serverTimestamp }
             : { payload, eventId, serverTimestamp };
+
+        // [M9/11 GUARDRAIL] Event Sourcing Persistence
+        // Only persist if aggregate data is provided (Whitelist logic)
+        if (options.aggregateType && options.aggregateId) {
+            try {
+                sequence_id = await eventStore.append({
+                    aggregate_type: options.aggregateType,
+                    aggregate_id: options.aggregateId,
+                    event_type: event.split(':')[0], // Extract base event name
+                    payload: enrichedPayload,
+                    metadata: {
+                        origin: this.instanceId,
+                        client_id: payload.originClientId
+                    }
+                });
+
+                if (sequence_id) {
+                    enrichedPayload.sequence_id = sequence_id;
+                }
+            } catch (err) {
+                // If EventStore fails, we log it but don't break SSE if it's already a high-traffic system
+                // However, per architecture Rule: Outbox-like atomicity
+                // Decisions: we log FATAL and continue only if it's non-critical.
+                console.error(`[Realtime] EventStore FAIL for ${event}:`, err);
+            }
+        }
 
         // 1. Emit locally immediately (Optimistic/Fast)
         super.emit(event, enrichedPayload);
@@ -95,8 +124,11 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} comment
      * @param {string} [originClientId]
      */
-    emitNewComment(reportId, comment, originClientId) {
-        this.broadcast(`comment:${reportId}`, { comment, originClientId });
+    async emitNewComment(reportId, comment, originClientId) {
+        await this.broadcast(`comment:${reportId}`, { comment, originClientId }, {
+            aggregateType: 'report',
+            aggregateId: reportId
+        });
         console.log(`[Realtime] Broadcasted new comment for report ${reportId}`);
     }
 
@@ -106,8 +138,8 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} comment
      * @param {string} [originClientId]
      */
-    emitCommentUpdate(reportId, comment, originClientId) {
-        this.broadcast(`comment-update:${reportId}`, { comment, originClientId });
+    async emitCommentUpdate(reportId, comment, originClientId) {
+        await this.broadcast(`comment-update:${reportId}`, { comment, originClientId });
         console.log(`[Realtime] Broadcasted comment update for report ${reportId}`);
     }
 
@@ -117,8 +149,8 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} commentId
      * @param {string} [originClientId]
      */
-    emitCommentDelete(reportId, commentId, originClientId) {
-        this.broadcast(`comment-delete:${reportId}`, { commentId, originClientId });
+    async emitCommentDelete(reportId, commentId, originClientId) {
+        await this.broadcast(`comment-delete:${reportId}`, { commentId, originClientId });
         console.log(`[Realtime] Broadcasted comment delete for report ${reportId}`);
     }
 
@@ -127,11 +159,14 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} report
      * @param {string} [originClientId]
      */
-    emitNewReport(report, originClientId) {
-        this.broadcast('global-report-update', {
+    async emitNewReport(report, originClientId) {
+        await this.broadcast('global-report-update', {
             type: 'new-report',
             report: report,
             originClientId
+        }, {
+            aggregateType: 'report',
+            aggregateId: report.id
         });
         console.log(`[Realtime] Broadcasted new report ${report.id} to global feed`);
     }
@@ -143,13 +178,16 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} status
      * @param {string} [originClientId]
      */
-    emitReportDelete(reportId, category, status, originClientId) {
-        this.broadcast('global-report-update', {
+    async emitReportDelete(reportId, category, status, originClientId) {
+        await this.broadcast('global-report-update', {
             type: 'delete',
             reportId,
             category,
             status,
             originClientId
+        }, {
+            aggregateType: 'report',
+            aggregateId: reportId
         });
         console.log(`[Realtime] Broadcasted report delete ${reportId}`);
     }
@@ -212,22 +250,28 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} [originClientId]
      * @param {string} [reportId] - ONLY for comments, to route correctly to report stream
      */
-    emitVoteUpdate(type, id, updates, originClientId, reportId) {
+    async emitVoteUpdate(type, id, updates, originClientId, reportId) {
         if (type === 'report') {
-            this.broadcast(`report-update:${id}`, { ...updates, originClientId });
-            this.broadcast('global-report-update', {
+            await this.broadcast(`report-update:${id}`, { ...updates, originClientId }, {
+                aggregateType: 'report',
+                aggregateId: id
+            });
+            await this.broadcast('global-report-update', {
                 type: 'stats-update',
                 reportId: id,
                 updates,
                 originClientId
+            }, {
+                aggregateType: 'report',
+                aggregateId: id
             });
         } else if (type === 'comment') {
             // DEPRECATED for likes, but kept for general updates:
-            this.broadcast(`comment-update:${id}`, { ...updates, originClientId });
+            await this.broadcast(`comment-update:${id}`, { ...updates, originClientId });
 
             // NEW Atomic Routing (if reportId provided):
             if (reportId) {
-                this.broadcast(`comment-update:${reportId}`, {
+                await this.broadcast(`comment-update:${reportId}`, {
                     id,
                     ...updates,
                     originClientId
@@ -292,13 +336,16 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} newStatus
      * @param {string} [originClientId]
      */
-    emitStatusChange(reportId, prevStatus, newStatus, originClientId) {
-        this.broadcast('global-report-update', {
+    async emitStatusChange(reportId, prevStatus, newStatus, originClientId) {
+        await this.broadcast('global-report-update', {
             type: 'status-change',
             reportId,
             prevStatus,
             newStatus,
             originClientId
+        }, {
+            aggregateType: 'report',
+            aggregateId: reportId
         });
         console.log(`[Realtime] Broadcasted status change for ${reportId}`);
     }
@@ -321,6 +368,22 @@ class RealtimeEvents extends EventEmitter {
     emitUserNotification(anonymousId, payload) {
         this.broadcast(`user-notification:${anonymousId}`, payload);
         console.log(`[Realtime] Broadcasted notification for user ${anonymousId}`);
+    }
+
+    /**
+     * Emit a generic report update
+     * @param {object} report
+     * @param {string} [originClientId]
+     */
+    async emitReportUpdate(report, originClientId) {
+        await this.broadcast(`report-update:${report.id}`, {
+            report,
+            originClientId
+        }, {
+            aggregateType: 'report',
+            aggregateId: report.id
+        });
+        console.log(`[Realtime] Broadcasted report update for ${report.id}`);
     }
 
     /**

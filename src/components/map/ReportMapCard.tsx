@@ -61,7 +61,6 @@ export function ReportMapCard({ report: rawReport }: ReportMapCardProps) {
                 <FavoriteButton
                     reportId={report.id}
                     isFavorite={report.is_favorite ?? false}
-                    useStar={true}
                 />
             </div>
 

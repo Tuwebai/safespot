@@ -7,6 +7,7 @@ import { sendWhatsAppAlert } from './whatsapp.js';
  * Utility to create admin tasks and notify n8n if critical
  */
 export const createAdminTask = async ({
+    id, // ✅ ENTERPRISE: Support for Client-Generated IDs (Optimistic UI)
     type,
     title,
     description,
@@ -19,6 +20,7 @@ export const createAdminTask = async ({
 
         // 1. Save to Database
         const task = await db.insert('admin_tasks', {
+            id, // Optional: If provided, uses client ID. If null, DB generates it.
             type,
             title,
             description,

@@ -10,6 +10,8 @@ import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { voteLimiter } from '../utils/rateLimiter.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { executeUserAction } from '../utils/governance.js';
+import { NotificationService } from '../utils/notificationService.js';
 
 const router = express.Router();
 
@@ -134,35 +136,7 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       // Fail open
     }
 
-    // Insert vote using queryWithRLS for RLS enforcement
-    logSuccess('Inserting vote', { anonymousId });
-
-    const insertQuery = `
-      INSERT INTO votes (anonymous_id, report_id, comment_id, is_hidden)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, anonymous_id, report_id, comment_id, created_at
-    `;
-
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      insertQuery,
-      [anonymousId, report_id || null, comment_id || null, isHidden]
-    );
-
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to create vote'
-      });
-    }
-
-    const data = insertResult.rows[0];
-
-    logSuccess('Vote created', {
-      id: data.id,
-      anonymousId,
-      target: report_id || comment_id
-    });
+    // Governance Note: Injected via executeUserAction below
 
     // Trigger gamification sync asynchronously (non-blocking)
     syncGamification(anonymousId).catch(err => {
@@ -203,35 +177,65 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       const targetType = report_id ? 'report' : 'comment';
       const targetId = report_id || comment_id;
 
-      // Import dynamically service if needed, OR assume NotificationService is imported (it wasn't imported in votes.js, need to add import)
-      import('../utils/notificationService.js').then(({ NotificationService }) => {
-        NotificationService.notifyLike(targetType, targetId, anonymousId).catch(err => {
-          logError(err, { context: 'notifyLike.vote', targetId });
-        });
+      NotificationService.notifyLike(targetType, targetId, anonymousId).catch(err => {
+        logError(err, { context: 'notifyLike.vote', targetId });
       });
+    }
+
+    // 4. ATOMIC MUTATION & GOVERNANCE (M12)
+    // ============================================
+    const targetType = report_id ? 'report' : 'comment';
+    const targetId = report_id || comment_id;
+    const actionType = report_id ? 'USER_VOTE_REPORT' : 'USER_VOTE_COMMENT';
+
+    // Build the atomic mutation query using CTE
+    const mutationQuery = `
+      WITH inserted_vote AS (
+        INSERT INTO votes (anonymous_id, report_id, comment_id, is_hidden)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+      )
+      UPDATE ${targetType}s 
+      SET upvotes_count = upvotes_count + 1 
+      WHERE id = $2 AND $4 = false;
+    `;
+
+    try {
+      await executeUserAction({
+        actorId: anonymousId,
+        targetType,
+        targetId,
+        actionType,
+        updateQuery: mutationQuery,
+        updateParams: [anonymousId, report_id || null, comment_id || null, isHidden]
+      });
+    } catch (err) {
+      // Handle unique constraint violation (duplicate vote) - Idempotency
+      if (err.code === '23505') {
+        return res.status(200).json({
+          success: true,
+          status: 'already_exists',
+          message: 'Already voted'
+        });
+      }
+      throw err;
     }
 
     res.status(201).json({
       success: true,
-      data,
       message: 'Vote created successfully'
     });
 
-    // REALTIME: Fetch updated count and broadcast
-    // Run asynchronously to not block response
+    // REALTIME: Broadcast updated count
     const clientId = req.headers['x-client-id'];
     (async () => {
       try {
         if (report_id) {
           const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
-          // Also update the reports table cache if you use it, but for now just broadcast the count
           realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count }, clientId);
         } else if (comment_id) {
-          // For comments, we can rely on the trigger content or fetch count if needed
-          // realtimeEvents.emitVoteUpdate is called in comment_likes too, but this endpoint handles generic votes
-          // Actually, votes.js handles generic votes but comment likes are often handled in comments.js specific route? 
-          // Wait, votes.js is the generic one. Let's support comment votes here too just in case.
-          // But for now, specifically report votes are critical here.
+          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('comment_id', comment_id);
+          realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: count }, clientId);
         }
       } catch (err) {
         logError(err, { context: 'realtimeParam.vote' });
@@ -280,36 +284,38 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
       });
     }
 
-    // Find and delete vote using queryWithRLS for RLS enforcement
-    let deleteQuery;
-    let deleteParams;
+    // 4. ATOMIC MUTATION & GOVERNANCE (M12)
+    // ============================================
+    const targetType = report_id ? 'report' : 'comment';
+    const targetId = report_id || comment_id;
+    const actionType = report_id ? 'USER_UNVOTE_REPORT' : 'USER_UNVOTE_COMMENT';
 
-    if (report_id) {
-      deleteQuery = `
+    const mutationQuery = `
+      WITH deleted_vote AS (
         DELETE FROM votes 
         WHERE anonymous_id = $1 
-        AND report_id = $2 
-        AND comment_id IS NULL
+        AND ${report_id ? 'report_id = $2 AND comment_id IS NULL' : 'comment_id = $2 AND report_id IS NULL'}
         RETURNING id
-      `;
-      deleteParams = [anonymousId, report_id];
-    } else {
-      deleteQuery = `
-        DELETE FROM votes 
-        WHERE anonymous_id = $1 
-        AND comment_id = $2 
-        AND report_id IS NULL
-        RETURNING id
-      `;
-      deleteParams = [anonymousId, comment_id];
-    }
+      )
+      UPDATE ${targetType}s 
+      SET upvotes_count = GREATEST(0, upvotes_count - 1) 
+      WHERE id = $2 AND (SELECT count(*) FROM deleted_vote) > 0;
+    `;
 
-    const deleteResult = await queryWithRLS(anonymousId, deleteQuery, deleteParams);
-
-    if (deleteResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Vote not found'
+    try {
+      await executeUserAction({
+        actorId: anonymousId,
+        targetType,
+        targetId,
+        actionType,
+        updateQuery: mutationQuery,
+        updateParams: [anonymousId, report_id || comment_id]
       });
+    } catch (err) {
+      if (err.message === 'Target not found') {
+        return res.status(404).json({ error: 'Vote not found' });
+      }
+      throw err;
     }
 
     logSuccess('Vote removed', {
@@ -328,6 +334,9 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
         if (report_id) {
           const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
           realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count });
+        } else if (comment_id) {
+          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('comment_id', comment_id);
+          realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: count });
         }
       } catch (err) {
         logError(err, { context: 'realtimeParam.unvote' });

@@ -1,7 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from './ui/button';
 import { FeedbackState } from './ui/feedback-state';
-import { reportFrontendError } from '@/lib/adminTasks';
+import { reportFrontendError } from '@/lib/telemetry';
 
 interface Props {
     children: ReactNode;

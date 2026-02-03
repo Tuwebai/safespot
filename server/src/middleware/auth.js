@@ -28,13 +28,15 @@ export function validateAuth(req, res, next) {
             // ANTI-SPOOFING & IDENTITY PROMOTION
             // We force the server to respect the identity claimed by the token.
             // We OVERWRITE the header to ensure downstream components trust the verified identity.
-            if (decoded.anonymous_id) {
-                req.headers['x-anonymous-id'] = decoded.anonymous_id;
+            if (decoded.anonymous_id || decoded.id) {
+                const effectiveAnonId = decoded.anonymous_id || decoded.id;
+                req.headers['x-anonymous-id'] = effectiveAnonId;
                 req.user = {
-                    auth_id: decoded.auth_id,
-                    anonymous_id: decoded.anonymous_id,
+                    auth_id: decoded.auth_id || decoded.id,
+                    anonymous_id: effectiveAnonId,
                     email: decoded.email,
-                    avatar_url: decoded.avatar_url
+                    avatar_url: decoded.avatar_url,
+                    role: decoded.role || 'citizen' // ✅ Critical for Operator Mode
                 };
             }
         } catch (err) {

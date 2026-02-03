@@ -74,6 +74,11 @@ function getHeaders(requestId?: string, traceId?: string): Record<string, string
     'X-Instance-ID': telemetry.getInstanceId(),
   };
 
+  // ✅ IDENTITY SHIELD: Inject Signature if available
+  if (sessionToken?.signature) {
+    headers['X-Anonymous-Signature'] = sessionToken.signature;
+  }
+
   // ✅ MOTOR 2.1: Only inject JWT if Authority is READY
   if (sessionState === SessionState.READY && sessionToken?.jwt) {
     headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
@@ -332,7 +337,7 @@ export interface CreateReportData {
   address: string;
   latitude?: number;
   longitude?: number;
-  status?: 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado';
+  status?: 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado' | 'rechazado';
   incident_date?: string; // ISO 8601 date string
 }
 
@@ -469,6 +474,21 @@ export const reportsApi = {
   },
 
   /**
+   * Toggle like for a report
+   */
+  toggleLike: async (id: string, liked: boolean): Promise<{ is_liked: boolean; likes_count: number }> => {
+    return trafficController.enqueueSerial(async () => {
+      const response = await apiRequest<{ success: boolean; data: { is_liked: boolean; likes_count: number } }>(
+        `/reports/${id}/like`,
+        {
+          method: liked ? 'POST' : 'DELETE'
+        }
+      );
+      return (response as any).data || response;
+    }, liked ? 'LIKE_REPORT' : 'UNLIKE_REPORT');
+  },
+
+  /**
    * Toggle favorite status for a report
    */
   toggleFavorite: async (reportId: string): Promise<{ is_favorite: boolean }> => {
@@ -499,6 +519,49 @@ export const reportsApi = {
       return response;
     }, 'FLAG_REPORT');
   },
+
+  /**
+   * SEMANTIC LIFECYCLE COMMANDS
+   */
+
+  resolve: async (id: string, reason: string): Promise<Report> => {
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>(`/reports/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      return transformReport(rawReport);
+    }, 'RESOLVE_REPORT');
+  },
+
+  reject: async (id: string, reason: string): Promise<Report> => {
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>(`/reports/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      return transformReport(rawReport);
+    }, 'REJECT_REPORT');
+  },
+
+  process: async (id: string): Promise<Report> => {
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>(`/reports/${id}/process`, {
+        method: 'POST'
+      });
+      return transformReport(rawReport);
+    }, 'PROCESS_REPORT');
+  },
+
+  close: async (id: string, reason: string): Promise<Report> => {
+    return trafficController.enqueueSerial(async () => {
+      const rawReport = await apiRequest<RawReport>(`/reports/${id}/close`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      return transformReport(rawReport);
+    }, 'CLOSE_REPORT');
+  }
 };
 
 // ============================================
@@ -748,6 +811,17 @@ export interface GlobalStats {
   active_users_month: number;
 }
 
+export interface TransparencyAction {
+  id: string;
+  target_type: 'report' | 'user' | 'comment';
+  target_id: string;
+  action_type: string;
+  display_message: string;
+  reason: string;
+  created_at: string;
+  target_display_name?: string;
+}
+
 export interface CategoryStats {
   Celulares: number;
   Bicicletas: number;
@@ -763,6 +837,13 @@ export const usersApi = {
    */
   getProfile: async (): Promise<UserProfile> => {
     return apiRequest<UserProfile>('/users/profile');
+  },
+
+  /**
+   * Get user's moderation history (Transparency Log)
+   */
+  getTransparencyLog: async (): Promise<TransparencyAction[]> => {
+    return apiRequest<TransparencyAction[]>('/users/transparency-log');
   },
 
   /**

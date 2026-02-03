@@ -2,9 +2,7 @@ import { memo, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Select } from '@/components/ui/select'
 import { ImagePlus, X, Image as ImageIcon } from 'lucide-react'
-import { STATUS_OPTIONS } from '@/lib/constants'
 import type { Report } from '@/lib/schemas'
 import type { useReportEditor } from '@/hooks/useReportEditor'
 
@@ -26,12 +24,12 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
         isEditing,
         editTitle,
         editDescription,
-        editStatus,
         updating,
         newImages,
+        imageUploadError,
+        setImageUploadError,
         setTitle,
         setDescription,
-        setStatus,
         setNewImages
     } = editor
 
@@ -53,7 +51,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
             {/* Edit form fields (title/status) - shown in header area when editing */}
             {isEditing && (
                 <div className="space-y-4 mb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-foreground/80 mb-2">
                                 Título
@@ -65,23 +63,6 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                                 className="bg-dark-bg border-dark-border"
                                 disabled={updating}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-foreground/80 mb-2">
-                                Estado
-                            </label>
-                            <Select
-                                value={editStatus}
-                                onChange={(e) => setStatus(e.target.value as Report['status'])}
-                                className="bg-dark-bg border-dark-border"
-                                disabled={updating}
-                            >
-                                {STATUS_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </Select>
                         </div>
                     </div>
                 </div>
@@ -114,14 +95,14 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                                     Añadir imágenes (recomendado)
                                 </label>
 
-                                {editor.imageUploadError && (
+                                {imageUploadError && (
                                     <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/50 text-red-500 text-xs font-medium flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
                                         <div className="flex items-center gap-2">
                                             <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                                            {editor.imageUploadError}
+                                            {imageUploadError}
                                         </div>
                                         <button
-                                            onClick={() => editor.setImageUploadError(null)}
+                                            onClick={() => setImageUploadError(null)}
                                             className="hover:bg-red-500/20 p-1 rounded transition-colors"
                                         >
                                             <X className="w-3 h-3" />

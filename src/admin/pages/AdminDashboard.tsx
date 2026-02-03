@@ -1,8 +1,8 @@
 import { Users, AlertTriangle, Activity, TrendingUp, MapPin } from 'lucide-react'
-import { useAdminStats } from '@/hooks/admin/useAdminData'
+import { useAdminStats } from '../hooks/useAdminData'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import AdminMap from '@/components/admin/AdminMap'
+import AdminMap from '../components/AdminMap'
 import { useNavigate } from 'react-router-dom'
 import { getAvatarUrl } from '@/lib/avatar'
 

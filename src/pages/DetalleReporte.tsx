@@ -9,7 +9,7 @@ import { SEO } from '@/components/SEO'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ReportCardSkeleton as ReportSkeleton } from '@/components/ui/skeletons'
-import { ArrowLeft, MapPin, MessageSquare } from 'lucide-react'
+import { ArrowLeft, MapPin, MessageSquare, ShieldAlert } from 'lucide-react'
 import { ShareButton } from '@/components/ShareButton'
 import { useCreateChatMutation } from '@/hooks/queries/useChatsQuery'
 
@@ -286,6 +286,21 @@ export function DetalleReporte() {
 
           {/* Main Content Layout */}
           <div className="space-y-6">
+
+            {/* 0. Contextual Moderation Notice (Trust Hub Integration) - Phase 3 */}
+            {report.is_hidden && isOwner && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+                <ShieldAlert className="h-5 w-5 text-red-500 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-red-500 text-sm">Este reporte está oculto a la comunidad</h4>
+                  <p className="text-xs text-red-400/90 mt-1 leading-relaxed">
+                    Nuestro sistema de confianza ha limitado la visibilidad de este contenido.
+                    Para conocer el motivo exacto, revisa tu <button onClick={() => navigate('/perfil')} className="underline hover:text-red-300 font-medium cursor-pointer">Historial de Transparencia</button>.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* 1. Header Section (Title, Badge, Location) */}
             {!editor.isEditing && <ReportHeader report={report} />}
 

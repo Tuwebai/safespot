@@ -5,6 +5,25 @@ import { fileURLToPath, URL } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
 import packageJson from './package.json'
+import jwt from 'jsonwebtoken'
+import dotenv from 'dotenv'
+
+// ✅ ENTERPRISE: Secure Environment Loading (ESM compatible)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(__dirname, 'server', '.env');
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  console.warn(`[SECURITY] server/.env not found at ${envPath}. Ensure backend exists.`);
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET || JWT_SECRET === 'super-secret-jwt-key-change-this') {
+  console.error('❌ [SECURITY] CRITICAL: JWT_SECRET is missing or insecure! Blocking admin access.');
+}
+
 
 // Generate a unique build hash (shortened timestamp + version or git hash if available)
 const buildHash = Math.random().toString(36).substring(2, 9);
@@ -100,6 +119,126 @@ export default defineConfig({
         ],
       },
     }),
+    {
+      name: 'admin-zero-trust-loader',
+      // 1. 🛡️ DEV GATEWAY: Intercept admin assets in the Vite dev server
+      configureServer(server) {
+        server.middlewares.use(async (req, res, next) => {
+          const url = req.url || '';
+
+          // Rewrite routes to the admin shell
+          if (url.startsWith('/admin') && !url.includes('.')) {
+            req.url = '/admin.html';
+            return next();
+          }
+
+          // 🛡️ GOLDEN RULE: Strict Directory-Based Isolation
+          // Everything in /src/admin/ is considered private and requires cryptographic proof.
+          const isInternalAdmin = url.includes('/src/admin/');
+
+          if (isInternalAdmin) {
+            // ✅ ASSET WHITELIST (Hard Rule) for HMR & Dev Source Loading
+            // Vite requests source files (.tsx, .css) via HTTP during dev. 
+            // Validating JWTs on code components breaks HMR and Hard Reloads.
+            const isAsset =
+              url.includes('.tsx') ||
+              url.includes('.ts') ||
+              url.includes('.jsx') ||
+              url.includes('.js') ||
+              url.includes('.css') ||
+              url.includes('.json') ||
+              url.includes('.map') ||
+              url.includes('node_modules') ||
+              url.includes('/@vite/') ||
+              url.includes('?t='); // HMR Timestamp
+
+            if (isAsset) {
+              // Allow Vite to serve the source code.
+              // Security is enforced at Data Layer (API) and Runtime (AdminGuard).
+
+              // 🧹 CLEANUP: Strip JWT from URL if present in 't' param
+              // This prevents 'vite:esbuild' from crashing due to "Invalid loader value"
+              // when it encounters a massive JWT in the query string.
+              const parsedUrl = new URL(url, 'http://localhost');
+              const tParam = parsedUrl.searchParams.get('t');
+
+              // If 't' looks like a JWT (starts with 'ey' or is very long), remove it.
+              // Standard Vite HMR 't' is usually a timestamp (numeric).
+              // We preserve short numeric 't' for cache busting if needed.
+              if (tParam && (tParam.length > 50 || tParam.startsWith('ey'))) {
+                parsedUrl.searchParams.delete('t');
+                req.url = parsedUrl.pathname + parsedUrl.search;
+              }
+
+              return next();
+            }
+
+            const parsedUrl = new URL(url, 'http://localhost');
+            const queryToken = parsedUrl.searchParams.get('t');
+            const cookieToken = req.headers.cookie?.split('; ').find(row => row.startsWith('admin_jwt='))?.split('=')[1];
+
+            const token = queryToken || cookieToken;
+
+            if (!token) {
+              console.warn(`[SECURITY] Golden Rule Interception: Blocked internal asset ${url} (Missing Token)`);
+              res.statusCode = 401;
+              res.end('Unauthorized: Admin Internal Assets require a valid Security Token.');
+              return;
+            }
+
+            try {
+              // 🛡️ REGLA DE ORO (DEV): Validación Criptográfica de la Firma Y ROL
+              const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+              if (decoded.role !== 'admin' && decoded.role !== 'super_admin') {
+                console.warn(`[SECURITY] Golden Rule Interception: Blocked internal asset ${url} (Insufficient Permissions: ${decoded.role})`);
+                res.statusCode = 403;
+                res.end('Forbidden: Admin Authority Required.');
+                return;
+              }
+
+              // ✅ Valid Token & Role -> Proceed and set/refresh cookie if it came from query
+              if (queryToken) {
+                res.setHeader('Set-Cookie', `admin_jwt=${queryToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`);
+                // Strip token for internal esbuild processing
+                parsedUrl.searchParams.delete('t');
+                req.url = parsedUrl.pathname + parsedUrl.search;
+              }
+            } catch (err: any) {
+              console.warn(`[SECURITY] Golden Rule Interception: Blocked internal asset ${url} (Invalid/Forged Token: ${err.message})`);
+              res.statusCode = 401;
+              res.end('Unauthorized: Invalid or Expired Security Token.');
+              return;
+            }
+          }
+
+
+
+
+          next();
+        });
+      },
+      // 2. ⚡ PROD RESOLVER: Inject hashed paths into the dynamic loader
+      transformIndexHtml: {
+        order: 'post',
+        handler(html, ctx) {
+          if (!ctx.filename.endsWith('admin.html')) return html;
+
+          // In dev, ctx.bundle is undefined. Paths remain /src/...
+          if (!ctx.bundle) return html;
+
+          // In production, we find the hashed entry points from the bundle
+          const adminEntry = Object.values(ctx.bundle).find(f => f.name === 'admin' && f.type === 'chunk');
+          const loginEntry = Object.values(ctx.bundle).find(f => f.name === 'admin_login' && f.type === 'chunk');
+
+          return html
+            .replace('/src/admin/entry.tsx', `/admin-assets/internal/${adminEntry?.fileName || ''}`)
+            .replace('/src/admin-login.tsx', `/admin-assets/public/${loginEntry?.fileName || ''}`);
+
+        }
+      }
+    }
+
   ],
   resolve: {
     alias: {
@@ -131,7 +270,7 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       }
-    }
+    },
   },
   base: '/',
   build: {
@@ -141,7 +280,61 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 500,
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        admin: path.resolve(__dirname, 'admin.html'),
+        admin_login: path.resolve(__dirname, 'src/admin-login.tsx'),
+        admin_internal: path.resolve(__dirname, 'src/admin/entry.tsx'),
+
+
+      },
+
       output: {
+        chunkFileNames: (chunkInfo) => {
+          const name = chunkInfo.name.toLowerCase();
+
+
+          // 🔴 SENSITIVE CHUNKS (Gated by Golden Rule)
+          // Any chunk coming from the src/admin directory is strictly internal.
+          const isInternalAdmin = chunkInfo.facadeModuleId?.includes('/src/admin/');
+
+          if (isInternalAdmin || name.includes('admin_internal')) {
+            return 'admin-assets/internal/[name]-[hash].js';
+          }
+
+          // 🟢 PUBLIC ADMIN CHUNKS (Required for Login Shell)
+          if (name.includes('admin_login') || name.includes('adminlogin')) {
+            return 'admin-assets/public/[name]-[hash].js';
+          }
+
+
+
+          if (name.includes('admin')) {
+            // Default to internal if ambiguous to avoid accidental leakage
+            return 'admin-assets/internal/[name]-[hash].js';
+          }
+
+          return 'assets/[name]-[hash].js';
+        },
+
+        entryFileNames: (chunkInfo) => {
+          if (chunkInfo.name === 'admin') {
+            return 'admin-assets/internal/admin-entry-[hash].js';
+          }
+          if (chunkInfo.name === 'admin_login') {
+            return 'admin-assets/public/login-entry-[hash].js';
+          }
+          return 'assets/[name]-[hash].js';
+        },
+        assetFileNames: (assetInfo) => {
+          const name = assetInfo.name?.toLowerCase() || '';
+          if (name.includes('admin')) {
+            if (name.includes('login')) return 'admin-assets/public/[name]-[hash][extname]';
+            return 'admin-assets/internal/[name]-[hash][extname]';
+          }
+          return 'assets/[name]-[hash][extname]';
+        },
+
         manualChunks: {
           // Core React - changes rarely, high cache value
           'vendor-react': ['react', 'react-dom', 'react-router-dom', 'react-helmet-async'],
@@ -172,3 +365,4 @@ export default defineConfig({
     },
   },
 })
+

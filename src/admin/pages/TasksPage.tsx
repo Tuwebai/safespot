@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
     CheckCircle2,
     Clock,
@@ -20,22 +20,14 @@ import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useAdminTasks, AdminTask } from '../hooks/useAdminTasks'
+import { v4 as uuidv4 } from 'uuid'
 
-interface AdminTask {
-    id: string
-    type: 'manual' | 'bug' | 'error' | 'alert' | 'system'
-    title: string
-    description: string
-    severity: 'low' | 'medium' | 'high' | 'critical'
-    status: 'pending' | 'in_progress' | 'done'
-    source: string
-    metadata: any
-    created_at: string
-    resolved_at: string | null
-}
+function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+    // ✅ ENTERPRISE: Zero-Latency UI
+    // Modal state is purely local. Mutation happens in the background.
+    const { createTask } = useAdminTasks()
 
-function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
-    const [loading, setLoading] = useState(false)
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -47,27 +39,29 @@ function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        setLoading(true)
-        try {
-            const token = localStorage.getItem('safespot_admin_token')
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(formData)
-            })
 
-            if (response.ok) {
-                onSuccess()
-                onClose()
-            }
-        } catch (error) {
-            console.error('Error creating task:', error)
-        } finally {
-            setLoading(false)
-        }
+        // 1. Fire Mutation (Optimistic Update happens inside hook)
+        // We generate the ID here to ensure we own the identity
+        createTask.mutate({
+            id: uuidv4(), // Client-Generated ID
+            type: formData.type as any,
+            title: formData.title,
+            description: formData.description,
+            severity: formData.severity as any,
+            source: 'manual',
+            metadata: {}
+        })
+
+        // 2. Close Immediately (0ms perceived latency)
+        onClose()
+
+        // Reset form for next time
+        setFormData({
+            title: '',
+            description: '',
+            severity: 'low',
+            type: 'manual'
+        })
     }
 
     return (
@@ -102,7 +96,7 @@ function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
                             <select
                                 className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all"
                                 value={formData.type}
-                                onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                             >
                                 <option value="manual">Manual</option>
                                 <option value="bug">Bug</option>
@@ -114,7 +108,7 @@ function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
                             <select
                                 className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all"
                                 value={formData.severity}
-                                onChange={(e) => setFormData({ ...formData, severity: e.target.value as any })}
+                                onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
                             >
                                 <option value="low">Baja</option>
                                 <option value="medium">Media</option>
@@ -147,9 +141,8 @@ function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
                             type="submit"
                             variant="neon"
                             className="flex-1"
-                            disabled={loading}
                         >
-                            {loading ? 'Creando...' : 'Crear Tarea'}
+                            Crear Tarea
                         </Button>
                     </div>
                 </form>
@@ -159,16 +152,20 @@ function CreateTaskModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
 }
 
 export function TasksPage() {
-    const [tasks, setTasks] = useState<AdminTask[]>([])
-    const [loading, setLoading] = useState(true)
-    const [isModalOpen, setIsModalOpen] = useState(false)
-    const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null)
-    const dropdownRef = useRef<HTMLDivElement>(null)
+    // ✅ ENTERPRISE: Use Hook instead of raw fetch
     const [filter, setFilter] = useState({
         status: '',
         severity: '',
         type: ''
     })
+
+    // The hook handles caching, refetching, and optimistic updates
+    const { tasks, isLoading, updateTask, deleteTask } = useAdminTasks(filter)
+
+    const [isModalOpen, setIsModalOpen] = useState(false)
+    const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
+
     const navigate = useNavigate()
     const { confirm } = useConfirm()
 
@@ -188,28 +185,13 @@ export function TasksPage() {
         }
     }
 
-    const updateTaskStatus = async (taskId: string, newStatus: string) => {
-        try {
-            const token = localStorage.getItem('safespot_admin_token')
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks/${taskId}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ status: newStatus })
-            })
-
-            if (response.ok) {
-                fetchTasks()
-                setActiveDropdownId(null)
-            }
-        } catch (error) {
-            console.error('Error updating task status:', error)
-        }
+    const handleUpdateStatus = (taskId: string, newStatus: string) => {
+        // Fire and Forget (Optimistic)
+        updateTask.mutate({ id: taskId, status: newStatus })
+        setActiveDropdownId(null)
     }
 
-    const deleteTask = async (taskId: string) => {
+    const handleDelete = async (taskId: string) => {
         if (!await confirm({
             title: '¿Eliminar tarea?',
             description: '¿Estás seguro de que quieres eliminar esta tarea permanentemente? Esta acción es irreversible.',
@@ -217,47 +199,10 @@ export function TasksPage() {
             variant: 'danger'
         })) return
 
-        try {
-            const token = localStorage.getItem('safespot_admin_token')
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks/${taskId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-
-            if (response.ok) {
-                fetchTasks()
-                setActiveDropdownId(null)
-            }
-        } catch (error) {
-            console.error('Error deleting task:', error)
-        }
+        // Fire and Forget (Optimistic)
+        deleteTask.mutate(taskId)
+        setActiveDropdownId(null)
     }
-
-    const fetchTasks = async () => {
-        try {
-            const token = localStorage.getItem('safespot_admin_token')
-            const query = new URLSearchParams(filter as any).toString()
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks?${query}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            const data = await response.json()
-            setTasks(Array.isArray(data) ? data : [])
-        } catch (error) {
-            console.error('Error fetching tasks:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        fetchTasks()
-        const interval = setInterval(fetchTasks, 30000) // Auto-refresh every 30s
-        return () => clearInterval(interval)
-    }, [filter])
 
     // Close dropdown on click outside
     useEffect(() => {
@@ -319,10 +264,10 @@ export function TasksPage() {
             {/* Stats Quick View */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Pendientes', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.status === 'pending').length, color: 'text-[#00ff88]' },
-                    { label: 'Críticas', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.severity === 'critical').length, color: 'text-red-500' },
-                    { label: 'Bugs Reportados', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.type === 'bug').length, color: 'text-orange-500' },
-                    { label: 'Resueltas hoy', value: (Array.isArray(tasks) ? tasks : []).filter(t => t.status === 'done').length, color: 'text-blue-400' },
+                    { label: 'Pendientes', value: tasks.filter(t => t.status === 'pending').length, color: 'text-[#00ff88]' },
+                    { label: 'Críticas', value: tasks.filter(t => t.severity === 'critical').length, color: 'text-red-500' },
+                    { label: 'Bugs Reportados', value: tasks.filter(t => t.type === 'bug').length, color: 'text-orange-500' },
+                    { label: 'Resueltas hoy', value: tasks.filter(t => t.status === 'done').length, color: 'text-blue-400' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-[#0f172a] border border-[#1e293b] p-4 rounded-xl">
                         <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">{stat.label}</p>
@@ -370,15 +315,15 @@ export function TasksPage() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-[#1e293b]/50 border-b border-[#1e293b]">
-                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider uppercase">Evento</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider uppercase">Severidad</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider uppercase">Estado</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider uppercase">Fecha</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider uppercase text-right">Acciones</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Evento</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Severidad</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Estado</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Fecha</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[#1e293b]">
-                            {loading ? (
+                            {isLoading ? (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                                         <div className="flex flex-col items-center gap-3">
@@ -415,7 +360,9 @@ export function TasksPage() {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <p className="font-bold text-white text-sm truncate max-w-[300px]">{task.title}</p>
-                                                    <p className="text-xs text-slate-500 mt-0.5 uppercase tracking-tighter">Source: {task.source} • ID: {task.id.split('-')[0]}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5 uppercase tracking-tighter">
+                                                        Source: {task.source} • ID: {task.id.split('-')[0]}
+                                                    </p>
                                                 </div>
                                             </div>
                                         </td>
@@ -466,7 +413,7 @@ export function TasksPage() {
                                                         >
                                                             {task.status === 'pending' && (
                                                                 <button
-                                                                    onClick={() => updateTaskStatus(task.id, 'in_progress')}
+                                                                    onClick={() => handleUpdateStatus(task.id, 'in_progress')}
                                                                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
                                                                 >
                                                                     <Play className="h-4 w-4 text-blue-400" /> Empezar Trabajo
@@ -474,7 +421,7 @@ export function TasksPage() {
                                                             )}
                                                             {task.status !== 'done' && (
                                                                 <button
-                                                                    onClick={() => updateTaskStatus(task.id, 'done')}
+                                                                    onClick={() => handleUpdateStatus(task.id, 'done')}
                                                                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
                                                                 >
                                                                     <Check className="h-4 w-4 text-[#00ff88]" /> Marcar Resuelta
@@ -482,7 +429,7 @@ export function TasksPage() {
                                                             )}
                                                             <div className="h-[1px] bg-[#1e293b] my-1" />
                                                             <button
-                                                                onClick={() => deleteTask(task.id)}
+                                                                onClick={() => handleDelete(task.id)}
                                                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                                                             >
                                                                 <Trash2 className="h-4 w-4" /> Eliminar Tarea
@@ -503,7 +450,6 @@ export function TasksPage() {
             <CreateTaskModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onSuccess={fetchTasks}
             />
         </div>
     )

@@ -8,7 +8,7 @@ const router = express.Router();
  * GET /api/admin/heatmap
  * Returns GeoJSON of recent reports for the heatmap
  */
-router.get('/heatmap', verifyAdminToken, async (req, res) => {
+router.get('/', verifyAdminToken, async (req, res) => {
     try {
         // 1. Fetch reports from the last 30 days
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();

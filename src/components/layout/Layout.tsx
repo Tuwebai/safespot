@@ -45,7 +45,7 @@ export function Layout({ children }: LayoutProps) {
   const publicRoutes = ['/terminos', '/privacidad']
   const isPublicRoute = publicRoutes.includes(location.pathname)
   const isMensajesPage = location.pathname.includes('/mensajes')
-  const isAdminPage = location.pathname.startsWith('/admin')
+  const isAdminPage = location.pathname.toLowerCase().startsWith('/admin')
 
   // Determine if we should force alias creation
   // Condición: No está cargando, tenemos perfil, NO tiene alias, y NO es una ruta pública, Y NO es admin

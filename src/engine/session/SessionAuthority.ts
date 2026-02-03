@@ -29,6 +29,7 @@ const API_BASE_URL = apiRaw.replace(/\/$/, '').endsWith('/api')
 export interface SessionToken {
     anonymousId: string;
     sessionId: string;
+    signature: string; // ✅ Identity Shield Signature
     issuedAt: number;
     expiresAt: number;
     jwt: string;
@@ -75,13 +76,15 @@ class SessionAuthority {
                 const parsed: SessionToken = JSON.parse(stored);
                 const now = Date.now();
 
-                if (parsed.expiresAt > now) {
+                // ✅ MOTOR 2.1: Only rehydrate if token is valid AND has signature
+                if (parsed.expiresAt > now && parsed.signature) {
                     this.token = parsed;
                     this.state = SessionState.READY;
                     console.debug(`[SessionAuthority] [READY] Session rehydrated. ID: ${parsed.anonymousId.substring(0, 8)}`);
                 } else {
-                    console.warn('[SessionAuthority] [EXPIRED] Stored session has expired.');
-                    this.state = SessionState.EXPIRED;
+                    const reason = parsed.expiresAt <= now ? 'expired' : 'missing signature';
+                    console.warn(`[SessionAuthority] [STALE] Stored session is ${reason}. Re-bootstrap required.`);
+                    // We stay in UNINITIALIZED to force a fresh init()
                 }
             }
         } catch (e) {
@@ -120,8 +123,12 @@ class SessionAuthority {
                 }
 
                 const data = await response.json();
-                if (data.success && data.session && data.token) {
-                    this.token = { ...data.session, jwt: data.token };
+                if (data.success && data.session && data.token && data.signature) {
+                    this.token = {
+                        ...data.session,
+                        jwt: data.token,
+                        signature: data.signature // ✅ Persist signature
+                    };
                     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.token));
                     this.setState(SessionState.READY);
                 } else {

@@ -28,6 +28,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { useAuthStore } from '@/store/authStore'
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
+import { TrustHub } from '@/components/profile/TrustHub'
 
 // ✅ PERFORMANCE FIX: Lazy load LoginModal (7 KB gzip) - only loads when user clicks "Guardar Progreso"
 const LoginModal = lazy(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })))
@@ -465,6 +466,10 @@ export function Perfil() {
                 )}
               </CardContent>
             </Card>
+            {/* TrustHub: Centro de Transparencia */}
+            <div className="mt-6">
+              <TrustHub />
+            </div>
           </div>
 
           {/* Sidebar */}

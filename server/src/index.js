@@ -8,7 +8,12 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
+
 import { logError, requestLogger } from './utils/logger.js'; // Updated logger
 import { correlationMiddleware, getCorrelationId } from './middleware/correlation.js';
 import { AppError } from './utils/AppError.js';
@@ -21,6 +26,7 @@ import { generateOpenApiSpecs } from './docs/openapi.js';
 // Router imports
 import presenceRouter from './routes/presence.js';
 import reportsRouter from './routes/reports.js';
+import reportLifecycleRouter from './routes/reportLifecycle.js';
 
 // API Routes
 import commentsRouter from './routes/comments.js';
@@ -48,13 +54,19 @@ import adminUsersRouter from './routes/adminUsers.js';
 import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
 import contactRouter from './routes/contact.js';
+
+
 import diagnosticsRouter from './routes/diagnostics.js';
+import syncRouter from './routes/sync.js';
 import { logCriticalError } from './utils/adminTasks.js';
 import { notifyError } from './utils/whatsapp.js';
+import { strictAdminGateway } from './utils/adminGateway.js';
 
 // Load environment variables
 // dotenv.config(); (Redundant, already called at top)
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const app = express();
 
 const PORT = process.env.PORT || 3000;
@@ -99,6 +111,10 @@ const allowedOrigins = baseOrigins.flatMap(origin => {
 // X. Correlation ID (Must be extremely early)
 app.use(correlationMiddleware);
 
+// Y. Cookie Parser (Required for Zero-Trust Assets)
+app.use(cookieParser());
+
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // Allow server-to-server, mobile apps, or curl
@@ -124,10 +140,11 @@ app.use(cors({
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'X-Anonymous-Id',
+    'X-Anonymous-Signature',
     'X-Client-ID',
     'Cache-Control',
     'Last-Event-ID',
@@ -299,9 +316,11 @@ app.use('/seo', seoRouter);
 
 // Diagnostics (should be early to avoid rate limiting)
 app.use('/api/diagnostics', diagnosticsRouter);
+app.use('/api/sync', syncRouter);
 
 // API Routes
 app.use('/api/auth', authRouter);
+app.use('/api/reports', reportLifecycleRouter); // Semantic Lifecycle Commands overrides
 app.use('/api/reports', reportsRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/votes', votesRouter);
@@ -317,16 +336,73 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/contact', contactRouter); // Register Contact Route
 app.use('/api/presence', presenceRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
+// Admins (Authentication is PUBLIC, functionality is PROTECTED)
 app.use('/api/admin/auth', adminAuthRouter);
-app.use('/api/admin', adminStatsRouter); // Mount at /api/admin so it becomes /api/admin/stats
-app.use('/api/admin', adminHeatmapRouter); // Mount at /api/admin so it becomes /api/admin/heatmap
+
+// Apply strict gateway to all functional administrative sectors
+app.use('/api/admin', strictAdminGateway);
+
+// Mount Admin Sub-Routers
+app.use('/api/admin/stats', adminStatsRouter);
+app.use('/api/admin/heatmap', adminHeatmapRouter);
 app.use('/api/admin/users', adminUsersRouter);
-app.use('/api/admin/moderation', adminModerationRouter); // Mount at /api/admin/users
+app.use('/api/admin/moderation', adminModerationRouter);
 app.use('/api/admin/tasks', adminTasksRouter);
+
 app.use('/api/user-zones', userZonesRouter);
+
 app.use('/api/chats', chatsRouter);
+
 app.use('/api', sitemapRouter);
 app.use('/api/seo', seoRouter); // Also expose under /api for sitemap consistency
+
+
+// ============================================
+// ADMIN ASSET GATEWAY (Enterprise Isolation)
+// ============================================
+
+/**
+ * Enterprise Rule: The login shell is public, the dashboard code is PRIVATE.
+ * We serve the admin.html bootstrapper to everyone, but the actual 
+ * business logic chunks are locked behind the gateway.
+ */
+app.get(['/admin', '/admin/', '/admin/login'], (req, res) => {
+  const adminPath = path.resolve(__dirname, '../../dist/admin.html');
+  if (fs.existsSync(adminPath)) {
+    // 🛡️ SECURITY: Force freshness for the bootloader
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return res.sendFile(adminPath);
+  }
+  res.status(404).send('Admin Environment Offline (Run build)');
+});
+
+
+// Serve the admin shell for all admin sub-routes (SPA support)
+// 📌 SECURITY: The HTML is public, the JS/CSS modules it loads are protected.
+app.get('/admin/*', (req, res) => {
+  const adminPath = path.resolve(__dirname, '../../dist/admin.html');
+  if (fs.existsSync(adminPath)) {
+    return res.sendFile(adminPath);
+  }
+  res.status(404).send('Admin Context Not Found');
+});
+
+
+
+/**
+ * Enterprise Rule: Admin assets are SENSITIVE.
+ * No JS or CSS from the INTERNAL admin bundle can be served without a valid JWT.
+ * The PUBLIC segment (Login form) is served openly to allow authentication.
+ */
+app.use('/admin-assets/public', express.static(path.resolve(__dirname, '../../dist/admin-assets/public')));
+app.use('/admin-assets/internal', strictAdminGateway, express.static(path.resolve(__dirname, '../../dist/admin-assets/internal')));
+
+
+
+
+
 
 // ============================================
 // ROOT ROUTE (Explicit API Status)
@@ -468,41 +544,81 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// SERVER START
+// SERVER START (Singleton Guard)
 // ============================================
 
 let server;
+let isStarting = false;
+const activeSockets = new Set();
 
-if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, async () => {
-    console.log('🚀 SafeSpot API Server');
-    console.log(`📍 Port: ${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
-    console.log('✅ Server ready to accept requests');
+/**
+ * Starts the Express server with protection against double-listening
+ */
+const startServer = () => {
+  if (isStarting) return;
+  isStarting = true;
+
+  if (process.env.NODE_ENV === 'test') return;
+
+  server = app.listen(PORT, () => {
+    console.log(`
+🚀 SafeSpot API Server
+📍 Port: ${PORT}
+🌍 Environment: ${process.env.NODE_ENV || 'development'}
+🔒 CORS Origins: ${allowedOrigins.join(', ')}
+✅ Server ready to accept requests
+    `);
+
+    // INCREASE TIMEOUTS FOR SSE STABILITY
+    server.keepAliveTimeout = 120000;
+    server.headersTimeout = 130000;
   });
 
-  // INCREASE TIMEOUTS FOR SSE STABILITY
-  // Prevent random ERR_CONNECTION_RESET in browsers
-  server.keepAliveTimeout = 120000; // 120s
-  server.headersTimeout = 130000;  // 130s
-}
+  // 🛡️ Socket Tracking for Forced Shutdown
+  server.on('connection', (socket) => {
+    activeSockets.add(socket);
+    socket.on('close', () => activeSockets.delete(socket));
+  });
 
-// ============================================
-// GRACEFUL SHUTDOWN
-// ============================================
-
-const gracefulShutdown = (signal) => {
-  console.log(`\n${signal} received, shutting down gracefully...`);
-
-  // Close server and allow existing connections to finish
-  process.exit(0);
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ CRITICAL: Port ${PORT} is already in use.`);
+      console.error(`💡 Pro tip: Kill existing process holding the port.`);
+      process.exit(1);
+    }
+  });
 };
+
+// ============================================
+// GRACEFUL SHUTDOWN (Real Resource Cleanup)
+// ============================================
+
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received, shutting down...`);
+
+  if (server) {
+    console.log(`🛑 Closing HTTP server and destroying ${activeSockets.size} active sockets...`);
+
+    // Force-terminate all active connections (required for SSE stability during restarts)
+    for (const socket of activeSockets) {
+      socket.destroy();
+    }
+
+    server.close(() => {
+      console.log('HTTP server closed.');
+    });
+  }
+
+  // Faster termination for dev agility
+  setTimeout(() => {
+    console.log('Process exit.');
+    process.exit(0);
+  }, 200).unref();
+};
+
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-
 
 // Handle uncaught exceptions
 process.on('uncaughtException', async (err) => {
@@ -515,7 +631,7 @@ process.on('uncaughtException', async (err) => {
   process.exit(1);
 });
 
-process.on('unhandledRejection', async (reason, promise) => {
+process.on('unhandledRejection', async (reason) => {
   console.error('❌ UNHANDLED REJECTION:', reason);
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
@@ -526,5 +642,12 @@ process.on('unhandledRejection', async (reason, promise) => {
   process.exit(1);
 });
 
+// AUTO-BOOTSTRAP if run directly
+const isMainModule = fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMainModule || process.env.NODE_WATCH === 'true') {
+  startServer();
+}
 
 export default app;
+export { startServer };
+

@@ -51,7 +51,7 @@ router.get('/', async (req, res, next) => {
  */
 router.post('/', async (req, res, next) => {
     try {
-        const { title, description, severity, metadata } = req.body;
+        const { id, title, description, severity, metadata } = req.body;
 
         const task = await createAdminTask({
             type: 'manual',

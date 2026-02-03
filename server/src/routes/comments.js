@@ -6,7 +6,7 @@ import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter, likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
-import { queryWithRLS } from '../utils/rls.js';
+import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
@@ -17,6 +17,7 @@ import { verifyUserStatus } from '../middleware/moderation.js';
 import { isValidUuid } from '../utils/validation.js';
 import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
+import { executeUserAction } from '../utils/governance.js';
 
 const router = express.Router();
 
@@ -352,28 +353,44 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       console.log('[CREATE COMMENT] Params:', insertParams);
     }
 
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      insertQuery,
-      insertParams
-    );
+    // 4. EXECUTE MUTATION (Atomic Transaction)
+    // ============================================
+    const data = await transactionWithRLS(anonymousId, async (client, sse) => {
+      // a. Insert Comment
+      const insertResult = await client.query(insertQuery, insertParams);
+      if (insertResult.rows.length === 0) {
+        throw new AppError('Insert operation returned no data', 500, ErrorCodes.INSERT_FAILED);
+      }
+      const comment = insertResult.rows[0];
 
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to create comment'
-      });
-    }
+      // b. Update Report Counter (Atomic Persistence)
+      // Incrementing denormalized counter in reports table
+      await client.query(
+        `UPDATE reports SET comments_count = comments_count + 1 WHERE id = $1`,
+        [req.body.report_id]
+      );
 
-    const data = insertResult.rows[0];
+      // c. Queue Realtime Events (SSE)
+      // These will ONLY flush if transaction COMMITs
+      const clientId = req.headers['x-client-id'];
+      sse.emit('emitNewComment', req.body.report_id, comment, clientId);
 
-    // Trigger gamification sync asynchronously (non-blocking)
-    syncGamification(anonymousId).catch(err => {
-      logError(err, { context: 'syncGamification.comment', anonymousId });
+      // CRITICAL: Global delta for 0ms counter sync across all clients
+      sse.emit('emitVoteUpdate', 'report', req.body.report_id, {
+        comments_count_delta: 1
+      }, clientId);
+
+      return comment;
     });
 
-    // NOTIFICATIONS: Notify report owner (Async)
+    // 5. ASYNC POST-PROCESSING (Non-blocking)
+    // ============================================
     try {
+      // Trigger gamification sync asynchronously (non-blocking)
+      syncGamification(anonymousId).catch(err => {
+        logError(err, { context: 'syncGamification.comment', anonymousId });
+      });
+
       const isSighting = content.includes('"type":"sighting"');
       const activityType = isSighting ? 'sighting' : 'comment';
 
@@ -390,53 +407,19 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       }
 
       // 3. Notify Mentioned Users
-      // Parsing content to find mentions
-      try {
-        console.log('[DEBUG-MENTIONS] Content to parse:', req.body.content.substring(0, 100)); // Log first 100 chars
-        const mentionedIds = extractMentions(req.body.content);
-        console.log('[DEBUG-MENTIONS] Extracted IDs:', mentionedIds);
-
-        if (mentionedIds.length > 0) {
-          console.log(`[Notify] Found mentions for comment ${data.id}:`, mentionedIds);
-          // Notify each unique mentioned user (except self)
-          mentionedIds.forEach(targetId => {
-            if (targetId !== anonymousId) {
-              console.log(`[DEBUG-MENTIONS] Sending notification to ${targetId}`);
-              NotificationService.notifyMention(targetId, data.id, anonymousId, req.body.report_id).catch(err => {
-                console.error('[Notify] Failed to notify mention:', err);
-              });
-            } else {
-              console.log('[DEBUG-MENTIONS] Skipping self-mention');
-            }
-          });
-        } else {
-          console.log('[DEBUG-MENTIONS] No mentions found in content');
-        }
-      } catch (mentionErr) {
-        console.error('[Notify] Error processing mentions:', mentionErr);
+      const mentionedIds = extractMentions(req.body.content);
+      if (mentionedIds.length > 0) {
+        mentionedIds.forEach(targetId => {
+          if (targetId !== anonymousId) {
+            NotificationService.notifyMention(targetId, data.id, anonymousId, req.body.report_id).catch(err => {
+              logError(err, { context: 'notifyMention', targetId });
+            });
+          }
+        });
       }
-
     } catch (err) {
-      // Ignore notification errors to not break comment creation
+      // Ignore notification errors
     }
-
-    // REALTIME: Broadcast new comment to all connected clients
-    const clientId = req.headers['x-client-id'] || req.headers['x-request-id'];
-    try {
-      realtimeEvents.emitNewComment(req.body.report_id, data, clientId);
-
-      // CRITICAL: Explicitly broadcast report-update to synchronize counters at 0ms globally
-      // This prevents User B from seeing "0 comments" while User A just added one.
-      realtimeEvents.emitVoteUpdate('report', req.body.report_id, {
-        comments_count_delta: 1
-      }, clientId);
-
-    } catch (err) {
-      // Ignore realtime errors to not break comment creation
-      logError(err, { context: 'realtimeEvents.emitNewComment', reportId: req.body.report_id });
-    }
-
-    // ... (rest of logic)
 
     res.status(201).json({
       success: true,
@@ -523,59 +506,43 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
 
-    // Check if comment exists and belongs to user using queryWithRLS
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT anonymous_id, report_id FROM comments 
-       WHERE id = $1 AND anonymous_id = $2`,
-      [id, anonymousId]
-    );
+    // [M12 REFINEMENT] Use executeUserAction for Willpower Audit + Mutation
+    const result = await executeUserAction({
+      actorId: anonymousId,
+      targetType: 'comment',
+      targetId: id,
+      actionType: 'USER_DELETE_SELF_COMMENT',
+      updateQuery: `UPDATE comments SET deleted_at = NOW() WHERE id = $1 AND anonymous_id = $2 AND deleted_at IS NULL`,
+      updateParams: [id, anonymousId]
+    });
 
-    if (checkResult.rows.length === 0) {
-      throw new NotFoundError('Comment not found or you do not have permission to delete it');
-    }
-
-    // Soft Delete comment using queryWithRLS for RLS enforcement
-    const deleteResult = await queryWithRLS(
-      anonymousId,
-      `UPDATE comments 
-       SET deleted_at = NOW() 
-       WHERE id = $1 AND anonymous_id = $2
-       AND deleted_at IS NULL`,
-      [id, anonymousId]
-    );
-
-    if (deleteResult.rowCount === 0) {
-      throw new ForbiddenError('Forbidden: You can only delete your own comments or comment is already deleted');
-    }
-
-    const deletedId = id;
-    const reportId = checkResult.rows[0].report_id;
+    const currentItem = result.snapshot;
+    const reportId = currentItem.report_id;
 
     // REALTIME: Broadcast deletion
     try {
       const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentDelete(reportId, deletedId, clientId);
+      realtimeEvents.emitCommentDelete(reportId, id, clientId);
+
+      // CRITICAL: Global delta for 0ms counter sync in DELETE
+      realtimeEvents.emitVoteUpdate('report', reportId, {
+        comments_count_delta: -1
+      }, clientId);
+
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
     }
 
-    if (!reportId) {
-      console.warn('[DELETE_COMMENT] Warning: report_id not found for comment', id);
-      // We continue to respond success but skip stat decrement
-      return res.json({ success: true, message: 'Comment deleted successfully (stat skipped)' });
-    }
-
-    // CRITICAL FIX: Manually decrement report counter because DB trigger might not handle soft deletes
-    try {
-      await queryWithRLS(
-        anonymousId,
-        `UPDATE reports SET comments_count = GREATEST(0, comments_count - 1) WHERE id = $1`,
-        [reportId]
-      );
-    } catch (err) {
-      console.error('[DELETE_COMMENT] Failed to decrement report count:', err);
-      // Don't fail the request, just log it
+    // CRITICAL: Manually decrement report counter
+    if (reportId) {
+      try {
+        await pool.query(
+          `UPDATE reports SET comments_count = GREATEST(0, comments_count - 1) WHERE id = $1`,
+          [reportId]
+        );
+      } catch (err) {
+        console.error('[DELETE_COMMENT] Failed to decrement report count:', err);
+      }
     }
 
     res.json({

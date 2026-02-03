@@ -57,6 +57,7 @@ export interface RawReport {
     latitude: number | null;
     longitude: number | null;
     upvotes_count: number;
+    likes_count?: number;
     comments_count: number;
     created_at: string;
     updated_at: string;
@@ -76,6 +77,7 @@ export interface RawReport {
     threads_count?: number;
     image_urls?: string[];
     is_favorite?: boolean;
+    is_liked?: boolean;
     is_flagged?: boolean;
     flags_count?: number;
 }
@@ -153,6 +155,7 @@ export function transformReport(raw: RawReport): Report {
         latitude: raw.latitude,
         longitude: raw.longitude,
         upvotes_count: raw.upvotes_count,
+        likes_count: raw.likes_count ?? 0,
         comments_count: raw.comments_count,
         created_at: raw.created_at,
         updated_at: raw.updated_at,
@@ -176,6 +179,7 @@ export function transformReport(raw: RawReport): Report {
         threads_count: raw.threads_count ?? 0,
         image_urls: raw.image_urls || [],
         is_favorite: raw.is_favorite ?? false,
+        is_liked: raw.is_liked ?? false,
         is_flagged: raw.is_flagged ?? false,
         flags_count: raw.flags_count ?? 0
     };

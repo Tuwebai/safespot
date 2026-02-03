@@ -30,7 +30,7 @@ export const reportSchema = z.object({
     address: z.string().optional().nullable(),
     zone: z.string().optional().nullable(),
     incident_date: z.string().datetime({ message: 'Fecha de incidente inválida (ISO 8601)' }).optional(),
-    status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado']).default('pendiente'),
+    status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado', 'rechazado']).default('pendiente'),
     image_urls: z.array(z.string().url('URL de imagen no válida')).optional().default([])
 });
 

@@ -43,28 +43,6 @@ export const reportsCache = {
 
                 const updates = typeof patch === 'function' ? patch(old as Report) : patch;
 
-                // Atomic Delta Logic
-                if ('comments_count_delta' in updates && updates.comments_count_delta !== undefined) {
-                    const delta = updates.comments_count_delta as number;
-                    const { comments_count_delta, ...rest } = updates;
-                    const updatedWithDelta = {
-                        ...old,
-                        ...rest,
-                        comments_count: Math.max(0, (old.comments_count || 0) + delta)
-                    };
-
-                    telemetry.emit({
-                        engine: 'Cache',
-                        severity: TelemetrySeverity.DEBUG,
-                        payload: { action: 'cache_patch_applied', entity: 'report', entityId: reportId, type: 'delta' }
-                    });
-
-                    if ('alias' in rest || 'anonymous_id' in rest || 'created_at' in rest) {
-                        return normalizeReportForUI(updatedWithDelta as Report);
-                    }
-                    return updatedWithDelta as NormalizedReport;
-                }
-
                 const updatedByObject = { ...old, ...updates };
 
                 // 🟥 DEBT PURGED: Identity Reconciliation removed. 

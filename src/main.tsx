@@ -62,11 +62,19 @@ const CACHE_VERSION_KEY = 'ss_cache_schema_version';
       const identityBackup = localStorage.getItem('safespot_anonymous_id');
       const sessionV2Backup = localStorage.getItem('safespot_session_v2');
 
+      // ✅ ENTERPRISE SECURITY: Preserve Admin Session during Public App boot
+      // This prevents "Session Contamination" where public app wipes admin credentials
+      const adminTokenBackup = localStorage.getItem('safespot_admin_token');
+      const adminUserBackup = localStorage.getItem('safespot_admin_user');
+
       localStorage.clear();
 
       if (authBackup) localStorage.setItem('auth-storage', authBackup);
       if (identityBackup) localStorage.setItem('safespot_anonymous_id', identityBackup);
       if (sessionV2Backup) localStorage.setItem('safespot_session_v2', sessionV2Backup);
+
+      if (adminTokenBackup) localStorage.setItem('safespot_admin_token', adminTokenBackup);
+      if (adminUserBackup) localStorage.setItem('safespot_admin_user', adminUserBackup);
 
       console.debug('[SecureBoot] ✅ Cleared localStorage (Identity & Auth preserved)');
 

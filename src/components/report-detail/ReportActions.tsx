@@ -6,6 +6,7 @@ import { useIsOwner } from '@/hooks/useIsOwner' // ✅ Reactive Hook
 import { cn } from '@/lib/utils'
 import type { Report } from '@/lib/schemas'
 import { ShareButton } from '@/components/ShareButton'
+import { LikeButton } from '@/components/LikeButton'
 
 // ============================================
 // TYPES
@@ -78,17 +79,26 @@ export const ReportActions = memo(function ReportActions({
 
     return (
         <div className="flex items-center space-x-2 relative" ref={menuRef}>
-            {/* 1. Primary Action: Share (Desktop only in header) */}
-            <div className="hidden md:block">
-                {!isEditing && (
-                    <ShareButton
-                        category={report.category}
-                        zone={report.address || report.zone || 'Ubicación desconocida'}
+            {/* 1. Primary Actions: Like & Share */}
+            {!isEditing && (
+                <>
+                    <LikeButton
                         reportId={report.id}
-                        variant="default"
+                        isLiked={report.is_liked}
+                        likesCount={report.likes_count}
+                        variant="ghost"
+                        className="rounded-full"
                     />
-                )}
-            </div>
+                    <div className="hidden md:block">
+                        <ShareButton
+                            category={report.category}
+                            zone={report.address || report.zone || 'Ubicación desconocida'}
+                            reportId={report.id}
+                            variant="default"
+                        />
+                    </div>
+                </>
+            )}
 
             {/* 2. Owner Editing Actions (Visible when editing) */}
             {isEditing && (

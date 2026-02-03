@@ -88,7 +88,8 @@ export function HighlightedReportCard({
                             <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
                                 <div className="flex items-center gap-1">
                                     <MapPin className="h-4 w-4 text-neon-green" />
-                                    <span>{report.address || report.zone || 'Sin ubicación'}</span>
+                                    {/* ✅ Enterprise Fix: Use normalized address */}
+                                    <span className="truncate">{report.fullAddress}</span>
                                 </div>
                                 <span>•</span>
                                 <span>{report.formattedDate}</span>

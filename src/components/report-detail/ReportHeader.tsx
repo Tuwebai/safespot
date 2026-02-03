@@ -1,9 +1,8 @@
 import { memo } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { cn } from '@/lib/utils'
 import type { NormalizedReport } from '@/lib/normalizeReport'
 import { PrefetchLink } from '@/components/PrefetchLink'
 
@@ -13,35 +12,6 @@ import { PrefetchLink } from '@/components/PrefetchLink'
 
 interface ReportHeaderProps {
     report: NormalizedReport
-}
-
-// ============================================
-// HELPERS
-// ============================================
-
-function getStatusColor(status: NormalizedReport['status']): string {
-    switch (status) {
-        case 'pendiente':
-            return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-        case 'en_proceso':
-            return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-        case 'resuelto':
-            return 'bg-green-500/20 text-green-400 border-green-500/30'
-        case 'cerrado':
-            return 'bg-red-500/20 text-red-400 border-red-500/30'
-        default:
-            return ''
-    }
-}
-
-function getStatusLabel(status: NormalizedReport['status']): string {
-    const labelMap: Record<NormalizedReport['status'], string> = {
-        'pendiente': 'Activo',
-        'en_proceso': 'En Proceso',
-        'resuelto': 'Recuperado',
-        'cerrado': 'Expirado'
-    }
-    return labelMap[status] || status
 }
 
 // ============================================
@@ -55,9 +25,7 @@ export const ReportHeader = memo(function ReportHeader({ report }: ReportHeaderP
                 <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight break-words">
                     {report.title}
                 </h1>
-                <Badge className={cn("px-2.5 py-0.5 text-xs font-semibold", getStatusColor(report.status))}>
-                    {getStatusLabel(report.status)}
-                </Badge>
+                <StatusBadge status={report.status} />
             </div>
 
             {/* 🛡️ DEFENSIVE CODING: Don't link to deleted users */}

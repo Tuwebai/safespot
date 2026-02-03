@@ -141,6 +141,66 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
 });
 
 /**
+ * GET /api/users/transparency-log
+ * Get moderation history for the user's content
+ * Requires: X-Anonymous-Id header
+ */
+router.get('/transparency-log', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+
+    // Join with reports and comments to ensure the owner is the requester
+    const query = `
+      SELECT 
+        ma.id, 
+        ma.target_type, 
+        ma.target_id, 
+        ma.action_type, 
+        ma.reason, 
+        ma.created_at,
+        CASE 
+          WHEN ma.target_type = 'report' THEN r.title
+          WHEN ma.target_type = 'comment' THEN SUBSTRING(co.content FROM 1 FOR 50)
+        END as target_display_name
+      FROM moderation_actions ma
+      LEFT JOIN reports r ON ma.target_id = r.id AND ma.target_type = 'report'
+      LEFT JOIN comments co ON ma.target_id = co.id AND ma.target_type = 'comment'
+      WHERE (r.anonymous_id = $1 OR co.anonymous_id = $1)
+      ORDER BY ma.created_at DESC
+      LIMIT 50
+    `;
+
+    const result = await queryWithRLS(anonymousId, query, [anonymousId]);
+
+    // [M12 REFINEMENT] Semantic Mapping for Users
+    const USER_VISIBLE_ACTION_MAP = {
+      'ADMIN_HIDE': 'Contenido ocultado por moderación',
+      'ADMIN_RESTORE': 'Contenido restaurado por moderación',
+      'AUTO_HIDE': 'Ocultado automáticamente por denuncias de la comunidad',
+      'HIDE': 'Contenido ocultado',
+      'RESTORE': 'Contenido restaurado',
+      'SHADOW_BAN': 'Cuenta en revisión (Shadow Ban)',
+      'AUTO_SHADOW_BAN': 'Cuenta en revisión automática',
+      'ADMIN_DISMISS_FLAGS': 'Denuncias desestimadas'
+    };
+
+    const mappedEvents = result.rows.map(row => ({
+      ...row,
+      display_message: USER_VISIBLE_ACTION_MAP[row.action_type] || 'Acción de moderación aplicada'
+    }));
+
+    res.json({
+      success: true,
+      data: mappedEvents
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to fetch transparency log' });
+  }
+});
+
+/**
  * PUT /api/users/profile
  * Update user profile (specifically avatar_url)
  */

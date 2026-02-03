@@ -8,7 +8,7 @@ const router = express.Router();
  * GET /api/admin/stats
  * Returns dashboard KPIs and recent activity
  */
-router.get('/stats', verifyAdminToken, async (req, res) => {
+router.get('/', verifyAdminToken, async (req, res) => {
     try {
         // 1. Calculate Active Users (Last 1 hour)
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();

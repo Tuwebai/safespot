@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard - SafeSpot Central</title>
+
+  <!-- SECURITY: No indexing for admin -->
+  <meta name="robots" content="noindex, nofollow" />
+
+  <!-- ✅ ENTERPRISE: Client-side Cache Defense -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <style>
+    body {
+      background-color: #020617;
+      margin: 0;
+    }
+
+    #root:empty {
+      background: radial-gradient(circle at top center, #0f172a 0%, #020617 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <!-- Initial State: Silent or minimal login prompt -->
+    <div id="boot-status"
+      style="color: #64748b; font-family: monospace; font-size: 12px; position: fixed; bottom: 20px; right: 20px;">
+      Awaiting Secure Handshake...
+    </div>
+  </div>
+
+  <script type="module">
+    /**
+     * ✅ ZERO-TRUST NEUTRAL BOOTLOADER
+     * Authorization is strictly server-side.
+     */
+    async function handOff() {
+      const statusEl = document.getElementById('boot-status');
+      const token = localStorage.getItem('safespot_admin_token');
+
+      try {
+        // ✅ ENTERPRISE: Intent-Aware Handshake
+        // Login page should never trigger a handshake (it's public).
+        // Only protected admin routes trigger the verification.
+        const isLoginIntent = window.location.pathname.includes('/login');
+
+        if (isLoginIntent) {
+          console.debug('[IAM] Login Intent Detected. Mounting Login Shell directly.');
+          mountShell('/src/admin-login.tsx');
+          return;
+        }
+
+        // Authoritative Handshake (Only for Dashboard)
+        const res = await fetch('/api/admin/auth/verify', {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+
+        const contentType = res.headers.get('content-type');
+
+        if (res.status === 200 && contentType?.includes('application/json')) {
+          const data = await res.json();
+          if (data.valid) {
+            console.info('[IAM] Handshake Accepted. Mounting Administrative Core.');
+            const s = document.createElement('script');
+            s.type = 'module';
+            s.src = `/src/admin/entry.tsx?t=${token}`;
+            document.body.appendChild(s);
+            return;
+          }
+        }
+
+        // Default: Load Authentication Shell
+        console.warn('[IAM] Handshake Denied. Mounting Login Shell.');
+        const s = document.createElement('script');
+        s.type = 'module';
+        s.src = '/src/admin-login.tsx';
+        document.body.appendChild(s);
+
+      } catch (err) {
+        console.error('[IAM] Integrity Error:', err);
+        statusEl.innerText = 'CRITICAL: Security Gateway Unreachable.';
+      }
+    }
+
+    handOff();
+  </script>
+
+
+
+
+
+</body>
+
+
+</html>

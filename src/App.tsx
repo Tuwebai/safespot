@@ -54,16 +54,6 @@ const RoboPiranaPage = lazyRetry(() => import('@/pages/intel/RoboPiranaPage').th
 const CorredoresSegurosPage = lazyRetry(() => import('@/pages/intel/CorredoresSegurosPage').then(m => ({ default: m.CorredoresSegurosPage })), 'CorredoresSegurosPage')
 const NocturnaPage = lazyRetry(() => import('@/pages/intel/NocturnaPage').then(m => ({ default: m.NocturnaPage })), 'NocturnaPage')
 
-// Admin Imports (Lazy Loaded)
-const AdminLayout = lazyRetry(() => import('@/components/layout/AdminLayout').then(m => ({ default: m.AdminLayout })), 'AdminLayout')
-
-const AdminDashboard = lazyRetry(() => import('@/pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })), 'AdminDashboard')
-const UsersPage = lazyRetry(() => import('@/pages/admin/UsersPage').then(m => ({ default: m.UsersPage })), 'UsersPage')
-const AdminReportsPage = lazyRetry(() => import('./pages/admin/ReportsPage').then(module => ({ default: module.ReportsPage })), 'AdminReportsPage')
-const AdminModerationPage = lazyRetry(() => import('@/pages/admin/ModerationPage').then(m => ({ default: m.ModerationPage })), 'AdminModerationPage')
-const AdminTasksPage = lazyRetry(() => import('@/pages/admin/TasksPage').then(m => ({ default: m.TasksPage })), 'AdminTasksPage')
-import { AdminGuard } from '@/components/admin/AdminGuard'
-
 // Intel Pages (Lazy Load could be better but direct for now)
 import EstafasPage from '@/pages/guia/EstafasPage';
 import TransportePage from '@/pages/guia/TransportePage';
@@ -216,18 +206,8 @@ function App() {
                       - If authorized -> Show Admin Layout (at /admin).
                       We will handle this in a wrapper component. 
                   */}
-                                <Route path="/admin/*" element={
-                                  <AdminGuard>
-                                    <AdminLayout />
-                                  </AdminGuard>
-                                }>
-                                  <Route index element={<AdminDashboard />} />
-                                  <Route path="reports" element={<AdminReportsPage />} />
-                                  <Route path="users" element={<UsersPage />} />
-                                  <Route path="moderation" element={<AdminModerationPage />} />
-                                  <Route path="tasks" element={<AdminTasksPage />} />
-                                  {/* Add other admin sub-routes here */}
-                                </Route>
+                                {/* Admin routes moved to separated AdminApp bundle for segmentation security override */}
+
 
                               </Routes>
                             </Suspense>

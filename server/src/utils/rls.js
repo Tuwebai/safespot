@@ -29,7 +29,6 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
     const cleanParams = params;
 
     // CRITICAL: Count UNIQUE placeholders in query and validate against params
-    // PostgreSQL allows reusing the same parameter ($1) multiple times
     const placeholderMatches = queryText.match(/\$\d+/g) || [];
     const uniquePlaceholders = new Set(placeholderMatches);
     const maxPlaceholderIndex = placeholderMatches.length > 0
@@ -37,7 +36,6 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
       : 0;
 
     // CRITICAL: Params must match the highest placeholder index
-    // If query has $1, $2, $3, we need at least 3 params (even if $1 is used twice)
     if (maxPlaceholderIndex > 0 && cleanParams.length < maxPlaceholderIndex) {
       const error = new Error(
         `Parameter count mismatch: query has placeholder $${maxPlaceholderIndex} but only ${cleanParams.length} params provided`
@@ -85,7 +83,7 @@ export async function queryWithRLS(anonymousId, queryText, params = []) {
              set_config('app.anonymous_id', '${rlsValue}', true)
     `);
 
-    // Query 2: Execute actual query with parameters
+    // Query 2: Execute actual query with original parameters
     const result = await client.query(queryText, cleanParams);
 
     return result;

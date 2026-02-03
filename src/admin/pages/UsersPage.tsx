@@ -83,6 +83,15 @@ export function UsersPage() {
         placeholderData: keepPreviousData
     })
 
+    // 🛡️ Observability: Log dropped users
+    useEffect(() => {
+        if (!data?.users) return
+        const invalid = data.users.filter(u => !isValidUser(u))
+        if (invalid.length > 0) {
+            console.error('[Admin Users] 🚨 Dropped invalid users from view:', invalid)
+        }
+    }, [data])
+
     // Ban Mutation
     const banMutation = useMutation({
         mutationFn: async ({ id, ban }: { id: string, ban: boolean }) => {
@@ -200,66 +209,68 @@ export function UsersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                (data?.users || []).map((user: AdminUser) => (
-                                    <tr
-                                        key={user.anonymous_id}
-                                        onMouseEnter={(e) => {
-                                            const { clientX, clientY } = e
-                                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
-                                            hoverTimeoutRef.current = setTimeout(() => {
-                                                setHoveredUser({ user, x: clientX, y: clientY })
-                                            }, 50) // Tiny delay for stability
-                                        }}
-                                        onMouseLeave={() => {
-                                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
-                                            setHoveredUser(null)
-                                        }}
-                                        className="hover:bg-[#1e293b]/30 transition-colors group relative"
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-full bg-[#1e293b] flex items-center justify-center border border-[#334155] overflow-hidden">
-                                                    <img
-                                                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
-                                                        alt=""
-                                                        className="h-full w-full object-cover"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <div className="font-medium text-slate-200">
-                                                        {user.alias || 'Anónimo'}
+                                (data?.users || [])
+                                    .filter(isValidUser)
+                                    .map((user: AdminUser) => (
+                                        <tr
+                                            key={user.anonymous_id}
+                                            onMouseEnter={(e) => {
+                                                const { clientX, clientY } = e
+                                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+                                                hoverTimeoutRef.current = setTimeout(() => {
+                                                    setHoveredUser({ user, x: clientX, y: clientY })
+                                                }, 50) // Tiny delay for stability
+                                            }}
+                                            onMouseLeave={() => {
+                                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
+                                                setHoveredUser(null)
+                                            }}
+                                            className="hover:bg-[#1e293b]/30 transition-colors group relative"
+                                        >
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-10 w-10 rounded-full bg-[#1e293b] flex items-center justify-center border border-[#334155] overflow-hidden">
+                                                        <img
+                                                            src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                                                            alt=""
+                                                            className="h-full w-full object-cover"
+                                                        />
                                                     </div>
-                                                    <div className="text-xs font-mono text-slate-500" title={user.anonymous_id}>
-                                                        {user.anonymous_id.substring(0, 8)}...
+                                                    <div>
+                                                        <div className="font-medium text-slate-200">
+                                                            {user.alias || 'Anónimo'}
+                                                        </div>
+                                                        <div className="text-xs font-mono text-slate-500" title={user.anonymous_id}>
+                                                            {user.anonymous_id.substring(0, 8)}...
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <StatusBadge status={user.status} />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <TrustScoreBar score={user.trust_score} />
-                                        </td>
-                                        <td className="px-6 py-4 font-mono">
-                                            {user.total_reports}
-                                        </td>
-                                        <td className="px-6 py-4 text-xs">
-                                            {formatDistanceToNow(new Date(user.last_active_at), { addSuffix: true, locale: es })}
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => handleBanToggle(user)}
-                                                disabled={banMutation.isPending}
-                                                className={`p-2 rounded hover:bg-[#1e293b] transition-colors border border-transparent hover:border-[#334155] ${user.status === 'banned' ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'
-                                                    }`}
-                                                title={user.status === 'banned' ? 'Desbanear' : 'Banear'}
-                                            >
-                                                {user.status === 'banned' ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <StatusBadge status={user.status} />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <TrustScoreBar score={user.trust_score} />
+                                            </td>
+                                            <td className="px-6 py-4 font-mono">
+                                                {user.total_reports}
+                                            </td>
+                                            <td className="px-6 py-4 text-xs">
+                                                {formatDistanceToNow(new Date(user.last_active_at), { addSuffix: true, locale: es })}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <button
+                                                    onClick={() => handleBanToggle(user)}
+                                                    disabled={banMutation.isPending}
+                                                    className={`p-2 rounded hover:bg-[#1e293b] transition-colors border border-transparent hover:border-[#334155] ${user.status === 'banned' ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'
+                                                        }`}
+                                                    title={user.status === 'banned' ? 'Desbanear' : 'Banear'}
+                                                >
+                                                    {user.status === 'banned' ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
                             )}
                         </tbody>
                     </table>
@@ -454,4 +465,20 @@ function TrustScoreBar({ score }: { score: number }) {
 
 function UsersIcon(props: any) {
     return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+}
+
+// 🛡️ DATA INTEGRITY GUARD
+function isValidUser(user: AdminUser): boolean {
+    // 1. Check ID Format (UUIDv4 roughly)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!user.anonymous_id || !uuidRegex.test(user.anonymous_id)) return false
+
+    // 2. Check Logical Bounds
+    if (typeof user.level !== 'number' || user.level < 0 || user.level > 100) return false
+    if (typeof user.points !== 'number' || user.points < 0 || user.points > 1000000) return false
+
+    // 3. Check Trust Score
+    if (typeof user.trust_score !== 'number' || user.trust_score < 0 || user.trust_score > 100) return false
+
+    return true
 }

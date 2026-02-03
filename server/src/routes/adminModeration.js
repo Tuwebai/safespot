@@ -1,8 +1,10 @@
 import express from 'express';
 import { supabaseAdmin } from '../utils/db.js';
+import pool from '../config/database.js'; // Added for atomic transactions
 import { verifyAdminToken } from '../utils/adminMiddleware.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { executeModeration } from '../utils/governance.js';
 
 const router = express.Router();
 
@@ -93,82 +95,92 @@ router.get('/pending', verifyAdminToken, async (req, res) => {
 router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
     try {
         const { type, id } = req.params;
-        const { action, banUser } = req.body; // action: 'approve' | 'reject' | 'dismiss'
+        const { action, banUser, reason, internal_note } = req.body;
+
+        if (!reason && action !== 'dismiss') {
+            return res.status(400).json({ error: 'Reason is required for moderation actions' });
+        }
 
         const isReport = type === 'reports' || type === 'report';
+        const targetType = isReport ? 'report' : 'comment';
         const table = isReport ? 'reports' : 'comments';
         const flagsTable = isReport ? 'report_flags' : 'comment_flags';
         const foreignKey = isReport ? 'report_id' : 'comment_id';
 
-        let updateData = {};
+        // 1. Resolve Action Types
+        let auditActionType = '';
+        let updateSql = '';
+        let updateParams = [id];
 
         if (action === 'approve') {
-            // Restore visibility
-            updateData = { is_hidden: false };
-
-            // Resolve flags as "Dismissed" (False alarm)
-            await supabaseAdmin
-                .from(flagsTable)
-                .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq(foreignKey, id);
-
+            updateSql = `UPDATE ${table} SET is_hidden = false WHERE id = $1`;
+            auditActionType = 'ADMIN_RESTORE';
         } else if (action === 'reject') {
-            // Soft delete
-            updateData = { deleted_at: new Date().toISOString() };
-
-            // Resolve flags as "Resolved" (Action Taken)
-            await supabaseAdmin
-                .from(flagsTable)
-                .update({ status: 'resolved', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq(foreignKey, id);
-
+            updateSql = `UPDATE ${table} SET deleted_at = NOW() WHERE id = $1`;
+            auditActionType = 'ADMIN_HIDE';
         } else if (action === 'dismiss') {
-            // Keep visible, but mark flags as ignored
-            await supabaseAdmin
-                .from(flagsTable)
-                .update({ status: 'dismissed', resolved_at: new Date().toISOString(), admin_id: req.adminUser.id })
-                .eq(foreignKey, id);
-
-            // Also unhide if it was auto-hidden
-            updateData = { is_hidden: false };
+            updateSql = `UPDATE ${table} SET is_hidden = false WHERE id = $1`;
+            auditActionType = 'ADMIN_DISMISS_FLAGS';
         } else {
             return res.status(400).json({ error: 'Invalid action' });
         }
 
-        const { error } = await supabaseAdmin
-            .from(table)
-            .update(updateData)
-            .eq('id', id);
+        // 2. ATOMIC EXECUTION via M12 Governance Engine
+        const result = await executeModeration({
+            actorId: req.adminUser.id,
+            targetType,
+            targetId: id,
+            actionType: auditActionType,
+            updateQuery: updateSql,
+            updateParams,
+            reason,
+            internalNote: internal_note
+        });
 
-        if (error) throw error;
+        // 3. Post-Transaction Auxiliary Operations (Best Effort / Non-blocking)
+        // A. Resolve Flags
+        const flagStatus = (action === 'approve' || action === 'dismiss') ? 'dismissed' : 'resolved';
+        pool.query(`
+            UPDATE ${flagsTable} 
+            SET status = $1, resolved_at = NOW(), admin_id = $2 
+            WHERE ${foreignKey} = $3
+        `, [flagStatus, req.adminUser.id, id]).catch(e => logError(e, { context: 'resolve_flags_error', id }));
 
-        // Optional: Ban User Logic
-        if (action === 'reject' && banUser) {
-            // Fetch user ID first
-            const { data: item } = await supabaseAdmin.from(table).select('anonymous_id').eq('id', id).single();
-            if (item && item.anonymous_id) {
-                await supabaseAdmin.from('anonymous_trust_scores').upsert({
-                    anonymous_id: item.anonymous_id,
-                    moderation_status: 'banned',
-                    last_updated: new Date().toISOString()
-                });
-
-                // Emit ban event
-                realtimeEvents.emitUserBan(item.anonymous_id, { status: 'banned', reason: 'Content Rejected in Moderation' });
+        // B. Realtime Events
+        const currentItem = result.snapshot;
+        if (isReport) {
+            if (action === 'reject') {
+                realtimeEvents.emitReportDelete(id, currentItem.category, currentItem.status);
+            } else {
+                realtimeEvents.broadcast(`report-update:${id}`, { is_hidden: false });
+                realtimeEvents.emitGlobalUpdate('report-update', { id, is_hidden: false, type: 'report-update' });
             }
         }
 
-        // Emit stats update to refresh global counters
-        realtimeEvents.emitGlobalUpdate('stats-update', {
-            action,
-            reportId: id
-        });
+        // C. Optional Chain: Ban User
+        if (action === 'reject' && banUser && currentItem.anonymous_id) {
+            try {
+                await executeModeration({
+                    actorId: req.adminUser.id,
+                    targetType: 'user',
+                    targetId: currentItem.anonymous_id,
+                    actionType: 'ADMIN_BAN',
+                    updateQuery: `UPDATE anonymous_trust_scores SET moderation_status = 'banned', last_score_update = NOW() WHERE anonymous_id = $1`,
+                    updateParams: [currentItem.anonymous_id],
+                    reason: reason || 'Content Rejected in Moderation',
+                    internalNote: 'Automatic BAN from content rejection'
+                });
+                realtimeEvents.emitUserBan(currentItem.anonymous_id, { status: 'banned', reason: reason || 'Content Rejected' });
+            } catch (banErr) {
+                logError(banErr, { context: 'chain_ban_failed', userId: currentItem.anonymous_id });
+            }
+        }
 
-        res.json({ success: true, message: 'Case resolved' });
+        res.json({ success: true, message: 'Case resolved with M12 Governance Grade accountability.', auditId: result.auditId });
 
     } catch (error) {
         console.error('Moderation Action Error:', error);
-        res.status(500).json({ error: 'Failed to resolve moderation case' });
+        res.status(500).json({ error: 'Failed to resolve case. Governance engine rejected mutation.' });
     }
 });
 
@@ -235,6 +247,159 @@ router.post('/:type/:id/notes', verifyAdminToken, async (req, res) => {
     } catch (error) {
         console.error('Create Note Error:', error);
         res.status(500).json({ error: 'Failed to create note' });
+    }
+});
+
+/**
+ * GET /api/admin/moderation/history
+ * Audit Log Viewer (Immutable)
+ * Query: page, limit, type, entityId, actorId
+ */
+router.get('/history', verifyAdminToken, async (req, res) => {
+    try {
+        const { page = 1, limit = 50, type, entityId, actorId } = req.query;
+        const offset = (page - 1) * limit;
+
+        let query = supabaseAdmin
+            .from('moderation_actions')
+            .select(`
+                *,
+                admin_users:actor_id ( email, alias )
+            `, { count: 'exact' });
+
+        if (type) query = query.eq('target_type', type);
+        if (entityId) query = query.eq('target_id', entityId);
+        if (actorId) query = query.eq('actor_id', actorId);
+
+        // Strict Order: Newest First
+        query = query.order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        const { data, count, error } = await query;
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            data,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: count,
+                pages: Math.ceil(count / limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Audit Log Error:', error);
+        res.status(500).json({ error: 'Failed to fetch audit log' });
+    }
+});
+
+/**
+ * GET /api/admin/moderation/actions/:id
+ * Detail view for Moderation Audit Panel (Enterprise Grade)
+ * Invariants: Read-Only, SSOT, Auditable
+ */
+router.get('/actions/:id', verifyAdminToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Fetch Immutable Audit Record
+        const { data: action, error } = await supabaseAdmin
+            .from('moderation_actions')
+            .select(`
+                *,
+                admin_users:actor_id ( id, email, alias, role )
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error || !action) {
+            return res.status(404).json({ error: 'Audit record not found' });
+        }
+
+        // 2. Resolve Actor Authority (System vs Human)
+        // Since we sync Root Admin identity to DB on login, we can trust the JOIN.
+        const dbUser = action.admin_users;
+
+        // If DB has the user, trust DB. Otherwise fallback to System.
+        const isSystemFallback = !dbUser;
+
+        const actor = {
+            id: action.actor_id,
+            type: dbUser ? 'ADMIN' : 'SYSTEM',
+            display_name: dbUser ? (dbUser.alias || 'Administrator') : 'SafeSpot Core',
+            email: req.adminUser.role === 'admin' ? (dbUser?.email) : undefined,
+            role: dbUser ? dbUser.role : 'system'
+        };
+
+        // 3. Resolve Severity (Backend Logic - Semánticamente unificado)
+        const getSeverity = (type) => {
+            switch (type) {
+                case 'ADMIN_BAN': return 'CRITICAL';
+                case 'SYSTEM_SHADOW_BAN': return 'HIGH';
+                case 'ADMIN_HIDE': return 'HIGH';
+                case 'AUTO_HIDE_THRESHOLD': return 'MEDIUM';
+                case 'ADMIN_RESTORE': return 'INFO';
+                case 'ADMIN_DISMISS_FLAGS': return 'INFO';
+                default: return 'LOW';
+            }
+        };
+
+        // 4. Resolve Target Current Status (If exists)
+        let currentTarget = null;
+        try {
+            const table = action.target_type === 'report' ? 'reports'
+                : action.target_type === 'comment' ? 'comments'
+                    : action.target_type === 'user' ? 'anonymous_users' // or auth.users if accessible
+                        : null;
+
+            if (table) {
+                const { data: target } = await supabaseAdmin
+                    .from(table)
+                    .select('*') // Select minimal fields ideally
+                    .eq('id', action.target_id)
+                    .single();
+                currentTarget = target;
+            }
+        } catch (e) {
+            console.warn('Failed to fetch current target status', e);
+        }
+
+        // 5. Construct Response (Strict Contract)
+        const response = {
+            meta: {
+                timestamp: new Date().toISOString(),
+                request_id: req.headers['x-request-id'] || 'unknown'
+            },
+            data: {
+                id: action.id,
+                created_at: action.created_at,
+                action: {
+                    type: action.action_type,
+                    severity: getSeverity(action.action_type),
+                    description: `Action ${action.action_type} on ${action.target_type}`
+                },
+                actor,
+                target: {
+                    type: action.target_type,
+                    id: action.target_id,
+                    current_status: currentTarget ? (currentTarget.status || (currentTarget.is_hidden ? 'HIDDEN' : 'ACTIVE')) : 'UNKNOWN/DELETED',
+                    snapshot: action.snapshot // Raw snapshot for audit
+                },
+                justification: {
+                    reason_public: action.reason,
+                    internal_note: req.adminUser.role === 'admin' || req.adminUser.role === 'staff' ? action.internal_note : undefined
+                }
+            }
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error('Audit Detail Error:', error);
+        res.status(500).json({ error: 'Failed to fetch audit detail' });
     }
 });
 

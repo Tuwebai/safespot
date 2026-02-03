@@ -10,6 +10,7 @@ import { verifyGoogleToken } from '../services/googleAuth.js';
 import jwt from 'jsonwebtoken';
 import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
+import { signAnonymousId } from '../utils/crypto.js';
 
 const router = express.Router();
 
@@ -57,6 +58,7 @@ router.post('/bootstrap', async (req, res, next) => {
         res.json({
             success: true,
             token,
+            signature: signAnonymousId(anonymousId), // Identity Shield Signature
             session: {
                 anonymousId,
                 sessionId,
@@ -135,6 +137,7 @@ router.post('/register', authLimiter, async (req, res) => {
             success: true,
             token,
             anonymous_id: current_anonymous_id,
+            signature: signAnonymousId(current_anonymous_id),
             user: {
                 email,
                 auth_id: newUser.id
@@ -191,7 +194,8 @@ router.post('/login', authLimiter, async (req, res) => {
         res.json({
             success: true,
             token,
-            anonymous_id: user.anonymous_id, // Client MUST use this to replace local ID
+            anonymous_id: user.anonymous_id,
+            signature: signAnonymousId(user.anonymous_id),
             message: 'Login exitoso'
         });
 
@@ -489,6 +493,7 @@ router.post('/google', authLimiter, async (req, res) => {
             message: 'Autenticación con Google exitosa',
             token,
             anonymous_id: anonymousIdToUse,
+            signature: signAnonymousId(anonymousIdToUse),
             user: {
                 id: user.id,
                 email: user.email,

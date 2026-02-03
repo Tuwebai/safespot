@@ -1,43 +1,17 @@
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { MapPin, Home, Briefcase, GitBranch, MessageCircle, Flag } from 'lucide-react'
 import { OptimizedImage } from '@/components/OptimizedImage'
 import { LazyReportMapFallback as ReportMapFallback } from '@/components/ui/LazyReportMapFallback'
 import { FavoriteButton } from '@/components/FavoriteButton'
+import { LikeButton } from '@/components/LikeButton' // Added LikeButton import
 import { AnimatedCard } from '@/components/ui/animated'
 import { SmartLink } from '@/components/SmartLink'
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { useReport } from '@/hooks/queries/useReportsQuery'
-import { isOwner } from '@/lib/permissions' // ✅ Correct Import
-
-import type { NormalizedReport } from '@/lib/normalizeReport'
-
-// HELPER FUNCTIONS (Moved from Reportes.tsx)
-const getStatusColor = (status: NormalizedReport['status']) => {
-    switch (status) {
-        case 'pendiente':
-            return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-        case 'en_proceso':
-            return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-        case 'resuelto':
-            return 'bg-green-500/20 text-green-400 border-green-500/30'
-        case 'cerrado':
-            return 'bg-red-500/20 text-red-400 border-red-500/30'
-        default:
-            return ''
-    }
-}
-
-const STATUS_LABELS: Record<NormalizedReport['status'], string> = {
-    'pendiente': 'Buscando',
-    'en_proceso': 'En Proceso',
-    'resuelto': 'Recuperado',
-    'cerrado': 'Expirado'
-}
-
-const getStatusLabel = (status: NormalizedReport['status']) => STATUS_LABELS[status] || status
+import { useIsOwner } from '@/hooks/useIsOwner' // Use the hook instead of helper
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 const CATEGORY_COLORS: Record<string, string> = {
     'Robo de Bicicleta': 'bg-red-500',
@@ -73,7 +47,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
     const report = rawReport ? normalizeReportForUI(rawReport) : undefined
 
     // Derived state (SSOT Driven)
-    const isReportOwner = isOwner(report)
+    const isReportOwner = useIsOwner(report?.author.id)
     const isFlagged = report?.is_flagged ?? false
 
     // 🚨 ENTERPRISE ASSERTION: Detect SSOT violations
@@ -119,9 +93,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                     className="w-full h-full object-cover"
                                 />
                                 <div className="absolute top-2 right-2 flex gap-2 z-10">
-                                    <Badge className={getStatusColor(report.status)}>
-                                        {getStatusLabel(report.status)}
-                                    </Badge>
+                                    <StatusBadge status={report.status} />
                                 </div>
                             </div>
                         ) : (
@@ -140,9 +112,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                 {report.title}
                             </h3>
                             {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
-                                <Badge className={`ml-2 ${getStatusColor(report.status)}`}>
-                                    {getStatusLabel(report.status)}
-                                </Badge>
+                                <StatusBadge status={report.status} className="ml-2" />
                             )}
                         </div>
 
@@ -157,7 +127,8 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
 
                         <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
                             <MapPin className="h-4 w-4 mr-1 text-neon-green" />
-                            <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
+                            {/* ✅ Enterpise Fix: Use normalized address */}
+                            <span className="truncate">{report.fullAddress}</span>
                         </div>
 
                         {/*  FOOTER META */}
@@ -195,7 +166,12 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                         {/* ACTIONS */}
                         <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
                             <span className="text-neon-green font-medium text-sm">Ver Detalles →</span>
-                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                                <LikeButton
+                                    reportId={report.id}
+                                    isLiked={report.is_liked}
+                                    likesCount={report.likes_count}
+                                />
                                 <FavoriteButton
                                     reportId={report.id}
                                     isFavorite={report.is_favorite ?? false}
