@@ -165,8 +165,8 @@ export function validateReport(data) {
     errors.push('Ambas coordenadas (latitud y longitud) son requeridas si se proporciona una');
   }
 
-  if (data.status && !['pendiente', 'en_proceso', 'resuelto', 'cerrado'].includes(data.status)) {
-    errors.push('status must be one of: pendiente, en_proceso, resuelto, cerrado');
+  if (data.status && !['abierto', 'en_progreso', 'resuelto', 'verificado', 'rechazado', 'archivado'].includes(data.status)) {
+    errors.push('status must be one of: abierto, en_progreso, resuelto, verificado, rechazado, archivado');
   }
 
   // Validate incident_date if provided

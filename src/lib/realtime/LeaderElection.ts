@@ -38,6 +38,8 @@ class LeaderElection {
     private state: LeadershipState = LeadershipState.CANDIDATE;
     private channel: BroadcastChannel;
     private listeners: Set<(state: LeadershipState) => void> = new Set();
+    private heartbeatInterval: any = null;
+    private watchdogInterval: any = null;
 
     constructor() {
         this.channel = new BroadcastChannel('safespot-m11-election');
@@ -167,14 +169,19 @@ class LeaderElection {
     }
 
     private startHeartbeat() {
-        setInterval(() => {
+        this.stopHeartbeat(); // Security: Clear existing before starting new
+
+        this.heartbeatInterval = setInterval(() => {
             this.updateLease();
             this.emitSignal('I_AM_LEADER');
         }, HEARTBEAT_INTERVAL);
     }
 
     private stopHeartbeat() {
-        // Heartbeat is persistent for the leader's life
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
     }
 
     private updateLease() {
@@ -187,7 +194,7 @@ class LeaderElection {
     }
 
     private startWatchdog() {
-        setInterval(() => {
+        this.watchdogInterval = setInterval(() => {
             if (this.state === LeadershipState.LEADING) return;
 
             const raw = localStorage.getItem(LEASE_KEY);
@@ -232,6 +239,18 @@ class LeaderElection {
 
     private notifyListeners() {
         this.listeners.forEach(cb => cb(this.state));
+    }
+
+    /**
+     * Enterprise Cleanup
+     */
+    public destroy() {
+        this.stopHeartbeat();
+        if (this.watchdogInterval) {
+            clearInterval(this.watchdogInterval);
+            this.watchdogInterval = null;
+        }
+        this.channel.close();
     }
 }
 

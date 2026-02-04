@@ -256,6 +256,9 @@ export const EnhancedComment = memo(function EnhancedComment({
               ? 'border-neon-green/40 bg-muted/90 ring-1 ring-neon-green/10'
               : 'border-border hover:border-neon-green/20 bg-card',
 
+        // FIX: Lift card above siblings when menu is open to prevent dropdown clipping
+        isContextMenuOpen ? "z-[60]" : "z-auto",
+
         comment.is_pinned
           ? 'border-neon-green/50 bg-neon-green/5 ring-1 ring-neon-green/20'
           : comment.is_highlighted

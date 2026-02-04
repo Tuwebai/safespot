@@ -170,7 +170,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                 <LikeButton
                                     reportId={report.id}
                                     isLiked={report.is_liked}
-                                    likesCount={report.likes_count}
+                                    upvotesCount={report.upvotes_count}
                                 />
                                 <FavoriteButton
                                     reportId={report.id}

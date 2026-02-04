@@ -71,8 +71,9 @@ describe('useReportsQuery - Background Refetch (Last Known Good State)', () => {
             expect(result.current.isSuccess).toBe(true);
         });
 
-        // Validar que los datos están presentes
-        expect(result.current.data).toEqual(['report-1', 'report-2']);
+        // Validar que los datos están presentes y enriquecidos
+        expect(result.current.data?.[0]).toMatchObject({ id: 'report-1', title: 'Reporte 1' });
+        expect(result.current.data?.length).toBe(2);
         expect(result.current.isLoading).toBe(false);
     });
 
@@ -82,20 +83,16 @@ describe('useReportsQuery - Background Refetch (Last Known Good State)', () => {
             { id: 'report-2', title: 'Reporte 2' }
         ];
 
-        // Primera carga: datos válidos
         vi.mocked(reportsApi.getAll).mockResolvedValueOnce(initialReports as any);
 
         const { result } = renderHook(() => useReportsQuery(), { wrapper });
 
-        // Esperar carga inicial
         await waitFor(() => {
             expect(result.current.isSuccess).toBe(true);
         });
 
-        const initialData = result.current.data;
-        expect(initialData).toEqual(['report-1', 'report-2']);
+        expect(result.current.data?.[0].id).toBe('report-1');
 
-        // Simular background refetch (segunda llamada)
         const updatedReports = [
             { id: 'report-1', title: 'Reporte 1' },
             { id: 'report-2', title: 'Reporte 2' },
@@ -104,21 +101,16 @@ describe('useReportsQuery - Background Refetch (Last Known Good State)', () => {
 
         vi.mocked(reportsApi.getAll).mockResolvedValueOnce(updatedReports as any);
 
-        // Forzar refetch
         await result.current.refetch();
 
-        // CRÍTICO: Durante el refetch, los datos NO deben desaparecer
-        // placeholderData debe mantener los datos previos
         expect(result.current.data).toBeDefined();
         expect(result.current.data?.length).toBeGreaterThan(0);
 
-        // Esperar a que termine el refetch
         await waitFor(() => {
             expect(result.current.isFetching).toBe(false);
         });
 
-        // Validar que los datos se actualizaron correctamente
-        expect(result.current.data).toEqual(['report-1', 'report-2', 'report-3']);
+        expect(result.current.data?.[2].id).toBe('report-3');
     });
 
     it('CRÍTICO: Si el backend devuelve datos inválidos, debe mantener datos previos', async () => {
@@ -126,7 +118,6 @@ describe('useReportsQuery - Background Refetch (Last Known Good State)', () => {
             { id: 'report-1', title: 'Reporte 1' }
         ];
 
-        // Primera carga: datos válidos
         vi.mocked(reportsApi.getAll).mockResolvedValueOnce(initialReports as any);
 
         const { result } = renderHook(() => useReportsQuery(), { wrapper });
@@ -135,21 +126,17 @@ describe('useReportsQuery - Background Refetch (Last Known Good State)', () => {
             expect(result.current.isSuccess).toBe(true);
         });
 
-        const initialData = result.current.data;
-        expect(initialData).toEqual(['report-1']);
+        expect(result.current.data?.[0].id).toBe('report-1');
 
-        // Segunda llamada: backend devuelve datos inválidos (no array)
         vi.mocked(reportsApi.getAll).mockResolvedValueOnce(null as any);
 
-        // Forzar refetch
         await result.current.refetch();
 
-        // CRÍTICO: El select debe lanzar error y mantener datos previos
         await waitFor(() => {
             expect(result.current.isError).toBe(true);
         });
 
-        // Los datos previos deben mantenerse (placeholderData)
-        expect(result.current.data).toEqual(['report-1']);
+        // Los datos previos deben mantenerse (Last Known Good State)
+        expect(result.current.data?.[0].id).toBe('report-1');
     });
 });

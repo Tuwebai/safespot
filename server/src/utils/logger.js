@@ -1,5 +1,5 @@
 import { getCorrelationId } from '../middleware/correlation.js';
-import { notifyError } from './whatsapp.js';
+import { NotificationService } from './notificationService.js';
 
 // Environment check
 const isProduction = process.env.NODE_ENV === 'production';
@@ -69,7 +69,7 @@ function log(level, message, context, error = null) {
     try {
       // Don't await to avoid blocking response
       const notificationContext = { requestId, ...context };
-      notifyError(error || new Error(message), notificationContext).catch(() => { });
+      NotificationService.notifyError(error || new Error(message), notificationContext).catch(() => { });
     } catch (e) {
       // Silent fail
     }
@@ -91,23 +91,35 @@ function getColor(level) {
 // ==========================================
 
 export const requestLogger = (req, res, next) => {
-  // Morgan replacement: Simple start/finish logging
   const start = Date.now();
 
-  // Log request start (Debug only to reduce noise)
-  logger.debug(`Incoming ${req.method} ${req.url}`);
+  // Log request start (Only in debug/development for non-noisy routes)
+  const NOISY_ROUTES = ['/health', '/api/users/profile', '/api/users/transparency-log', '/api/sync', '/api/diagnostics', '/api/presence'];
+  const isNoisy = NOISY_ROUTES.some(route => req.url.startsWith(route));
+
+  if (!isNoisy && (!isProduction || process.env.DEBUG)) {
+    logger.debug(`Incoming ${req.method} ${req.url}`);
+  }
 
   // Hook into response finish
   res.on('finish', () => {
     const duration = Date.now() - start;
     const status = res.statusCode;
-    const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
 
-    // SMART LOGGING: Skip successful GETs to reduce noise, unless it's slow (>500ms)
-    const isSuccessGet = req.method === 'GET' && status < 400;
-    const isSlow = duration > 500;
+    // ENTERPRISE LOGGING RULES:
+    // 1. Only log errors (status >= 400)
+    // 2. Only log slow requests (>1000ms)
+    // 3. Skip all noisy background routes
+    const isError = status >= 400;
+    const isSlow = duration > 1000;
 
-    if (!isSuccessGet || isSlow) {
+    if ((isError || isSlow) && !isNoisy) {
+      let level = status >= 500 ? 'error' : 'warn';
+
+      // OPTIMIZATION: 404s are often "expected" (e.g. following a deleted report link)
+      // Log as info to avoid visual alarm in terminal
+      if (status === 404) level = 'info';
+
       const meta = {
         statusCode: status,
         duration: `${duration}ms`,
@@ -116,11 +128,11 @@ export const requestLogger = (req, res, next) => {
       };
 
       if (level === 'error') {
-        // Standard Logger.error signature: (message, error, context)
         logger.error(`${req.method} ${req.url}`, null, meta);
+      } else if (level === 'warn') {
+        logger.warn(`${req.method} ${req.url}`, meta);
       } else {
-        // Info/Warn signature: (message, context)
-        logger[level](`${req.method} ${req.url}`, meta);
+        logger.info(`${req.method} ${req.url}`, meta);
       }
     }
   });

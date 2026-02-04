@@ -15,7 +15,7 @@ export const generateTestReport = (overrides = {}) => {
         latitude: -34.6037,
         longitude: -58.3816,
         address: 'Calle Falsa 123',
-        status: 'pendiente',
+        status: 'abierto',
         image_url: 'https://placehold.co/600x400',
         ...overrides
     };

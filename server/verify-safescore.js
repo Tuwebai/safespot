@@ -42,7 +42,7 @@ async function verifySafeScore() {
             ) VALUES (
                 gen_random_uuid(), 'Robo Test', 'Test description', 'Robo de Vehículo', 
                 $1, $2, 'Zona Test Verification', 'Test Address',
-                'pendiente', $3, NOW(), NOW()
+                'abierto', $3, NOW(), NOW()
             )
         `, [testLat, testLng, userId]);
 

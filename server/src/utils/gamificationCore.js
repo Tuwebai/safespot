@@ -2,7 +2,7 @@ import { queryWithRLS } from './rls.js';
 import { logError, logSuccess } from './logger.js';
 import { calculateLevelFromPoints } from './levelCalculation.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
-import { NotificationService } from './notificationService.js';
+import { NotificationService } from './appNotificationService.js';
 
 /**
  * Helper: Smart Metric Selector
@@ -61,7 +61,7 @@ export async function calculateUserMetrics(anonymousId) {
                 (SELECT COUNT(*) FROM report_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as r_flags,
                 (SELECT COUNT(*) FROM comment_flags WHERE anonymous_id = $1 AND resolved_at IS NULL) as c_flags,
                 COALESCE((SELECT SUM(upvotes_count) FROM reports WHERE anonymous_id = $1), 0) +
-                COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as likes_received,
+                COALESCE((SELECT SUM(upvotes_count) FROM comments WHERE anonymous_id = $1), 0) as upvotes_received,
                 -- P0 FIX: SQL Syntax Error. Sum counts from separate subqueries instead of UNION ALL
                 (
                     (SELECT COUNT(*) FROM (SELECT 1 FROM reports WHERE anonymous_id = $1 LIMIT 100) r) +

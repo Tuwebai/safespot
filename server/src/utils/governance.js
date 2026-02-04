@@ -1,6 +1,6 @@
-
 import pool from '../config/database.js';
 import { logError } from './logger.js';
+import { NotFoundError, ForbiddenError } from './AppError.js';
 
 const SYSTEM_ROOT_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
@@ -10,7 +10,7 @@ const SYSTEM_ROOT_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
  * 
  * Ensures: BEGIN -> Context Guard -> Snapshot -> Audit -> Mutate -> COMMIT
  */
-export async function executeModeration(params) {
+export async function executeModeration(params, externalClient = null) {
     const {
         actorId,
         actorType = 'HUMAN', // 'HUMAN' | 'SYSTEM'
@@ -25,10 +25,11 @@ export async function executeModeration(params) {
         metadata = {}
     } = params;
 
-    const client = await pool.connect();
+    const client = externalClient || await pool.connect();
+    const isInternalTransaction = !externalClient;
 
     try {
-        await client.query('BEGIN');
+        if (isInternalTransaction) await client.query('BEGIN');
 
         // [M12 CRITICAL] Set Context Guard to prevent duplicate audit from triggers
         await client.query("SET LOCAL app.audit_skip = 'true'");
@@ -73,9 +74,11 @@ export async function executeModeration(params) {
         const actionRecordId = auditRes.rows[0].id;
 
         // 3. Execute Mutation
-        await client.query(updateQuery, updateParams);
+        if (updateQuery) {
+            await client.query(updateQuery, updateParams);
+        }
 
-        await client.query('COMMIT');
+        if (isInternalTransaction) await client.query('COMMIT');
 
         return {
             success: true,
@@ -84,11 +87,11 @@ export async function executeModeration(params) {
         };
 
     } catch (err) {
-        await client.query('ROLLBACK');
+        if (isInternalTransaction) await client.query('ROLLBACK');
         logError(err, { context: 'M12_GOVERNANCE_EXECUTE', params });
         throw err;
     } finally {
-        client.release();
+        if (isInternalTransaction) client.release();
     }
 }
 
@@ -97,7 +100,7 @@ export async function executeModeration(params) {
  * Logs User Intent (Willpower) into user_actions ledger
  * Separate from Moderation (Coercion)
  */
-export async function executeUserAction(params) {
+export async function executeUserAction(params, externalClient = null) {
     const {
         actorId, // Anonymous User ID
         targetType,
@@ -107,36 +110,62 @@ export async function executeUserAction(params) {
         updateParams
     } = params;
 
-    const client = await pool.connect();
+    const client = externalClient || await pool.connect();
+    const isInternalTransaction = !externalClient;
 
     try {
-        await client.query('BEGIN');
+        if (isInternalTransaction) await client.query('BEGIN');
 
         // 1. Snapshot
         const table = targetType === 'report' ? 'reports' : 'comments';
         const snapshotRes = await client.query(`SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`, [targetId]);
-        if (snapshotRes.rowCount === 0) throw new Error('Target not found');
+
+        // [AUDIT] Semántica HTTP CorrectA
+        if (snapshotRes.rowCount === 0) throw new NotFoundError(`Target ${targetType} not found`);
         const snapshot = snapshotRes.rows[0];
 
-        // 2. Log Willpower
+        // 2. Ownership Validation (Guard Invariante)
+        // El actorId proveído por el middleware debe coincidir con el dueño del recurso.
+        if (snapshot.anonymous_id && snapshot.anonymous_id !== actorId) {
+            throw new ForbiddenError(`You do not have permission to perform this action on this ${targetType}`);
+        }
+
+        // 3. Idempotency Check
+        // Si la acción es un borrado y ya está borrado, devolvemos éxito sin re-ejecutar.
+        if (actionType.includes('DELETE') && snapshot.deleted_at) {
+            if (isInternalTransaction) await client.query('COMMIT');
+            return { success: true, snapshot, rowCount: 0, idempotent: true };
+        }
+
+        // 4. Log Willpower
         await client.query(`
             INSERT INTO user_actions (actor_id, action_type, target_type, target_id, snapshot)
             VALUES ($1, $2, $3, $4, $5)
         `, [actorId, actionType, targetType, targetId, snapshot]);
 
-        // 3. Mutate
+        // 5. Mutate
+        let rowCount = 0;
         if (updateQuery) {
-            await client.query(updateQuery, updateParams);
+            // Nota: El query ya tiene el filtro por anonymous_id por seguridad extra, 
+            // pero governance ya lo validó arriba.
+            const mutateRes = await client.query(updateQuery, updateParams);
+            rowCount = mutateRes.rowCount;
         }
 
-        await client.query('COMMIT');
-        return { success: true, snapshot };
+        if (isInternalTransaction) await client.query('COMMIT');
+        return { success: true, snapshot, rowCount };
 
     } catch (err) {
-        await client.query('ROLLBACK');
+        if (isInternalTransaction) await client.query('ROLLBACK');
+
+        // Propagar errores operacionales (4xx) sin loguearlos como errores críticos de sistema
+        if (err instanceof NotFoundError || err instanceof ForbiddenError) {
+            throw err;
+        }
+
         logError(err, { context: 'M12_USER_ACTION_EXECUTE', params });
         throw err;
     } finally {
-        client.release();
+        if (isInternalTransaction) client.release();
     }
 }

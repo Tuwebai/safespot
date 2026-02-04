@@ -120,4 +120,47 @@ router.delete('/:id', async (req, res, next) => {
     }
 });
 
+/**
+ * POST /api/admin/tasks/resolve-all
+ * Mark ALL pending tasks as done
+ */
+router.post('/resolve-all', async (req, res, next) => {
+    try {
+        const db = DB.public();
+        const result = await db.query(`
+            UPDATE admin_tasks 
+            SET status = 'done', 
+                resolved_at = NOW() 
+            WHERE status != 'done'
+        `);
+
+        res.json({
+            success: true,
+            message: 'All tasks resolved',
+            count: result.rowCount
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * DELETE /api/admin/tasks
+ * Delete ALL tasks (Clear History)
+ */
+router.delete('/', async (req, res, next) => {
+    try {
+        const db = DB.public();
+        const result = await db.query('DELETE FROM admin_tasks');
+
+        res.json({
+            success: true,
+            message: 'All tasks deleted',
+            count: result.rowCount
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

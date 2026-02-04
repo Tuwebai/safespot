@@ -1,8 +1,24 @@
+import { vi } from 'vitest';
+
+// Force infrastructure mocks before importing app
+vi.mock('../../server/src/engine/QueueFactory.js', () => ({
+    QueueFactory: {
+        getQueue: vi.fn(() => ({ add: vi.fn().mockResolvedValue({ id: 'mock-job-id' }) })),
+        createWorker: vi.fn(),
+    }
+}));
+
+vi.mock('ioredis', () => ({
+    default: vi.fn().mockImplementation(() => ({
+        on: vi.fn(),
+        quit: vi.fn().mockResolvedValue('OK'),
+    }))
+}));
+
 import request from 'supertest';
 import { describe, it, expect } from 'vitest';
 import app from '../../server/src/index.js';
 import { generateTestUser, generateTestReport } from '../utils/test-helpers.js';
-import { reportSchema, commentSchema } from '../../server/src/utils/schemas.js';
 
 /**
  * Contract Tests: API vs Zod Schemas

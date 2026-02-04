@@ -20,14 +20,14 @@ class SSEPool {
         // 🔄 Sync connections when leadership changes
         leaderElection.onChange((state) => {
             if (state === LeadershipState.LEADING) {
-                console.debug('[SSEPool] 👑 Became Leader. Activating connections...');
+                // console.debug('[SSEPool] 👑 Became Leader. Activating connections...');
                 this.connections.forEach(entry => {
                     if (!entry.source && entry.refCount > 0) {
                         this.connect(entry);
                     }
                 });
             } else {
-                console.debug('[SSEPool] 👥 Became Follower. Closing connections...');
+                // console.debug('[SSEPool] 👥 Became Follower. Closing connections...');
                 this.connections.forEach(entry => {
                     if (entry.source) {
                         entry.source.close();

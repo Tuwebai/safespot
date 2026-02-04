@@ -6,6 +6,7 @@
  */
 
 import express from 'express';
+import logger from '../utils/logger.js';
 const router = express.Router();
 
 /**
@@ -74,7 +75,7 @@ router.post('/performance', async (req, res) => {
     try {
         const { metrics, timestamp } = req.body;
 
-        console.log('[DIAGNOSTIC] Performance metrics:', {
+        logger.debug('[DIAGNOSTIC] Performance metrics:', {
             metrics,
             timestamp,
         });

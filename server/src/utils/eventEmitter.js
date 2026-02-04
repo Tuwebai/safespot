@@ -15,7 +15,9 @@ class RealtimeEvents extends EventEmitter {
         super();
         this.setMaxListeners(100); // Allow many concurrent SSE connections
         this.instanceId = Math.random().toString(36).substring(7);
-        console.log(`[RealtimeEvents] Instance created: ${this.instanceId}`);
+        if (process.env.DEBUG) {
+            console.log(`[RealtimeEvents] Instance created: ${this.instanceId}`);
+        }
 
         // Initialize Redis Subscription
         this.initRedisSubscription();
@@ -30,7 +32,9 @@ class RealtimeEvents extends EventEmitter {
                 if (err) {
                     console.error('[Realtime] Failed to subscribe to Redis:', err);
                 } else {
-                    console.log(`[Realtime] Subscribed to ${REALTIME_CHANNEL}. Count: ${count}`);
+                    if (process.env.DEBUG) {
+                        console.log(`[Realtime] Subscribed to ${REALTIME_CHANNEL}. Count: ${count}`);
+                    }
                 }
             });
 
@@ -45,7 +49,9 @@ class RealtimeEvents extends EventEmitter {
                         // Filter loopback (Own events are already emitted locally in broadcast)
                         if (origin !== this.instanceId) {
                             super.emit(eventName, payload);
-                            console.log(`[Realtime] 📥 Received from Redis: ${eventName} (ID: ${eventId}) from ${origin}`);
+                            if (process.env.DEBUG) {
+                                console.log(`[Realtime] 📥 Received from Redis: ${eventName} (ID: ${eventId}) from ${origin}`);
+                            }
                         } else {
                             // console.log(`[Realtime] 🔂 Ignored loopback: ${eventName} (ID: ${eventId})`);
                         }
@@ -129,7 +135,7 @@ class RealtimeEvents extends EventEmitter {
             aggregateType: 'report',
             aggregateId: reportId
         });
-        console.log(`[Realtime] Broadcasted new comment for report ${reportId}`);
+        // Silent broadcast
     }
 
     /**
@@ -149,9 +155,12 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} commentId
      * @param {string} [originClientId]
      */
-    async emitCommentDelete(reportId, commentId, originClientId) {
-        await this.broadcast(`comment-delete:${reportId}`, { commentId, originClientId });
-        console.log(`[Realtime] Broadcasted comment delete for report ${reportId}`);
+    async emitCommentDelete(reportId, commentId, originClientId, eventId) {
+        await this.broadcast(`comment-delete:${reportId}`, { commentId, originClientId, eventId }, {
+            aggregateType: 'report',
+            aggregateId: reportId
+        });
+        console.log(`[Realtime] Broadcasted comment delete for report ${reportId} (ID: ${eventId || 'new'})`);
     }
 
     /**
@@ -168,7 +177,7 @@ class RealtimeEvents extends EventEmitter {
             aggregateType: 'report',
             aggregateId: report.id
         });
-        console.log(`[Realtime] Broadcasted new report ${report.id} to global feed`);
+        // Silent broadcast
     }
 
     /**
@@ -243,19 +252,22 @@ class RealtimeEvents extends EventEmitter {
     }
 
     /**
-     * Emit a vote/like update
+     * Emit a vote/like update (SSOT Refinement Feb 2026)
      * @param {string} type - 'report' or 'comment'
      * @param {string} id - The ID of the item being liked
-     * @param {object} updates - The updates object
+     * @param {object} updates - The updates object (likes_count/upvotes_count)
      * @param {string} [originClientId]
      * @param {string} [reportId] - ONLY for comments, to route correctly to report stream
      */
     async emitVoteUpdate(type, id, updates, originClientId, reportId) {
+        const eventId = updates.eventId; // Pass through if exists
         if (type === 'report') {
+            // 1. Target Broadcast (for detail views)
             await this.broadcast(`report-update:${id}`, { ...updates, originClientId }, {
                 aggregateType: 'report',
                 aggregateId: id
             });
+            // 2. Global Stream (for feeds)
             await this.broadcast('global-report-update', {
                 type: 'stats-update',
                 reportId: id,
@@ -266,18 +278,33 @@ class RealtimeEvents extends EventEmitter {
                 aggregateId: id
             });
         } else if (type === 'comment') {
-            // DEPRECATED for likes, but kept for general updates:
+            // Target Broadcast (for comment lists)
             await this.broadcast(`comment-update:${id}`, { ...updates, originClientId });
 
-            // NEW Atomic Routing (if reportId provided):
+            // Atomic Routing (if reportId provided to sync parent report feed)
             if (reportId) {
                 await this.broadcast(`comment-update:${reportId}`, {
                     id,
                     ...updates,
                     originClientId
+                }, {
+                    aggregateType: 'report',
+                    aggregateId: reportId
                 });
             }
         }
+    }
+
+    /**
+     * emitLikeUpdate (Semantic alias for emitVoteUpdate)
+     * Specifically for reports to maintain API consistency in routers
+     */
+    emitLikeUpdate(reportId, upvotesCount, category, status, originClientId) {
+        this.emitVoteUpdate('report', reportId, {
+            upvotes_count: upvotesCount,
+            category,
+            status
+        }, originClientId);
     }
 
     /**

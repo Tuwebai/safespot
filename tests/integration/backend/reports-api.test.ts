@@ -1,3 +1,13 @@
+import { vi } from 'vitest';
+
+// Force infrastructure mocks before importing app
+vi.mock('../../../server/src/engine/QueueFactory.js', () => ({
+    QueueFactory: {
+        getQueue: vi.fn(() => ({ add: vi.fn().mockResolvedValue({ id: 'mock-job-id' }) })),
+        createWorker: vi.fn(),
+    }
+}));
+
 import request from 'supertest';
 import { describe, it, expect, afterAll } from 'vitest';
 import app from '../../../server/src/index.js';

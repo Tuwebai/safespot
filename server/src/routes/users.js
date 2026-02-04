@@ -2,9 +2,9 @@ import express from 'express';
 import multer from 'multer';
 import { queryWithRLS } from '../utils/rls.js';
 import { requireAnonymousId, validateImageBuffer } from '../utils/validation.js';
-import { logError, logSuccess } from '../utils/logger.js';
+import { logError, logSuccess, default as logger } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { NotificationService } from '../utils/notificationService.js';
+import { NotificationService } from '../utils/appNotificationService.js';
 import supabase, { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
@@ -31,7 +31,6 @@ const upload = multer({
  * Requires: X-Anonymous-Id header
  */
 router.get('/profile', requireAnonymousId, async (req, res) => {
-  console.log(`[BACKEND] GET /api/users/profile - ${req.anonymousId}`);
   try {
     const anonymousId = req.anonymousId;
 
@@ -44,7 +43,8 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
       });
     }
 
-    logSuccess('Fetching user profile', { anonymousId });
+    // Only log in debug to avoid noise
+    logger.debug('Fetching user profile', { anonymousId });
 
     // Get or create user (ensures user exists in DB)
     try {
@@ -363,8 +363,6 @@ router.get('/search', async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
-    console.log(`[SEARCH] Query: "${q}"`);
-
     // Search users with aliases matching query
     // We only select necessary public info
     const result = await queryWithRLS(
@@ -530,15 +528,15 @@ router.get('/public/:alias', async (req, res) => {
       `SELECT 
          (SELECT COUNT(*) FROM reports WHERE anonymous_id = $1) as total_reports,
          (SELECT COUNT(*) FROM comments WHERE anonymous_id = $1) as total_comments,
-         (SELECT COALESCE(SUM(upvotes_count), 0) FROM reports WHERE anonymous_id = $1) as report_likes,
-         (SELECT COALESCE(SUM(upvotes_count), 0) FROM comments WHERE anonymous_id = $1) as comment_likes,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM reports WHERE anonymous_id = $1) as report_upvotes,
+         (SELECT COALESCE(SUM(upvotes_count), 0) FROM comments WHERE anonymous_id = $1) as comment_upvotes,
          (SELECT COUNT(DISTINCT created_at::date) FROM reports WHERE anonymous_id = $1 AND created_at > NOW() - INTERVAL '30 days') as active_days_30
        `,
       [publicProfile.anonymous_id]
     );
 
     const stats = statsResult.rows[0] || {};
-    const trustScore = Math.min(100, 50 + (parseInt(stats.report_likes || 0) * 2) + (parseInt(stats.comment_likes || 0) * 0.5)); // Simple algo
+    const trustScore = Math.min(100, 50 + (parseInt(stats.report_upvotes || 0) * 2) + (parseInt(stats.comment_upvotes || 0) * 0.5)); // Simple algo
 
     // Get public reports (limit to 10 most recent)
     const reportsResult = await queryWithRLS(
@@ -578,7 +576,7 @@ router.get('/public/:alias', async (req, res) => {
       badges: badgesResult.rows,
       stats: {
         trust_score: Math.floor(trustScore),
-        likes_received: parseInt(stats.report_likes) + parseInt(stats.comment_likes),
+        upvotes_received: parseInt(stats.report_upvotes) + parseInt(stats.comment_upvotes),
         active_days_30: parseInt(stats.active_days_30),
         followers_count: parseInt(followStats.followers_count) || 0,
         following_count: parseInt(followStats.following_count) || 0,
@@ -626,7 +624,6 @@ router.post('/follow/:followingId', requireAnonymousId, async (req, res) => {
     );
 
     // Trigger Notification (Async)
-    console.log(`[FOLLOW] Triggering notification for follower=${followerId} -> following=${followingId}`);
     NotificationService.notifyNewFollower(followerId, followingId).catch(err => {
       console.error('[FOLLOW] Notification failed:', err.message);
     });

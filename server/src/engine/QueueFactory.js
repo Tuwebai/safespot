@@ -18,7 +18,7 @@ export const QueueFactory = {
     getConnection() {
         if (!this._connection) {
             if (!REDIS_URL) {
-                console.warn('[QueueFactory] REDIS_URL not found. Engine will fail in production.');
+                // console.warn('[QueueFactory] REDIS_URL not found. Engine will fail in production.');
             }
             // BullMQ requires maxRetriesPerRequest: null
             this._connection = {

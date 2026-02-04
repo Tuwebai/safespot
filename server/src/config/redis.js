@@ -31,17 +31,15 @@ const redis = REDIS_URL ? new Redis(REDIS_URL, options) : null;
 const redisSubscriber = REDIS_URL ? new Redis(REDIS_URL, options) : null;
 
 if (redis) {
-    redis.on('connect', () => {
-        logSuccess('[Redis Pub] Connected successfully');
-    });
-
     redis.on('error', (err) => {
         console.error('[Redis Pub] Connection Error:', err);
     });
 
-    redis.on('ready', () => {
-        console.log('[Redis Pub] Client is ready');
-    });
+    // In dev we keep a quiet indicator if DEBUG is on
+    if (process.env.DEBUG) {
+        redis.on('connect', () => console.log('[Redis Pub] Connected'));
+        redis.on('ready', () => console.log('[Redis Pub] Ready'));
+    }
 }
 
 if (redisSubscriber) {

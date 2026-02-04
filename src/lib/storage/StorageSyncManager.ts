@@ -171,10 +171,21 @@ export class StorageSyncManager {
 
         // Auth changes (logout/login)
         if (storageKey === 'auth-storage' || storageKey === 'safespot_auth_logout') {
-            // Nuclear option: invalidate everything
-            console.warn('[StorageSync] Auth change detected, clearing all queries');
-            queryClient.clear();
-            return [];  // Already handled
+            // ✅ ENTERPRISE FIX: No más "Nuclear Clear".
+            // En su lugar, invalidamos solo lo que depende de la identidad del usuario.
+            console.warn('[StorageSync] Auth change detected, invalidating identity-sensitive queries');
+
+            // Invalida perfiles, reportes (que pueden tener 'liked_by_me'), notificaciones, etc.
+            queryClient.invalidateQueries({
+                predicate: (query) => {
+                    const key = JSON.stringify(query.queryKey);
+                    return key.includes('user') ||
+                        key.includes('profile') ||
+                        key.includes('notifications') ||
+                        key.includes('reports');
+                }
+            });
+            return [];
         }
 
         // Internal System Keys - Ignore silently

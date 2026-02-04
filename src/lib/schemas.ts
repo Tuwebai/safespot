@@ -66,8 +66,8 @@ export const reportSchema = z.object({
     description: z.string(),
     category: z.string(),
     status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado', 'rechazado']),
-    upvotes_count: z.number().int(),
-    likes_count: z.number().int().default(0),
+    upvotes_count: z.number().int().default(0),
+    likes_count: z.number().int().optional(), // DEPRECATED: Use upvotes_count for Reports
     comments_count: z.number().int(),
     created_at: z.string(),
     updated_at: z.string(),

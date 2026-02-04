@@ -1,3 +1,23 @@
+// SILENCIO TOTAL: Interceptar inmediatamente console.log/warn para eliminar ruido de infraestructura
+const originalLog = console.log;
+const originalWarn = console.warn;
+const IS_PROD = process.env.NODE_ENV === 'production';
+const DEBUG = process.env.DEBUG;
+
+const silenceFilter = (...args) => {
+  const msg = args[0]?.toString() || '';
+  if (msg.includes('[NotificationEngine]') ||
+    msg.includes('[RealtimeEvents]') ||
+    msg.includes('Eviction policy') ||
+    msg.includes('volatile-lru')) {
+    if (!DEBUG) return true; // Silenced
+  }
+  return false; // Show
+};
+
+console.log = (...args) => { if (!silenceFilter(...args)) originalLog(...args); };
+console.warn = (...args) => { if (!silenceFilter(...args)) originalWarn(...args); };
+
 import dotenv from 'dotenv';
 import { NotificationWorker } from './engine/NotificationWorker.js';
 
@@ -59,7 +79,7 @@ import contactRouter from './routes/contact.js';
 import diagnosticsRouter from './routes/diagnostics.js';
 import syncRouter from './routes/sync.js';
 import { logCriticalError } from './utils/adminTasks.js';
-import { notifyError } from './utils/whatsapp.js';
+import { NotificationService } from './utils/notificationService.js';
 import { strictAdminGateway } from './utils/adminGateway.js';
 
 // Load environment variables
@@ -75,10 +95,11 @@ const PORT = process.env.PORT || 3000;
 // ENVIRONMENT VALIDATION
 // ============================================
 
-const requiredEnvVars = ['DATABASE_URL'];
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+const requiredEnvVars = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+const IS_TEST = process.env.NODE_ENV === 'test';
 
-if (missingVars.length > 0) {
+if (!IS_TEST && missingVars.length > 0) {
   console.error('❌ ERROR: Missing required environment variables:', missingVars.join(', '));
   process.exit(1);
 }
@@ -508,7 +529,8 @@ app.use((err, req, res, next) => {
 
   if (logLevel === 'error') {
     // Critical errors get full stack trace in logs (both dev and prod logs should have stacks for 500s)
-    // Logger handles notification to WhatsApp internally if level is error
+    // Logger handles notification to Telegram internally if level is error
+    NotificationService.notifyError(error, { path: req.path, method: req.method });
     logError(error, req);
   } else {
     // Warnings (4xx) don't need notifications, just logs
@@ -560,14 +582,13 @@ const startServer = () => {
 
   if (process.env.NODE_ENV === 'test') return;
 
+  const isProduction = process.env.NODE_ENV === 'production';
   server = app.listen(PORT, () => {
-    console.log(`
-🚀 SafeSpot API Server
-📍 Port: ${PORT}
-🌍 Environment: ${process.env.NODE_ENV || 'development'}
-🔒 CORS Origins: ${allowedOrigins.join(', ')}
-✅ Server ready to accept requests
-    `);
+    if (!isProduction || process.env.DEBUG) {
+      console.log(`🚀 SafeSpot API Server | Port: ${PORT} | Env: ${process.env.NODE_ENV || 'development'}`);
+    } else {
+      console.log(`🚀 SafeSpot API Server ready on port ${PORT}`);
+    }
 
     // INCREASE TIMEOUTS FOR SSE STABILITY
     server.keepAliveTimeout = 120000;
@@ -624,7 +645,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('uncaughtException', async (err) => {
   console.error('❌ UNCAUGHT EXCEPTION:', err);
   try {
-    await notifyError(err, { type: 'UNCAUGHT_EXCEPTION' });
+    await NotificationService.notifyError(err, { type: 'UNCAUGHT_EXCEPTION' });
   } catch (e) {
     console.error('Failed to notify error:', e);
   }
@@ -635,7 +656,7 @@ process.on('unhandledRejection', async (reason) => {
   console.error('❌ UNHANDLED REJECTION:', reason);
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
-    await notifyError(err, { type: 'UNHANDLED_REJECTION' });
+    await NotificationService.notifyError(err, { type: 'UNHANDLED_REJECTION' });
   } catch (e) {
     console.error('Failed to notify rejection:', e);
   }

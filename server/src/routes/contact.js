@@ -1,6 +1,6 @@
 import express from 'express';
-import { z } from 'zod'; // Assuming zod is available or use another validation method
-// import fetch from 'node-fetch'; // Native fetch is available in Node 18+
+import { z } from 'zod';
+import { NotificationService } from '../utils/notificationService.js';
 
 const router = express.Router();
 
@@ -21,33 +21,14 @@ router.post('/', async (req, res) => {
         // 1. Validate Input
         const validatedData = contactSchema.parse(req.body);
 
-        // 2. Check configuration
-        const webhookUrl = process.env.N8N_CONTACT_WEBHOOK_URL;
-        if (!webhookUrl) {
-            console.error('[CONTACT] Missing N8N_CONTACT_WEBHOOK_URL env var');
-            return res.status(503).json({
-                success: false,
-                error: 'Service configuration error',
-                message: 'El servicio de contacto no está configurado correctamente.'
-            });
-        }
-
-        // 3. Forward to n8n
-        const response = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Source': 'SafeSpot-Backend'
-            },
-            body: JSON.stringify({
-                ...validatedData,
-                timestamp: new Date().toISOString(),
-                source: 'SafeSpot Web Contact Form'
-            })
+        // 3. Forward to n8n (Unified)
+        const success = await NotificationService.sendContactForm({
+            ...validatedData,
+            source: 'SafeSpot Web Contact Form'
         });
 
-        if (!response.ok) {
-            throw new Error(`n8n webhook failed with status ${response.status}`);
+        if (!success) {
+            throw new Error('NotificationService failed to send contact form');
         }
 
         // 4. Success Response

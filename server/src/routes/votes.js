@@ -11,7 +11,7 @@ import supabase from '../config/supabase.js';
 import { voteLimiter } from '../utils/rateLimiter.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { executeUserAction } from '../utils/governance.js';
-import { NotificationService } from '../utils/notificationService.js';
+import { NotificationService } from '../utils/appNotificationService.js';
 
 const router = express.Router();
 
@@ -25,9 +25,13 @@ const router = express.Router();
 router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { report_id, comment_id } = req.body;
+    const { report_id, comment_id, target_type, target_id } = req.body;
 
-    logSuccess('Creating vote', { anonymousId, reportId: report_id, commentId: comment_id });
+    // Normalizar a polimórfico
+    const targetType = target_type || (report_id ? 'report' : 'comment');
+    const targetId = target_id || (report_id || comment_id);
+
+    logSuccess('Creating vote', { anonymousId, targetType, targetId });
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
     try {
@@ -87,28 +91,15 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
     }
 
     // Check if vote already exists (prevent duplicates) using queryWithRLS
-    logSuccess('Checking for existing vote', { anonymousId });
+    logSuccess('Checking for existing vote', { anonymousId, targetType, targetId });
 
-    let checkQuery;
-    let checkParams;
-
-    if (report_id) {
-      checkQuery = `
-        SELECT id FROM votes 
-        WHERE anonymous_id = $1 
-        AND report_id = $2 
-        AND comment_id IS NULL
-      `;
-      checkParams = [anonymousId, report_id];
-    } else {
-      checkQuery = `
-        SELECT id FROM votes 
-        WHERE anonymous_id = $1 
-        AND comment_id = $2 
-        AND report_id IS NULL
-      `;
-      checkParams = [anonymousId, comment_id];
-    }
+    const checkQuery = `
+      SELECT id FROM votes 
+      WHERE anonymous_id = $1 
+      AND target_type = $2::vote_target_type 
+      AND target_id = $3
+    `;
+    const checkParams = [anonymousId, targetType, targetId];
 
     const existingVoteResult = await queryWithRLS(anonymousId, checkQuery, checkParams);
 
@@ -177,27 +168,24 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       const targetType = report_id ? 'report' : 'comment';
       const targetId = report_id || comment_id;
 
-      NotificationService.notifyLike(targetType, targetId, anonymousId).catch(err => {
-        logError(err, { context: 'notifyLike.vote', targetId });
-      });
+      try {
+        NotificationService.notifyLike(targetType, targetId, anonymousId).catch(err => {
+          logError(err, { context: 'notifyLike.vote', targetId });
+        });
+      } catch (notiError) {
+        console.error('[Votes] notifyLike triggered exception:', notiError.message);
+      }
     }
 
-    // 4. ATOMIC MUTATION & GOVERNANCE (M12)
+    // 4. ATOMIC MUTATION (SSOT: DB Trigger handles counters)
     // ============================================
-    const targetType = report_id ? 'report' : 'comment';
-    const targetId = report_id || comment_id;
-    const actionType = report_id ? 'USER_VOTE_REPORT' : 'USER_VOTE_COMMENT';
+    const actionType = targetType === 'report' ? 'USER_VOTE_REPORT' : 'USER_VOTE_COMMENT';
 
-    // Build the atomic mutation query using CTE
+    // Build the atomic mutation query. NO manual SET here.
     const mutationQuery = `
-      WITH inserted_vote AS (
-        INSERT INTO votes (anonymous_id, report_id, comment_id, is_hidden)
-        VALUES ($1, $2, $3, $4)
-        RETURNING *
-      )
-      UPDATE ${targetType}s 
-      SET upvotes_count = upvotes_count + 1 
-      WHERE id = $2 AND $4 = false;
+        INSERT INTO votes (anonymous_id, target_type, target_id, is_hidden)
+        VALUES ($1, $2::vote_target_type, $3, $4)
+        RETURNING *;
     `;
 
     try {
@@ -207,7 +195,7 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
         targetId,
         actionType,
         updateQuery: mutationQuery,
-        updateParams: [anonymousId, report_id || null, comment_id || null, isHidden]
+        updateParams: [anonymousId, targetType, targetId, isHidden]
       });
     } catch (err) {
       // Handle unique constraint violation (duplicate vote) - Idempotency
@@ -221,26 +209,32 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       throw err;
     }
 
-    res.status(201).json({
-      success: true,
-      message: 'Vote created successfully'
-    });
+    try {
+      // Fetch updated count after trigger
+      const updatedCountResult = await queryWithRLS('', `SELECT upvotes_count FROM ${targetType}s WHERE id = $1`, [targetId]);
+      const updatedCount = updatedCountResult.rows[0]?.upvotes_count || 0;
 
-    // REALTIME: Broadcast updated count
-    const clientId = req.headers['x-client-id'];
-    (async () => {
-      try {
-        if (report_id) {
-          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
-          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count }, clientId);
-        } else if (comment_id) {
-          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('comment_id', comment_id);
-          realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: count }, clientId);
-        }
-      } catch (err) {
-        logError(err, { context: 'realtimeParam.vote' });
+      res.status(201).json({
+        success: true,
+        data: {
+          is_liked: report_id ? true : undefined, // For reports
+          upvotes_count: updatedCount
+        },
+        message: 'Vote created successfully'
+      });
+
+      // REALTIME: Broadcast updated count
+      const clientId = req.headers['x-client-id'];
+      if (report_id) {
+        const { data: report } = await supabase.from('reports').select('category, status').eq('id', report_id).single();
+        realtimeEvents.emitLikeUpdate(report_id, updatedCount, report?.category, report?.status, clientId);
+      } else {
+        realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);
       }
-    })();
+    } catch (err) {
+      logError(err, { context: 'postVote.response' });
+      res.status(201).json({ success: true, message: 'Vote created' });
+    }
   } catch (error) {
     logError(error, req);
 
@@ -276,9 +270,12 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
 router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { report_id, comment_id } = req.body;
+    const { report_id, comment_id, target_type, target_id } = req.body;
 
-    if (!report_id && !comment_id) {
+    const targetType = target_type || (report_id ? 'report' : 'comment');
+    const targetId = target_id || (report_id || comment_id);
+
+    if (!targetId) {
       return res.status(400).json({
         error: 'Either report_id or comment_id is required'
       });
@@ -286,20 +283,14 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
 
     // 4. ATOMIC MUTATION & GOVERNANCE (M12)
     // ============================================
-    const targetType = report_id ? 'report' : 'comment';
-    const targetId = report_id || comment_id;
-    const actionType = report_id ? 'USER_UNVOTE_REPORT' : 'USER_UNVOTE_COMMENT';
+    const actionType = targetType === 'report' ? 'USER_UNVOTE_REPORT' : 'USER_UNVOTE_COMMENT';
 
     const mutationQuery = `
-      WITH deleted_vote AS (
         DELETE FROM votes 
         WHERE anonymous_id = $1 
-        AND ${report_id ? 'report_id = $2 AND comment_id IS NULL' : 'comment_id = $2 AND report_id IS NULL'}
-        RETURNING id
-      )
-      UPDATE ${targetType}s 
-      SET upvotes_count = GREATEST(0, upvotes_count - 1) 
-      WHERE id = $2 AND (SELECT count(*) FROM deleted_vote) > 0;
+        AND target_type = $2::vote_target_type 
+        AND target_id = $3
+        RETURNING id;
     `;
 
     try {
@@ -309,7 +300,7 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
         targetId,
         actionType,
         updateQuery: mutationQuery,
-        updateParams: [anonymousId, report_id || comment_id]
+        updateParams: [anonymousId, targetType, targetId]
       });
     } catch (err) {
       if (err.message === 'Target not found') {
@@ -323,29 +314,38 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
       target: report_id || comment_id
     });
 
-    res.json({
-      success: true,
-      message: 'Vote removed successfully'
-    });
+    try {
+      // Fetch updated count after trigger (SSOT Authority)
+      const updatedCountResult = await queryWithRLS('', `SELECT upvotes_count FROM ${targetType}s WHERE id = $1`, [targetId]);
+      const updatedCount = updatedCountResult.rows[0]?.upvotes_count || 0;
 
-    // REALTIME: Fetch updated count and broadcast
-    (async () => {
-      try {
-        if (report_id) {
-          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('report_id', report_id);
-          realtimeEvents.emitVoteUpdate('report', report_id, { upvotes_count: count });
-        } else if (comment_id) {
-          const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('comment_id', comment_id);
-          realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: count });
-        }
-      } catch (err) {
-        logError(err, { context: 'realtimeParam.unvote' });
+      res.status(200).json({
+        success: true,
+        data: {
+          is_liked: report_id ? false : undefined,
+          upvotes_count: updatedCount
+        },
+        message: 'Vote removed successfully'
+      });
+
+      // REALTIME: Broadcast updated count
+      const clientId = req.headers['x-client-id'];
+      if (report_id) {
+        const { data: report } = await supabase.from('reports').select('category, status').eq('id', report_id).single();
+        realtimeEvents.emitLikeUpdate(report_id, updatedCount, report?.category, report?.status, clientId);
+      } else {
+        realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);
       }
-    })();
+    } catch (err) {
+      logError(err, { context: 'deleteVote.response' });
+      res.status(200).json({ success: true, message: 'Vote removed' });
+    }
   } catch (error) {
     logError(error, req);
     res.status(500).json({
-      error: 'Failed to remove vote'
+      success: false,
+      error: 'Failed to remove vote',
+      details: error.message
     });
   }
 });
@@ -359,33 +359,25 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
 router.get('/check', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { report_id, comment_id } = req.query;
+    const { report_id, comment_id, target_type, target_id } = req.query;
 
-    if (!report_id && !comment_id) {
+    const targetType = target_type || (report_id ? 'report' : 'comment');
+    const targetId = target_id || (report_id || comment_id);
+
+    if (!targetId) {
       return res.status(400).json({
         error: 'Either report_id or comment_id is required'
       });
     }
 
     // Check vote status using queryWithRLS for RLS enforcement
-    let checkQuery;
-    let checkParams;
-
-    if (report_id) {
-      checkQuery = `
-        SELECT id FROM votes 
-        WHERE anonymous_id = $1 
-        AND report_id = $2
-      `;
-      checkParams = [anonymousId, report_id];
-    } else {
-      checkQuery = `
-        SELECT id FROM votes 
-        WHERE anonymous_id = $1 
-        AND comment_id = $2
-      `;
-      checkParams = [anonymousId, comment_id];
-    }
+    const checkQuery = `
+      SELECT id FROM votes 
+      WHERE anonymous_id = $1 
+      AND target_type = $2::vote_target_type 
+      AND target_id = $3
+    `;
+    const checkParams = [anonymousId, targetType, targetId];
 
     const result = await queryWithRLS(anonymousId, checkQuery, checkParams);
 

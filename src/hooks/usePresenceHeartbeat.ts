@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { getAnonymousId } from '@/lib/identity';
 
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -10,8 +10,17 @@ const HEARTBEAT_INTERVAL = 30000; // 30 seconds
  * This is the Client-Side half of the Distributed Presence System.
  */
 export const usePresenceHeartbeat = () => {
+    const lastPingRef = useRef<number>(0);
+    const PING_THROTTLE_MS = 5000; // 5 seconds minimum between pings
+
     useEffect(() => {
         const sendHeartbeat = async () => {
+            // 🛑 THROTTLING: Prevent redundant pings within 5s (fixes StrictMode & rapid visibility toggles)
+            const now = Date.now();
+            if (now - lastPingRef.current < PING_THROTTLE_MS) {
+                // console.debug('[Presence] Heartbeat throttled');
+                return;
+            }
             // Check Ghost Mode
             const isGhost = localStorage.getItem('safespot_ghost_mode') === 'true';
             if (isGhost) return;
@@ -41,6 +50,8 @@ export const usePresenceHeartbeat = () => {
                     },
                     keepalive: true // Ensure request survives page navigation
                 });
+
+                lastPingRef.current = Date.now();
             } catch (err) {
                 // Silently fail - presence is "soft state"
                 // Do not warn in console to keep hygiene clean unless explicitly debugging presence

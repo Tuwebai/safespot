@@ -44,7 +44,7 @@ class ReportLifecycleService {
      * @param {object} actor 
      */
     async processReport(reportId, actor) {
-        return this._executeTransition(reportId, actor, 'en_proceso', 'PROCESS_REPORT', 'Processing started');
+        return this._executeTransition(reportId, actor, 'en_progreso', 'PROCESS_REPORT', 'Processing started');
     }
 
     /**
@@ -55,7 +55,7 @@ class ReportLifecycleService {
      * @param {string} reason 
      */
     async closeReport(reportId, actor, reason = 'Closed by admin') {
-        return this._executeTransition(reportId, actor, 'cerrado', 'CLOSE_REPORT', reason);
+        return this._executeTransition(reportId, actor, 'archivado', 'CLOSE_REPORT', reason);
     }
 
     /**
@@ -165,11 +165,12 @@ class ReportLifecycleService {
         // z, c -> final
 
         const valid = {
-            'pendiente': ['en_proceso', 'resuelto', 'rechazado'],
-            'en_proceso': ['resuelto', 'cerrado', 'rechazado'],
-            'resuelto': ['cerrado', 'en_proceso'], // DB trigger allowed re-open? Plan said no, verify script said no. Adjusting to strict DB reality.
+            'abierto': ['en_progreso', 'resuelto', 'rechazado', 'archivado'],
+            'en_progreso': ['resuelto', 'archivado', 'rechazado'],
+            'resuelto': ['archivado', 'en_progreso', 'verificado'],
+            'verificado': ['archivado'],
             'rechazado': [],
-            'cerrado': []
+            'archivado': []
         };
 
         // Nota: El parche de trigger permitió old=resuelto -> new!=resuelto only logic stats, 

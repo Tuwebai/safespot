@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS reports (
     address VARCHAR(255) NOT NULL,
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8),
-    status VARCHAR(50) DEFAULT 'pendiente' CHECK (status IN ('pendiente', 'en_proceso', 'resuelto', 'cerrado')),
+    status report_status_enum DEFAULT 'pendiente',
     upvotes_count INTEGER DEFAULT 0,
     comments_count INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -89,28 +89,29 @@ CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC);
 -- ============================================
 -- 4. VOTES TABLE
 -- ============================================
--- Votes (upvotes) on reports and comments
--- Prevents duplicate votes per anonymous_id
+-- Votes (upvotes) on reports and comments using Polymorphic Pattern
+-- Prevents duplicate votes per anonymous_id per target
+CREATE TYPE vote_target_type AS ENUM ('report', 'comment');
+
 CREATE TABLE IF NOT EXISTS votes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     anonymous_id UUID NOT NULL,
-    report_id UUID,
-    comment_id UUID,
+    target_type vote_target_type NOT NULL,
+    target_id UUID NOT NULL,
+    is_hidden BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT fk_votes_report FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
-    CONSTRAINT fk_votes_comment FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
     CONSTRAINT fk_votes_anonymous FOREIGN KEY (anonymous_id) REFERENCES anonymous_users(anonymous_id) ON DELETE CASCADE,
-    CONSTRAINT vote_target CHECK (
-        (report_id IS NOT NULL AND comment_id IS NULL) OR
-        (report_id IS NULL AND comment_id IS NOT NULL)
-    ),
-    CONSTRAINT one_vote_per_target UNIQUE (anonymous_id, report_id, comment_id)
+    CONSTRAINT unique_vote_per_target UNIQUE (anonymous_id, target_type, target_id)
 );
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_votes_report_id ON votes(report_id) WHERE report_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_votes_comment_id ON votes(comment_id) WHERE comment_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_votes_anonymous_id ON votes(anonymous_id);
+-- Indexes for polymorphic performance
+CREATE INDEX IF NOT EXISTS idx_votes_polymorphic ON votes (target_type, target_id);
+-- ============================================
+-- 0. TYPES & ENUMS
+-- ============================================
+CREATE TYPE report_status_enum AS ENUM ('pendiente', 'en_proceso', 'resuelto', 'cerrado', 'rechazado');
+
+-- ============================================
 
 -- ============================================
 -- 5. GAMIFICATION STATS TABLE (Optional)
@@ -163,45 +164,86 @@ CREATE TRIGGER trigger_update_comments_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_comments_updated_at();
 
--- Update report upvotes_count when vote is added/removed
-CREATE OR REPLACE FUNCTION update_report_upvotes_count()
+-- Update report/comment upvotes_count when vote is added/removed (SSOT AUTHORITY)
+CREATE OR REPLACE FUNCTION update_vote_counters_v3_1()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF TG_OP = 'INSERT' AND NEW.report_id IS NOT NULL THEN
-        UPDATE reports SET upvotes_count = upvotes_count + 1 WHERE id = NEW.report_id;
-        UPDATE anonymous_users SET total_votes = total_votes + 1 WHERE anonymous_id = NEW.anonymous_id;
-    ELSIF TG_OP = 'DELETE' AND OLD.report_id IS NOT NULL THEN
-        UPDATE reports SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.report_id;
-        UPDATE anonymous_users SET total_votes = GREATEST(0, total_votes - 1) WHERE anonymous_id = OLD.anonymous_id;
+    -- 1. HANDLER FOR INSERT
+    IF TG_OP = 'INSERT' THEN
+        IF (NEW.is_hidden IS NOT TRUE) THEN
+            IF NEW.target_type = 'report' THEN
+                UPDATE reports SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+                UPDATE anonymous_users SET total_votes = total_votes + 1 WHERE anonymous_id = NEW.anonymous_id;
+            ELSIF NEW.target_type = 'comment' THEN
+                UPDATE comments SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+            END IF;
+        END IF;
+
+    -- 2. HANDLER FOR DELETE
+    ELSIF TG_OP = 'DELETE' THEN
+        IF (OLD.is_hidden IS NOT TRUE) THEN
+            IF OLD.target_type = 'report' THEN
+                UPDATE reports SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+                UPDATE anonymous_users SET total_votes = GREATEST(0, total_votes - 1) WHERE anonymous_id = OLD.anonymous_id;
+            ELSIF OLD.target_type = 'comment' THEN
+                UPDATE comments SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+            END IF;
+        END IF;
+
+    -- 3. HANDLER FOR UPDATE (Critical for Shadow Ban / Moderation)
+    ELSIF TG_OP = 'UPDATE' THEN
+        -- Case A: Status changed (is_hidden toggle)
+        IF (OLD.is_hidden IS DISTINCT FROM NEW.is_hidden) THEN
+            -- Transition to Hidden
+            IF (NEW.is_hidden IS TRUE) THEN
+                IF OLD.target_type = 'report' THEN
+                    UPDATE reports SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+                    UPDATE anonymous_users SET total_votes = GREATEST(0, total_votes - 1) WHERE anonymous_id = OLD.anonymous_id;
+                ELSIF OLD.target_type = 'comment' THEN
+                    UPDATE comments SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+                END IF;
+            -- Transition to Visible
+            ELSE
+                IF NEW.target_type = 'report' THEN
+                    UPDATE reports SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+                    UPDATE anonymous_users SET total_votes = total_votes + 1 WHERE anonymous_id = NEW.anonymous_id;
+                ELSIF NEW.target_type = 'comment' THEN
+                    UPDATE comments SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+                END IF;
+            END IF;
+        END IF;
+        
+        -- Case B: Target Swapped (Administrative correction)
+        IF (OLD.target_id IS DISTINCT FROM NEW.target_id OR OLD.target_type IS DISTINCT FROM NEW.target_type) THEN
+            -- Decrement Old Target if it was visible
+            IF (OLD.is_hidden IS NOT TRUE) THEN
+                IF OLD.target_type = 'report' THEN
+                    UPDATE reports SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+                    UPDATE anonymous_users SET total_votes = GREATEST(0, total_votes - 1) WHERE anonymous_id = OLD.anonymous_id;
+                ELSIF OLD.target_type = 'comment' THEN
+                    UPDATE comments SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.target_id;
+                END IF;
+            END IF;
+            -- Increment New Target if it is visible
+            IF (NEW.is_hidden IS NOT TRUE) THEN
+                IF NEW.target_type = 'report' THEN
+                    UPDATE reports SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+                    UPDATE anonymous_users SET total_votes = total_votes + 1 WHERE anonymous_id = NEW.anonymous_id;
+                ELSIF NEW.target_type = 'comment' THEN
+                    UPDATE comments SET upvotes_count = upvotes_count + 1 WHERE id = NEW.target_id;
+                END IF;
+            END IF;
+        END IF;
     END IF;
-    RETURN COALESCE(NEW, OLD);
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_update_report_upvotes ON votes;
-CREATE TRIGGER trigger_update_report_upvotes
-    AFTER INSERT OR DELETE ON votes
+DROP TRIGGER IF EXISTS trigger_ssot_vote_counters ON votes;
+CREATE TRIGGER trigger_ssot_vote_counters
+    AFTER INSERT OR DELETE OR UPDATE ON votes
     FOR EACH ROW
-    EXECUTE FUNCTION update_report_upvotes_count();
-
--- Update comment upvotes_count when vote is added/removed
-CREATE OR REPLACE FUNCTION update_comment_upvotes_count()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' AND NEW.comment_id IS NOT NULL THEN
-        UPDATE comments SET upvotes_count = upvotes_count + 1 WHERE id = NEW.comment_id;
-    ELSIF TG_OP = 'DELETE' AND OLD.comment_id IS NOT NULL THEN
-        UPDATE comments SET upvotes_count = GREATEST(0, upvotes_count - 1) WHERE id = OLD.comment_id;
-    END IF;
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trigger_update_comment_upvotes ON votes;
-CREATE TRIGGER trigger_update_comment_upvotes
-    AFTER INSERT OR DELETE ON votes
-    FOR EACH ROW
-    EXECUTE FUNCTION update_comment_upvotes_count();
+    EXECUTE FUNCTION update_vote_counters_v3_1();
 
 -- Update report comments_count when comment is added/removed
 CREATE OR REPLACE FUNCTION update_report_comments_count()

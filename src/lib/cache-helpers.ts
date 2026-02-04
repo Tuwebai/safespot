@@ -222,7 +222,9 @@ export const commentsCache = {
     },
 
     remove: (queryClient: QueryClient, commentId: string, reportId: string) => {
-        queryClient.removeQueries({ queryKey: queryKeys.comments.detail(commentId) });
+        // 🔴 NO USAR removeQueries: Evita el error "Missing queryFn" si la query sigue siendo observada.
+        // La limpieza del detalle ocurrirá de forma pasiva o vía GC si nadie lo usa.
+
         queryClient.setQueriesData<any>(
             { queryKey: queryKeys.comments.byReport(reportId) },
             (old: any) => {
@@ -230,6 +232,8 @@ export const commentsCache = {
                 const removeAction = (list: any) => {
                     const sanitizedList = Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
                     if (!sanitizedList.includes(commentId)) return sanitizedList;
+
+                    // ✅ Sincronización Atómica del Contador
                     reportsCache.applyCommentDelta(queryClient, reportId, -1);
                     return sanitizedList.filter(id => id !== commentId);
                 }

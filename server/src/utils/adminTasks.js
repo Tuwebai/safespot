@@ -1,5 +1,5 @@
 import { DB } from './db.js';
-import { sendWhatsAppAlert } from './whatsapp.js';
+import { NotificationService } from './notificationService.js';
 
 
 
@@ -35,7 +35,7 @@ export const createAdminTask = async ({
         // 2. Notify n8n via Webhook
         // 2. Notify n8n via Webhook
         // Trigger generic high-priority alert via WhatsApp (NON-BLOCKING)
-        sendWhatsAppAlert(
+        NotificationService.sendAdminAlert(
             `Nueva Tarea: ${title}`,
             `Prioridad: ${severity}\nFuente: ${source}\n\n${description}`,
             severity === 'critical' ? 'Alta' : 'Informativa'

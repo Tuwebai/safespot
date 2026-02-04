@@ -46,7 +46,7 @@ export const reportResponseSchema = z.object({
     address: z.string().nullable(),
     latitude: coerceNumber.nullable(),
     longitude: coerceNumber.nullable(),
-    status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado', 'rechazado']),
+    status: z.enum(['abierto', 'en_progreso', 'resuelto', 'verificado', 'rechazado', 'archivado']),
     upvotes_count: coerceInt.default(0),
     comments_count: coerceInt.default(0),
     threads_count: coerceInt.optional().default(0),

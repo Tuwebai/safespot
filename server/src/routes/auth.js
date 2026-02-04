@@ -1,6 +1,6 @@
 
 import express from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import pool from '../config/database.js';
 import { validateAuth, signToken } from '../middleware/auth.js';
 import { logError, logSuccess } from '../utils/logger.js';
@@ -232,7 +232,6 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
             );
 
             // 4. Send Email via n8n
-            console.log('Sending email via n8n...');
             const { emailService } = await import('../utils/emailService.js');
             const resetLink = `${process.env.CLIENT_URL || 'http://localhost:5174'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
 
@@ -367,14 +366,7 @@ router.post('/google', authLimiter, async (req, res) => {
     try {
         const { google_id_token, google_access_token, current_anonymous_id } = req.body;
 
-        console.log('[DEBUG] Google Auth Request:', {
-            hasIdToken: !!google_id_token,
-            hasAccessToken: !!google_access_token,
-            anonId: current_anonymous_id
-        });
-
         if ((!google_id_token && !google_access_token) || !current_anonymous_id) {
-            console.error('[DEBUG] Missing required fields for Google Auth');
             throw new ValidationError('Token y ID anónimo requeridos');
         }
 

@@ -71,24 +71,26 @@ export function useReportsQuery(filters?: ReportFilters) {
     const isCreating = useIsMutating({ mutationKey: ['createReport'] }) > 0;
 
     return useQuery<string[], Error, NormalizedReport[]>({
-        queryKey: queryKeys.reports.list(filters, anonymousId || undefined),  // ✅ SSOT: Include identity in key to force fresh fetch on login
+        queryKey: queryKeys.reports.list(filters, anonymousId || undefined),
         queryFn: async () => {
-            // 1. Fetch RAW data
             const data = await reportsApi.getAll(filters);
-
-            // 2. Store in Canonical Detail Cache
+            if (!Array.isArray(data)) {
+                throw new Error('Backend returned invalid reports data');
+            }
             return reportsCache.store(queryClient, data);
         },
         enabled: !!anonymousId,
-        staleTime: 30 * 1000, // 30s
-        refetchOnWindowFocus: !isCreating, // Block refetch if creating
-        refetchOnMount: !isCreating ? 'always' : false, // Block refetch if creating
+        staleTime: 30 * 1000,
+        refetchOnWindowFocus: !isCreating,
+        refetchOnMount: !isCreating ? true : false,
         select: (ids) => {
+            // ✅ LAST KNOWN GOOD STATE: If selection fails or ids are invalid, 
+            // the previous data is preserved by placeholderData.
             if (!Array.isArray(ids)) return [];
-            // 3. Hydrate from Canonical Cache
             return reportsCache.hydrate(queryClient, ids);
         },
-        placeholderData: (previousData) => previousData as unknown as string[],
+        // ✅ ENTERPRISE RESILIENCE: Ensure previous data is kept during fetch
+        placeholderData: (previousData) => previousData,
     })
 }
 
@@ -188,7 +190,7 @@ export function useCreateReportMutation() {
                 category: newReportData.category,
                 status: newReportData.status || 'pendiente',
                 upvotes_count: 0,
-                likes_count: 0,
+                likes_count: 0, // DEPRECATED
                 comments_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -445,7 +447,7 @@ export function useToggleReportLikeMutation() {
                 // Optimistic UI: Update is_liked and likes_count
                 reportsCache.patch(queryClient, reportId, {
                     is_liked: liked,
-                    likes_count: liked ? (previousDetail.likes_count || 0) + 1 : Math.max(0, (previousDetail.likes_count || 0) - 1)
+                    upvotes_count: liked ? (previousDetail.upvotes_count || 0) + 1 : Math.max(0, (previousDetail.upvotes_count || 0) - 1)
                 })
             }
 
@@ -456,7 +458,7 @@ export function useToggleReportLikeMutation() {
             if (result && typeof result.is_liked === 'boolean') {
                 reportsCache.patch(queryClient, reportId, {
                     is_liked: result.is_liked,
-                    likes_count: result.likes_count
+                    upvotes_count: result.upvotes_count
                 })
             }
         },

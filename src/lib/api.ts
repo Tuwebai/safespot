@@ -473,12 +473,9 @@ export const reportsApi = {
     }, 'REGISTER_SHARE');
   },
 
-  /**
-   * Toggle like for a report
-   */
-  toggleLike: async (id: string, liked: boolean): Promise<{ is_liked: boolean; likes_count: number }> => {
+  toggleLike: async (id: string, liked: boolean): Promise<{ is_liked: boolean; upvotes_count: number }> => {
     return trafficController.enqueueSerial(async () => {
-      const response = await apiRequest<{ success: boolean; data: { is_liked: boolean; likes_count: number } }>(
+      const response = await apiRequest<{ success: boolean; data: { is_liked: boolean; upvotes_count: number } }>(
         `/reports/${id}/like`,
         {
           method: liked ? 'POST' : 'DELETE'
@@ -570,6 +567,7 @@ export const reportsApi = {
 
 
 export interface CreateCommentData {
+  id?: string; // ✅ Enterprise: Client-side ID (Optional)
   report_id: string;
   content: string;
   parent_id?: string; // Para crear respuestas

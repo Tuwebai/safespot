@@ -8,7 +8,7 @@ import { useToggleReportLikeMutation } from '@/hooks/queries/useReportsQuery';
 interface LikeButtonProps {
     reportId: string;
     isLiked?: boolean;
-    likesCount?: number;
+    upvotesCount?: number;
     className?: string;
     variant?: 'ghost' | 'outline' | 'default';
     showCount?: boolean;
@@ -22,7 +22,7 @@ interface LikeButtonProps {
 export function LikeButton({
     reportId,
     isLiked = false,
-    likesCount = 0,
+    upvotesCount = 0,
     className,
     variant = 'ghost',
     showCount = true
@@ -42,32 +42,33 @@ export function LikeButton({
             disabled={isPending}
             onClick={handleLike}
             className={cn(
-                "gap-2 transition-all duration-300 group active:scale-95",
+                "gap-2 transition-all duration-300 group active:scale-95 px-3 py-1.5 h-auto rounded-full border",
                 isLiked
-                    ? "text-neon-blue bg-neon-blue/10 hover:bg-neon-blue/20 border-neon-blue/30"
-                    : "text-muted-foreground hover:text-neon-blue hover:bg-neon-blue/5",
+                    ? "bg-sky-500/20 text-sky-400 border-sky-400/50 shadow-[0_0_15px_rgba(56,189,248,0.2)]"
+                    : "bg-white/5 text-slate-300 border-white/10 hover:border-sky-400/50 hover:bg-sky-400/10 hover:text-sky-400",
                 className
             )}
         >
             <motion.div
                 whileTap={{ scale: 1.4 }}
-                className="relative"
+                className="relative flex items-center justify-center"
             >
                 <ThumbsUp
-                    size={18}
+                    size={16}
+                    strokeWidth={2.5}
                     className={cn(
-                        "transition-transform duration-300",
-                        isLiked ? "fill-current" : "group-hover:scale-110"
+                        "transition-all duration-300",
+                        isLiked ? "fill-sky-400 filter drop-shadow-[0_0_8px_rgba(56,189,248,0.6)]" : "group-hover:scale-110"
                     )}
                 />
 
                 <AnimatePresence>
                     {isLiked && (
                         <motion.span
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1.5, opacity: 0 }}
-                            transition={{ duration: 0.5 }}
-                            className="absolute inset-0 bg-neon-blue rounded-full"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 2.2, opacity: 0 }}
+                            transition={{ duration: 0.6 }}
+                            className="absolute inset-0 bg-sky-400 rounded-full"
                         />
                     )}
                 </AnimatePresence>
@@ -75,10 +76,10 @@ export function LikeButton({
 
             {showCount && (
                 <span className={cn(
-                    "text-sm font-medium tabular-nums transition-colors",
-                    isLiked ? "text-neon-blue" : "text-muted-foreground"
+                    "text-[0.95rem] font-bold tabular-nums tracking-tight transition-colors drop-shadow-sm",
+                    isLiked ? "text-sky-300" : "text-slate-200"
                 )}>
-                    {likesCount}
+                    {upvotesCount}
                 </span>
             )}
         </Button>

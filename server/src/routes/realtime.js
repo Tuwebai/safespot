@@ -3,6 +3,7 @@ import { realtimeEvents } from '../utils/eventEmitter.js';
 import { SSEResponse } from '../utils/sseResponse.js';
 import { presenceTracker } from '../utils/presenceTracker.js';
 import pool from '../config/database.js';
+import logger from '../utils/logger.js';
 
 
 import redis, { redisSubscriber } from '../config/redis.js';
@@ -48,44 +49,73 @@ router.get('/catchup', async (req, res) => {
             [sinceTs]
         );
 
-        // 2. Fetch missed Reports (New ones only for catchup feed)
+        // 2. Fetch missed Reports (New or Updated)
         const anonymousId = req.headers['x-anonymous-id'] || '00000000-0000-0000-0000-000000000000';
         const userRole = req.user?.role || 'citizen';
+
         const reportTask = pool.query(
             `SELECT r.*, u.alias, u.avatar_url FROM reports r
              LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-             WHERE (EXTRACT(EPOCH FROM r.created_at) * 1000 > $1)
+             WHERE (GREATEST(EXTRACT(EPOCH FROM r.created_at), EXTRACT(EPOCH FROM r.updated_at)) * 1000 > $1)
                AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
                AND (r.is_hidden = false OR r.anonymous_id = $2 OR $3 = 'admin')
-             ORDER BY r.created_at ASC LIMIT 50`,
+             ORDER BY GREATEST(r.created_at, r.updated_at) ASC LIMIT 50`,
             [sinceTs, anonymousId, userRole]
         );
 
-        const [messagesResult, reportsResult] = await Promise.all([messageTask, reportTask]);
+        // 3. Fetch missed Comment deletions
+        const commentTask = pool.query(
+            `SELECT c.id, c.report_id, c.deleted_at FROM comments c
+             WHERE (EXTRACT(EPOCH FROM c.deleted_at) * 1000 > $1)
+             ORDER BY c.deleted_at ASC LIMIT 50`,
+            [sinceTs]
+        );
+
+        const [messagesResult, reportsResult, commentsResult] = await Promise.all([messageTask, reportTask, commentTask]);
 
         const events = [];
 
         // Process Reports
         reportsResult.rows.forEach(r => {
-            const ts = new Date(r.created_at).getTime();
-            events.push({
-                eventId: `rep_${r.id}`,
-                serverTimestamp: ts,
-                type: 'report-create',
-                payload: {
-                    id: r.id,
-                    partial: {
-                        ...r,
-                        author: {
-                            id: r.anonymous_id,
-                            alias: r.alias,
-                            avatarUrl: r.avatar_url
-                        }
+            const createdAtTs = new Date(r.created_at).getTime();
+            const updatedAtTs = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+            const ts = Math.max(createdAtTs, updatedAtTs);
+
+            // A. New Report
+            if (createdAtTs > sinceTs) {
+                events.push({
+                    eventId: `rep_${r.id}`,
+                    serverTimestamp: ts,
+                    type: 'report-create',
+                    payload: {
+                        id: r.id,
+                        partial: {
+                            ...r,
+                            author: {
+                                id: r.anonymous_id,
+                                alias: r.alias,
+                                avatarUrl: r.avatar_url
+                            }
+                        },
+                        originClientId: 'system_catchup'
                     },
-                    originClientId: 'system_catchup'
-                },
-                isReplay: true
-            });
+                    isReplay: true
+                });
+            }
+            // B. Updated Report (but not new)
+            else if (updatedAtTs > sinceTs) {
+                events.push({
+                    eventId: `upd_${r.id}_${updatedAtTs}`,
+                    serverTimestamp: ts,
+                    type: 'report-update',
+                    payload: {
+                        id: r.id,
+                        partial: r, // Full state for reconciliation
+                        originClientId: 'system_catchup'
+                    },
+                    isReplay: true
+                });
+            }
         });
 
         // Process Messages
@@ -132,6 +162,22 @@ router.get('/catchup', async (req, res) => {
                     isReplay: true
                 });
             }
+        });
+
+        // Process Comment Deletions
+        commentsResult.rows.forEach(c => {
+            const ts = new Date(c.deleted_at || Date.now()).getTime();
+            events.push({
+                eventId: `cde_${c.id}_${ts}`,
+                serverTimestamp: ts,
+                type: 'comment-delete',
+                payload: {
+                    id: c.id,
+                    reportId: c.report_id,
+                    originClientId: 'system_catchup'
+                },
+                isReplay: true
+            });
         });
 
         res.json(events);
@@ -241,7 +287,7 @@ router.get('/comments/:reportId', (req, res) => {
     // Initialize Standard SSE Response
     const stream = new SSEResponse(res);
 
-    console.log(`[SSE] Client connected for report ${reportId}`);
+    logger.debug(`[SSE] Client connected for report ${reportId}`);
 
     // Confirm connection
     stream.send('connected', { reportId });
@@ -287,22 +333,17 @@ router.get('/comments/:reportId', (req, res) => {
         });
     };
 
-    const handleReportUpdate = (payload) => {
-        // Payload from eventEmitter.emitVoteUpdate: { ...updates, originClientId }
-        // We need to extract ID. 
-        // Note: report-update events usually come from emitVoteUpdate('report', id, updates)
-        // Check eventEmitter.js: emit(`report-update:${id}`, { ...updates, originClientId })
-        // It does NOT include ID in the object, because the channel includes it.
-        // But the handler needs it? checking realtime.js:43... it receives 'payload'.
-        // If the payload from emitVoteUpdate doesn't have ID, we can't send it?
-        // Wait, the listener `realtimeEvents.on('report-update:${reportId}', ...)`
-        // We know reportId from scope!
+    const handleReportUpdate = (data) => {
+        // Payload from eventEmitter.emitVoteUpdate: { ...updates, originClientId, eventId, serverTimestamp }
+        const { originClientId, eventId, serverTimestamp, sequence_id, ...updates } = data;
 
-        const { originClientId, ...updates } = payload;
         stream.send('report-update', {
             id: reportId,
             partial: updates,
-            originClientId
+            originClientId,
+            eventId,
+            serverTimestamp,
+            sequence_id
         });
     };
 
@@ -333,7 +374,7 @@ router.get('/chats/:roomId', (req, res) => {
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    console.log(`[SSE] Client connected for chat room ${roomId} (User: ${anonymousId})`);
+    logger.debug(`[SSE] Client connected for chat room ${roomId} (User: ${anonymousId})`);
 
     stream.send('connected', { roomId });
     stream.startHeartbeat(2000);
@@ -350,34 +391,46 @@ router.get('/chats/:roomId', (req, res) => {
     };
 
     const handleTyping = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('typing', {
             id: roomId,
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handleRead = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('message.read', {
             id: data.id || data.messageId,
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handleMessageDelivered = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('message.delivered', {
             id: data.id || data.messageId,
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handlePresence = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('presence', {
             id: data.userId,
-            partial: data,
-            originClientId: 'system'
+            partial: payload,
+            originClientId: originClientId || 'system',
+            eventId,
+            serverTimestamp
         });
     };
 
@@ -457,7 +510,7 @@ router.get('/user/:anonymousId', (req, res) => {
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    console.log(`[SSE] Client connected for user notifications ${anonymousId} (Events ID: ${realtimeEvents.instanceId})`);
+    logger.debug(`[SSE] Client connected for user notifications ${anonymousId} (Events ID: ${realtimeEvents.instanceId})`);
 
     stream.send('connected', { anonymousId });
     stream.startHeartbeat(15000, () => {
@@ -492,42 +545,57 @@ router.get('/user/:anonymousId', (req, res) => {
     };
 
     const handleMessageDelivered = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('message.delivered', {
             id: data.id || data.messageId,
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handleMessageRead = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('message.read', {
             id: data.id || data.messageId,
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handleNotification = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('notification', {
             id: data.id || (data.notification && data.notification.id),
-            partial: data,
-            originClientId: data.originClientId
+            partial: payload,
+            originClientId,
+            eventId,
+            serverTimestamp
         });
     };
 
     const handleRollback = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('chat-rollback', {
             id: data.id || data.conversationId,
-            partial: data,
-            originClientId: 'system'
+            partial: payload,
+            originClientId: originClientId || 'system',
+            eventId,
+            serverTimestamp
         });
     };
 
     const handlePresenceUpdate = (data) => {
+        const { originClientId, eventId, serverTimestamp, ...payload } = data;
         stream.send('presence-update', {
             id: data.userId,
-            partial: data,
-            originClientId: 'system'
+            partial: payload,
+            originClientId: originClientId || 'system',
+            eventId,
+            serverTimestamp
         });
     };
 
@@ -546,7 +614,7 @@ router.get('/user/:anonymousId', (req, res) => {
         // Solo si es la última pestaña, se emite 'offline' dentro de trackDisconnect.
         presenceTracker.trackDisconnect(anonymousId);
 
-        console.log(`[SSE] Client disconnected ${anonymousId}`);
+        logger.debug(`[SSE] Client disconnected ${anonymousId}`);
 
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);

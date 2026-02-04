@@ -112,10 +112,8 @@ export function HighlightedReportCard({
                                     <MessageCircle className="h-4 w-4" />
                                     <span>{report.comments_count ?? 0}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                    <ArrowUp className="h-4 w-4" />
-                                    <span>{report.upvotes_count ?? 0}</span>
-                                </div>
+                                <ArrowUp className="h-4 w-4" />
+                                <span>{report.upvotes_count ?? 0}</span>
                             </div>
 
                             {/* Footer: Autor + CTA + Actions */}

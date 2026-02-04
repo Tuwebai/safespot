@@ -160,7 +160,7 @@ export function TasksPage() {
     })
 
     // The hook handles caching, refetching, and optimistic updates
-    const { tasks, isLoading, updateTask, deleteTask } = useAdminTasks(filter)
+    const { tasks, isLoading, updateTask, deleteTask, resolveAllTasks, deleteAllTasks } = useAdminTasks(filter)
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null)
@@ -202,6 +202,33 @@ export function TasksPage() {
         // Fire and Forget (Optimistic)
         deleteTask.mutate(taskId)
         setActiveDropdownId(null)
+    }
+
+    // 🚀 BULK ACTIONS (Zero-Latency)
+    const handleResolveAll = async () => {
+        if (tasks.length === 0) return
+
+        if (!await confirm({
+            title: '¿Marcar TODO como Resuelto?',
+            description: `Se resolverán ${tasks.length} tareas pendientes. Los contadores se actualizarán instantáneamente.`,
+            confirmText: 'Resolver Todo',
+            variant: 'default'
+        })) return
+
+        resolveAllTasks.mutate()
+    }
+
+    const handleDeleteAll = async () => {
+        if (tasks.length === 0) return
+
+        if (!await confirm({
+            title: '¿ELIMINAR TODAS LAS TAREAS?',
+            description: 'Esta acción borrará TODO el historial de tareas. Es irreversible.',
+            confirmText: 'ELIMINAR TODO',
+            variant: 'danger'
+        })) return
+
+        deleteAllTasks.mutate()
     }
 
     // Close dropdown on click outside
@@ -252,13 +279,38 @@ export function TasksPage() {
                     </h1>
                     <p className="text-slate-400 mt-1">Control de eventos críticos, bugs y logs del sistema.</p>
                 </div>
-                <Button
-                    variant="neon"
-                    className="gap-2"
-                    onClick={() => setIsModalOpen(true)}
-                >
-                    <Plus className="h-4 w-4" /> Nueva Tarea
-                </Button>
+
+                <div className="flex items-center gap-3">
+                    {/* Bulk Actions */}
+                    <div className="flex items-center gap-2 mr-4 border-r border-[#1e293b] pr-6">
+                        <Button
+                            variant="ghost"
+                            className="text-slate-400 hover:text-[#00ff88]"
+                            onClick={handleResolveAll}
+                            disabled={tasks.length === 0}
+                        >
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Resolver Todo
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            className="text-slate-400 hover:text-red-500"
+                            onClick={handleDeleteAll}
+                            disabled={tasks.length === 0}
+                        >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar Todo
+                        </Button>
+                    </div>
+
+                    <Button
+                        variant="neon"
+                        className="gap-2"
+                        onClick={() => setIsModalOpen(true)}
+                    >
+                        <Plus className="h-4 w-4" /> Nueva Tarea
+                    </Button>
+                </div>
             </div>
 
             {/* Stats Quick View */}
@@ -451,6 +503,6 @@ export function TasksPage() {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
             />
-        </div>
+        </div >
     )
 }

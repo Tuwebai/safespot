@@ -85,7 +85,7 @@ export const ReportActions = memo(function ReportActions({
                     <LikeButton
                         reportId={report.id}
                         isLiked={report.is_liked}
-                        likesCount={report.likes_count}
+                        upvotesCount={report.upvotes_count}
                         variant="ghost"
                         className="rounded-full"
                     />

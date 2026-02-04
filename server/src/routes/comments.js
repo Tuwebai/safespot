@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { requireAnonymousId, validateFlagReason } from '../utils/validation.js';
 import { validate } from '../utils/validateMiddleware.js';
 import { commentSchema, commentUpdateSchema } from '../utils/schemas.js';
@@ -10,7 +11,7 @@ import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
 import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
-import { NotificationService } from '../utils/notificationService.js';
+import { NotificationService } from '../utils/appNotificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { extractMentions } from '../utils/mentions.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
@@ -27,7 +28,7 @@ const router = express.Router();
  * Query params: page, limit
  * Optional: anonymous_id header to check if user liked each comment
  */
-router.get('/:reportId', async (req, res) => {
+router.get('/:reportId', async (req, res, next) => {
   try {
     const { reportId } = req.params;
     const anonymousId = req.headers['x-anonymous-id'];
@@ -141,8 +142,8 @@ router.get('/:reportId', async (req, res) => {
       // Check likes using queryWithRLS for RLS enforcement
       const likesResult = await queryWithRLS(
         anonymousId,
-        `SELECT comment_id FROM comment_likes 
-         WHERE anonymous_id = $1 AND comment_id = ANY($2)`,
+        `SELECT target_id as comment_id FROM votes 
+         WHERE anonymous_id = $1 AND target_type = 'comment' AND target_id = ANY($2)`,
         [anonymousId, commentIds]
       );
 
@@ -301,15 +302,26 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
     // normal lifecycle continues...
 
     // Insert comment using queryWithRLS for RLS enforcement
+    // FIXED: Explicit column selection to match GET /comments contract exactly
+    // Added: liked_by_me, is_flagged, is_highlighted (defaults)
+    // ENTERPRISE FIX: Accept client-generated UUID for 0ms optimistic updates
+
+    // Ensure ID is valid if provided, otherwise let DB generate it
+    const clientGeneratedId = isValidUuid(req.body.id) ? req.body.id : null;
+
     const insertQuery = `
       WITH inserted AS (
-        INSERT INTO comments (report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO comments (id, report_id, anonymous_id, content, is_thread, parent_id, is_hidden)
+        VALUES (COALESCE($1, uuid_generate_v4()), $2, $3, $4, $5, $6, $7)
         RETURNING *
       )
       SELECT 
-        i.*,
+        i.id, i.report_id, i.anonymous_id, i.content, i.upvotes_count, 
+        i.created_at, i.updated_at, i.last_edited_at, i.parent_id, i.is_thread, i.is_pinned,
         u.avatar_url, u.alias,
+        false as is_highlighted,
+        false as liked_by_me,
+        false as is_flagged,
         (i.anonymous_id = r.anonymous_id) as is_author,
         (
           EXISTS (
@@ -340,12 +352,13 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 
     // CRITICAL: Ensure all params are defined (no undefined values)
     const insertParams = [
-      req.body.report_id,    // $1
-      anonymousId,           // $2
-      content,               // $3 - Already sanitized above
-      isThread || false,     // $4
-      parentId,              // $5
-      isHidden               // $6
+      clientGeneratedId,     // $1 - Optimistic ID (if valid)
+      req.body.report_id,    // $2
+      anonymousId,           // $3
+      content,               // $4 - Already sanitized above
+      isThread || false,     // $5
+      parentId,              // $6
+      isHidden               // $7
     ];
 
     // Development mode: log params for debugging
@@ -364,11 +377,12 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       const comment = insertResult.rows[0];
 
       // b. Update Report Counter (Atomic Persistence)
-      // Incrementing denormalized counter in reports table
-      await client.query(
-        `UPDATE reports SET comments_count = comments_count + 1 WHERE id = $1`,
-        [req.body.report_id]
-      );
+      // REMOVED: Duplicated logic. Trigger `trigger_update_report_comments` handles this.
+      // See Audit: Step 631
+      // await client.query(
+      //   `UPDATE reports SET comments_count = comments_count + 1 WHERE id = $1`,
+      //   [req.body.report_id]
+      // );
 
       // c. Queue Realtime Events (SSE)
       // These will ONLY flush if transaction COMMITs
@@ -522,18 +536,23 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
     // REALTIME: Broadcast deletion
     try {
       const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentDelete(reportId, id, clientId);
+      const eventId = crypto.randomUUID(); // Single ID for all broadcasts related to this action
+
+      realtimeEvents.emitCommentDelete(reportId, id, clientId, eventId);
 
       // CRITICAL: Global delta for 0ms counter sync in DELETE
       realtimeEvents.emitVoteUpdate('report', reportId, {
-        comments_count_delta: -1
+        isCommentDelta: true,
+        delta: -1,
+        eventId // Reuse same ID for de-duplication in Orchestrator
       }, clientId);
 
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
     }
 
-    // CRITICAL: Manually decrement report counter
+    // CRITICAL Manual decrement removed - Handled by DB Trigger
+    /*
     if (reportId) {
       try {
         await pool.query(
@@ -544,6 +563,7 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
         console.error('[DELETE_COMMENT] Failed to decrement report count:', err);
       }
     }
+    */
 
     res.json({
       success: true,
@@ -608,12 +628,12 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, asyn
       // Fail open
     }
 
-    // Try to insert like using queryWithRLS for RLS enforcement
+    // Try to insert like into unified votes table
     try {
       const insertResult = await queryWithRLS(
         anonymousId,
-        `INSERT INTO comment_likes (comment_id, anonymous_id, is_hidden)
-         VALUES ($1, $2, $3)
+        `INSERT INTO votes (target_type, target_id, anonymous_id, is_hidden)
+         VALUES ('comment', $1, $2, $3)
          RETURNING id`,
         [id, anonymousId, isHidden]
       );
@@ -726,11 +746,11 @@ router.delete('/:id/like', requireAnonymousId, likeLimiter, async (req, res) => 
       });
     }
 
-    // Delete the like using queryWithRLS for RLS enforcement
+    // Delete the like using unified votes table
     const deleteResult = await queryWithRLS(
       anonymousId,
-      `DELETE FROM comment_likes 
-       WHERE comment_id = $1 AND anonymous_id = $2`,
+      `DELETE FROM votes 
+       WHERE target_type = 'comment' AND target_id = $1 AND anonymous_id = $2`,
       [id, anonymousId]
     );
 

@@ -36,10 +36,10 @@ export const ReportMeta = memo(function ReportMeta({ report, commentsCount }: Re
             {/* Likes Card */}
             <Card className="p-4 bg-dark-card border-dark-border">
                 <div className="flex items-center gap-3">
-                    <ThumbsUp className="h-5 w-5 text-neon-blue" />
+                    <ThumbsUp className="h-5 w-5 text-sky-400" />
                     <div>
                         <div className="text-sm text-muted-foreground mb-1">Likes</div>
-                        <div className="font-medium text-foreground">{report.likes_count ?? 0}</div>
+                        <div className="font-medium text-foreground">{report.upvotes_count ?? 0}</div>
                     </div>
                 </div>
             </Card>

@@ -158,12 +158,92 @@ export const useAdminTasks = (filter?: Record<string, string>) => {
         }
     })
 
+    // 5. BULK: Resolve All Tasks (Optimistic)
+    const resolveAllTasks = useMutation({
+        mutationFn: async () => {
+            const token = localStorage.getItem('safespot_admin_token')
+            const res = await fetch(`${API_BASE}/resolve-all`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (!res.ok) throw new Error('Failed to resolve all tasks')
+            return res.json()
+        },
+        onMutate: async () => {
+            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: ['admin-tasks'] })
+
+            // Snapshot the previous value
+            const previousQueries = queryClient.getQueriesData<AdminTask[]>({ queryKey: ['admin-tasks'] })
+
+            // Optimistically update to the new value
+            queryClient.setQueriesData<AdminTask[]>({ queryKey: ['admin-tasks'] }, (old) => {
+                if (!old) return []
+                return old.map(task => ({
+                    ...task,
+                    status: 'done',
+                    resolved_at: new Date().toISOString()
+                }))
+            })
+
+            // Return a context object with the snapshotted value
+            return { previousQueries }
+        },
+        onError: (_err, _variables, context) => {
+            showError('Error al resolver tareas. Revertiendo.')
+            // Rollback all queries
+            if (context?.previousQueries) {
+                context.previousQueries.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-tasks'] })
+        }
+    })
+
+    // 6. BULK: Delete All Tasks (Optimistic)
+    const deleteAllTasks = useMutation({
+        mutationFn: async () => {
+            const token = localStorage.getItem('safespot_admin_token')
+            const res = await fetch(API_BASE, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (!res.ok) throw new Error('Failed to delete all tasks')
+            return res.json()
+        },
+        onMutate: async () => {
+            await queryClient.cancelQueries({ queryKey: ['admin-tasks'] })
+            const previousQueries = queryClient.getQueriesData<AdminTask[]>({ queryKey: ['admin-tasks'] })
+
+            // Optimistically delete all
+            queryClient.setQueriesData<AdminTask[]>({ queryKey: ['admin-tasks'] }, () => [])
+
+            return { previousQueries }
+        },
+        onError: (_err, _variables, context) => {
+            showError('Error al eliminar tareas. Revertiendo.')
+            if (context?.previousQueries) {
+                context.previousQueries.forEach(([queryKey, data]) => {
+                    queryClient.setQueryData(queryKey, data)
+                })
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-tasks'] })
+        }
+    })
+
     return {
         tasks: query.data || [],
         isLoading: query.isLoading,
         createTask,
         updateTask,
         deleteTask,
+        resolveAllTasks,
+        deleteAllTasks,
         refetch: query.refetch
     }
 }

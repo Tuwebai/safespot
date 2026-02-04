@@ -12,15 +12,17 @@ import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
 import { reverseGeocode } from '../utils/georef.js';
+import pool from '../config/database.js';
 import { exportReportPDF } from '../controllers/exportController.js';
-import { NotificationService } from '../utils/notificationService.js';
+import { NotificationService as AppNotificationService } from '../utils/appNotificationService.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
-import { sendNewReportNotification } from '../utils/whatsapp.js';
+import { NotificationService } from '../utils/notificationService.js';
 import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
 import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
 import { executeUserAction } from '../utils/governance.js';
+import { normalizeStatus } from '../utils/legacyShim.js';
 
 const router = express.Router();
 
@@ -47,6 +49,7 @@ const upload = multer({
  * Optional: includes is_favorite and is_flagged if X-Anonymous-Id header is present
  */
 import { encodeCursor, decodeCursor } from '../utils/cursor.js';
+import logger from '../utils/logger.js';
 
 // ... other imports
 
@@ -100,7 +103,7 @@ router.get('/', async (req, res, next) => {
           r.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
           AND r.location IS NOT NULL
           AND (r.is_hidden = false OR r.anonymous_id = $5::uuid)
-          AND (r.deleted_at IS NULL OR r.anonymous_id = $5::uuid)
+          AND (r.deleted_at IS NULL) -- Consistencia visual: no ver borrados en feed
         ORDER BY r.created_at DESC
         LIMIT 100
       `;
@@ -164,7 +167,7 @@ router.get('/', async (req, res, next) => {
         const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
         const conds = ownerIdIdx
           ? [
-            `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`,
+            `(r.deleted_at IS NULL)`,
             `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`
           ]
           : [
@@ -244,7 +247,7 @@ router.get('/', async (req, res, next) => {
           LEFT JOIN anonymous_trust_scores ts ON r.anonymous_id = ts.anonymous_id
           LEFT JOIN favorites f ON f.report_id = r.id AND f.anonymous_id = $8::uuid
           LEFT JOIN report_flags rf ON rf.report_id = r.id AND rf.anonymous_id = $8::uuid
-          LEFT JOIN report_likes rl ON rl.report_id = r.id AND rl.anonymous_id = $8::uuid
+          LEFT JOIN votes v ON v.target_type = 'report' AND v.target_id = r.id AND v.anonymous_id = $8::uuid
           LEFT JOIN LATERAL (
             SELECT type 
             FROM user_zones 
@@ -364,7 +367,7 @@ router.get('/', async (req, res, next) => {
       // No N+1 loop needed - all reports returned are already visible
       const visibleReports = reports;
 
-      logSuccess('GET /api/reports (geographic)', anonymousId);
+      logger.debug('GET /api/reports (geographic)', { anonymousId });
 
       return res.validateJson(reportsListResponseSchema, {
         success: true,
@@ -404,11 +407,11 @@ router.get('/', async (req, res, next) => {
       const adminBypass = roleIdx ? ` OR $${roleIdx} = 'admin'` : '';
       const conds = ownerIdIdx
         ? [
-          `(r.deleted_at IS NULL OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`,
+          `(r.deleted_at IS NULL)`,
           `(r.is_hidden = false OR r.anonymous_id = $${ownerIdIdx}::uuid${adminBypass})`
         ]
         : [
-          `(r.deleted_at IS NULL${adminBypass})`,
+          `(r.deleted_at IS NULL)`,
           `(r.is_hidden = false${adminBypass})`
         ];
       const vals = [];
@@ -512,7 +515,7 @@ router.get('/', async (req, res, next) => {
       switch (sortBy) {
         case 'popular':
           // Weight: Likes * 5 + Comments * 2 + Upvotes * 1
-          return `ORDER BY ((COALESCE(r.likes_count, 0) * 5) + (r.comments_count * 2) + COALESCE(r.upvotes_count, 0)) DESC, r.created_at DESC`;
+          return `ORDER BY ((COALESCE(r.upvotes_count, 0) * 5) + (r.comments_count * 2)) DESC, r.created_at DESC`;
         case 'oldest':
           return `ORDER BY r.created_at ASC, r.id ASC`;
         case 'recent':
@@ -549,13 +552,13 @@ router.get('/', async (req, res, next) => {
           u.alias,
           CASE WHEN ($1::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END as is_favorite,
           CASE WHEN ($1::uuid IS NOT NULL AND rf.id IS NOT NULL) THEN true ELSE false END as is_flagged,
-          CASE WHEN ($1::uuid IS NOT NULL AND rl.id IS NOT NULL) THEN true ELSE false END as is_liked,
+          CASE WHEN ($1::uuid IS NOT NULL AND v.id IS NOT NULL) THEN true ELSE false END as is_liked,
           uz.type as priority_zone
         FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         LEFT JOIN favorites f ON f.report_id = r.id AND ($1::uuid IS NOT NULL AND f.anonymous_id = $1::uuid)
         LEFT JOIN report_flags rf ON rf.report_id = r.id AND ($1::uuid IS NOT NULL AND rf.anonymous_id = $1::uuid)
-        LEFT JOIN report_likes rl ON rl.report_id = r.id AND ($1::uuid IS NOT NULL AND rl.anonymous_id = $1::uuid)
+        LEFT JOIN votes v ON v.target_type = 'report' AND v.target_id = r.id AND ($1::uuid IS NOT NULL AND v.anonymous_id = $1::uuid)
         LEFT JOIN LATERAL (
           SELECT type 
           FROM user_zones 
@@ -693,14 +696,14 @@ router.get('/:id', async (req, res, next) => {
         u.alias,
         CASE WHEN ($2::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END AS is_favorite,
         CASE WHEN ($2::uuid IS NOT NULL AND rf.id IS NOT NULL) THEN true ELSE false END AS is_flagged,
-        CASE WHEN ($2::uuid IS NOT NULL AND rl.id IS NOT NULL) THEN true ELSE false END AS is_liked
+        CASE WHEN ($2::uuid IS NOT NULL AND v.id IS NOT NULL) THEN true ELSE false END AS is_liked
       FROM reports r 
       LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
       LEFT JOIN favorites f ON f.report_id = r.id AND ($2::uuid IS NOT NULL AND f.anonymous_id = $2::uuid)
       LEFT JOIN report_flags rf ON rf.report_id = r.id AND ($2::uuid IS NOT NULL AND rf.anonymous_id = $2::uuid)
-      LEFT JOIN report_likes rl ON rl.report_id = r.id AND ($2::uuid IS NOT NULL AND rl.anonymous_id = $2::uuid)
+      LEFT JOIN votes v ON v.target_type = 'report' AND v.target_id = r.id AND ($2::uuid IS NOT NULL AND v.anonymous_id = $2::uuid)
       WHERE r.id = $1
-      AND (r.deleted_at IS NULL OR r.anonymous_id = $2::uuid OR $3 = 'admin')
+      AND (r.deleted_at IS NULL OR $3 = 'admin')
       AND (r.is_hidden = false OR r.anonymous_id = $2::uuid OR $3 = 'admin')
     `, [id, sanitizedId, req.user?.role || 'citizen']);
 
@@ -733,82 +736,15 @@ router.post('/',
   imageUploadLimiter,
   upload.array('images', 3),
   async (req, res, next) => {
+    let client;
+    let newReport;
+
     try {
       const anonymousId = req.anonymousId;
+      logger.debug('Creating report (Enterprise Atomic Flow)', { anonymousId, title: req.body.title });
 
-      logSuccess('Creating report', { anonymousId, title: req.body.title });
-
-      // Ensure anonymous user exists in anonymous_users table (idempotent)
-      try {
-        await ensureAnonymousUser(anonymousId);
-      } catch (error) {
-        logError(error, req);
-        return res.status(500).json({
-          error: 'Failed to ensure anonymous user'
-        });
-      }
-
-      // Check for duplicate report (same anonymous_id, category, zone, title within last 10 minutes)
-      const title = req.body.title.trim();
-      const category = req.body.category;
-      const zone = req.body.zone || null;
-
-      // Calculate timestamp 10 minutes ago
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-
-      const duplicateResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM reports
-      WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
-      LIMIT 1
-    `, [anonymousId, category, zone, title, tenMinutesAgo]);
-
-      if (duplicateResult.rows.length > 0) {
-        throw new AppError('Ya existe un reporte similar reciente', 409, ErrorCodes.DUPLICATE_ENTRY, true);
-      }
-
-      // Parse and validate incident_date if provided
-      let incidentDate = null;
-      if (req.body.incident_date) {
-        const parsedDate = new Date(req.body.incident_date);
-        if (isNaN(parsedDate.getTime())) {
-          return res.status(400).json({
-            error: 'VALIDATION_ERROR',
-            message: 'incident_date must be a valid ISO 8601 date string'
-          });
-        }
-        incidentDate = parsedDate.toISOString();
-      } else {
-        incidentDate = new Date().toISOString();
-      }
-
-      // ... other imports
-
-      // Check for Duplicate Report (same block)
-      // ...
-
-      // NEW: Check Trust Score & Shadow Ban Status
-      let isHidden = false;
-      try {
-        const visibility = await checkContentVisibility(anonymousId);
-        if (visibility.isHidden) {
-          isHidden = true;
-          logSuccess('Shadow ban applied', { anonymousId, action: visibility.moderationAction });
-        }
-      } catch (checkError) {
-        logError(checkError, req);
-        // Fail open: Default to visible if check fails to avoid blocking valid users
-      }
-
-      // Context for logging suspicious content
-      const sanitizeContext = { anonymousId, ip: req.ip };
-
-      // SECURITY: Sanitize all user input BEFORE database insert
-      const sanitizedTitle = sanitizeText(req.body.title, 'report.title', sanitizeContext);
-      const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
-      const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext) || null;
-      const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext) || null;
-
-      // GEOLOCATION: Get province/locality from Georef API (Argentina)
+      // 1. PRE-TRANSACTION: Geolocation (Georef Argentina)
+      // We do this outside the transaction to avoid holding DB connections during external API wait times.
       let province = null;
       let locality = null;
       let department = null;
@@ -822,151 +758,179 @@ router.post('/',
           province = geoData.province || null;
           locality = geoData.locality || null;
           department = geoData.department || null;
-          logSuccess('Georef resolved', { province, locality });
         } catch (geoError) {
-          // Non-blocking: continue without province data
-          logError(geoError, { context: 'georef.reverseGeocode' });
+          logError(geoError, { context: 'georef.reverseGeocode_pre_transaction' });
         }
       }
 
-      // AUTO-POPULATE ZONE: If zone is empty or generic, use locality/department from Georef
-      // This ensures meaningful location data for new reports while maintaining backward compatibility
+      // 2. PRE-TRANSACTION: Business Logic & Sanitization
+      const title = req.body.title.trim();
+      const category = req.body.category;
+      const zone = req.body.zone || null;
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+      // Sanitization
+      const sanitizeContext = { anonymousId, ip: req.ip };
+      const sanitizedTitle = sanitizeText(title, 'report.title', sanitizeContext);
+      const sanitizedDescription = sanitizeContent(req.body.description, 'report.description', sanitizeContext);
+      const sanitizedAddress = sanitizeText(req.body.address, 'report.address', sanitizeContext) || null;
+      const sanitizedZone = sanitizeText(req.body.zone, 'report.zone', sanitizeContext) || null;
+
       let finalZone = sanitizedZone;
       if (!finalZone || finalZone.trim() === '' || finalZone === 'Sin zona') {
-        // Priority: locality > department > keep original
         finalZone = locality || department || sanitizedZone || '';
       }
 
-      // ALLOW CLIENT-GENERATED ID (Enterprise Pattern)
-      // This enables 0ms UI updates by letting the client define the ID upfront.
-      const reportId = (req.body.id && isValidUuid(req.body.id)) ? req.body.id : null;
+      // Incident Date
+      let incidentDate = new Date().toISOString();
+      if (req.body.incident_date) {
+        const parsedDate = new Date(req.body.incident_date);
+        if (isNaN(parsedDate.getTime())) {
+          throw new ValidationError('incident_date must be a valid ISO 8601 date string');
+        }
+        incidentDate = parsedDate.toISOString();
+      }
 
+      // Visibility (Shadow Ban)
+      let isHidden = false;
+      try {
+        const visibility = await checkContentVisibility(anonymousId);
+        if (visibility.isHidden) isHidden = true;
+      } catch (err) {
+        logError(err, { context: 'visibility_check_pre_transaction' });
+      }
+
+      // Client-generated ID support
+      const reportId = (req.body.id && isValidUuid(req.body.id)) ? req.body.id : crypto.randomUUID();
+
+      // 3. ATOMIC TRANSACTION
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      // 3.1 Idempotent user ensure
+      await ensureAnonymousUser(anonymousId);
+
+      // 3.2 Duplicate check within transaction (FOR UPDATE not needed but safe)
+      const duplicateResult = await client.query(`
+        SELECT id FROM reports
+        WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
+        LIMIT 1
+      `, [anonymousId, category, zone, title, tenMinutesAgo]);
+
+      if (duplicateResult.rows.length > 0) {
+        throw new AppError('Ya existe un reporte similar reciente', 409, ErrorCodes.DUPLICATE_ENTRY, true);
+      }
+
+      // 3.3 Strict SSOT Insert (No RETURNING *)
       const columns = [
-        'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
+        'id', 'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
         'latitude', 'longitude', 'status', 'incident_date', 'is_hidden',
         'province', 'locality', 'department'
       ];
-
       const values = [
-        anonymousId,
-        sanitizedTitle,
-        sanitizedDescription,
-        req.body.category,
-        finalZone,
-        sanitizedAddress,
-        req.body.latitude || null,
-        req.body.longitude || null,
-        req.body.status || 'pendiente',
-        incidentDate,
-        isHidden,
-        province,
-        locality,
-        department
+        reportId, anonymousId, sanitizedTitle, sanitizedDescription, category,
+        finalZone, sanitizedAddress, req.body.latitude || null, req.body.longitude || null,
+        normalizeStatus(req.body.status) || 'abierto', incidentDate, isHidden, province, locality, department
       ];
-
-      // If client provided a valid ID, use it
-      if (reportId) {
-        columns.push('id');
-        values.push(reportId);
-      }
 
       const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
-      // Insert report using queryWithRLS for RLS consistency
-      // CTE: Insert + Join for Atomic Identity Retrieval
-      const insertResult = await queryWithRLS(anonymousId, `
-        WITH inserted_report AS (
-          INSERT INTO reports (${columns.join(', ')})
-          VALUES (${placeholders})
-          RETURNING *
-        )
+      // INSERT
+      await client.query(`INSERT INTO reports (${columns.join(', ')}) VALUES (${placeholders})`, values);
+
+      // RETRIEVE WITH JOIN (Deduplicated Contract)
+      const retrieveResult = await client.query(`
         SELECT 
-          r.*, 
-          u.alias, 
-          u.avatar_url
-        FROM inserted_report r
+          r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
+          r.latitude, r.longitude, r.status, r.incident_date, r.created_at, r.is_hidden,
+          r.province, r.locality, r.department,
+          u.alias, u.avatar_url
+        FROM reports r
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-      `, values);
+        WHERE r.id = $1
+      `, [reportId]);
 
-      if (insertResult.rows.length === 0) {
-        logError(new Error('Insert returned no data'), req);
-        return res.status(500).json({
-          error: 'Failed to create report',
-          message: 'Insert operation returned no data'
-        });
-      }
+      newReport = retrieveResult.rows[0];
 
-      const newReport = insertResult.rows[0];
+      // 3.4 Governance M12: executeUserAction (In same transaction)
+      await executeUserAction({
+        actorId: anonymousId,
+        targetType: 'report',
+        targetId: reportId,
+        actionType: 'USER_REPORT_CREATE'
+      }, client);
 
-      logSuccess('Report created', {
-        id: newReport.id,
-        anonymousId
-      });
+      await client.query('COMMIT');
+      logSuccess('Report created (Atomic)', { id: reportId, anonymousId });
 
-      // REALTIME: Broadcast new report using enriched CTE data
-      try {
-        realtimeEvents.emitNewReport(newReport, req.headers['x-client-id']);
-      } catch (evtError) {
-        logError(evtError, { context: 'realtimeEvents.emitNewReport' });
-      }
+      // 4. POST-COMMIT SIDE EFFECTS (Non-blocking, Protected)
+      // These MUST NOT break the HTTP response if they fail.
 
-      // WHATSAPP: Send notification (delayed to wait for images)
-      sendNewReportNotification(newReport.id);
+      const fireAndForget = async () => {
+        // SSE
+        try {
+          await realtimeEvents.emitNewReport(newReport, req.headers['x-client-id']);
+        } catch (e) { logError(e, { context: 'SSE_emitNewReport' }); }
 
-      // Evaluate badges (await to include in response for real-time notification)
-      let newBadges = [];
-      try {
-        const gamification = await syncGamification(anonymousId);
-        if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
-          newBadges = gamification.profile.newlyAwarded;
+        // External Notifications (Telegram)
+        try {
+          await NotificationService.sendEvent('NEW_REPORT', {
+            reportId: newReport.id,
+            title: newReport.title,
+            category: newReport.category,
+            zone: newReport.zone,
+            timestamp: new Date().toISOString()
+          });
+        } catch (e) { logError(e, { context: 'Telegram_NewReport' }); }
 
-          // Notify for each new badge
-          for (const badge of newBadges) {
-            NotificationService.notifyBadgeEarned(anonymousId, badge)
-              .catch(err => logError(err, { context: 'notifyBadgeEarned', badge: badge.code }));
+        // Gamification
+        try {
+          const gamification = await syncGamification(anonymousId);
+          if (gamification?.profile?.newlyAwarded) {
+            for (const badge of gamification.profile.newlyAwarded) {
+              await AppNotificationService.notifyBadgeEarned(anonymousId, badge).catch(() => { });
+            }
           }
-        }
-      } catch (err) {
-        logError(err, req);
-      }
+        } catch (e) { logError(e, { context: 'Gamification_Sync' }); }
 
-      // NOTIFICATIONS: Notify users (In-app)
-      NotificationService.notifyNearbyNewReport(newReport).catch(err => logError(err, { context: 'notifyNearbyNewReport' }));
-      NotificationService.notifySimilarReports(newReport).catch(err => logError(err, { context: 'notifySimilarReports' }));
+        // In-App & Push
+        try {
+          await AppNotificationService.notifyNearbyNewReport(newReport);
+          await AppNotificationService.notifySimilarReports(newReport);
+          const pushModule = await import('./push.js');
+          await pushModule.notifyNearbyUsers(newReport);
+        } catch (e) { logError(e, { context: 'Notifications_Push' }); }
+      };
 
-      // PUSH NOTIFICATIONS: Notify nearby users (async, non-blocking)
-      // Import dynamically to avoid circular dependencies
-      import('./push.js').then(({ notifyNearbyUsers }) => {
-        notifyNearbyUsers(newReport).catch(err => {
-          logError(err, { context: 'notifyNearbyUsers' });
-        });
-      }).catch(() => {
-        // Push module not available, ignore
-      });
+      // Set and forget (background execution)
+      fireAndForget();
 
-      res.status(201).json({
+      // 5. CLEAN SSOT RESPONSE
+      return res.status(201).json({
         success: true,
-        data: {
-          ...newReport,
-          newBadges
-        },
+        data: newReport,
         message: 'Report created successfully'
       });
+
     } catch (error) {
+      if (client) await client.query('ROLLBACK');
       logError(error, req);
 
-      if (error.message.startsWith('VALIDATION_ERROR')) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          message: error.message
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({
+          error: error.code,
+          message: error.message,
+          details: error.details
         });
       }
 
       res.status(500).json({
-        error: 'Failed to create report',
-        details: error.message,
-        stack: error.stack
+        error: ErrorCodes.INTERNAL_ERROR,
+        message: 'Failed to create report',
+        details: error.message
       });
+    } finally {
+      if (client) client.release();
     }
   });
 
@@ -1011,7 +975,7 @@ router.get('/:id/related', async (req, res) => {
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
           AND (r.is_hidden = false OR r.anonymous_id = $6 OR $7 = 'admin')
-          AND (r.deleted_at IS NULL OR r.anonymous_id = $6 OR $7 = 'admin')
+          AND (r.deleted_at IS NULL)
           AND r.locality = $5
         ORDER BY
           (r.category = $1) DESC, -- Best matches (same category) first
@@ -1029,7 +993,7 @@ router.get('/:id/related', async (req, res) => {
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
           AND (r.is_hidden = false OR r.anonymous_id = $5 OR $6 = 'admin')
-          AND (r.deleted_at IS NULL OR r.anonymous_id = $5 OR $6 = 'admin')
+          AND (r.deleted_at IS NULL)
           AND r.location IS NOT NULL
         ORDER BY
           (r.category = $1) DESC, 
@@ -1046,7 +1010,7 @@ router.get('/:id/related', async (req, res) => {
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
         WHERE r.id != $2
           AND (r.is_hidden = false OR r.anonymous_id = $4 OR $5 = 'admin')
-          AND (r.deleted_at IS NULL OR r.anonymous_id = $4 OR $5 = 'admin')
+          AND (r.deleted_at IS NULL)
           AND r.zone = $3
         ORDER BY 
           (r.category = $1) DESC,
@@ -1134,7 +1098,8 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
         });
       }
       updates.push(`status = $${paramIndex}`);
-      params.push(req.body.status);
+      // FIX: Serialize legacy status to new enum values
+      params.push(normalizeStatus(req.body.status));
       paramIndex++;
     }
 
@@ -1308,39 +1273,32 @@ router.post('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) =
     }
     const report = reportResult.rows[0];
 
-    // Atomic Like with M12 Governance
-    // Using CTE to insert into relation and update counter in a single M12 mutation
+    // Atomic Like with SSOT (DB trigger handles counter)
     await executeUserAction({
       actorId: anonymousId,
       targetType: 'report',
       targetId: id,
       actionType: 'LIKE_REPORT',
       updateQuery: `
-        WITH inserted AS (
-          INSERT INTO report_likes (anonymous_id, report_id)
-          VALUES ($1::uuid, $2)
-          ON CONFLICT (anonymous_id, report_id) DO NOTHING
-          RETURNING report_id
-        )
-        UPDATE reports 
-        SET likes_count = likes_count + 1 
-        WHERE id IN (SELECT report_id FROM inserted)
+        INSERT INTO votes (anonymous_id, target_type, target_id)
+        VALUES ($1::uuid, 'report'::vote_target_type, $2)
+        ON CONFLICT (anonymous_id, target_type, target_id) DO NOTHING;
       `,
       updateParams: [anonymousId, id]
     });
 
-    // Get updated count
-    const countResult = await pool.query('SELECT likes_count FROM reports WHERE id = $1', [id]);
-    const likesCount = countResult.rows[0]?.likes_count || 0;
+    // Get updated count from SSOT
+    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
+    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
 
     // Realtime broadcast
-    realtimeEvents.emitLikeUpdate?.(id, likesCount, report.category, report.status);
+    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
 
     res.json({
       success: true,
       data: {
         is_liked: true,
-        likes_count: likesCount
+        upvotes_count: upvotesCount
       },
       message: 'Like added'
     });
@@ -1375,28 +1333,22 @@ router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res)
       targetId: id,
       actionType: 'UNLIKE_REPORT',
       updateQuery: `
-        WITH deleted AS (
-          DELETE FROM report_likes 
-          WHERE anonymous_id = $1::uuid AND report_id = $2
-          RETURNING report_id
-        )
-        UPDATE reports 
-        SET likes_count = GREATEST(0, likes_count - 1)
-        WHERE id IN (SELECT report_id FROM deleted)
+        DELETE FROM votes 
+        WHERE anonymous_id = $1::uuid AND target_type = 'report' AND target_id = $2;
       `,
       updateParams: [anonymousId, id]
     });
 
-    const countResult = await pool.query('SELECT likes_count FROM reports WHERE id = $1', [id]);
-    const likesCount = countResult.rows[0]?.likes_count || 0;
+    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
+    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
 
-    realtimeEvents.emitLikeUpdate?.(id, likesCount, report.category, report.status);
+    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
 
     res.json({
       success: true,
       data: {
         is_liked: false,
-        likes_count: likesCount
+        upvotes_count: upvotesCount
       },
       message: 'Like removed'
     });
@@ -1546,6 +1498,15 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       updateQuery: `UPDATE reports SET deleted_at = NOW() WHERE id = $1 AND anonymous_id = $2 AND deleted_at IS NULL`,
       updateParams: [id, anonymousId]
     });
+
+    if (result.rowCount === 0) {
+      // If snapshot existed but UPDATE affected 0 rows, it's either already deleted or ownership mismatch
+      // executeUserAction throws 'Target not found' if it doesn't exist at all, so here it's definitely mismatch or already deleted.
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'No tienes permiso para eliminar este reporte o ya fue eliminado'
+      });
+    }
 
     const currentItem = result.snapshot;
     logSuccess('Report deleted with Willpower Audit', { id, anonymousId });
