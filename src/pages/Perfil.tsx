@@ -216,7 +216,7 @@ export function Perfil() {
                     {/* Avatar Circle */}
                     <Avatar className="h-24 w-24 border-2 border-neon-green/30 group-hover:border-neon-green/80 transition-all shadow-[0_0_15px_rgba(0,255,136,0.1)]">
                       <AvatarImage
-                        src={profile?.avatar_url || getAvatarUrl(anonymousId)}
+                        src={profile?.avatarUrl || getAvatarUrl(anonymousId)}
                         alt="Avatar"
                         className="object-cover"
                       />

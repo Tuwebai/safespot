@@ -69,9 +69,10 @@ queryClient.invalidateQueries = function (filters?: any) {
                 new Error().stack
             );
 
-            // In DEV: throw error to catch violations immediately
+            // TEMP: Fail-safe mode (Phase A Incident Response)
+            // MUST be reverted in Phase C when backend contract is 100% verified.
             if (import.meta.env.DEV) {
-                throw new Error(`INVARIANT VIOLATION: Cannot invalidate protected query key: ${keyStr}`);
+                console.warn(`[QueryClient] ⚠️ CONTRACT VIOLATION: Cannot invalidate protected query key: ${keyStr}. Reports MUST ONLY be updated via SSE + Optimistic Updates.`);
             }
 
             // In PROD: log error but don't break app

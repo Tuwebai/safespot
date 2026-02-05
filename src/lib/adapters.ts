@@ -1,4 +1,4 @@
-import { type Comment, type Report, type Author } from './schemas';
+import { type Comment, type Report, type Author, userProfileSchema } from './schemas';
 import { getAvatarUrl } from '@/lib/avatar';
 
 
@@ -57,7 +57,6 @@ export interface RawReport {
     latitude: number | null;
     longitude: number | null;
     upvotes_count: number;
-    likes_count?: number;
     comments_count: number;
     created_at: string;
     updated_at: string;
@@ -135,7 +134,7 @@ export function transformComment(raw: RawComment): Comment {
         priority_zone: raw.priority_zone,
         thread_type: raw.thread_type,
         priority: raw.priority,
-        newBadges: raw.newBadges
+        newBadges: raw.newBadges || [] // Suavizar guard
     };
 }
 
@@ -143,6 +142,13 @@ export function transformComment(raw: RawComment): Comment {
  * Adaptador Estricto para Reportes
  */
 export function transformReport(raw: RawReport): Report {
+    // TEMP: Fail-safe (Phase A)
+    if (process.env.NODE_ENV === 'development') {
+        if ('likes_count' in raw) {
+            console.warn('⚠️ CONTRACT VIOLATION: likes_count detected in raw report data. Field ignored.', raw);
+        }
+    }
+
     return {
         id: raw.id,
         // anonymous_id: raw.anonymous_id, // DEPRECATED in favor of author.id but kept in Schema for compatibility if needed? No, removing from strict model.
@@ -154,7 +160,7 @@ export function transformReport(raw: RawReport): Report {
         address: raw.address,
         latitude: raw.latitude,
         longitude: raw.longitude,
-        upvotes_count: raw.upvotes_count ?? raw.likes_count ?? 0,
+        upvotes_count: raw.upvotes_count,
         comments_count: raw.comments_count,
         created_at: raw.created_at,
         updated_at: raw.updated_at,
@@ -181,6 +187,31 @@ export function transformReport(raw: RawReport): Report {
         is_liked: raw.is_liked ?? false,
         is_flagged: raw.is_flagged ?? false,
         flags_count: raw.flags_count ?? 0
+    };
+}
+
+/**
+ * Adaptador para el Perfil de Usuario
+ * Normaliza avatar_url -> avatarUrl (SSOT)
+ * Implementa resiliencia con safeParse (Fase A)
+ */
+export function transformProfile(raw: any): any {
+    if (!raw) return null;
+
+    // Phase A Resilience: safeParse prevents contract mismatches from crashing the UI
+    const result = userProfileSchema.safeParse(raw);
+
+    if (!result.success) {
+        console.warn('⚠️ CONTRACT MISMATCH: UserProfile does not match schema.', result.error.format());
+        // We continue with raw but at least we warned. 
+        // In Phase C this will become a strict failure.
+    }
+
+    return {
+        ...raw,
+        avatarUrl: raw.avatar_url || getAvatarUrl(raw.anonymous_id),
+        // Preservamos el original para compatibilidad temporal durante la Fase A
+        avatar_url: raw.avatar_url || getAvatarUrl(raw.anonymous_id)
     };
 }
 

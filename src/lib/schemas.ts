@@ -13,6 +13,21 @@ export const authorSchema = z.object({
 
 export type Author = z.infer<typeof authorSchema>;
 
+// --- User Profile Schema ---
+
+export const userProfileSchema = z.object({
+    anonymous_id: z.string(),
+    alias: z.string().nullable().optional(),
+    avatar_url: z.string().nullable().optional(),
+    avatarUrl: z.string().nullable().optional(), // Normalizado
+    theme: z.string().optional(),
+    accent_color: z.string().optional(),
+    is_official: z.boolean().optional(),
+    role: z.string().optional(),
+    points: z.number().optional(),
+    level: z.number().optional(),
+});
+
 // --- Comment Schema (Strict) ---
 
 /**
@@ -61,13 +76,11 @@ export interface Comment {
 export const reportSchema = z.object({
     // ===== CAMPOS OBLIGATORIOS =====
     id: z.string(),
-    // anonymous_id: z.string(), DEPRECATED - Use author.id
     title: z.string(),
     description: z.string(),
     category: z.string(),
     status: z.enum(['pendiente', 'en_proceso', 'resuelto', 'cerrado', 'rechazado']),
     upvotes_count: z.number().int().default(0),
-    likes_count: z.number().int().optional(), // DEPRECATED: Use upvotes_count for Reports
     comments_count: z.number().int(),
     created_at: z.string(),
     updated_at: z.string(),
@@ -82,8 +95,6 @@ export const reportSchema = z.object({
     longitude: z.number().nullable(),
     last_edited_at: z.string().nullable(),
     incident_date: z.string().nullable(),
-    // avatar_url: z.string().nullable(), // MOVED to author
-    // alias: z.string().nullable(), // MOVED to author
     priority_zone: z.string().nullable(),
     distance_meters: z.number().nullable(),
 
@@ -100,7 +111,7 @@ export const reportSchema = z.object({
     locality: z.string().optional(),
     department: z.string().optional(),
     _isOptimistic: z.boolean().optional()
-});
+}).strict();
 
 /**
  * Tipo SafeSpotReport inferido del schema

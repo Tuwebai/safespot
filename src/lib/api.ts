@@ -4,7 +4,7 @@ import { ensureAnonymousId } from './identity';
 import { isTokenExpired } from './auth/permissions';
 import { ZodSchema } from 'zod';
 import { type Report, type Comment } from './schemas'; // Import Report directly from schemas (already strict)
-import { transformReport, transformComment, RawReport, RawComment } from './adapters'; // Adapter integration
+import { transformReport, transformComment, transformProfile, RawReport, RawComment } from './adapters'; // Adapter integration
 
 export { type Report, type Comment };
 
@@ -800,6 +800,7 @@ export interface UserProfile {
   interest_radius_meters?: number;
   is_official?: boolean;
   role?: string;
+  avatarUrl?: string | null;
 }
 
 export interface GlobalStats {
@@ -834,7 +835,8 @@ export const usersApi = {
    * Get current user profile
    */
   getProfile: async (): Promise<UserProfile> => {
-    return apiRequest<UserProfile>('/users/profile');
+    const raw = await apiRequest<UserProfile>('/users/profile');
+    return transformProfile(raw);
   },
 
   /**

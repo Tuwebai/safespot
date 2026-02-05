@@ -162,7 +162,7 @@ export function Header() {
               >
                 <Avatar className="h-full w-full">
                   <AvatarImage
-                    src={profile?.avatar_url || getAvatarUrl(anonymousId)}
+                    src={profile?.avatarUrl || getAvatarUrl(anonymousId)}
                     alt="Avatar"
                     className="object-cover"
                   />
