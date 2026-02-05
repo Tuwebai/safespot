@@ -547,7 +547,9 @@ router.get('/', async (req, res, next) => {
 
       dataQuery = `
         SELECT 
-          r.*,
+          r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+          r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+          r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
           u.avatar_url,
           u.alias,
           CASE WHEN ($1::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END as is_favorite,
@@ -597,7 +599,11 @@ router.get('/', async (req, res, next) => {
       const whereClause = whereConds.length > 0 ? `WHERE ${whereConds.join(' AND ')}` : '';
 
       dataQuery = `
-        SELECT r.*, u.avatar_url, u.alias
+        SELECT 
+          r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+          r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+          r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
+          u.avatar_url, u.alias
         FROM reports r 
         LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id 
         ${whereClause}
@@ -640,10 +646,30 @@ router.get('/', async (req, res, next) => {
       }
 
       return {
-        ...report,
+        id: report.id,
+        anonymous_id: report.anonymous_id,
+        title: report.title,
+        description: report.description,
+        category: report.category,
+        zone: report.zone,
+        address: report.address,
+        latitude: report.latitude,
+        longitude: report.longitude,
+        status: report.status,
+        upvotes_count: report.upvotes_count,
+        comments_count: report.comments_count,
+        created_at: report.created_at,
+        updated_at: report.updated_at,
+        last_edited_at: report.last_edited_at,
+        incident_date: report.incident_date,
         image_urls: normalizedImageUrls,
-        is_favorite: report.is_favorite === true, // Only present in auth flow logic but safe to access
-        is_flagged: report.is_flagged === true
+        is_hidden: report.is_hidden,
+        deleted_at: report.deleted_at,
+        avatar_url: report.avatar_url,
+        alias: report.alias,
+        is_favorite: report.is_favorite === true,
+        is_flagged: report.is_flagged === true,
+        priority_zone: report.priority_zone
       };
     });
 
@@ -691,7 +717,9 @@ router.get('/:id', async (req, res, next) => {
 
     // PERFORMANCE FIX: Single query with LEFT JOINs for favorites/flags (was 3 queries)
     const reportResult = await queryWithRLS(anonymousId, `
-      SELECT r.*, 
+      SELECT r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+        r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+        r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
         u.avatar_url, 
         u.alias,
         CASE WHEN ($2::uuid IS NOT NULL AND f.id IS NOT NULL) THEN true ELSE false END AS is_favorite,

@@ -255,7 +255,7 @@ class RealtimeEvents extends EventEmitter {
      * Emit a vote/like update (SSOT Refinement Feb 2026)
      * @param {string} type - 'report' or 'comment'
      * @param {string} id - The ID of the item being liked
-     * @param {object} updates - The updates object (likes_count/upvotes_count)
+     * @param {object} updates - The updates object (upvotes_count, status, etc.)
      * @param {string} [originClientId]
      * @param {string} [reportId] - ONLY for comments, to route correctly to report stream
      */

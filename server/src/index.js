@@ -89,6 +89,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 
+// ============================================
+// DEVELOPMENT CONTRACT GUARD (Assertion)
+// ============================================
+// ⚠️ Only active in non-production environments
+// Throws an error if legacy fields like 'likes_count' are detected in JSON responses.
+if (process.env.NODE_ENV !== 'production') {
+  const originalJson = app.response.json;
+  app.response.json = function (body) {
+    if (body && typeof body === 'object') {
+      const jsonStr = JSON.stringify(body);
+      if (jsonStr.includes('"likes_count"') || jsonStr.includes('likesCount')) {
+        console.error('❌ BACKEND CONTRACT VIOLATION: likes_count detected in response body!');
+        console.error('Payload sample:', jsonStr.substring(0, 500));
+        throw new Error('BACKEND CONTRACT VIOLATION: legacy field detected. Projection cleanup REQUIRED.');
+      }
+    }
+    return originalJson.call(this, body);
+  };
+}
+
 const PORT = process.env.PORT || 3000;
 
 // ============================================

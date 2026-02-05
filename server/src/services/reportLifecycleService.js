@@ -69,7 +69,14 @@ class ReportLifecycleService {
         // Usamos queryWithRLS con 'admin' system bypass o el id del actor si es admin real.
         // Usamos UUID Nil para validar formato en queryWithRLS.
         const SYSTEM_UUID = '00000000-0000-0000-0000-000000000000';
-        const snapshotQuery = `SELECT * FROM reports WHERE id = $1`;
+        const snapshotQuery = `
+            SELECT 
+                id, anonymous_id, title, description, category, zone, address, 
+                latitude, longitude, status, upvotes_count, comments_count, 
+                created_at, updated_at, last_edited_at, incident_date, image_urls, is_hidden
+            FROM reports 
+            WHERE id = $1
+        `;
         const snapshotRes = await queryWithRLS(SYSTEM_UUID, snapshotQuery, [reportId]);
 
         if (snapshotRes.rows.length === 0) {
@@ -95,7 +102,10 @@ class ReportLifecycleService {
           UPDATE reports 
           SET status = $6::report_status_enum, updated_at = NOW()
           WHERE id = $3 AND status IS DISTINCT FROM $6::report_status_enum
-          RETURNING *
+          RETURNING 
+            id, anonymous_id, title, description, category, zone, address, 
+            latitude, longitude, status, upvotes_count, comments_count, 
+            created_at, updated_at, last_edited_at, incident_date, image_urls, is_hidden
         ),
         audit_insert AS (
           INSERT INTO moderation_actions (
@@ -110,7 +120,11 @@ class ReportLifecycleService {
           FROM update_report
           RETURNING id
         )
-        SELECT r.*, a.id as action_id 
+        SELECT 
+          r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+          r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+          r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden,
+          a.id as action_id 
         FROM update_report r
         LEFT JOIN audit_insert a ON true
       `;

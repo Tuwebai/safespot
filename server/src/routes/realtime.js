@@ -54,7 +54,12 @@ router.get('/catchup', async (req, res) => {
         const userRole = req.user?.role || 'citizen';
 
         const reportTask = pool.query(
-            `SELECT r.*, u.alias, u.avatar_url FROM reports r
+            `SELECT 
+                r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address, 
+                r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count, 
+                r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls, r.is_hidden, r.deleted_at,
+                u.alias, u.avatar_url 
+             FROM reports r
              LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
              WHERE (GREATEST(EXTRACT(EPOCH FROM r.created_at), EXTRACT(EPOCH FROM r.updated_at)) * 1000 > $1)
                AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
@@ -90,7 +95,25 @@ router.get('/catchup', async (req, res) => {
                     payload: {
                         id: r.id,
                         partial: {
-                            ...r,
+                            id: r.id,
+                            anonymous_id: r.anonymous_id,
+                            title: r.title,
+                            description: r.description,
+                            category: r.category,
+                            zone: r.zone,
+                            address: r.address,
+                            latitude: r.latitude,
+                            longitude: r.longitude,
+                            status: r.status,
+                            upvotes_count: r.upvotes_count,
+                            comments_count: r.comments_count,
+                            created_at: r.created_at,
+                            updated_at: r.updated_at,
+                            last_edited_at: r.last_edited_at,
+                            incident_date: r.incident_date,
+                            image_urls: r.image_urls,
+                            is_hidden: r.is_hidden,
+                            deleted_at: r.deleted_at,
                             author: {
                                 id: r.anonymous_id,
                                 alias: r.alias,
@@ -110,7 +133,27 @@ router.get('/catchup', async (req, res) => {
                     type: 'report-update',
                     payload: {
                         id: r.id,
-                        partial: r, // Full state for reconciliation
+                        partial: {
+                            id: r.id,
+                            anonymous_id: r.anonymous_id,
+                            title: r.title,
+                            description: r.description,
+                            category: r.category,
+                            zone: r.zone,
+                            address: r.address,
+                            latitude: r.latitude,
+                            longitude: r.longitude,
+                            status: r.status,
+                            upvotes_count: r.upvotes_count,
+                            comments_count: r.comments_count,
+                            created_at: r.created_at,
+                            updated_at: r.updated_at,
+                            last_edited_at: r.last_edited_at,
+                            incident_date: r.incident_date,
+                            image_urls: r.image_urls,
+                            is_hidden: r.is_hidden,
+                            deleted_at: r.deleted_at
+                        }, // Full safe state for reconciliation
                         originClientId: 'system_catchup'
                     },
                     isReplay: true

@@ -190,7 +190,6 @@ export function useCreateReportMutation() {
                 category: newReportData.category,
                 status: newReportData.status || 'pendiente',
                 upvotes_count: 0,
-                likes_count: 0, // DEPRECATED
                 comments_count: 0,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -444,7 +443,6 @@ export function useToggleReportLikeMutation() {
             const previousDetail = queryClient.getQueryData<Report>(queryKeys.reports.detail(reportId))
 
             if (previousDetail) {
-                // Optimistic UI: Update is_liked and likes_count
                 reportsCache.patch(queryClient, reportId, {
                     is_liked: liked,
                     upvotes_count: liked ? (previousDetail.upvotes_count || 0) + 1 : Math.max(0, (previousDetail.upvotes_count || 0) - 1)

@@ -76,8 +76,15 @@ export const exportReportPDF = async (req, res) => {
         const { id } = req.params;
         const db = DB.public();
 
-        // 1. Fetch Report Data
-        const result = await db.query('SELECT * FROM reports WHERE id = $1', [id]);
+        // 1. Fetch Report Data (Explicit Projection to prevent upvotes_count leak)
+        const result = await db.query(`
+            SELECT 
+                id, anonymous_id, title, description, category, zone, address, 
+                latitude, longitude, status, upvotes_count, comments_count, 
+                created_at, updated_at, last_edited_at, incident_date, image_urls, is_hidden
+            FROM reports 
+            WHERE id = $1
+        `, [id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Reporte no encontrado' });
         }

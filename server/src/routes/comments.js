@@ -487,7 +487,8 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
          RETURNING *
        )
        SELECT 
-         c.*, 
+         c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, 
+         c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
          u.alias, 
          u.avatar_url
        FROM updated c

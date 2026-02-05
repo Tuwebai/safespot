@@ -4,6 +4,12 @@ import { NotFoundError, ForbiddenError } from './AppError.js';
 
 const SYSTEM_ROOT_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
+const TABLE_FIELDS = {
+    reports: 'id, anonymous_id, title, description, category, zone, address, latitude, longitude, status, upvotes_count, comments_count, created_at, updated_at, last_edited_at, incident_date, image_urls, is_hidden',
+    comments: 'id, report_id, anonymous_id, content, upvotes_count, created_at, updated_at, last_edited_at, parent_id, is_thread, is_pinned',
+    anonymous_users: 'anonymous_id, alias, avatar_url, created_at, last_active_at, bio, location'
+};
+
 /**
  * executeModeration
  * Atomic Moderation Action (M12 Governance Engine)
@@ -42,7 +48,8 @@ export async function executeModeration(params, externalClient = null) {
 
         if (!table) throw new Error(`Invalid target type: ${targetType}`);
 
-        const snapshotRes = await client.query(`SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`, [targetId]);
+        const fields = TABLE_FIELDS[table] || '*';
+        const snapshotRes = await client.query(`SELECT ${fields} FROM ${table} WHERE id = $1 FOR UPDATE`, [targetId]);
         if (snapshotRes.rowCount === 0) {
             throw new Error(`Target ${targetType}:${targetId} not found`);
         }
@@ -118,7 +125,8 @@ export async function executeUserAction(params, externalClient = null) {
 
         // 1. Snapshot
         const table = targetType === 'report' ? 'reports' : 'comments';
-        const snapshotRes = await client.query(`SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`, [targetId]);
+        const fields = TABLE_FIELDS[table] || '*';
+        const snapshotRes = await client.query(`SELECT ${fields} FROM ${table} WHERE id = $1 FOR UPDATE`, [targetId]);
 
         // [AUDIT] Semántica HTTP CorrectA
         if (snapshotRes.rowCount === 0) throw new NotFoundError(`Target ${targetType} not found`);

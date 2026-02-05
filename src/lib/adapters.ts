@@ -142,10 +142,10 @@ export function transformComment(raw: RawComment): Comment {
  * Adaptador Estricto para Reportes
  */
 export function transformReport(raw: RawReport): Report {
-    // TEMP: Fail-safe (Phase A)
+    // [Fase C: Hard Gate]
     if (process.env.NODE_ENV === 'development') {
         if ('likes_count' in raw) {
-            console.warn('⚠️ CONTRACT VIOLATION: likes_count detected in raw report data. Field ignored.', raw);
+            throw new Error('❌ CRITICAL CONTRACT VIOLATION: likes_count detected in raw report data. This indicates a BACKEND LEAK. Cleanup required.');
         }
     }
 
