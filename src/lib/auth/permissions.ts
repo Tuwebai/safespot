@@ -1,16 +1,15 @@
-import { useAuthStore } from '@/store/authStore';
+import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
 
 /**
- * Enterprise Auth Permissions Layer
+ * Enterprise Auth Permissions Layer (SSOT v3)
  * 
- * ✅ SSOT para validación de autenticación
- * ✅ NO lee localStorage directamente (lee del auth store)
+ * ✅ SessionAuthority es la única fuente de verdad
+ * ✅ No lee Zustand store directamente
  * ✅ SSR-safe, testeable, desacoplado de storage
- * 🔴 SECURITY FIX: Validates token expiration to prevent 401 errors
  */
 
 export interface AuthState {
-    token: string | null;
+    jwt: string | null;
     userId: string | null;
     isAnonymous: boolean;
 }
@@ -60,37 +59,38 @@ export function isTokenExpired(token: string | null): boolean {
 }
 
 /**
- * Obtiene el estado de autenticación desde el store centralizado
+ * Obtiene el estado de autenticación desde SessionAuthority (SSOT)
  */
 export function getAuthState(): AuthState {
-    const state = useAuthStore.getState();
+    const token = sessionAuthority.getToken();
+    const authId = sessionAuthority.getAuthId();
+    const state = sessionAuthority.getState();
 
     return {
-        token: state.token,
-        userId: state.user?.auth_id || null,
-        isAnonymous: !state.token,
+        jwt: token?.jwt || null,
+        userId: authId,
+        isAnonymous: state === SessionState.READY && !authId,
     };
 }
 
 /**
- * Verifica si el usuario está autenticado (tiene token válido y NO expirado)
+ * Verifica si el usuario está autenticado (tiene authId y token NO expirado)
  * 
- * 🔴 SECURITY FIX: Ahora valida expiración del token
- * Si el token está expirado, dispara logout silencioso para limpiar estado corrupto
+ * 🔴 SECURITY FIX: Valida expiración del token
  */
 export function isAuthenticated(): boolean {
     const auth = getAuthState();
 
-    // 1. Check token exists
-    if (!auth.token || auth.isAnonymous) {
+    // 1. Check tiene authId (no es anónimo)
+    if (!auth.userId || auth.isAnonymous) {
         return false;
     }
 
     // 🔴 2. SECURITY FIX: Check token expiration
-    if (isTokenExpired(auth.token)) {
-        console.warn('[Permissions] Token expired, triggering silent logout');
-        // Silent logout to clear corrupted state
-        useAuthStore.getState().logout();
+    if (isTokenExpired(auth.jwt)) {
+        console.warn('[Permissions] Token expired, triggering logout');
+        // Logout para limpiar estado corrupto
+        sessionAuthority.logout();
         return false;
     }
 

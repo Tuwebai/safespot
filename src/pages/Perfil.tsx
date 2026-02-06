@@ -27,6 +27,7 @@ import { PencilIcon } from 'lucide-react'
 import { queryKeys } from '@/lib/queryKeys'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { useAuthStore } from '@/store/authStore'
+import { sessionAuthority } from '@/engine/session/SessionAuthority'
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge'
 import { TrustHub } from '@/components/profile/TrustHub'
 
@@ -63,7 +64,10 @@ export function Perfil() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false)
 
-  const { isAuthenticated, logout, user } = useAuthStore()
+  const { isAuthenticated, logout } = useAuthStore()
+  
+  // ✅ SSOT v3: Obtener metadata de usuario desde SessionAuthority
+  const userMetadata = sessionAuthority.getToken()?.userMetadata
 
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
@@ -172,17 +176,17 @@ export function Perfil() {
             <div className="flex items-center gap-2">
               <div className="text-right mr-2 flex flex-col items-end justify-center">
                 <p className="text-xs text-muted-foreground hidden sm:block">
-                  {user?.provider === 'google' ? 'Sesión iniciada con Google' : 'Sesión iniciada como'}
+                  {profile?.provider === 'google' ? 'Sesión iniciada con Google' : 'Sesión iniciada como'}
                 </p>
                 <div className="flex items-center justify-end gap-1.5 bg-white/5 sm:bg-transparent px-3 py-1.5 sm:p-0 rounded-full sm:rounded-none border border-white/10 sm:border-none">
-                  {user?.provider === 'google' && (
+                  {profile?.provider === 'google' && (
                     <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-4 h-4" alt="Google" />
                   )}
-                  <p className="text-xs sm:text-sm font-medium max-w-[140px] sm:max-w-none truncate">{user?.email}</p>
+                  <p className="text-xs sm:text-sm font-medium max-w-[140px] sm:max-w-none truncate">{userMetadata?.email || profile?.email}</p>
                 </div>
               </div>
 
-              {user?.provider !== 'google' && (
+              {profile?.provider !== 'google' && (
                 <Button
                   variant="outline"
                   onClick={() => setIsChangePasswordModalOpen(true)}

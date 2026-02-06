@@ -121,7 +121,7 @@ export function HighlightedReportCard({
                                 <div className="flex items-center gap-2">
                                     <Avatar className="h-8 w-8 border border-white/10">
                                         <AvatarImage
-                                            src={report.author?.avatarUrl || getAvatarUrl(report.author?.id || 'unknown')}
+                                            src={report.author?.avatarUrl || getAvatarUrl(report.author?.id || '00000000-0000-0000-0000-000000000000')}
                                             alt="Avatar"
                                         />
                                         <AvatarFallback className="bg-muted text-xs text-muted-foreground">

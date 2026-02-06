@@ -79,24 +79,42 @@ export function requireAnonymousId(req, res, next) {
     // Identity Shield: Signature Verification (P1)
     const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
     const shouldEnforce = process.env.NODE_ENV === 'production' || process.env.ENFORCE_IDENTITY_SHIELD === 'true';
+    const hasJWT = req.headers['authorization']?.startsWith('Bearer ');
 
     if (shouldEnforce) {
       if (!signature) {
+        // ✅ REFINED ENFORCEMENT (per user feedback):
+        // - Mutations: ALWAYS require valid signature
+        // - GETs: Require signature ONLY if no valid JWT present
+        // Rationale: JWT already provides identity + auth, signature is redundant
         if (isMutation) {
           throw new Error('SECURITY_ERROR: Missing identity signature for mutation');
+        } else if (!hasJWT) {
+          // GET without JWT → requires signature for identity validation
+          throw new Error('SECURITY_ERROR: Missing identity signature for anonymous request');
         } else {
-          // Soft failure for GET: Allow but log warning to detect outdated clients
-          console.warn(`[IDENTITY_SHIELD] [SOFT_FAIL] Missing signature for GET request on ${req.originalUrl} (ID: ${anonymousId})`);
+          // GET with JWT → signature optional (JWT is sufficient)
+          console.warn(`[IDENTITY_SHIELD] [SOFT_FAIL] Missing signature for authenticated GET on ${req.originalUrl} (ID: ${anonymousId})`);
         }
       } else if (!verifyAnonymousSignature(anonymousId, signature)) {
-        throw new Error('SECURITY_ERROR: Invalid identity signature. Spoofing attempt detected.');
+        // Signature present but invalid → Block ONLY mutations in production
+        // Allow GETs to enable re-bootstrap for legacy clients
+        const signaturePreview = signature.substring(0, 16) + '...';
+        if (isMutation) {
+          console.error(`[IDENTITY_SHIELD] [SPOOFING_DETECTED] Invalid signature for mutation ${req.method} ${req.originalUrl} (ID: ${anonymousId.substring(0, 8)}..., sig: ${signaturePreview})`);
+          throw new Error('SECURITY_ERROR: Invalid identity signature. Spoofing attempt detected.');
+        } else {
+          // Allow GET with invalid signature (legacy client needs to re-bootstrap)
+          console.warn(`[IDENTITY_SHIELD] [LEGACY_CLIENT] Invalid signature for GET ${req.originalUrl} (ID: ${anonymousId.substring(0, 8)}...). Allowing for re-bootstrap.`);
+        }
       }
     } else {
-      // In development, we warn but allow to avoid breaking local testing if headers are missing
+      // In development, we warn but ALLOW ALL to avoid breaking local testing
       if (!signature) {
-        console.warn(`[IDENTITY_SHIELD] Missing signature for ID ${anonymousId}. In production this will be BLOCKED for mutations.`);
+        console.warn(`[IDENTITY_SHIELD] [DEV] Missing signature for ${req.method} ${req.originalUrl} (ID: ${anonymousId.substring(0, 8)}...). Production will enforce.`);
       } else if (!verifyAnonymousSignature(anonymousId, signature)) {
-        console.error(`[IDENTITY_SHIELD] INVALID signature for ID ${anonymousId}. Spoofing attempt?`);
+        const signaturePreview = signature.substring(0, 16) + '...';
+        console.warn(`[IDENTITY_SHIELD] [DEV] INVALID signature for ${req.method} ${req.originalUrl} (ID: ${anonymousId.substring(0, 8)}..., sig: ${signaturePreview}). Allowing in dev mode.`);
       }
     }
 

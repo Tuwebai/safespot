@@ -32,9 +32,11 @@ export interface NormalizedReport extends Report {
  */
 export function normalizeReportForUI(report: Report): NormalizedReport {
     // 🛡️ SECURITY & SSOT: Always rely on author object
-    // ADAPTER LAYER guarantees author.id exists.
-    const safeAuthorId = report.author?.id || 'unknown'
-    const isDeletedUser = safeAuthorId === 'unknown'
+    // ADAPTER LAYER guarantees author.id exists for active users.
+    // 'DELETED_USER' representa un usuario que fue eliminado (dato histórico válido).
+    const DELETED_USER_MARKER = 'DELETED_USER' as const;
+    const safeAuthorId = report.author?.id || DELETED_USER_MARKER;
+    const isDeletedUser = safeAuthorId === DELETED_USER_MARKER;
     // Explicitly check for 'Anónimo' string or falsy values
     const authorAlias = report.author?.alias;
     const isAnonymousAlias = authorAlias === 'Anónimo' || !authorAlias;

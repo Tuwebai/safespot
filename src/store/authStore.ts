@@ -1,96 +1,103 @@
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { updateIdentity, getAnonymousId } from '../lib/identity';
+import { sessionAuthority, SessionState, type UserMetadata } from '../engine/session/SessionAuthority';
 
-interface User {
-    email: string;
-    auth_id: string;
-    anonymous_id: string; // The ID linked to this account
-    provider?: string; // 'google' | 'email'
-    avatar_url?: string;
-    alias?: string; // 🔵 FIX #11: Display name for UX
-}
+/**
+ * Auth Store v3 - UI State Only
+ * 
+ * IMPORTANTE: Este store NO persiste datos de identidad.
+ * La identidad vive EXCLUSIVAMENTE en SessionAuthority (SSOT).
+ * Este store solo maneja estado de UI y acciones.
+ */
 
-// ... (imports remain)
 interface AuthState {
-    token: string | null;
-    user: User | null;
+    // UI State ONLY - derived from SessionAuthority
     isAuthenticated: boolean;
-    isInitializing: boolean; // 🆕 Critical for StartupGuard
+    isLoading: boolean;
+    userAlias: string | null;
+    userAvatar: string | null;
 
     // Actions
-    loginSuccess: (token: string, anonymousId: string, user: User) => Promise<void>;
+    loginSuccess: (token: string, anonymousId: string, user: {
+        auth_id: string;
+        anonymous_id: string;
+        alias?: string;
+        avatar_url?: string;
+        email?: string;
+    }, signature?: string) => void;
     logout: () => void;
-    syncIdentity: () => void;
-    setInitialized: () => void; // 🆕 Manual override if needed
+    syncFromAuthority: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-    persist(
-        (set, get) => ({
-            token: null,
-            user: null,
+export const useAuthStore = create<AuthState>()((set) => ({
+    // Initial state derived from SessionAuthority
+    isAuthenticated: sessionAuthority.getState() === SessionState.AUTHENTICATED,
+    isLoading: sessionAuthority.getState() === SessionState.BOOTSTRAPPING,
+    userAlias: sessionAuthority.getToken()?.userMetadata?.alias || null,
+    userAvatar: sessionAuthority.getToken()?.userMetadata?.avatarUrl || null,
+
+    loginSuccess: async (token, _anonymousId, user, signature) => {
+        // SessionAuthority is the SSOT - update it atomically
+        const userMetadata: UserMetadata = {
+            alias: user.alias || 'Usuario',
+            avatarUrl: user.avatar_url,
+            email: user.email
+        };
+
+        sessionAuthority.login({
+            token,
+            authId: user.auth_id,
+            anonymousId: user.anonymous_id,
+            userMetadata,
+            signature  // ✅ FIX: Pass backend HMAC signature for Identity Shield
+        });
+
+        // Update UI state
+        set({
+            isAuthenticated: true,
+            isLoading: false,
+            userAlias: userMetadata.alias,
+            userAvatar: userMetadata.avatarUrl || null
+        });
+
+        // Full reload to ensure clean component state
+        window.location.reload();
+    },
+
+    logout: () => {
+        sessionAuthority.logout();
+        
+        set({
             isAuthenticated: false,
-            isInitializing: true, // Start in loading state
+            isLoading: false,
+            userAlias: null,
+            userAvatar: null
+        });
 
-            loginSuccess: async (token, anonymousId, user) => {
-                // 1. Update legacy identity layer
-                await updateIdentity(anonymousId);
+        window.location.reload();
+    },
 
-                // 2. Update Motor 2 Authority Engine
-                // We create a fresh session object from the backend data
-                import('../engine/session/SessionAuthority').then(({ sessionAuthority }) => {
-                    sessionAuthority.setSession({
-                        anonymousId,
-                        sessionId: self.crypto.randomUUID ? self.crypto.randomUUID() : 'session-' + Date.now(),
-                        issuedAt: Date.now(),
-                        expiresAt: Date.now() + (1000 * 60 * 60 * 24 * 30), // 30 days auth
-                        jwt: token
-                    });
-                });
+    // Sync UI state with SessionAuthority
+    syncFromAuthority: () => {
+        const token = sessionAuthority.getToken();
+        const state = sessionAuthority.getState();
+        
+        set({
+            isAuthenticated: state === SessionState.AUTHENTICATED,
+            isLoading: state === SessionState.BOOTSTRAPPING,
+            userAlias: token?.userMetadata?.alias || null,
+            userAvatar: token?.userMetadata?.avatarUrl || null
+        });
+    }
+}));
 
-                set({
-                    token,
-                    user,
-                    isAuthenticated: true
-                });
-                window.location.reload();
-            },
-
-            logout: () => {
-                set({
-                    token: null,
-                    user: null,
-                    isAuthenticated: false
-                });
-                window.location.reload();
-            },
-
-            syncIdentity: () => {
-                const currentId = getAnonymousId();
-                const user = get().user;
-                if (user && user.anonymous_id !== currentId) {
-                    console.warn('[AuthStore] Identity mismatch. Forcing logout safety.');
-                    get().logout();
-                }
-            },
-
-            setInitialized: () => set({ isInitializing: false })
-        }),
-        {
-            name: 'auth-storage',
-            partialize: (state) => ({
-                token: state.token,
-                user: state.user,
-                isAuthenticated: state.isAuthenticated
-            }),
-            // ⚡ HYDRATION LIFECYCLE
-            onRehydrateStorage: () => (state) => {
-                // console.debug('[AuthStore] 💧 Hydration finished');
-                // Ensure we unset initializing when storage is loaded
-                state?.setInitialized();
-            }
-        }
-    )
-);
+// Auto-sync on mount and state changes
+if (typeof window !== 'undefined') {
+    // Initial sync
+    useAuthStore.getState().syncFromAuthority();
+    
+    // Subscribe to SessionAuthority changes
+    sessionAuthority.subscribe(() => {
+        useAuthStore.getState().syncFromAuthority();
+    });
+}

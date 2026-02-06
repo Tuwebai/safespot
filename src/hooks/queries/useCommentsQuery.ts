@@ -6,10 +6,11 @@ import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 // 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
-import { resolveCreator } from '@/lib/auth/resolveCreator'
+import { resolveMutationIdentity } from '@/lib/auth/identityResolver'
 import { getAvatarUrl } from '@/lib/avatar'
 import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard'
 import { useToast } from '@/components/ui/toast'
+import { sessionAuthority } from '@/engine/session/SessionAuthority'
 
 /**
  * Fetch a single comment from the canonical cache
@@ -133,10 +134,22 @@ export function useCreateCommentMutation() {
             // Strategy: Use client-generated ID + SSOT Identity
             const commentId = newCommentData.id || crypto.randomUUID();
 
-            // ✅ FRAME-0 IDENTITY RESOLUTION
-            // Progresión: Cache Perfil (SSOT) -> resolveCreator (Fallback Store)
-            const cachedProfile = queryClient.getQueryData<any>(queryKeys.user.profile);
-            const creator = resolveCreator(cachedProfile);
+            // ✅ FRAME-0 IDENTITY RESOLUTION (SSOT)
+            // 🔴 CRITICAL FIX: NO usar cachedProfile del report owner
+            // El cache ['users', 'profile'] contiene el perfil del USUARIO QUE SE ESTÁ VIENDO
+            // (ej: dueño del reporte), no del usuario actual.
+            // Usar SIEMPRE SessionAuthority para identidad del usuario actual.
+            const identity = resolveMutationIdentity();
+
+            // 🔍 DEBUG LOG: Verificar identidad usada en optimistic
+            console.log('[CreateComment] OPTIMISTIC IDENTITY:', {
+                authorId: identity.id,
+                type: identity.type,
+                alias: identity.alias,
+                fromSession: sessionAuthority.getAnonymousId(),
+                commentId: commentId,
+                timestamp: new Date().toISOString()
+            });
 
             const optimisticComment: Comment = {
                 id: commentId,
@@ -148,11 +161,11 @@ export function useCreateCommentMutation() {
                 parent_id: newCommentData.parent_id ?? undefined,
                 is_thread: newCommentData.is_thread ?? false,
 
-                // ✅ IDENTITY RECONSTRUCTION (Instantánea)
+                // ✅ IDENTITY RECONSTRUCTION (SSOT)
                 author: {
-                    id: creator.creator_id,
-                    alias: creator.displayAlias,
-                    avatarUrl: creator.avatarUrl || getAvatarUrl(creator.creator_id),
+                    id: identity.id,
+                    alias: identity.alias,
+                    avatarUrl: identity.avatarUrl || getAvatarUrl(identity.id),
                     isAuthor: true
                 },
 
@@ -186,7 +199,17 @@ export function useCreateCommentMutation() {
                 // Detail query will be garbage collected as it won't be observed anymore.
             }
         },
-        onSuccess: (newComment, variables, _context) => {
+        onSuccess: (newComment, variables, context) => {
+            // 🔍 DEBUG LOG: Verificar respuesta del backend
+            console.log('[CreateComment] SERVER RESPONSE:', {
+                commentId: newComment.id,
+                authorId: newComment.author.id,
+                authorAlias: newComment.author.alias,
+                expectedAuthorId: context?.commentId ? 'check context' : 'no context',
+                isOptimisticMatch: context?.commentId === newComment.id,
+                timestamp: new Date().toISOString()
+            });
+
             // ✅ ZERO-LATENCY FINALIZATION
             // The optimistic comment had the REAL ID.
             // Backend returned the same ID.

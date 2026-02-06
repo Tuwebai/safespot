@@ -12,6 +12,9 @@ import { playNotificationSound } from '@/lib/sound';
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard';
+import { IdentityInvariantViolation } from '@/lib/errors/IdentityInvariantViolation';
+import { requireAnonymousId } from '@/lib/auth/identityResolver';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -356,7 +359,8 @@ export function useUserPresence(userId: string | undefined) {
  */
 export function useSendMessageMutation() {
     const queryClient = useQueryClient();
-    const anonymousId = useAnonymousId();  // ✅ ENTERPRISE FIX: Clean UUID
+    // Hook must be called at top level; value read from SessionAuthority directly in mutation
+    useAnonymousId();
     const toast = useToast();
     const { checkAuth } = useAuthGuard(); // ✅ PHASE 2: Auth guard
 
@@ -397,11 +401,15 @@ export function useSendMessageMutation() {
                 throw e;
             }
 
+            // ✅ SSOT: Obtener ID garantizado directamente de SessionAuthority
+            // Esto nunca falla si guardIdentityReady() pasó
+            const senderId = requireAnonymousId();
+
             // Cancelar refetches salientes
-            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(variables.roomId, anonymousId || '') });
+            await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(variables.roomId, senderId) });
 
             // Snapshot del valor previo
-            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId, anonymousId || ''));
+            const previousMessages = queryClient.getQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId, senderId));
 
             // Optimistic update logic
             let optimisticContent = variables.content;
@@ -413,15 +421,10 @@ export function useSendMessageMutation() {
             // ✅ Enterprise: Use crypto.randomUUID for globally unique Client-Side ID
             const tempId = variables.id || self.crypto.randomUUID();
 
-            // ✅ ENTERPRISE FIX: anonymousId garantizado por guard (no fallback 'me')
-            if (!anonymousId) {
-                throw new Error('Anonymous ID not available after guard');
-            }
-
             const optimisticMessage: ChatMessage = {
                 id: tempId,
                 conversation_id: variables.roomId,
-                sender_id: anonymousId,  // ✅ NO fallback 'me' (guard garantiza ID válido)
+                sender_id: senderId,  // ✅ SSOT garantizado por SessionAuthority
                 content: variables.type === 'image' && variables.file ? '' : variables.content,
                 localUrl: optimisticContent.startsWith('blob:') ? optimisticContent : undefined,
                 localStatus: 'pending', // ✅ UX: Clock Icon
@@ -440,7 +443,7 @@ export function useSendMessageMutation() {
             };
 
             // ✅ Enterprise: Idempotent Upsert + Sort
-            chatCache.upsertMessage(queryClient, optimisticMessage, anonymousId || '');
+            chatCache.upsertMessage(queryClient, optimisticMessage, senderId);
 
             // ✅ PERSISTENCE: Save to localStorage (Survives F5)
             chatCache.persistPendingMessage(variables.roomId, optimisticMessage);
@@ -453,10 +456,10 @@ export function useSendMessageMutation() {
             });
 
             // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY (Atomic Reordering)
-            chatCache.applyInboxUpdate(queryClient, optimisticMessage, anonymousId || '', true);
+            chatCache.applyInboxUpdate(queryClient, optimisticMessage, senderId, true);
 
             // 2. Update Conversation detail cache (last message)
-            queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId, anonymousId || ''), (old: any) => ({
+            queryClient.setQueryData(CHATS_KEYS.conversation(variables.roomId, senderId), (old: any) => ({
                 ...old,
                 last_message_content: optimisticMessage.content,
                 last_message_at: optimisticMessage.created_at,
@@ -470,8 +473,8 @@ export function useSendMessageMutation() {
         onError: (err, variables, context) => {
             // ✅ ENTERPRISE FIX: IdentityNotReadyError no es un error de red
             // No hacer rollback porque no hubo optimistic update
-            if (err instanceof IdentityNotReadyError) {
-                console.log('[useSendMessageMutation] Mutation blocked by identity guard. State:', err.state);
+            if (err instanceof IdentityNotReadyError || err instanceof IdentityInvariantViolation) {
+                console.log('[useSendMessageMutation] Mutation blocked by identity guard:', err.message);
                 return; // Early return, no rollback necesario
             }
 
@@ -489,14 +492,15 @@ export function useSendMessageMutation() {
 
             // Real Server Error (400/500) -> Rollback
             if (context?.previousMessages) {
-                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, anonymousId || ''), context.previousMessages);
+                const rollbackId = sessionAuthority.getAnonymousId() || '';
+                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, rollbackId), context.previousMessages);
             }
-            // Real Server Error (400/500) -> Rollback
-            if (context?.previousMessages) {
-                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, anonymousId || ''), context.previousMessages);
+            // ✅ PERSISTENCE: Cleanup invalid pending message (best effort)
+            // Si no tenemos ID válido en variables, intentamos con tempId del contexto si existe
+            const pendingId = variables.id;
+            if (pendingId) {
+                chatCache.removePendingMessage(variables.roomId, pendingId);
             }
-            // ✅ PERSISTENCE: Cleanup invalid pending message
-            chatCache.removePendingMessage(variables.roomId, context?.blobUrl ? 'unknown' : (variables.id || 'unknown')); // Best effort since we don't have exact ID easily in variables without context passing better
 
             // Revocamos solo en error real
             if (context?.blobUrl) URL.revokeObjectURL(context.blobUrl);
@@ -507,6 +511,10 @@ export function useSendMessageMutation() {
 
 
         onSuccess: (newMessage, variables, context) => {
+            // ✅ SSOT: Obtener ID actual para operaciones de cache
+            const currentId = sessionAuthority.getAnonymousId();
+            if (!currentId) return; // No cache update if identity lost (edge case)
+
             // Reemplazar el mensaje optimista manteniendo el localUrl para la transición
             const confirmedMessage = {
                 ...newMessage,
@@ -515,19 +523,13 @@ export function useSendMessageMutation() {
             };
 
             // ✅ Enterprise: Idempotent Upsert (Merges pending -> sent)
-            chatCache.upsertMessage(queryClient, confirmedMessage, anonymousId || '');
+            chatCache.upsertMessage(queryClient, confirmedMessage, currentId);
 
             // ✅ PERSISTENCE: Remove from pending storage (It's safe now)
-            // Note: We need the ID used in onMutate. 
-            // Since we passed it or generated it, and "newMessage.id" IS that ID (if backend respects it),
-            // or we need to find it by content. 
-            // For now, assume backend returns same ID or we clear by matching logic if needed.
-            // Actually, removePendingMessage uses ID. If Backend generated NEW ID, we might have zombie in LS.
-            // FIX: We should depend on Client ID.
             if (newMessage.id) chatCache.removePendingMessage(variables.roomId, newMessage.id);
 
-            // 1. WhatsApp-Grade: Promote room to top IMMEDIATELY on success (reconcile)
-            chatCache.applyInboxUpdate(queryClient, confirmedMessage, anonymousId || '', true);
+            // 1. WhatsApp-Grade: Promote room to top IMMEDIATEMENTE on success (reconcile)
+            chatCache.applyInboxUpdate(queryClient, confirmedMessage, currentId, true);
         }
     });
 }

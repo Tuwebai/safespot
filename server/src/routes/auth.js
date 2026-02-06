@@ -394,8 +394,12 @@ router.post('/google', authLimiter, async (req, res) => {
                     user.avatar_url = googleUser.picture;
                 }
 
-                // 2. Update Public Profile (Always force sync to fix any drift/bugs)
-                await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, anonymousIdToUse]);
+                // 2. Update Public Profile (Always force sync avatar)
+                // ✅ FIX: Solo actualizar avatar en LOGIN, NO alias (preservar cambios manuales)
+                await pool.query(
+                    'UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2',
+                    [googleUser.picture, anonymousIdToUse]
+                );
             }
         } else {
             // REGISTER: User doesn't exist, promote current anonymous identity
@@ -418,8 +422,12 @@ router.post('/google', authLimiter, async (req, res) => {
 
                 // CRITICAL FIX: Also sync avatar to public profile (anonymous_users)
                 // user.anonymous_id might be null if legacy, but it should exist.
+                // ✅ FIX: Solo actualizar avatar en MERGE, NO alias (preservar cambios manuales)
                 if (user.anonymous_id) {
-                    await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, user.anonymous_id]);
+                    await pool.query(
+                        'UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2',
+                        [googleUser.picture, user.anonymous_id]
+                    );
                 }
 
                 // Use the existing user's anonymous_id (Restore Identity)
@@ -444,11 +452,22 @@ router.post('/google', authLimiter, async (req, res) => {
                     anonymousIdToUse = crypto.randomUUID();
 
                     // Ensure it exists in anonymous_users table (Foreign Key Constraint)
-                    await pool.query('INSERT INTO anonymous_users (anonymous_id, avatar_url) VALUES ($1, $2)', [anonymousIdToUse, googleUser.picture]);
+                    // ✅ FIX: Sincronizar alias público desde Google
+                    await pool.query(
+                        'INSERT INTO anonymous_users (anonymous_id, avatar_url, alias) VALUES ($1, $2, $3)',
+                        [anonymousIdToUse, googleUser.picture, googleUser.name]
+                    );
                 } else {
                     anonymousIdToUse = current_anonymous_id;
-                    // Update existing anonymous user with avatar
-                    await pool.query('UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2', [googleUser.picture, anonymousIdToUse]);
+                    // Update existing anonymous user with avatar and alias
+                    // ✅ FIX: En REGISTER, sincronizar alias SOLO si no existe
+                    await pool.query(
+                        `UPDATE anonymous_users 
+                         SET avatar_url = $1, 
+                             alias = COALESCE(alias, $2) 
+                         WHERE anonymous_id = $3`,
+                        [googleUser.picture, googleUser.name, anonymousIdToUse]
+                    );
                 }
 
                 // 3. Create User
@@ -470,7 +489,16 @@ router.post('/google', authLimiter, async (req, res) => {
         // 3. Update Last Login
         await pool.query('UPDATE user_auth SET last_login_at = NOW() WHERE id = $1', [user.id]);
 
-        // 4. Generate Session Token
+        // 4. Fetch Public Profile (SSOT: anonymous_users)
+        // ✅ ENTERPRISE FIX: alias público vive SOLO en anonymous_users
+        // Ya fue sincronizado en pasos anteriores (líneas 398, 422, 447, 451)
+        const publicProfileResult = await pool.query(
+            'SELECT alias, avatar_url FROM anonymous_users WHERE anonymous_id = $1',
+            [anonymousIdToUse]
+        );
+        const publicProfile = publicProfileResult.rows[0] || {};
+
+        // 5. Generate Session Token
         const tokenPayload = {
             id: user.id,
             email: user.email,
@@ -489,9 +517,9 @@ router.post('/google', authLimiter, async (req, res) => {
             user: {
                 id: user.id,
                 email: user.email,
-                alias: user.alias,
+                alias: publicProfile.alias ?? null,  // ✅ FIX: SSOT público, sin fallbacks dinámicos
                 provider: 'google',
-                avatar_url: user.avatar_url
+                avatar_url: publicProfile.avatar_url || user.avatar_url  // ✅ Priorizar SSOT público
             }
         });
 

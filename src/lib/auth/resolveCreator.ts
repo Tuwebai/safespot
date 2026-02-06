@@ -1,21 +1,27 @@
 /**
- * resolveCreator
+ * resolveCreator (SSOT v3)
  * 
  * ROLE: Identity Resolution Engine for Mutations
  * RESPONSIBILITY: Resolve creator identity for optimistic updates
  * 
- * PRIORITY HIERARCHY:
- * 1. Supabase Auth (auth.user.auth_id) - Real users
- * 2. SessionAuthority (anonymous_id) - Anonymous users (SSOT)
- * 3. Fallback ('unknown') - Emergency only
+ * ⚠️ INVARIANTE CRÍTICA: Esta función NUNCA debe retornar un ID inválido.
+ * Si no hay identidad válida, lanza IdentityInvariantViolation.
+ * 
+ * PRECONDICIÓN: guardIdentityReady() debe ejecutarse ANTES de llamar esta función.
+ * 
+ * ✅ SSOT v3: SessionAuthority es la ÚNICA fuente de verdad.
+ * - anonymousId: Siempre presente en SessionToken
+ * - authId: Presente cuando está autenticado
+ * - userMetadata: Avatar, alias, email del usuario autenticado
+ * - NO hay fallback a auth-store legacy
  * 
  * METADATA SOURCES:
- * - Alias: cachedProfile > localStorage > 'Usuario'
- * - Avatar: cachedProfile > auth.user.avatar_url
+ * - Alias: cachedProfile > SessionAuthority.userMetadata.alias > localStorage > 'Usuario'
+ * - Avatar: cachedProfile > SessionAuthority.userMetadata.avatarUrl
  */
 
 import { sessionAuthority } from '@/engine/session/SessionAuthority';
-import { useAuthStore } from '@/store/authStore';
+import { IdentityInvariantViolation } from '@/lib/errors/IdentityInvariantViolation';
 
 export interface CreatorIdentity {
     creator_id: string;
@@ -24,41 +30,66 @@ export interface CreatorIdentity {
     avatarUrl?: string;
 }
 
+/**
+ * Resuelve la identidad del creador para optimistic updates.
+ * 
+ * ✅ SSOT v3: SessionAuthority es la única fuente de verdad.
+ * SessionToken contiene: anonymousId, authId, userMetadata
+ * 
+ * @throws {IdentityInvariantViolation} Si no hay identidad válida disponible
+ */
 export function resolveCreator(cachedProfile?: any): CreatorIdentity {
-    const auth = useAuthStore.getState();
+    const token = sessionAuthority.getToken();
+    
+    if (!token) {
+        throw new IdentityInvariantViolation(
+            'Cannot resolve creator: no session token. Session not initialized.',
+            'resolveCreator',
+            'session_token',
+            null
+        );
+    }
 
     // Extract metadata from cached profile (if available)
     const profileData = cachedProfile?.data || cachedProfile;
     const cachedAlias = profileData?.alias;
     const cachedAvatar = profileData?.avatar_url;
 
-    // CASO 1: Usuario autenticado (PRIORIDAD ABSOLUTA DE ID)
-    if (auth.token && auth.user?.auth_id) {
-        // Smart Merge: Prefer Cached Alias > Auth Store Alias > 'Usuario'
-        const authAlias = auth.user.alias;
-
+    // CASO 1: Usuario autenticado (authId existe en el token)
+    if (token.authId) {
+        const userMetadata = token.userMetadata;
+        
+        // Smart Merge: Prefer Cached Alias > UserMetadata Alias > 'Usuario'
         let finalAlias = 'Usuario';
         if (cachedAlias && cachedAlias !== 'Usuario') {
             finalAlias = cachedAlias;
-        } else if (authAlias && authAlias !== 'Usuario') {
-            finalAlias = authAlias;
+        } else if (userMetadata?.alias && userMetadata.alias !== 'Usuario') {
+            finalAlias = userMetadata.alias;
         }
 
         return {
-            creator_id: auth.user.auth_id,
+            creator_id: token.authId,
             creator_type: 'user',
             displayAlias: finalAlias,
-            avatarUrl: cachedAvatar || auth.user.avatar_url
+            avatarUrl: cachedAvatar || userMetadata?.avatarUrl
         };
     }
 
     // CASO 2: Usuario anónimo
-    // ✅ ENTERPRISE FIX: SessionAuthority es SSOT para anonymous_id
-    // cachedProfile puede tener anonymous_id VIEJO si hubo cambio de sesión
-    // SIEMPRE usar SessionAuthority.getAnonymousId() como fuente de verdad
-    const anonymousId = sessionAuthority.getAnonymousId();
+    // SessionAuthority.getAnonymousId() es SSOT
+    const anonymousId = token.anonymousId;
 
-    const finalId = anonymousId || 'unknown';
+    // 🔴 INVARIANTE: anonymousId SIEMPRE existe en el token (es requerido)
+    // Solo lanzaría error si el token está corrupto
+    if (!anonymousId) {
+        throw new IdentityInvariantViolation(
+            'Cannot resolve creator: anonymous_id is null in session token. Token may be corrupted.',
+            'resolveCreator',
+            'anonymous_id',
+            null
+        );
+    }
+
     const localAlias = localStorage.getItem('anonymous_alias');
 
     // Priority: Cache > LocalStorage > Default
@@ -66,7 +97,7 @@ export function resolveCreator(cachedProfile?: any): CreatorIdentity {
     const finalAvatar = cachedAvatar || undefined;
 
     return {
-        creator_id: finalId,
+        creator_id: anonymousId,
         creator_type: 'anonymous',
         displayAlias: finalAlias,
         avatarUrl: finalAvatar

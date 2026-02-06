@@ -22,6 +22,26 @@ export function signAnonymousId(anonymousId) {
  */
 export function verifyAnonymousSignature(anonymousId, signature) {
     if (!anonymousId || !signature) return false;
-    const expected = signAnonymousId(anonymousId);
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+
+    try {
+        const expected = signAnonymousId(anonymousId);
+
+        // ✅ HARDENING: Validate buffer lengths BEFORE timingSafeEqual
+        // timingSafeEqual throws "Input buffers must have the same byte length" if lengths differ
+        // This happens when frontend sends legacy random signatures (~15 chars) vs HMAC-SHA256 (64 chars)
+        const signatureBuffer = Buffer.from(signature);
+        const expectedBuffer = Buffer.from(expected);
+
+        if (signatureBuffer.length !== expectedBuffer.length) {
+            // Legacy signature detected (different length than HMAC-SHA256)
+            return false;
+        }
+
+        return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+    } catch (error) {
+        // ✅ DEFENSIVE: Catch any unexpected errors (e.g., invalid encoding)
+        // Never crash the API due to signature validation
+        console.error('[CRYPTO] Signature verification failed:', error.message);
+        return false;
+    }
 }

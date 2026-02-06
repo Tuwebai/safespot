@@ -15,7 +15,7 @@ import { useConfirm } from '@/components/ui/confirmation-manager'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
-import { isOwner, getCurrentUserId } from '@/lib/permissions'
+import { getCurrentUserId } from '@/lib/permissions'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
 const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
@@ -324,10 +324,7 @@ export function CommentsSection({
                     ) : (
                         <>
                             <div className="space-y-4">
-                                {topLevelComments.map((comment) => {
-                                    const isCommentOwner = isOwner(comment)
-
-                                    return (
+                                {topLevelComments.map((comment) => (
                                         <div key={comment.id} className="pb-4">
                                             <CommentThread
                                                 comment={comment}
@@ -338,7 +335,8 @@ export function CommentsSection({
                                                 onDelete={handleDeleteComment}
                                                 onFlag={handleFlagComment}
                                                 onLikeChange={handleLikeChange}
-                                                isOwner={isCommentOwner}
+                                                // ✅ SSOT: Ownership se calcula internamente en EnhancedComment vía useIsOwner
+                                                // No pasar isOwner aquí para evitar doble fuente de verdad
                                                 isMod={currentUserId === reportOwnerId}
                                                 onPin={pinComment}
                                                 onUnpin={unpinComment}
@@ -358,8 +356,7 @@ export function CommentsSection({
                                                 onMenuOpen={setActiveMenuId}
                                             />
                                         </div>
-                                    )
-                                })}
+                                ))}
                             </div>
 
                             {/* Load More Button & Counter */}

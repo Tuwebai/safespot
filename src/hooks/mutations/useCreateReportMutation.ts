@@ -1,10 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type CreateReportData } from '@/lib/api'
 import { type Report } from '@/lib/schemas'
 import { reportsCache } from '@/lib/cache-helpers'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
-import { resolveCreator } from '@/lib/auth/resolveCreator'
+import { resolveMutationIdentity } from '@/lib/auth/identityResolver'
 import { getAvatarUrl } from '@/lib/avatar'
 import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard'
 import { useToast } from '@/components/ui/toast'
@@ -53,8 +52,9 @@ export function useCreateReportMutation() {
             }
             const reportId = newReportData.id!
 
-            const cachedProfile = queryClient.getQueryData(queryKeys.user.profile);
-            const creator = resolveCreator(cachedProfile);
+            // 🔴 CRITICAL FIX: NO usar cachedProfile - puede ser de otro usuario
+            // Usar SIEMPRE SessionAuthority para identidad del usuario actual
+            const identity = resolveMutationIdentity();
 
             // 2. Create Authoritative Optimistic Entity
             const optimisticReport: Report = {
@@ -68,9 +68,9 @@ export function useCreateReportMutation() {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 author: {
-                    id: creator.creator_id,
-                    alias: creator.displayAlias,
-                    avatarUrl: creator.avatarUrl || getAvatarUrl(creator.creator_id),
+                    id: identity.id,
+                    alias: identity.alias,
+                    avatarUrl: identity.avatarUrl || getAvatarUrl(identity.id),
                     isAuthor: true,
                     is_official: false,
                     role: 'citizen'

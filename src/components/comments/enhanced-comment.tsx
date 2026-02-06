@@ -91,6 +91,24 @@ export const EnhancedComment = memo(function EnhancedComment({
   // ✅ SSOT Permission: Calculate ownership directly
   const isMe = useIsOwner(comment.author.id)
 
+  // 🔍 DIAGNOSTIC LOGS (Remove after debugging)
+  useEffect(() => {
+    const canEditValue = isMe
+    const canModerateValue = isMe || isMod
+    console.group(`[EnhancedComment] ${comment.id.substring(0, 8)}`)
+    console.log('comment.id:', comment.id)
+    console.log('comment.is_optimistic:', comment.is_optimistic)
+    console.log('author.id:', comment.author.id)
+    console.log('author.alias:', comment.author.alias)
+    console.log('currentId:', currentId)
+    console.log('isMe:', isMe)
+    console.log('Direct comparison:', currentId === comment.author.id)
+    console.log('author.id type:', typeof comment.author.id)
+    console.log('currentId type:', typeof currentId)
+    console.log('canEdit:', canEditValue)
+    console.log('canModerate:', canModerateValue)
+    console.groupEnd()
+  }, [comment.id, comment.author.id, comment.author.alias, comment.is_optimistic, currentId, isMe, isMod])
 
   // [CMT-001] Permission Separation:
   // canEdit: Only the author can edit their own content.

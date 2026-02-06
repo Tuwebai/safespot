@@ -5,7 +5,7 @@
  * RESPONSIBILITY: Validar que SessionAuthority.state === READY antes de mutations.
  * 
  * CONTRATO:
- * - READY: Identidad estable, mutations permitidas
+ * - READY / AUTHENTICATED: Identidad estable, mutations permitidas
  * - BOOTSTRAPPING/UNINITIALIZED: Identidad transitoria, mutations bloqueadas
  * - DEGRADED/FAILED/EXPIRED: Bloqueadas (estricto, puede relajarse después)
  * 
@@ -61,9 +61,9 @@ export class IdentityNotReadyError extends Error {
 export function guardIdentityReady(): void {
     const state = sessionAuthority.getState();
 
-    // ✅ ENTERPRISE STRICT: Solo READY permite mutations
+    // ✅ ENTERPRISE STRICT: READY o AUTHENTICADO permiten mutations
     // DEGRADED/FAILED bloqueados inicialmente (puede relajarse después si es seguro)
-    if (state !== SessionState.READY) {
+    if (state !== SessionState.READY && state !== SessionState.AUTHENTICATED) {
         console.warn('[IdentityGuard] Mutation blocked. State:', state);
         throw new IdentityNotReadyError(state);
     }
@@ -88,19 +88,21 @@ export function guardIdentityReady(): void {
  */
 export function useIsIdentityReady(): boolean {
     const [isReady, setIsReady] = useState(() => {
-        return sessionAuthority.getState() === SessionState.READY;
+        const state = sessionAuthority.getState();
+        return state === SessionState.READY || state === SessionState.AUTHENTICATED;
     });
 
     useEffect(() => {
         // Initial sync
         const currentState = sessionAuthority.getState();
-        if ((currentState === SessionState.READY) !== isReady) {
-            setIsReady(currentState === SessionState.READY);
+        const currentlyReady = currentState === SessionState.READY || currentState === SessionState.AUTHENTICATED;
+        if (currentlyReady !== isReady) {
+            setIsReady(currentlyReady);
         }
 
         // Subscribe to state changes
         const unsubscribe = sessionAuthority.subscribe((state) => {
-            setIsReady(state === SessionState.READY);
+            setIsReady(state === SessionState.READY || state === SessionState.AUTHENTICATED);
         });
 
         return unsubscribe;

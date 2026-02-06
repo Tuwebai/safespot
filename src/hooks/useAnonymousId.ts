@@ -1,36 +1,31 @@
 import { useState, useEffect } from 'react';
 import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthority';
+import { IdentityInvariantViolation } from '@/lib/errors/IdentityInvariantViolation';
 
 /**
  * useAnonymousId
  * 
- * ✅ MOTOR 2: Reactive Identity Hook
- * Subscribes to SessionAuthority for real-time identity updates.
+ * v3 SSOT: Reactive Identity Hook
+ * Reads exclusively from SessionAuthority.
  * 
  * @returns {string | null}
- *   - null: Identity is bootstrapping or failed.
- *   - string: Valid Anonymous ID from the active session.
+ *   - null: Identity is bootstrapping or uninitialized
+ *   - string: Valid Anonymous ID from SessionAuthority
  */
 export function useAnonymousId(): string | null {
     const [id, setId] = useState<string | null>(sessionAuthority.getAnonymousId());
 
     useEffect(() => {
-        // 1. Initial sync
+        // Initial sync
         const currentId = sessionAuthority.getAnonymousId();
-        console.log('[useAnonymousId] Initial sync:', { currentId: currentId?.substring(0, 8), stateId: id?.substring(0, 8) });
-        if (currentId !== id) setId(currentId);
+        if (currentId !== id) {
+            setId(currentId);
+        }
 
-        // 2. Subscribe to state changes
-        const unsubscribe = sessionAuthority.subscribe((state) => {
+        // Subscribe to state changes
+        const unsubscribe = sessionAuthority.subscribe(() => {
             const newId = sessionAuthority.getAnonymousId();
-            console.log('[useAnonymousId] State change:', { state, newId: newId?.substring(0, 8), currentStateId: id?.substring(0, 8) });
-            if (newId !== id) {
-                console.log('[useAnonymousId] 🔄 Updating ID:', newId?.substring(0, 8));
-                setId(newId);
-                if (state === SessionState.READY) {
-                    console.log('[useAnonymousId] ✅ Identity resolved via Motor 2:', newId?.substring(0, 8));
-                }
-            }
+            setId(prev => prev === newId ? prev : newId);
         });
 
         return unsubscribe;
@@ -40,21 +35,87 @@ export function useAnonymousId(): string | null {
 }
 
 /**
- * useAnonymousIdOrThrow
+ * useAnonymousIdRequired
  * 
- * Variant that throws if identity is not ready.
- * Use ONLY in components that absolutely require identity (e.g., profile page).
+ * Hook for mutations requiring guaranteed identity.
+ * Throws if identity is not ready.
  * 
- * Most components should use useAnonymousId() + enabled flag instead.
+ * @throws {IdentityInvariantViolation} If identity not ready
  */
-export function useAnonymousIdOrThrow(): string {
+export function useAnonymousIdRequired(): string {
     const id = useAnonymousId();
 
     if (!id) {
-        throw new Error(
-            'Anonymous ID not initialized. Wrap component in Suspense or use useAnonymousId() with conditional rendering.'
+        throw new IdentityInvariantViolation(
+            'Anonymous ID not ready. Ensure guardIdentityReady() was called.',
+            'useAnonymousIdRequired',
+            'anonymousId',
+            null
         );
     }
 
     return id;
 }
+
+/**
+ * useIsIdentityReady
+ * 
+ * Hook to check if identity is ready for mutations.
+ */
+export function useIsIdentityReady(): boolean {
+    const [isReady, setIsReady] = useState(() => {
+        const state = sessionAuthority.getState();
+        return state === SessionState.READY || state === SessionState.AUTHENTICATED;
+    });
+
+    useEffect(() => {
+        const unsubscribe = sessionAuthority.subscribe(() => {
+            const state = sessionAuthority.getState();
+            setIsReady(state === SessionState.READY || state === SessionState.AUTHENTICATED);
+        });
+        return unsubscribe;
+    }, []);
+
+    return isReady;
+}
+
+/**
+ * useIsAuthenticated
+ * 
+ * Hook to check if user is fully authenticated.
+ */
+export function useIsAuthenticated(): boolean {
+    const [isAuth, setIsAuth] = useState(() => 
+        sessionAuthority.getState() === SessionState.AUTHENTICATED
+    );
+
+    useEffect(() => {
+        const unsubscribe = sessionAuthority.subscribe(() => {
+            setIsAuth(sessionAuthority.getState() === SessionState.AUTHENTICATED);
+        });
+        return unsubscribe;
+    }, []);
+
+    return isAuth;
+}
+
+/**
+ * useAuthId
+ * 
+ * Returns authId if authenticated, null otherwise.
+ */
+export function useAuthId(): string | null {
+    const [authId, setAuthId] = useState<string | null>(sessionAuthority.getAuthId());
+
+    useEffect(() => {
+        const unsubscribe = sessionAuthority.subscribe(() => {
+            setAuthId(sessionAuthority.getAuthId());
+        });
+        return unsubscribe;
+    }, []);
+
+    return authId;
+}
+
+// Legacy compatibility
+export const useAnonymousIdOrThrow = useAnonymousIdRequired;

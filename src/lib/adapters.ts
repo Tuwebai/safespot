@@ -91,7 +91,7 @@ export interface RawReport {
 function transformAuthor(id: string, alias: string | null | undefined, avatarUrl: string | null | undefined, isAuthorContext: boolean = false): Author {
     return {
         id: id,
-        alias: alias || 'Anónimo', // Fallback inmediato
+        alias: alias || id.substring(0, 8), // ✅ FIX: Fallback a ID abreviado (determinístico)
         avatarUrl: avatarUrl || getAvatarUrl(id), // Deterministic Fallback
         isAuthor: isAuthorContext
     };

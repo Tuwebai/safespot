@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useAuthStore } from '../../store/authStore';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
 import { X, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { API_BASE_URL } from '../../lib/api';
 
@@ -17,8 +17,6 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-
-    const { token } = useAuthStore();
 
     if (!isOpen) return null;
 
@@ -41,11 +39,17 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
         }
 
         try {
+            // ✅ SSOT: Obtener JWT de SessionAuthority
+            const jwt = sessionAuthority.getToken()?.jwt;
+            if (!jwt) {
+                throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
+            }
+            
             const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${jwt}`
                 },
                 body: JSON.stringify({ currentPassword, newPassword })
             });

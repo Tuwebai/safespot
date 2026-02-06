@@ -1,6 +1,6 @@
 import { AppClientError } from './errors';
 import { getClientId } from './clientId';
-import { ensureAnonymousId } from './identity';
+// SSOT: ensureAnonymousId removed - using sessionAuthority.requireAnonymousId() instead
 import { isTokenExpired } from './auth/permissions';
 import { ZodSchema } from 'zod';
 import { type Report, type Comment } from './schemas'; // Import Report directly from schemas (already strict)
@@ -61,26 +61,32 @@ function getHeaders(requestId?: string, traceId?: string): Record<string, string
   const sessionState = sessionAuthority.getState();
   const sessionToken = sessionAuthority.getToken();
 
-  // Use Authority ID if available, otherwise fallback to local identity
-  const anonymousId = sessionAuthority.getAnonymousId() || ensureAnonymousId();
+  // ✅ SSOT: Solo usar ID de SessionAuthority si está disponible
+  // NO generar IDs de emergencia para headers - eso crea identidades fantasma
+  const anonymousId = sessionAuthority.getAnonymousId();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Client-ID': getClientId(),
-    'X-Anonymous-Id': anonymousId,
     'X-App-Version': __SW_VERSION__,
     'X-Request-ID': requestId || self.crypto.randomUUID(),
     'X-Trace-ID': traceId || telemetry.getTraceId(),
     'X-Instance-ID': telemetry.getInstanceId(),
   };
 
+  // ✅ SSOT: Inject Anonymous ID only if available from Authority
+  // NO fallback to generated IDs - prevents ghost identity creation
+  if (anonymousId) {
+    headers['X-Anonymous-Id'] = anonymousId;
+  }
+
   // ✅ IDENTITY SHIELD: Inject Signature if available
   if (sessionToken?.signature) {
     headers['X-Anonymous-Signature'] = sessionToken.signature;
   }
 
-  // ✅ MOTOR 2.1: Only inject JWT if Authority is READY
-  if (sessionState === SessionState.READY && sessionToken?.jwt) {
+  // ✅ MOTOR 2.1: Only inject JWT if Authority is READY or AUTHENTICATED
+  if ((sessionState === SessionState.READY || sessionState === SessionState.AUTHENTICATED) && sessionToken?.jwt) {
     headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
   } else {
     // Legacy / Auth Guard Fallback (DEPRECATED - Transition to Motor 2)
@@ -623,10 +629,30 @@ export const commentsApi = {
    */
   create: async (data: CreateCommentData): Promise<Comment> => {
     return trafficController.enqueueSerial(async () => {
+      // 🔍 DEBUG LOG: Verificar qué se envía al backend
+      const headers = getHeaders();
+      console.log('[API CreateComment] REQUEST:', {
+        url: '/comments',
+        headers: {
+          'X-Anonymous-Id': headers['X-Anonymous-Id'],
+          'Authorization': headers['Authorization'] ? 'Bearer ***' : 'none'
+        },
+        body: data,
+        timestamp: new Date().toISOString()
+      });
+
       const raw = await apiRequest<RawComment>('/comments', {
         method: 'POST',
         body: JSON.stringify(data),
       });
+
+      // 🔍 DEBUG LOG: Verificar respuesta cruda
+      console.log('[API CreateComment] RAW RESPONSE:', {
+        commentId: raw.id,
+        anonymousId: raw.anonymous_id,
+        timestamp: new Date().toISOString()
+      });
+
       return transformComment(raw);
     }, 'CREATE_COMMENT');
   },
@@ -810,6 +836,7 @@ export interface UserProfile {
   is_official?: boolean;
   role?: string;
   avatarUrl?: string | null;
+  provider?: 'email' | 'google' | null;
 }
 
 export interface GlobalStats {
@@ -899,7 +926,8 @@ export const usersApi = {
       const formData = new FormData();
       formData.append('avatar', file);
 
-      const anonymousId = ensureAnonymousId();
+      // ✅ SSOT: Requerir ID válido de SessionAuthority
+      const anonymousId = sessionAuthority.requireAnonymousId();
 
       const response = await fetch(`${API_BASE_URL}/users/avatar`, {
         method: 'POST',
@@ -1174,10 +1202,11 @@ export const chatsApi = {
   uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append('image', file);
+    // ✅ SSOT: Requerir ID válido de SessionAuthority
     const response = await fetch(`${API_BASE_URL}/chats/rooms/${roomId}/images`, {
       method: 'POST',
       headers: {
-        'X-Anonymous-Id': ensureAnonymousId(),
+        'X-Anonymous-Id': sessionAuthority.requireAnonymousId(),
       },
       body: formData
     });

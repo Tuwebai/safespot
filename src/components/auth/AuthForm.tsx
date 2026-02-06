@@ -135,13 +135,21 @@ export function AuthForm({
     }
 
     async function performLogin(data: any) {
+        // 🔴 INVARIANTE: El backend DEBE retornar un user.id válido
+        if (!data.user?.id) {
+            throw new Error('Invalid server response: missing user ID. Please try again.');
+        }
+
         const user = {
             email: data.user?.email || email,
-            auth_id: data.user?.id || 'unknown',
+            auth_id: data.user.id,  // ✅ Sin fallback - falla explícitamente arriba
             anonymous_id: data.anonymous_id,
-            provider: data.user?.provider || (mode === 'register' || mode === 'login' ? 'email' : undefined)
+            provider: data.user?.provider || (mode === 'register' || mode === 'login' ? 'email' : undefined),
+            alias: data.user?.alias ?? null,           // ✅ FIX: Propagar alias del backend
+            avatar_url: data.user?.avatar_url ?? null  // ✅ FIX: Propagar avatar del backend
         };
-        await loginSuccess(data.token, data.anonymous_id, user);
+        // ✅ FIX: Pass backend signature for Identity Shield (HMAC-SHA256)
+        await loginSuccess(data.token, data.anonymous_id, user, data.signature);
         if (onSuccess) {
             onSuccess();
         } else {
