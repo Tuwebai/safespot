@@ -5,35 +5,99 @@ import { leaderElection, LeadershipState } from './realtime/LeaderElection';
 type SSEListener = (event: MessageEvent) => void;
 type ReconnectCallback = (lastEventId: string | null) => void;
 
+// ✅ ENTERPRISE: SSE State Machine Types
+export enum SSEState {
+    OFFLINE = 'OFFLINE',           // No network or no subscriptions
+    DISCONNECTED = 'DISCONNECTED', // Active subscriptions but source closed
+    CONNECTING = 'CONNECTING',     // Attempting to open EventSource
+    CONNECTED = 'CONNECTED',       // Active and receiving events
+    IDLE_SLEEP = 'IDLE_SLEEP'      // Follower idle (>5min), connection paused
+}
+
+interface SSEConnectionEntry {
+    source: EventSource | null;
+    refCount: number;
+    listeners: Map<string, Set<SSEListener>>;
+    reconnectCallbacks: Set<ReconnectCallback>;
+    backoff: Backoff;
+    state: SSEState;
+    url: string;
+}
+
 class SSEPool {
-    private connections = new Map<string, {
-        source: EventSource | null;
-        refCount: number;
-        listeners: Map<string, Set<SSEListener>>;
-        reconnectCallbacks: Set<ReconnectCallback>;
-        backoff: Backoff;
-        isSleeping: boolean;
-        url: string; // Store URL for reconnection
-    }>();
+    private connections = new Map<string, SSEConnectionEntry>();
+    private idleTimer: number | null = null;
+    private readonly IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+    private isUserIdle = false;
 
     constructor() {
+        if (typeof window !== 'undefined') {
+            this.setupIdleDetection();
+        }
+
         // 🔄 Sync connections when leadership changes
         leaderElection.onChange((state) => {
+            this.handleLeadershipChange(state);
+        });
+    }
+
+    private setupIdleDetection() {
+        const resetIdle = () => {
+            if (this.isUserIdle) {
+                // console.debug('[SSEPool] 🏃 User active. Waking up followers...');
+                this.isUserIdle = false;
+                this.wake();
+            }
+
+            if (this.idleTimer) window.clearTimeout(this.idleTimer);
+            this.idleTimer = window.setTimeout(() => {
+                // console.debug('[SSEPool] 😴 User idle detected.');
+                this.isUserIdle = true;
+                this.enterIdleMode();
+            }, this.IDLE_TIMEOUT);
+        };
+
+        const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'];
+        events.forEach(evt => {
+            window.addEventListener(evt, resetIdle, { passive: true });
+        });
+        resetIdle();
+    }
+
+    private handleLeadershipChange(state: LeadershipState) {
+        this.connections.forEach(entry => {
             if (state === LeadershipState.LEADING) {
-                // console.debug('[SSEPool] 👑 Became Leader. Activating connections...');
-                this.connections.forEach(entry => {
-                    if (!entry.source && entry.refCount > 0) {
-                        this.connect(entry);
-                    }
-                });
+                // Leader ALWAYS connects if there are subscribers
+                if (entry.refCount > 0 && entry.state !== SSEState.CONNECTED) {
+                    this.transition(entry, SSEState.CONNECTING);
+                }
             } else {
-                // console.debug('[SSEPool] 👥 Became Follower. Closing connections...');
-                this.connections.forEach(entry => {
-                    if (entry.source) {
-                        entry.source.close();
-                        entry.source = null;
-                    }
-                });
+                // Follower: Pause if idle
+                if (this.isUserIdle && entry.state !== SSEState.IDLE_SLEEP) {
+                    this.transition(entry, SSEState.IDLE_SLEEP);
+                }
+            }
+        });
+    }
+
+    private enterIdleMode() {
+        if (leaderElection.isLeader()) return; // Leader never sleeps
+
+        this.connections.forEach(entry => {
+            if (entry.state === SSEState.CONNECTED || entry.state === SSEState.CONNECTING) {
+                this.transition(entry, SSEState.IDLE_SLEEP);
+            }
+        });
+    }
+
+    private wake() {
+        this.connections.forEach(entry => {
+            if (entry.state === SSEState.IDLE_SLEEP && entry.refCount > 0) {
+                // When waking up, we trigger catchup via Orchestrator (external to this class)
+                this.transition(entry, SSEState.CONNECTING);
+
+                // Trigger Catchup Signal
+                window.dispatchEvent(new CustomEvent('safespot:sse_wake', { detail: { url: entry.url } }));
             }
         });
     }
@@ -48,7 +112,7 @@ class SSEPool {
                 listeners: new Map(),
                 reconnectCallbacks: new Set(),
                 backoff: new Backoff(),
-                isSleeping: false, // Legacy field, kept for internal structure for now but ignored logic-wise
+                state: SSEState.DISCONNECTED,
                 url: url
             };
             this.connections.set(url, entry);
@@ -60,150 +124,12 @@ class SSEPool {
         }
         entry.listeners.get(eventName)!.add(listener);
 
-        if (!entry.source) {
-            this.connect(entry);
+        // Auto-connect if not connected and we have permission
+        if (entry.state === SSEState.DISCONNECTED || entry.state === SSEState.OFFLINE) {
+            this.transition(entry, SSEState.CONNECTING);
         }
 
         return () => this.unsubscribe(url, eventName, listener);
-    }
-
-    /**
-     * 🧠 ENTERPRISE FIX: SSE is now IMMORTAL.
-     * We no longer sleep or wake connections based on tab visibility.
-     * The OS/Browser will manage resources, but we never voluntarily disconnect.
-     */
-    sleep() {
-        console.log('[SSE] 🛡️ Sleep ignored: Connection is now persistent/immortal.');
-    }
-
-    wake() {
-        console.log('[SSE] 🛡️ Wake ignored: Connection was already persistent.');
-    }
-
-    private connect(entry: any) {
-        if (!navigator.onLine || !leaderElection.isLeader()) {
-            return;
-        }
-
-        const url = entry.url;
-        const SHARED_BACKOFF_KEY = `safespot_backoff_${url}`;
-
-        // Restore backoff state from shared storage if available
-        const storedAttempt = localStorage.getItem(SHARED_BACKOFF_KEY);
-        if (storedAttempt) {
-            entry.backoff.setAttempt(parseInt(storedAttempt, 10));
-        }
-        // console.debug(`[SSE] Connecting to ${url}...`);
-
-        try {
-            const source = new EventSource(url);
-            entry.source = source;
-
-            source.onopen = () => {
-                // console.debug(`[SSE] Connected to ${url}`);
-
-                // 📡 MOTOR 8: Trace Connection
-                telemetry.emit({
-                    engine: 'SSE',
-                    severity: TelemetrySeverity.SIGNAL,
-                    payload: { action: 'connected', url }
-                });
-
-                entry.backoff.reset();
-                localStorage.removeItem(SHARED_BACKOFF_KEY);
-                entry.reconnectCallbacks.forEach((cb: any) => cb(null));
-            };
-
-            source.onerror = () => {
-                if (source.readyState === EventSource.CLOSED) {
-                    source.close();
-                    entry.source = null;
-
-                    // ENTERPRISE: Infinite Backoff (Never give up while visible)
-                    // If we are visible, we must keep trying, but slowly.
-                    const delay = entry.backoff.getDelay();
-
-                    // 📡 MOTOR 8: Trace Error/Retry
-                    telemetry.emit({
-                        engine: 'SSE',
-                        severity: TelemetrySeverity.WARN,
-                        payload: { action: 'connection_lost', url, retryIn: delay, attempt: entry.backoff.count }
-                    });
-
-                    // Persist backoff state for other tabs (failover sync)
-                    localStorage.setItem(SHARED_BACKOFF_KEY, entry.backoff.count.toString());
-
-                    if (entry.backoff.count % 5 === 0) {
-                        console.warn(`[SSE] Connection struggling for ${url}. Next retry in ${delay}ms. (Attempt ${entry.backoff.count})`);
-                        // Notify Lifecycle Engine of persistent failure
-                        window.dispatchEvent(new CustomEvent('safespot:sse_struggle', { detail: { url, attempts: entry.backoff.count } }));
-                    }
-
-                    setTimeout(() => {
-                        if (entry.refCount > 0) this.connect(entry);
-                    }, delay);
-                }
-            };
-
-            // Proxy all events to listeners
-            const dispatch = (e: MessageEvent) => {
-                // 📡 MOTOR 8: Root Trace Generation (Fase D/Motor 8 Completion)
-                // We stamp the event to propagate the traceId without breaking the public SSEListener contract
-                const traceId = telemetry.startTrace();
-                (e as any).traceId = traceId;
-
-                telemetry.emit({
-                    engine: 'SSE',
-                    severity: TelemetrySeverity.DEBUG,
-                    traceId,
-                    payload: {
-                        action: 'event_received',
-                        type: e.type,
-                        url: entry.url,
-                        timestamp: Date.now()
-                    }
-                });
-
-                // 1. Specific listeners for this event type
-                const specificListeners = entry.listeners.get(e.type);
-                specificListeners?.forEach((fn: any) => fn(e));
-
-                // 2. 👑 Spy/Global listeners (the Orchestrator)
-                // We notify 'message' for EVERY event unless the type is already 'message' (to avoid double call)
-                if (e.type !== 'message') {
-                    const globalListeners = entry.listeners.get('message');
-                    globalListeners?.forEach((fn: any) => fn(e));
-                }
-            };
-
-            source.onmessage = dispatch;
-            [
-                'new-message',
-                'message.delivered',
-                'message.read',
-                'typing',
-                'presence',
-                'presence-update',
-                'chat-update',
-                'chat-rollback',
-                'message-reaction',
-                'message-pinned',
-                'connected',
-                'inbox-update',
-                'notification',
-                'mark-read',
-                'report-update',
-                'report-create',
-                'report-delete',
-                'comment-update',
-                'comment-delete'
-            ].forEach(evt => source.addEventListener(evt, dispatch));
-
-        } catch (err) {
-            console.error('[SSE] Fatal connection error', err);
-            // Retry anyway
-            setTimeout(() => this.connect(entry), 5000);
-        }
     }
 
     private unsubscribe(url: string, eventName: string, listener: SSEListener) {
@@ -214,9 +140,133 @@ class SSEPool {
         entry.listeners.get(eventName)?.delete(listener);
 
         if (entry.refCount <= 0) {
-            entry.source?.close();
+            this.transition(entry, SSEState.DISCONNECTED);
             this.connections.delete(url);
         }
+    }
+
+    // 🧠 Central State Transition Logic
+    private transition(entry: SSEConnectionEntry, newState: SSEState) {
+        const oldState = entry.state;
+        if (oldState === newState) return;
+
+        // console.debug(`[SSEPool] ${entry.url} transition: ${oldState} -> ${newState}`);
+        entry.state = newState;
+
+        switch (newState) {
+            case SSEState.CONNECTING:
+                this.connect(entry);
+                break;
+            case SSEState.CONNECTED:
+                // Handled in connect() onopen
+                break;
+            case SSEState.IDLE_SLEEP:
+            case SSEState.DISCONNECTED:
+            case SSEState.OFFLINE:
+                if (entry.source) {
+                    entry.source.close();
+                    entry.source = null;
+                }
+                break;
+        }
+
+        telemetry.emit({
+            engine: 'SSE',
+            severity: TelemetrySeverity.DEBUG,
+            payload: { action: 'state_transition', oldState, newState, url: entry.url }
+        });
+    }
+
+    private connect(entry: SSEConnectionEntry) {
+        // Guard: Network check
+        if (!navigator.onLine) {
+            this.transition(entry, SSEState.OFFLINE);
+            return;
+        }
+
+        // 🛡️ User Rule: Only Leader maintains SSE when idle
+        if (!leaderElection.isLeader() && this.isUserIdle) {
+            this.stateTransition(entry, SSEState.IDLE_SLEEP); // Internal call to avoid double logging if needed, or just transition
+            return;
+        }
+
+        const url = entry.url;
+        const SHARED_BACKOFF_KEY = `safespot_backoff_${url}`;
+
+        try {
+            if (entry.source) {
+                entry.source.close();
+                entry.source = null;
+            }
+
+            const source = new EventSource(url);
+            entry.source = source;
+
+            source.onopen = () => {
+                entry.state = SSEState.CONNECTED;
+                entry.backoff.reset();
+                localStorage.removeItem(SHARED_BACKOFF_KEY);
+                entry.reconnectCallbacks.forEach(cb => cb(null));
+
+                telemetry.emit({
+                    engine: 'SSE',
+                    severity: TelemetrySeverity.SIGNAL,
+                    payload: { action: 'connected', url }
+                });
+            };
+
+            source.onerror = () => {
+                if (source.readyState === EventSource.CLOSED) {
+                    this.transition(entry, SSEState.DISCONNECTED);
+
+                    const delay = entry.backoff.getDelay();
+                    localStorage.setItem(SHARED_BACKOFF_KEY, entry.backoff.count.toString());
+
+                    telemetry.emit({
+                        engine: 'SSE',
+                        severity: TelemetrySeverity.WARN,
+                        payload: { action: 'connection_lost', url, retryIn: delay, attempt: entry.backoff.count }
+                    });
+
+                    setTimeout(() => {
+                        if (entry.refCount > 0 && entry.state === SSEState.DISCONNECTED) {
+                            this.transition(entry, SSEState.CONNECTING);
+                        }
+                    }, delay);
+                }
+            };
+
+            const dispatch = (e: MessageEvent) => {
+                const traceId = telemetry.startTrace();
+                (e as any).traceId = traceId;
+
+                const specificListeners = entry.listeners.get(e.type);
+                specificListeners?.forEach(fn => fn(e));
+
+                if (e.type !== 'message') {
+                    const globalListeners = entry.listeners.get('message');
+                    globalListeners?.forEach(fn => fn(e));
+                }
+            };
+
+            source.onmessage = dispatch;
+            [
+                'new-message', 'message.delivered', 'message.read', 'typing',
+                'presence', 'presence-update', 'chat-update', 'chat-rollback',
+                'message-reaction', 'message-pinned', 'connected', 'inbox-update',
+                'notification', 'mark-read', 'report-update', 'report-create',
+                'report-delete', 'comment-update', 'comment-delete'
+            ].forEach(evt => source.addEventListener(evt, dispatch));
+
+        } catch (err) {
+            console.error('[SSE] Fatal connection error', err);
+            this.transition(entry, SSEState.DISCONNECTED);
+            setTimeout(() => this.transition(entry, SSEState.CONNECTING), 5000);
+        }
+    }
+
+    private stateTransition(entry: SSEConnectionEntry, state: SSEState) {
+        this.transition(entry, state);
     }
 
     onReconnect(url: string, callback: ReconnectCallback) {
@@ -230,17 +280,16 @@ class SSEPool {
     }
 
     isConnectionHealthy(): boolean {
-        // A simple heuristic: if we have any active sources, we are mostly healthy.
-        // Or we could check if any are in CONNECTING state.
         if (this.connections.size === 0) return false;
-
         for (const [_, entry] of this.connections) {
-            if (entry.source && entry.source.readyState === EventSource.OPEN) {
-                return true;
-            }
+            if (entry.state === SSEState.CONNECTED) return true;
         }
         return false;
     }
+
+    // Legacy compatibility
+    sleep() { this.enterIdleMode(); }
+    wakeExplicit() { this.wake(); }
 }
 
 export const ssePool = new SSEPool();

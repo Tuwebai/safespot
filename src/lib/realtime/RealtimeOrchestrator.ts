@@ -6,7 +6,7 @@ import { getClientId } from '../clientId';
 import { dataIntegrityEngine } from '@/engine/integrity';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 import { reportsCache, statsCache, commentsCache } from '../cache-helpers';
-import { reportSchema } from '../schemas';
+import { reportSchema, Comment } from '../schemas';
 import { upsertInList } from '@/lib/realtime-utils';
 import { NOTIFICATIONS_QUERY_KEY } from '@/hooks/queries/useNotificationsQuery';
 import { eventAuthorityLog } from './EventAuthorityLog';
@@ -77,9 +77,18 @@ class RealtimeOrchestrator {
     private userId: string | null = null;
     private myClientId: string = getClientId();
     private status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
-    private syncChannel: BroadcastChannel;
+    private syncChannel!: BroadcastChannel; // Definite assignment via constructor
 
     constructor() {
+        // 🛡️ MEM-ROOT-001: SSE Safety Guard
+        // Prevent multiple instances during HMR or component remounts
+        if ((window as any).__REALTIME_ORCHESTRATOR_ACTIVE__) {
+            console.warn('[Orchestrator] ⚠️ Instance already active. Reusing existing.');
+            return (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__;
+        }
+        (window as any).__REALTIME_ORCHESTRATOR_ACTIVE__ = true;
+        (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__ = this;
+
         this.syncChannel = new BroadcastChannel('safespot-m11-events');
         this.syncChannel.onmessage = (e) => this.handleSyncEvent(e.data);
 
@@ -93,6 +102,20 @@ class RealtimeOrchestrator {
                 console.debug('[Orchestrator] 👥 Following active leader.');
             }
         });
+
+        // 🚑 SSE Wake listener (Idle Recovery)
+        if (typeof window !== 'undefined') {
+            window.addEventListener('safespot:sse_wake', (e: any) => {
+                console.log(`[Orchestrator] 🚑 SSE Wake detected for ${e.detail?.url}. Triggering catchup...`);
+                this.resync().catch(err => {
+                    telemetry.emit({
+                        engine: 'Orchestrator',
+                        severity: TelemetrySeverity.ERROR,
+                        payload: { action: 'wake_resync_failed', error: err.message }
+                    });
+                });
+            });
+        }
     }
 
     // 🚥 PHASE D TELEMETRY
@@ -375,22 +398,60 @@ class RealtimeOrchestrator {
         try {
             switch (type) {
                 case 'new-comment': {
-                    if (payload) {
-                        commentsCache.append(queryClient, payload);
+                    const comment = payload.comment || payload;
+                    if (!comment || !comment.id) return;
+
+                    // ✅ ENTERPRISE FIX: Deduplicación determinística basada en LISTA
+                    // Principio: La fuente de verdad es el estado de la lista, no solo el detail cache
+                    // Problema: Si comentario optimista está en lista pero sin detail query → doble delta
+                    // Solución: Verificar contra la lista normalizada primero
+
+                    const list = queryClient.getQueryData<any>(
+                        queryKeys.comments.byReport(comment.report_id)
+                    );
+
+                    // Normalizar lista (puede ser array directo o { comments: [...] })
+                    const normalizedList = Array.isArray(list)
+                        ? list
+                        : (list?.comments || []);
+
+                    const alreadyInList = normalizedList.includes(comment.id);
+
+                    if (alreadyInList) {
+                        // Ya existe en la lista → verificar si es optimista para reconciliar
+                        const existing = queryClient.getQueryData<Comment>(
+                            queryKeys.comments.detail(comment.id)
+                        );
+
+                        if (existing?.is_optimistic) {
+                            // Reconciliar optimista con datos reales (sin delta)
+                            commentsCache.store(queryClient, comment);
+                        }
+                        // Si no es optimista o no existe detail → skip (ya fue procesado)
+                        return;
                     }
+
+                    // No existe en lista → es comentario realmente nuevo → aplicar delta
+                    commentsCache.append(queryClient, comment);
                     break;
                 }
                 case 'comment-update': {
+                    const commentId = id || payload.commentId || (payload.comment && payload.comment.id);
+                    if (!commentId) return;
+
                     if (data.isLikeDelta || payload.isLikeDelta) {
-                        commentsCache.applyLikeDelta(queryClient, id, data.delta || payload.delta);
+                        commentsCache.applyLikeDelta(queryClient, commentId, data.delta || payload.delta);
                     } else {
-                        commentsCache.patch(queryClient, id, payload);
+                        const patch = payload.comment || payload;
+                        commentsCache.patch(queryClient, commentId, patch);
                     }
                     break;
                 }
                 case 'comment-delete': {
-                    if (id && reportId) {
-                        commentsCache.remove(queryClient, id, reportId);
+                    const commentId = id || payload.commentId;
+                    const finalReportId = reportId || payload.reportId || payload.report_id;
+                    if (commentId && finalReportId) {
+                        commentsCache.remove(queryClient, commentId, finalReportId);
                     }
                     break;
                 }

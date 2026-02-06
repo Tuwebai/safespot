@@ -1,36 +1,33 @@
-import { useAuthStore } from '@/store/authStore';
-import { sessionAuthority } from '@/engine/session/SessionAuthority';
-
 /**
- * 🔴 ENTERPRISE FIX: Resolve Creator Identity (SSOT)
+ * resolveCreator
  * 
- * Este helper centraliza la lógica de determinación de creator para optimistic updates.
+ * ROLE: Identity Resolution Engine for Mutations
+ * RESPONSIBILITY: Resolve creator identity for optimistic updates
  * 
- * REGLA DE ORO (SSOT):
- * - Si autenticado → creator = user.auth_id (identity real)
- * - Si anónimo → creator = anonymous_id (identity dispositiva)
+ * PRIORITY HIERARCHY:
+ * 1. Supabase Auth (auth.user.auth_id) - Real users
+ * 2. SessionAuthority (anonymous_id) - Anonymous users (SSOT)
+ * 3. Fallback ('unknown') - Emergency only
  * 
- * Esto asegura que el ID local coincida con lo que el servidor guardará.
- * CENTRALIZADO: Ahora usa SessionAuthority para evitar fractura de identidad.
+ * METADATA SOURCES:
+ * - Alias: cachedProfile > localStorage > 'Usuario'
+ * - Avatar: cachedProfile > auth.user.avatar_url
  */
 
-export interface CreatorInfo {
-    creator_id: string; // Nunca null para creadores activos
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
+import { useAuthStore } from '@/store/authStore';
+
+export interface CreatorIdentity {
+    creator_id: string;
     creator_type: 'user' | 'anonymous';
     displayAlias: string;
-    avatarUrl?: string; // Optional pre-resolved avatar
+    avatarUrl?: string;
 }
 
-/**
- * Resuelve la identidad del creator según el estado de autenticación
- * 
- * @returns {CreatorInfo} Información completa del creator con alias display
- */
-export function resolveCreator(cachedProfile?: any): CreatorInfo {
+export function resolveCreator(cachedProfile?: any): CreatorIdentity {
     const auth = useAuthStore.getState();
 
-    // ✅ ENTERPRISE FIX: Smart Alias Resolution
-    // Always extract cached profile first (it's often fresher than auth store snapshot)
+    // Extract metadata from cached profile (if available)
     const profileData = cachedProfile?.data || cachedProfile;
     const cachedAlias = profileData?.alias;
     const cachedAvatar = profileData?.avatar_url;
@@ -55,8 +52,18 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
         };
     }
 
-    // CASO 2: Usuario anónimo (Fallback a Device ID vía SSOT Authority)
+    // CASO 2: Usuario anónimo
+    // ✅ ENTERPRISE FIX: SessionAuthority es SSOT para anonymous_id
+    // cachedProfile puede tener anonymous_id VIEJO si hubo cambio de sesión
+    // SIEMPRE usar SessionAuthority.getAnonymousId() como fuente de verdad
     const anonymousId = sessionAuthority.getAnonymousId();
+
+    console.log('[resolveCreator] 🔍 DIAGNOSTIC:', {
+        sessionAuthorityId: anonymousId?.substring(0, 8),
+        cachedProfileId: cachedProfile?.anonymous_id?.substring(0, 8),
+        cachedAlias,
+        cachedAvatar: !!cachedAvatar
+    });
 
     if (!anonymousId) {
         console.warn('[resolveCreator] Identity not ready in SessionAuthority. Falling back to local identity.');
@@ -71,6 +78,12 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
     const finalAlias = cachedAlias || localAlias || 'Usuario';
     const finalAvatar = cachedAvatar || undefined;
 
+    console.log('[resolveCreator] ✅ RESULT:', {
+        creator_id: finalId?.substring(0, 8),
+        displayAlias: finalAlias,
+        source: anonymousId ? 'SessionAuthority' : 'fallback'
+    });
+
     return {
         creator_id: finalId,
         creator_type: 'anonymous',
@@ -78,4 +91,3 @@ export function resolveCreator(cachedProfile?: any): CreatorInfo {
         avatarUrl: finalAvatar
     };
 }
-

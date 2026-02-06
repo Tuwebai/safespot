@@ -390,13 +390,11 @@ router.get('/', async (req, res, next) => {
     // CHRONOLOGICAL FEED (Fallback)
     // ============================================
 
-    // Parse cursor if present
-    // Parse cursor if present
     const decodedCursor = cursor ? decodeCursor(cursor) : null;
     let cursorDate = null;
     let cursorId = null;
 
-    if (decodedCursor && decodedCursor.c && decodedCursor.i) {
+    if (decodedCursor?.c && decodedCursor?.i) {
       cursorDate = decodedCursor.c;
       cursorId = decodedCursor.i;
     }
@@ -686,8 +684,6 @@ router.get('/', async (req, res, next) => {
     // ... (rest of logic unchanged)
 
   } catch (err) {
-    // OLD: logError(err, req); res.status(500)...
-    // NEW: Pass to global handler
     next(err);
   }
 });

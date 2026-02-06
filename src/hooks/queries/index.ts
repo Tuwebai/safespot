@@ -9,12 +9,13 @@
 export {
     useReportsQuery,
     useReportDetailQuery,
-    useCreateReportMutation,
     useUpdateReportMutation,
     useDeleteReportMutation,
     useToggleFavoriteMutation,
     useFlagReportMutation,
 } from './useReportsQuery'
+
+export { useCreateReportMutation } from '../mutations/useCreateReportMutation'
 
 // Profile & Favorites
 export {

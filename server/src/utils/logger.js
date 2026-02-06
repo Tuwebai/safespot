@@ -163,4 +163,8 @@ export const logSuccess = (message, data) => {
   logger.info(message, data);
 };
 
+export const logInfo = (message, data) => {
+  logger.info(message, data);
+};
+
 export default logger;

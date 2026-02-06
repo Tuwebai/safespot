@@ -7,8 +7,6 @@ import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 // 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
-import { resolveCreator } from '@/lib/auth/resolveCreator'
-import { getAvatarUrl } from '@/lib/avatar'
 
 // Enterprise Data Freshness SLA:
 // ... (comments remain same)
@@ -26,8 +24,21 @@ import { reportsCache } from '@/lib/cache-helpers'
 // However, sticking to the plan: Update Optimistic Update first.
 
 // ============================================
-// QUERIES (READ)
+// REPORTS CACHE CONTRACT
 // ============================================
+
+/**
+ * REPORTS CACHE CONTRACT
+ *
+ * Reports list is SSOT for UI rendering.
+ * Optimistic updates are authoritative until server reconciliation.
+ * Never reset entire array unless explicitly rehydrating from cold start.
+ * 
+ * RULES:
+ * - NEVER invalidate ['reports', 'list'] manually.
+ * - ALWAYS rely on setQueriesData with exact:false for updates.
+ * - SSE is the ONLY authority for total reconciliation.
+ */
 
 import { type NormalizedReport, normalizeReportForUI } from '@/lib/normalizeReport'
 
@@ -143,143 +154,7 @@ export function useReportDetailQuery(reportId: string | undefined, enabled = tru
 // MUTATIONS (WRITE)
 // ============================================
 
-export function useCreateReportMutation() {
-    const queryClient = useQueryClient()
-    const { checkAuth } = useAuthGuard()
-
-    return useMutation({
-        mutationKey: ['createReport'], // ✅ Key for detection
-        mutationFn: async (data: CreateReportData) => {
-            if (!checkAuth()) {
-                throw new Error('AUTH_REQUIRED');
-            }
-            return reportsApi.create(data);
-        },
-        onMutate: async (newReportData) => {
-            // 1. Cancel outgoing queries
-            await queryClient.cancelQueries({ queryKey: queryKeys.reports.all })
-            await queryClient.cancelQueries({ queryKey: queryKeys.stats.global })
-            await queryClient.cancelQueries({ queryKey: queryKeys.stats.categories })
-
-            // 2. Snapshot previous state
-            const previousReports = queryClient.getQueriesData({ queryKey: ['reports', 'list'] })
-            const previousGlobalStats = queryClient.getQueryData(queryKeys.stats.global)
-            const previousCategoryStats = queryClient.getQueryData(queryKeys.stats.categories)
-
-            // 3. GENERATE REAL ID (Enterprise Pattern)
-            if (!newReportData.id) {
-                newReportData.id = crypto.randomUUID()
-            }
-            const reportId = newReportData.id!
-
-            // 🔵 ROBUSTNESS FIX: Resolve creator correctly using Cache
-            const cachedProfile = queryClient.getQueryData(queryKeys.user.profile);
-            const creator = resolveCreator(cachedProfile);
-
-            // 4. Create Optimistic Report (Final ID, no Temp)
-            // ✅ ENTERPRISE FIX: Complete entity with Strict Author Model
-            const optimisticReport: Report = {
-                // Required fields
-                id: reportId,
-                // anonymous_id: creator.creator_id, // DEPRECATED but kept if schema requires strict compliance (though we prefer author.id)
-                // We will omit anonymous_id if Type permits, or set it to creator_id if strictly needed by older consumers.
-                // Assuming schema defines it but we want to move away. Let's map it for safety but focus on author.
-
-                title: newReportData.title,
-                description: newReportData.description,
-                category: newReportData.category,
-                status: newReportData.status || 'pendiente',
-                upvotes_count: 0,
-                comments_count: 0,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-
-                // ✅ IDENTITY SSOT (Critical Fix)
-                author: {
-                    id: creator.creator_id,
-                    alias: creator.displayAlias,
-                    avatarUrl: creator.avatarUrl || getAvatarUrl(creator.creator_id),
-                    isAuthor: true // Implicit owner
-                },
-
-                // Nullable fields
-                zone: newReportData.zone || null,
-                address: newReportData.address || null,
-                latitude: newReportData.latitude ?? null,
-                longitude: newReportData.longitude ?? null,
-                last_edited_at: null,
-                incident_date: newReportData.incident_date ?? null,
-                // Flat fields GONE
-                priority_zone: null,
-                distance_meters: null,
-
-                // Optional fields
-                province: undefined,
-                locality: undefined,
-                department: undefined,
-
-                // Optional fields
-                threads_count: 0,
-                image_urls: [],
-                is_favorite: false,
-                is_flagged: false,
-                flags_count: 0,
-                _isOptimistic: true // UI helper
-            }
-
-            // 5. STORE IMMEDIATELY (0ms UI Update)
-            reportsCache.prepend(queryClient, optimisticReport)
-
-            // 6. Update Stats Optimistically (Same as before)
-            if (previousGlobalStats) {
-                queryClient.setQueryData(
-                    queryKeys.stats.global,
-                    (old: any) => ({ ...old, total_reports: (old?.total_reports || 0) + 1 })
-                )
-            }
-            if (previousCategoryStats && newReportData.category) {
-                queryClient.setQueryData(
-                    queryKeys.stats.categories,
-                    (old: any) => ({
-                        ...old,
-                        [newReportData.category]: (old?.[newReportData.category] || 0) + 1
-                    })
-                )
-            }
-
-            return { previousReports, previousGlobalStats, previousCategoryStats, reportId }
-        },
-        onSuccess: (serverReport, _newReportData, context) => {
-            // SERVER RECONCILIATION
-            if (context?.reportId && serverReport.id !== context.reportId) {
-                reportsCache.swapId(queryClient, context.reportId, serverReport.id)
-            }
-
-            // MERGE & PATCH
-            reportsCache.patch(queryClient, serverReport.id, {
-                ...serverReport,
-                _isOptimistic: false
-            })
-            // Storage sync omitted
-        },
-        onError: (_err, _newReport, context) => {
-            // Rollback
-            if (context?.reportId) {
-                reportsCache.remove(queryClient, context.reportId)
-            }
-            if (context?.previousGlobalStats) {
-                queryClient.setQueryData(queryKeys.stats.global, context.previousGlobalStats)
-            }
-            if (context?.previousCategoryStats) {
-                queryClient.setQueryData(queryKeys.stats.categories, context.previousCategoryStats)
-            }
-        },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
-        },
-    })
-}
+// useCreateReportMutation moved to src/hooks/mutations/useCreateReportMutation.ts
 
 // ... UseUpdate, UseDelete, UseToggleFavorite, UseFlag (Logic remains same, type check ensures compliance)
 
@@ -314,10 +189,7 @@ export function useUpdateReportMutation() {
             }
         },
         onSettled: () => {
-            // ✅ ENTERPRISE RULE: Never invalidate detail on update. Rely on Optimistic + SSE.
-            // queryClient.invalidateQueries({ queryKey: queryKeys.reports.detail(id) })
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
+            // ✅ ENTERPRISE RULE: Never invalidate stats manually on update. SSE handles it.
         }
     })
 }
@@ -384,8 +256,7 @@ export function useDeleteReportMutation() {
             }
         },
         onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.global })
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats.categories })
+            // ✅ ENTERPRISE RULE: Never invalidate stats manually on delete. SSE handles it.
         },
     })
 }

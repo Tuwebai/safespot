@@ -5,8 +5,8 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
+    "dev": "node --max-old-space-size=1024 --watch src/index.js",
+    "start": "node --max-old-space-size=2048 src/index.js",
     "migrate": "node src/scripts/migrate.js",
     "sync:counters": "node src/scripts/syncCounters.js",
     "test-connection": "node test-connection.js",

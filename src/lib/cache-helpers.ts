@@ -91,11 +91,29 @@ export const reportsCache = {
     },
 
     applyCommentDelta: (queryClient: QueryClient, reportId: string, delta: number) => {
-        queryClient.setQueryData<Report>(
+        // CONTRACT CMT-ROOT-001: Atomic Counter Reconciliation
+        // Delta must only apply to the target reportId to protect SSOT integrity.
+
+        // 1. Update Detail Cache (Source of Truth)
+        queryClient.setQueryData<NormalizedReport>(
             queryKeys.reports.detail(reportId),
             (old) => {
                 if (!old) return undefined;
+                // Safety: Defensive check to ensure we are patching the right object
+                if (old.id !== reportId) return old;
                 return { ...old, comments_count: Math.max(0, (old.comments_count || 0) + delta) };
+            }
+        );
+
+        // 2. Trigger List Observers (Reactive hydration)
+        queryClient.setQueriesData<string[]>(
+            { queryKey: ['reports', 'list'], exact: false },
+            (oldList) => {
+                if (!Array.isArray(oldList)) return oldList;
+                // We only trigger re-render if the list actually contains the report being modified.
+                // This prevents unnecessary re-renders in unrelated views.
+                if (!oldList.includes(reportId)) return oldList;
+                return [...oldList];
             }
         );
     },
@@ -109,19 +127,12 @@ export const reportsCache = {
             if (!Array.isArray(oldData)) return;
             const filters = queryKey[2] as ReportFilters | string | undefined;
             const matches = !filters || reportsCache.matchesFilters(normalizedReport, filters);
-            if (!matches) {
-                // SIGNAL DISCARDED BY FILTER (Context Awareness)
-                telemetry.emit({
-                    engine: 'Cache',
-                    severity: TelemetrySeverity.DEBUG,
-                    payload: { action: 'event_discarded_by_filter', entity: 'report', entityId: normalizedReport.id, reason: 'filter_mismatch', filter: filters }
-                });
-                return;
-            }
+
+            if (!matches) return;
 
             queryClient.setQueryData<string[]>(queryKey, (old) => {
-                if (!Array.isArray(old)) return old;
-                const uniqueOld = old.filter(id => id !== normalizedReport.id);
+                const currentOld = old || [];
+                const uniqueOld = currentOld.filter(id => id !== normalizedReport.id);
                 return [normalizedReport.id, ...uniqueOld];
             });
         });
@@ -223,7 +234,8 @@ export const commentsCache = {
 
     remove: (queryClient: QueryClient, commentId: string, reportId: string) => {
         // 🔴 NO USAR removeQueries: Evita el error "Missing queryFn" si la query sigue siendo observada.
-        // La limpieza del detalle ocurrirá de forma pasiva o vía GC si nadie lo usa.
+        // 🔴 NO USAR invalidateQueries: queryClient tiene guard que bloquea operaciones en comments.
+        // ✅ USAR setQueryData(undefined): Marca la query como inexistente sin triggerar refetch.
 
         queryClient.setQueriesData<any>(
             { queryKey: queryKeys.comments.byReport(reportId) },
@@ -241,6 +253,15 @@ export const commentsCache = {
                 if (old.comments) return { ...old, comments: removeAction(old.comments) };
                 return old;
             }
+        );
+
+        // ✅ ENTERPRISE FIX: Setear query detail a undefined
+        // Problema: useQueries en useCommentsManager sigue observando el ID hasta el próximo render
+        // Si usamos invalidate/remove → React Query intenta refetch → Missing queryFn
+        // Solución: Setear a undefined → observer ve "no data" → no intenta refetch
+        queryClient.setQueryData(
+            queryKeys.comments.detail(commentId),
+            undefined
         );
     },
 
@@ -286,6 +307,37 @@ export const commentsCache = {
                 return old;
             }
         );
+    },
+
+    swapId: (queryClient: QueryClient, oldId: string, newId: string, reportId: string) => {
+        if (oldId === newId) return;
+
+        // 1. Swap Detail Cache
+        const oldData = queryClient.getQueryData<Comment>(queryKeys.comments.detail(oldId));
+        if (oldData) {
+            queryClient.setQueryData(queryKeys.comments.detail(newId), { ...oldData, id: newId, is_optimistic: false });
+            // We DON'T remove oldId yet to keep UI stable if an observer is still looking at it
+            // but we ensure it's not the primary one.
+        }
+
+        // 2. Swap List Caches
+        queryClient.setQueriesData<any>(
+            { queryKey: queryKeys.comments.byReport(reportId) },
+            (old: any) => {
+                const swapAction = (list: any) => {
+                    if (!Array.isArray(list)) return list;
+                    return list.map(id => id === oldId ? newId : id);
+                }
+                if (Array.isArray(old)) return swapAction(old);
+                if (old.comments) return { ...old, comments: swapAction(old.comments) };
+                return old;
+            }
+        );
+
+        // 3. Deferred Cleanup
+        setTimeout(() => {
+            queryClient.removeQueries({ queryKey: queryKeys.comments.detail(oldId) });
+        }, 1000);
     }
 };
 

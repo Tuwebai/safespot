@@ -8,15 +8,27 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 // 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
 import { resolveCreator } from '@/lib/auth/resolveCreator'
 import { getAvatarUrl } from '@/lib/avatar'
+import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard'
+import { useToast } from '@/components/ui/toast'
 
 /**
  * Fetch a single comment from the canonical cache
  */
 export function useComment(commentId: string | undefined) {
+    const queryClient = useQueryClient();
+
     return useQuery({
         queryKey: queryKeys.comments.detail(commentId ?? ''),
-        // 🔴 NO queryFn nulo: Si esta key explota, es porque hay un bug de invalidación que debe corregirse.
-        enabled: false, // Strictly passive cache reader (no single-comment API)
+        queryFn: async () => {
+            // ✅ ENTERPRISE RULE: Strict queryFn invariant
+            if (!commentId) throw new Error('Comment ID is required');
+            // Check cache first to avoid unnecessary network calls for optimistic items
+            const cached = queryClient.getQueryData<Comment>(queryKeys.comments.detail(commentId));
+            if (cached?.is_optimistic) return cached;
+
+            return commentsApi.getById(commentId);
+        },
+        enabled: !!commentId,
         staleTime: Infinity,
         gcTime: 1000 * 60 * 60, // Keep in cache for 1 hour
     })
@@ -76,6 +88,7 @@ export function useCommentsQuery(reportId: string | undefined, limit = 20, curso
 export function useCreateCommentMutation() {
     const queryClient = useQueryClient()
     const { checkAuth } = useAuthGuard() // ✅ PHASE 2: Auth guard
+    const toast = useToast()
 
     return useMutation({
         mutationFn: async (data: CreateCommentData & { id?: string }) => {
@@ -86,12 +99,31 @@ export function useCreateCommentMutation() {
             return commentsApi.create(data);
         },
         onMutate: async (newCommentData) => {
+            // ✅ ENTERPRISE FIX: Identity Gate (ANTES de optimistic update)
+            try {
+                guardIdentityReady();
+            } catch (e) {
+                if (e instanceof IdentityNotReadyError) {
+                    toast.warning('Identidad no lista. Intenta nuevamente en unos segundos.');
+                }
+                throw e;
+            }
+
             const listKey = queryKeys.comments.byReport(newCommentData.report_id)
             const reportKey = queryKeys.reports.detail(newCommentData.report_id)
 
             // 1. Cancel outgoing refetches
-            await queryClient.cancelQueries({ queryKey: listKey })
-            await queryClient.cancelQueries({ queryKey: reportKey })
+            // ✅ ENTERPRISE FIX: Manejar CancelledError silenciosamente
+            // Esto puede ocurrir si hay queries en progreso que se cancelan
+            try {
+                await queryClient.cancelQueries({ queryKey: listKey })
+                await queryClient.cancelQueries({ queryKey: reportKey })
+            } catch (error) {
+                // CancelledError es esperado y seguro de ignorar
+                if (error instanceof Error && error.name !== 'CancelledError') {
+                    throw error;
+                }
+            }
 
             // 2. Snapshot previous values
             const previousComments = queryClient.getQueryData<any>(listKey)
@@ -105,6 +137,12 @@ export function useCreateCommentMutation() {
             // Progresión: Cache Perfil (SSOT) -> resolveCreator (Fallback Store)
             const cachedProfile = queryClient.getQueryData<any>(queryKeys.user.profile);
             const creator = resolveCreator(cachedProfile);
+
+            console.log('[useCommentsQuery] 🔍 OPTIMISTIC IDENTITY:', {
+                creator_id: creator.creator_id?.substring(0, 8),
+                displayAlias: creator.displayAlias,
+                cachedProfile: !!cachedProfile
+            });
 
             const optimisticComment: Comment = {
                 id: commentId,
@@ -154,17 +192,52 @@ export function useCreateCommentMutation() {
                 // Detail query will be garbage collected as it won't be observed anymore.
             }
         },
-        onSuccess: (newComment, _variables, _context) => {
+        onSuccess: (newComment, variables, _context) => {
             // ✅ ZERO-LATENCY FINALIZATION
             // The optimistic comment had the REAL ID.
             // Backend returned the same ID.
             // We just ensure the data is authoritative (e.g. is_local calculation).
 
             // 1. Silent Update: Update the detail cache with authoritative data
-            // This won't cause list re-order because ID is same.
-            commentsCache.store(queryClient, newComment)
+            commentsCache.store(queryClient, newComment);
 
-            // 2. NO Invalidation. NO Refetch. (Preserve 0ms state)
+            // 2. ✅ ENTERPRISE FIX (Capa 3 - UX): Reconciliar Lista Estructuralmente
+            // Problema: Lista tiene comentario optimista con estructura parcial
+            // Root Cause: commentsCache.store() solo actualiza detail, NO lista
+            // Solución: Reemplazar optimista en lista con versión real del backend
+            // Esto NO es normalización de IDs, la lista YA tiene IDs correctos
+            // Esto ES reconciliación de objetos completos si la lista los almacena
+
+            // NOTA: Actualmente la lista almacena solo IDs (string[])
+            // Por lo tanto, esta reconciliación es NO-OP pero semánticamente correcta
+            // Si en el futuro la lista almacena objetos, esto funcionará automáticamente
+            queryClient.setQueryData<any>(
+                queryKeys.comments.byReport(variables.report_id),
+                (old: any) => {
+                    if (!old) return old;
+
+                    // Normalizar estructura (array directo o { comments: [...] })
+                    const isList = Array.isArray(old);
+                    const list = isList ? old : (old.comments ?? []);
+
+                    // Si la lista almacena objetos, reemplazar optimista con real
+                    // Si la lista almacena IDs, esto es NO-OP (pero correcto)
+                    const reconciled = list.map((item: any) => {
+                        // Si es objeto con id, reemplazar si coincide
+                        if (typeof item === 'object' && item?.id === newComment.id) {
+                            return newComment;
+                        }
+                        // Si es string (ID), mantener
+                        return item;
+                    });
+
+                    // Retornar en la misma estructura que entró
+                    return isList ? reconciled : { ...old, comments: reconciled };
+                }
+            );
+
+            // 3. NO Invalidation. NO Refetch. (Preserve 0ms state)
+            // La mutación estructural triggerea re-render natural
         },
         onSettled: () => {
         },
@@ -221,6 +294,13 @@ export function useDeleteCommentMutation() {
 
     return useMutation({
         mutationFn: async ({ id }: { id: string; reportId: string }) => {
+            // ✅ CLAUSULA 1: Optimistic Cancel
+            const cached = queryClient.getQueryData<Comment>(queryKeys.comments.detail(id));
+            if (cached?.is_optimistic) {
+                console.log('[useDeleteCommentMutation] 🛡️ Optimistic item detected. Skipping network DELETE.');
+                return { skipped: true };
+            }
+
             // ✅ AUTH GUARD: Block anonymous users
             if (!checkAuth()) {
                 throw new Error('AUTH_REQUIRED');
@@ -239,18 +319,38 @@ export function useDeleteCommentMutation() {
             const previousComments = queryClient.getQueryData(listKey)
             const previousReport = queryClient.getQueryData(reportKey)
 
+            // ✅ CLAUSULA 1: Cancel any ongoing creation for this ID
+            const isOptimistic = queryClient.getQueryData<Comment>(queryKeys.comments.detail(id))?.is_optimistic;
+            if (isOptimistic) {
+                // This will prevent the POST onSuccess from reviving the comment
+                await queryClient.cancelQueries({ queryKey: ['createComment'] });
+            }
+
             // USE HELPER: Remove from SSOT, Lists, and Decrement Counter
             commentsCache.remove(queryClient, id, reportId)
 
             return { previousComments, previousReport, listKey, reportKey, id }
         },
-        onError: (_err, _vars, context) => {
+        onError: (error, variables, context) => {
+            // ✅ ENTERPRISE FIX: IdentityNotReadyError no es un error de red
+            // No hacer rollback porque no hubo optimistic update
+            if (error instanceof IdentityNotReadyError) {
+                console.log('[useCommentsQuery] Mutation blocked by identity guard. State:', error.state);
+                return; // Early return, no rollback necesario
+            }
+
+            const listKey = queryKeys.comments.byReport(variables.reportId)
+            const reportKey = queryKeys.reports.detail(variables.reportId)
+
+            // Rollback solo para errores reales (después de optimistic update)
             if (context?.previousComments) {
-                queryClient.setQueryData(context.listKey, context.previousComments)
+                queryClient.setQueryData(listKey, context.previousComments)
             }
             if (context?.previousReport) {
-                queryClient.setQueryData(context.reportKey, context.previousReport)
+                queryClient.setQueryData(reportKey, context.previousReport)
             }
+
+            console.error('[useCommentsQuery] Error creating comment:', error)
             // Restore detail if we had it? (Ideally yes, but omitted for brevity as fetch refetches)
         },
         onSettled: () => {
@@ -358,8 +458,8 @@ export function usePinCommentMutation() {
         onMutate: async ({ id }) => {
             commentsCache.patch(queryClient, id, { is_pinned: true })
         },
-        onSettled: (_, __, { reportId }) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(reportId) })
+        onSettled: () => {
+            // ✅ SSOT FIX: No manual invalidation. State is synced via SSE.
         }
     })
 }
@@ -382,8 +482,8 @@ export function useUnpinCommentMutation() {
         onMutate: async ({ id }) => {
             commentsCache.patch(queryClient, id, { is_pinned: false })
         },
-        onSettled: (_, __, { reportId }) => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.comments.byReport(reportId) })
+        onSettled: () => {
+            // ✅ SSOT FIX: No manual invalidation. State is synced via SSE.
         }
     })
 }

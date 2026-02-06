@@ -11,6 +11,7 @@ import { chatBroadcast } from '@/lib/chatBroadcast';
 import { playNotificationSound } from '@/lib/sound';
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard';
 
 export interface UserPresence {
     status: 'online' | 'offline';
@@ -386,6 +387,16 @@ export function useSendMessageMutation() {
 
 
         onMutate: async (variables) => {
+            // ✅ ENTERPRISE FIX: Identity Gate (ANTES de optimistic update)
+            try {
+                guardIdentityReady();
+            } catch (e) {
+                if (e instanceof IdentityNotReadyError) {
+                    toast.error('Identidad no lista. Intenta nuevamente en unos segundos.');
+                }
+                throw e;
+            }
+
             // Cancelar refetches salientes
             await queryClient.cancelQueries({ queryKey: CHATS_KEYS.messages(variables.roomId, anonymousId || '') });
 
@@ -402,10 +413,15 @@ export function useSendMessageMutation() {
             // ✅ Enterprise: Use crypto.randomUUID for globally unique Client-Side ID
             const tempId = variables.id || self.crypto.randomUUID();
 
+            // ✅ ENTERPRISE FIX: anonymousId garantizado por guard (no fallback 'me')
+            if (!anonymousId) {
+                throw new Error('Anonymous ID not available after guard');
+            }
+
             const optimisticMessage: ChatMessage = {
                 id: tempId,
                 conversation_id: variables.roomId,
-                sender_id: anonymousId || 'me',
+                sender_id: anonymousId,  // ✅ NO fallback 'me' (guard garantiza ID válido)
                 content: variables.type === 'image' && variables.file ? '' : variables.content,
                 localUrl: optimisticContent.startsWith('blob:') ? optimisticContent : undefined,
                 localStatus: 'pending', // ✅ UX: Clock Icon
@@ -452,6 +468,13 @@ export function useSendMessageMutation() {
         },
 
         onError: (err, variables, context) => {
+            // ✅ ENTERPRISE FIX: IdentityNotReadyError no es un error de red
+            // No hacer rollback porque no hubo optimistic update
+            if (err instanceof IdentityNotReadyError) {
+                console.log('[useSendMessageMutation] Mutation blocked by identity guard. State:', err.state);
+                return; // Early return, no rollback necesario
+            }
+
             // ✅ ENTERPRISE FIX: Offline Resilience
             // If network fails, the SW Background Sync has likely queued the request (Outbox).
             // We should NOT rollback the UI, but leave it as 'pending' (clock icon).

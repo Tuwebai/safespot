@@ -609,6 +609,15 @@ export const commentsApi = {
   },
 
   /**
+   * Get a single comment by ID
+   * Canonical fetch for CMT-001 Detail Query
+   */
+  getById: async (id: string): Promise<Comment> => {
+    const response = await apiRequest<RawComment>(`/comments/id/${id}`);
+    return transformComment(response);
+  },
+
+  /**
    * Create a new comment
    * If parent_id is provided, creates a reply to that comment
    */

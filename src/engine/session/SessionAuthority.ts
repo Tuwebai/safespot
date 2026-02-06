@@ -198,8 +198,22 @@ class SessionAuthority {
     }
 
     public getAnonymousId(): string | null {
-        // ✅ MOTOR 2.1: Use VersionedStorageManager helper (fixes JSON-in-header leak)
-        return this.token?.anonymousId || versionedStorage.getVersioned<string>('safespot_anonymous_id') || null;
+        // ✅ ENTERPRISE FIX: Hard gate - NO identity during transition
+        // Previene uso de identidad transitoria durante BOOTSTRAPPING
+        if (this.state === SessionState.BOOTSTRAPPING ||
+            this.state === SessionState.UNINITIALIZED) {
+            console.warn('[SessionAuthority] Identity requested during transition. State:', this.state);
+            return null;
+        }
+
+        // Permitir fallback en estados degradados (emergency)
+        if (this.state === SessionState.DEGRADED ||
+            this.state === SessionState.FAILED) {
+            return versionedStorage.getVersioned<string>('safespot_anonymous_id') || null;
+        }
+
+        // Estado READY/RECOVERING/EXPIRED: retornar token authority
+        return this.token?.anonymousId || null;
     }
 
     private setState(newState: SessionState) {

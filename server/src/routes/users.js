@@ -391,14 +391,7 @@ router.get('/search', async (req, res) => {
  * GET /api/users/stats
  * Get global statistics
  */
-/**
- * GET /api/users/stats
- * Get global statistics
- * CHANGED: Now runs live COUNT(*) to ensure 100% accuracy (Enterprise Grade)
- * Removed dependency on stale 'global_stats' table.
- */
 router.get('/stats', async (req, res) => {
-  // console.log('[STATS] GET /api/users/stats (Live Count)');
   try {
     // Parallelize valid counts for performance
     const [reportsCount, resolvedCount, usersCount] = await Promise.all([
@@ -417,8 +410,7 @@ router.get('/stats', async (req, res) => {
       data: {
         total_reports: reportsCount.count || 0,
         resolved_reports: resolvedCount.count || 0,
-        total_users: usersCount.count || 0,
-        active_users_month: 0 // Placeholder
+        total_users: usersCount.count || 0
       }
     });
   } catch (error) {
@@ -430,13 +422,7 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-/**
- * GET /api/users/category-stats
- * Get report counts by category
- * CHANGED: Live Aggregation (Enterprise Grade)
- */
 router.get('/category-stats', async (req, res) => {
-  // console.log('[STATS] GET /api/users/category-stats (Live)');
   try {
     // Perform efficient Group By Count
     // CRITICAL: Use supabaseAdmin to bypass RLS

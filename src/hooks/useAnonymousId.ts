@@ -17,12 +17,15 @@ export function useAnonymousId(): string | null {
     useEffect(() => {
         // 1. Initial sync
         const currentId = sessionAuthority.getAnonymousId();
+        console.log('[useAnonymousId] Initial sync:', { currentId: currentId?.substring(0, 8), stateId: id?.substring(0, 8) });
         if (currentId !== id) setId(currentId);
 
         // 2. Subscribe to state changes
         const unsubscribe = sessionAuthority.subscribe((state) => {
             const newId = sessionAuthority.getAnonymousId();
+            console.log('[useAnonymousId] State change:', { state, newId: newId?.substring(0, 8), currentStateId: id?.substring(0, 8) });
             if (newId !== id) {
+                console.log('[useAnonymousId] 🔄 Updating ID:', newId?.substring(0, 8));
                 setId(newId);
                 if (state === SessionState.READY) {
                     console.log('[useAnonymousId] ✅ Identity resolved via Motor 2:', newId?.substring(0, 8));

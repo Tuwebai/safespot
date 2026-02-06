@@ -100,11 +100,31 @@ class ApplicationBootstrapManager {
                 console.error('[Bootstrap] Identity failed. Proceeding in degraded mode.');
             }
 
+
             // 👑 ORCHESTRATOR: Start Realtime Commander
             const anonymousId = sessionAuthority.getAnonymousId();
             if (anonymousId) {
                 realtimeOrchestrator.connect(anonymousId);
+            } else {
+                // ✅ ENTERPRISE FIX: Subscribe to SessionAuthority state changes
+                // If identity is not ready yet (BOOTSTRAPPING), connect when it becomes READY
+                console.debug('[Bootstrap] Identity not ready. Subscribing to state changes...');
+
+                const unsubscribe = sessionAuthority.subscribe((state) => {
+                    if (state === SessionState.READY || state === SessionState.DEGRADED) {
+                        const currentId = sessionAuthority.getAnonymousId();
+
+                        if (currentId) {
+                            console.debug(`[Bootstrap] Identity ready (${state}). Connecting SSE...`);
+                            realtimeOrchestrator.connect(currentId);
+
+                            // Cleanup: Unsubscribe after first successful connection
+                            unsubscribe();
+                        }
+                    }
+                });
             }
+
 
             this.setState(BootstrapState.RUNNING, 'boot_success');
 

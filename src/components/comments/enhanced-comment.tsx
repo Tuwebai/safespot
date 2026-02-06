@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAvatarFallback } from '@/lib/avatar'
 import { isRealUser } from '@/lib/adapters' // ✅ Centralized Helper
 import { useIsOwner } from '@/hooks/useIsOwner' // ✅ SSOT
+import { useAnonymousId } from '@/hooks/useAnonymousId' // ✅ Reactive Identity
 import {
   MessageCircle,
   ThumbsUp,
@@ -77,11 +78,36 @@ export const EnhancedComment = memo(function EnhancedComment({
   const [localIsContextMenuOpen, setLocalIsContextMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // ✅ SSOT Permission: Calculate ownership directly, ignoring potential prop staleness
+  // ✅ ENTERPRISE FIX: Force re-render when identity resolves
+  // Root Cause: Race condition de hydration
+  // - resolveCreator() usa sessionAuthority.getAnonymousId() directo (síncrono)
+  // - useAnonymousId() usa useState(sessionAuthority.getAnonymousId()) (reactivo)
+  // Si SessionAuthority está BOOTSTRAPPING → useAnonymousId retorna null
+  // Component renderiza con isMe=false → botón "Reportar"
+  // Cuando SessionAuthority → READY, useAnonymousId actualiza
+  // Esta dependencia reactiva fuerza re-render → isMe actualiza → botón correcto
+  const currentId = useAnonymousId()
+
+  // ✅ SSOT Permission: Calculate ownership directly
   const isMe = useIsOwner(comment.author.id)
 
-  // Determine if we can edit/delete (Must be owner OR Mod)
-  const canModify = isMe || isMod
+  // 🔍 DIAGNOSTIC LOGS (Remove after debugging)
+  useEffect(() => {
+    console.group(`[EnhancedComment] ${comment.id.substring(0, 8)}`)
+    console.log('author.id:', comment.author.id)
+    console.log('currentId:', currentId)
+    console.log('isMe:', isMe)
+    console.log('Direct comparison:', currentId === comment.author.id)
+    console.log('author.id type:', typeof comment.author.id)
+    console.log('currentId type:', typeof currentId)
+    console.groupEnd()
+  }, [comment.id, comment.author.id, currentId, isMe])
+
+  // [CMT-001] Permission Separation:
+  // canEdit: Only the author can edit their own content.
+  // canModerate: The author OR a moderator (Report Owner/Admin) can delete or pin.
+  const canEdit = isMe
+  const canModerate = isMe || isMod
 
   const isContextMenuOpen = onMenuOpen ? activeMenuId === comment.id : localIsContextMenuOpen
 
@@ -432,61 +458,68 @@ export const EnhancedComment = memo(function EnhancedComment({
                     </button>
                   )}
 
-                  {/* Consolidated Admin/Owner Actions */}
-                  {canModify && (
+                  {/* Consolidated User/Admin Actions */}
+                  {(canEdit || canModerate) && (
                     <>
                       <div className="border-t border-border my-1" />
 
-                      {/* Edit */}
-                      <button
-                        onClick={() => {
-                          onEdit?.(comment.id, comment.content)
-                          closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                      >
-                        <Edit className="h-4 w-4" />
-                        Editar
-                      </button>
-
-                      {/* Pin/Unpin (Report Owner or Mod only) */}
-                      {(canPin || isMod) && (
-                        comment.is_pinned ? (
-                          <button
-                            onClick={() => {
-                              onUnpin?.(comment.id)
-                              closeMenu()
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                          >
-                            <Pin className="h-4 w-4 rotate-45 transform" />
-                            Desfijar
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              onPin?.(comment.id)
-                              closeMenu()
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
-                          >
-                            <Pin className="h-4 w-4" />
-                            Fijar
-                          </button>
-                        )
+                      {/* Edit (Strictly only for Author) */}
+                      {canEdit && (
+                        <button
+                          onClick={() => {
+                            onEdit?.(comment.id, comment.content)
+                            closeMenu()
+                          }}
+                          className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                        >
+                          <Edit className="h-4 w-4" />
+                          Editar
+                        </button>
                       )}
 
-                      {/* Delete */}
-                      <button
-                        onClick={() => {
-                          onDelete?.(comment.id)
-                          closeMenu()
-                        }}
-                        className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </button>
+                      {/* Moderation Actions (Author or Mod) */}
+                      {canModerate && (
+                        <>
+                          {/* Pin/Unpin (Report Owner or Mod only - though here isMod is the Report Owner) */}
+                          {(canPin || isMod) && (
+                            comment.is_pinned ? (
+                              <button
+                                onClick={() => {
+                                  onUnpin?.(comment.id)
+                                  closeMenu()
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                              >
+                                <Pin className="h-4 w-4 rotate-45 transform" />
+                                Desfijar
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  onPin?.(comment.id)
+                                  closeMenu()
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                              >
+                                <Pin className="h-4 w-4" />
+                                Fijar
+                              </button>
+                            )
+                          )}
+
+                          {/* Delete */}
+                          <button
+                            onClick={() => {
+                              onDelete?.(comment.id)
+                              closeMenu()
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

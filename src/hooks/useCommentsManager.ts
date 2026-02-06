@@ -1,7 +1,8 @@
 import { useCallback, useReducer, useMemo } from 'react'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import type { Comment } from '@/lib/api'
+import { commentsApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { handleErrorWithMessage } from '@/lib/errorHandler'
@@ -133,6 +134,7 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     const toast = useToast()
     const { checkAuth } = useAuthGuard()
     const [state, dispatch] = useReducer(commentsReducer, initialState)
+    const queryClient = useQueryClient()
 
     // ============================================
     // DATA LOADING (React Query)
@@ -155,10 +157,27 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     }, [commentsIdsOrData])
 
     // Hydrate comments from SSOT (Canonical Cache)
+    // ✅ ENTERPRISE FIX: Provide queryFn to prevent "Missing queryFn" errors
+    // Root Cause: useQueries sin queryFn crea queries zombie
+    // Cuando React Query intenta refetch (tab switch, focus, reconnect) → Missing queryFn
+    // Solución: Registrar queryFn con cache-first strategy explícita
+    // Esto evita fetch innecesario si cache ya tiene data (optimistic, SSE, etc.)
     const commentQueries = useQueries({
         queries: commentIds.map(id => ({
             queryKey: queryKeys.comments.detail(id),
-            staleTime: Infinity,
+            queryFn: async () => {
+                // Cache-first: Check if data already exists (optimistic, SSE, previous fetch)
+                const cached = queryClient.getQueryData<Comment>(
+                    queryKeys.comments.detail(id)
+                );
+                if (cached) return cached;
+
+                // Fallback: Fetch from API (rare case: direct navigation, cache miss)
+                return commentsApi.getById(id);
+            },
+            staleTime: Infinity, // Never auto-refetch (manual invalidation only)
+            gcTime: 1000 * 60 * 60, // Keep in cache for 1 hour
+            enabled: !!id,
         }))
     })
 

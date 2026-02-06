@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { requireAnonymousId, validateFlagReason } from '../utils/validation.js';
 import { validate } from '../utils/validateMiddleware.js';
 import { commentSchema, commentUpdateSchema } from '../utils/schemas.js';
-import { logError, logSuccess } from '../utils/logger.js';
+import { logError, logSuccess, logInfo } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter, likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
@@ -21,6 +21,68 @@ import { ErrorCodes } from '../utils/errorCodes.js';
 import { executeUserAction } from '../utils/governance.js';
 
 const router = express.Router();
+
+/**
+ * GET /api/comments/id/:id
+ * Get a single comment by ID (Canonical Detail Fetch)
+ * Used by useComment queryFn to restore CMT-001 Invariant
+ */
+router.get('/id/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.headers['x-anonymous-id'];
+
+    const result = await queryWithRLS(
+      anonymousId || '',
+      `SELECT 
+         c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
+         u.avatar_url, u.alias,
+         (c.anonymous_id = r.anonymous_id) as is_author
+       FROM comments c
+       LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
+       INNER JOIN reports r ON c.report_id = r.id
+       WHERE c.id = $1 AND c.deleted_at IS NULL`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Comment not found');
+    }
+
+    const comment = result.rows[0];
+
+    // Check likes/flags if anonymousId provided
+    let liked = false;
+    let flagged = false;
+
+    if (anonymousId) {
+      const voteCheck = await queryWithRLS(
+        anonymousId,
+        `SELECT type FROM votes WHERE target_id = $1 AND anonymous_id = $2 AND target_type = 'comment'`,
+        [id, anonymousId]
+      );
+      liked = voteCheck.rows.some(v => v.type === 'upvote');
+
+      const flagCheck = await queryWithRLS(
+        anonymousId,
+        `SELECT id FROM flags WHERE target_id = $1 AND anonymous_id = $2 AND target_type = 'comment'`,
+        [id, anonymousId]
+      );
+      flagged = flagCheck.rows.length > 0;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...comment,
+        liked_by_me: liked,
+        is_flagged: flagged
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * GET /api/comments/:reportId
@@ -225,7 +287,11 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 
       if (hasParentId) {
         verificationPromises.push(
-          supabase.from('comments').select('id, report_id').eq('id', req.body.parent_id).maybeSingle()
+          supabase.from('comments')
+            .select('id, report_id')
+            .eq('id', req.body.parent_id)
+            .is('deleted_at', null)
+            .maybeSingle()
         );
       }
 
@@ -389,11 +455,6 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       const clientId = req.headers['x-client-id'];
       sse.emit('emitNewComment', req.body.report_id, comment, clientId);
 
-      // CRITICAL: Global delta for 0ms counter sync across all clients
-      sse.emit('emitVoteUpdate', 'report', req.body.report_id, {
-        comments_count_delta: 1
-      }, clientId);
-
       return comment;
     });
 
@@ -461,16 +522,26 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     const { id } = req.params;
     const anonymousId = req.anonymousId;
 
-    // Check if comment exists and belongs to user using queryWithRLS
+    // [CMT-001] Precise ownership check (403 vs 404)
     const checkResult = await queryWithRLS(
       anonymousId,
-      `SELECT id, anonymous_id, content FROM comments 
-       WHERE id = $1 AND anonymous_id = $2`,
-      [id, anonymousId]
+      `SELECT id, anonymous_id FROM comments 
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
     );
 
     if (checkResult.rows.length === 0) {
-      throw new NotFoundError('Comment not found or you do not have permission to edit it');
+      logInfo('Comment PATCH failed: Not Found', { commentId: id, actorId: anonymousId });
+      throw new NotFoundError('Comment not found');
+    }
+
+    if (checkResult.rows[0].anonymous_id !== anonymousId) {
+      logInfo('Comment PATCH failed: Forbidden (Ownership Mismatch)', {
+        commentId: id,
+        actorId: anonymousId,
+        ownerId: checkResult.rows[0].anonymous_id
+      });
+      throw new ForbiddenError('You do not have permission to edit this comment');
     }
 
     const comment = checkResult.rows[0];
@@ -540,13 +611,6 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
       const eventId = crypto.randomUUID(); // Single ID for all broadcasts related to this action
 
       realtimeEvents.emitCommentDelete(reportId, id, clientId, eventId);
-
-      // CRITICAL: Global delta for 0ms counter sync in DELETE
-      realtimeEvents.emitVoteUpdate('report', reportId, {
-        isCommentDelta: true,
-        delta: -1,
-        eventId // Reuse same ID for de-duplication in Orchestrator
-      }, clientId);
 
     } catch (err) {
       logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
