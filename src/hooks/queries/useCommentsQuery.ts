@@ -138,12 +138,6 @@ export function useCreateCommentMutation() {
             const cachedProfile = queryClient.getQueryData<any>(queryKeys.user.profile);
             const creator = resolveCreator(cachedProfile);
 
-            console.log('[useCommentsQuery] 🔍 OPTIMISTIC IDENTITY:', {
-                creator_id: creator.creator_id?.substring(0, 8),
-                displayAlias: creator.displayAlias,
-                cachedProfile: !!cachedProfile
-            });
-
             const optimisticComment: Comment = {
                 id: commentId,
                 report_id: newCommentData.report_id,

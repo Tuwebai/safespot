@@ -58,31 +58,12 @@ export function resolveCreator(cachedProfile?: any): CreatorIdentity {
     // SIEMPRE usar SessionAuthority.getAnonymousId() como fuente de verdad
     const anonymousId = sessionAuthority.getAnonymousId();
 
-    console.log('[resolveCreator] 🔍 DIAGNOSTIC:', {
-        sessionAuthorityId: anonymousId?.substring(0, 8),
-        cachedProfileId: cachedProfile?.anonymous_id?.substring(0, 8),
-        cachedAlias,
-        cachedAvatar: !!cachedAvatar
-    });
-
-    if (!anonymousId) {
-        console.warn('[resolveCreator] Identity not ready in SessionAuthority. Falling back to local identity.');
-        // If authority is not ready, we can't block, so we use a safe fallback but log it.
-        // This should be rare if UI guards are active.
-    }
-
     const finalId = anonymousId || 'unknown';
     const localAlias = localStorage.getItem('anonymous_alias');
 
     // Priority: Cache > LocalStorage > Default
     const finalAlias = cachedAlias || localAlias || 'Usuario';
     const finalAvatar = cachedAvatar || undefined;
-
-    console.log('[resolveCreator] ✅ RESULT:', {
-        creator_id: finalId?.substring(0, 8),
-        displayAlias: finalAlias,
-        source: anonymousId ? 'SessionAuthority' : 'fallback'
-    });
 
     return {
         creator_id: finalId,
