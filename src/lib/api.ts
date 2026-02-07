@@ -641,6 +641,10 @@ export const commentsApi = {
         timestamp: new Date().toISOString()
       });
 
+      // 🔬 DIAGNOSTIC: Trace client-generated ID transmission
+      console.log('[API CreateComment] 🔍 DIAGNOSTIC: data.id:', data.id);
+      console.log('[API CreateComment] 🔍 DIAGNOSTIC: typeof data.id:', typeof data.id);
+
       const raw = await apiRequest<RawComment>('/comments', {
         method: 'POST',
         body: JSON.stringify(data),

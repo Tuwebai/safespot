@@ -251,8 +251,14 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
         // Clear input IMMEDIATELY for instant feedback
         dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'comment' })
 
+        // ✅ ENTERPRISE FIX: Generate UUID ONCE at intention layer
+        // This UUID travels intact through: optimistic → HTTP → DB → response
+        // Prevents ID drift and ensures deterministic identity
+        const commentId = crypto.randomUUID();
+
         try {
             await createMutation.mutateAsync({
+                id: commentId,  // ✅ IDENTITY INTEGRITY: Same ID for optimistic + backend
                 report_id: reportId,
                 content: rich || plain,
             })
@@ -281,8 +287,12 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
         // Clear input and close form IMMEDIATELY for instant feedback
         dispatch({ type: 'RESET_AFTER_SUBMIT', payload: 'reply' })
 
+        // ✅ ENTERPRISE FIX: Generate UUID ONCE at intention layer
+        const commentId = crypto.randomUUID();
+
         try {
             await createMutation.mutateAsync({
+                id: commentId,  // ✅ IDENTITY INTEGRITY
                 report_id: reportId,
                 content: rich || plain,
                 parent_id: parentId,
@@ -309,8 +319,12 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
 
         dispatch({ type: 'START_SUBMIT', payload: { operation: 'thread' } })
 
+        // ✅ ENTERPRISE FIX: Generate UUID ONCE at intention layer
+        const commentId = crypto.randomUUID();
+
         try {
             await createMutation.mutateAsync({
+                id: commentId,  // ✅ IDENTITY INTEGRITY
                 report_id: reportId,
                 content: rich || plain,
                 is_thread: true,

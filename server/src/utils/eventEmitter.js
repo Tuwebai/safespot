@@ -403,10 +403,17 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} [originClientId]
      */
     async emitReportUpdate(report, originClientId) {
-        await this.broadcast(`report-update:${report.id}`, {
+        const eventPayload = {
             report,
             originClientId
-        }, {
+        };
+        console.log(`[AUDIT emitReportUpdate] Broadcasting for ${report.id}:`, {
+            title: report.title,
+            hasReport: !!report,
+            payloadKeys: Object.keys(eventPayload),
+            timestamp: Date.now()
+        });
+        await this.broadcast(`report-update:${report.id}`, eventPayload, {
             aggregateType: 'report',
             aggregateId: report.id
         });

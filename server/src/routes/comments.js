@@ -372,6 +372,11 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
     // Added: liked_by_me, is_flagged, is_highlighted (defaults)
     // ENTERPRISE FIX: Accept client-generated UUID for 0ms optimistic updates
 
+    // 🔬 DIAGNOSTIC LOGS: Trace ID transmission wire
+    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: req.body.id:', req.body.id);
+    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: typeof req.body.id:', typeof req.body.id);
+    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: isValidUuid result:', isValidUuid(req.body.id));
+
     // Ensure ID is valid if provided, otherwise let DB generate it
     const clientGeneratedId = isValidUuid(req.body.id) ? req.body.id : null;
 
@@ -434,6 +439,9 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 
     // 4. EXECUTE MUTATION (Atomic Transaction)
     // ============================================
+    const transactionStartTime = Date.now();
+    console.log(`[CREATE COMMENT] 🔵 TRANSACTION START: ${clientGeneratedId || 'DB-generated'} at ${new Date().toISOString()}`);
+
     const data = await transactionWithRLS(anonymousId, async (client, sse) => {
       // a. Insert Comment
       const insertResult = await client.query(insertQuery, insertParams);
@@ -458,7 +466,10 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       return comment;
     });
 
-    // 5. ASYNC POST-PROCESSING (Non-blocking)
+    const transactionDuration = Date.now() - transactionStartTime;
+    console.log(`[CREATE COMMENT] ✅ TRANSACTION COMMITTED: ${data.id} in ${transactionDuration}ms at ${new Date().toISOString()}`);
+
+    // 5. SIDE EFFECTS (Post-Commit)PROCESSING (Non-blocking)
     // ============================================
     try {
       // Trigger gamification sync asynchronously (non-blocking)
@@ -518,8 +529,11 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
  * Body: { content: string }
  */
 router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res, next) => {
+  const patchStartTime = Date.now();
+  const { id } = req.params;
+  console.log(`[PATCH COMMENT] 🟡 PATCH RECEIVED: ${id} at ${new Date().toISOString()}`);
+
   try {
-    const { id } = req.params;
     const anonymousId = req.anonymousId;
 
     // [CMT-001] Precise ownership check (403 vs 404)
@@ -531,6 +545,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     );
 
     if (checkResult.rows.length === 0) {
+      console.log(`[PATCH COMMENT] ❌ COMMENT NOT FOUND: ${id} - Possible race condition with POST`);
       logInfo('Comment PATCH failed: Not Found', { commentId: id, actorId: anonymousId });
       throw new NotFoundError('Comment not found');
     }
@@ -568,6 +583,9 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     );
 
     const updatedComment = updateResult.rows[0];
+
+    const patchDuration = Date.now() - patchStartTime;
+    console.log(`[PATCH COMMENT] ✅ PATCH SUCCESS: ${id} in ${patchDuration}ms at ${new Date().toISOString()}`);
 
     res.json({
       success: true,

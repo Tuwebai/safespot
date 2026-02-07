@@ -207,7 +207,12 @@ export function useCreateReportForm() {
             return
         }
 
+        // ✅ ENTERPRISE FIX: Client-Generated ID (Identity Integrity)
+        // Generate UUID BEFORE mutation to ensure same ID in optimistic update and backend
+        const reportId = crypto.randomUUID()
+
         const payload = {
+            id: reportId,  // ✅ IDENTITY INTEGRITY: Same ID for optimistic + backend
             title: data.title,
             description: data.description,
             category: data.category,

@@ -10,6 +10,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * Report Validation Schema
  */
 export const reportSchema = z.object({
+    id: z.string().regex(UUID_REGEX, 'ID no válido (UUID)').optional(), // ✅ Client-Generated ID Support
     title: z.string()
         .min(3, 'El título es muy corto (mínimo 3 caracteres)')
         .max(100, 'El título es muy largo (máximo 100 caracteres)')
@@ -38,6 +39,7 @@ export const reportSchema = z.object({
  * Comment Validation Schema
  */
 export const commentSchema = z.object({
+    id: z.string().regex(UUID_REGEX, 'ID no válido (UUID)').optional(), // ✅ Client-Generated ID Support
     content: z.string()
         .min(1, 'El comentario no puede estar vacío')
         .max(5000, 'El comentario es muy largo (máximo 5000 caracteres)')

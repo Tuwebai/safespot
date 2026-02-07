@@ -7,7 +7,7 @@ import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { flagRateLimiter, favoriteLimiter, imageUploadLimiter, createReportLimiter } from '../utils/rateLimiter.js';
-import { queryWithRLS } from '../utils/rls.js';
+import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
@@ -827,64 +827,64 @@ router.post('/',
       // Client-generated ID support
       const reportId = (req.body.id && isValidUuid(req.body.id)) ? req.body.id : crypto.randomUUID();
 
-      // 3. ATOMIC TRANSACTION
-      client = await pool.connect();
-      await client.query('BEGIN');
+      // 3. ATOMIC TRANSACTION WITH RLS
+      const data = await transactionWithRLS(anonymousId, async (client, sse) => {
+        // 3.1 Idempotent user ensure
+        await ensureAnonymousUser(anonymousId);
 
-      // 3.1 Idempotent user ensure
-      await ensureAnonymousUser(anonymousId);
+        // 3.2 Duplicate check within transaction
+        const duplicateResult = await client.query(`
+          SELECT id FROM reports
+          WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
+          LIMIT 1
+        `, [anonymousId, category, zone, title, tenMinutesAgo]);
 
-      // 3.2 Duplicate check within transaction (FOR UPDATE not needed but safe)
-      const duplicateResult = await client.query(`
-        SELECT id FROM reports
-        WHERE anonymous_id = $1 AND category = $2 AND zone = $3 AND title = $4 AND created_at >= $5
-        LIMIT 1
-      `, [anonymousId, category, zone, title, tenMinutesAgo]);
+        if (duplicateResult.rows.length > 0) {
+          throw new AppError('Ya existe un reporte similar reciente', 409, ErrorCodes.DUPLICATE_ENTRY, true);
+        }
 
-      if (duplicateResult.rows.length > 0) {
-        throw new AppError('Ya existe un reporte similar reciente', 409, ErrorCodes.DUPLICATE_ENTRY, true);
-      }
+        // 3.3 Strict SSOT Insert
+        const columns = [
+          'id', 'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
+          'latitude', 'longitude', 'status', 'incident_date', 'is_hidden',
+          'province', 'locality', 'department'
+        ];
+        const values = [
+          reportId, anonymousId, sanitizedTitle, sanitizedDescription, category,
+          finalZone, sanitizedAddress, req.body.latitude || null, req.body.longitude || null,
+          normalizeStatus(req.body.status) || 'abierto', incidentDate, isHidden, province, locality, department
+        ];
 
-      // 3.3 Strict SSOT Insert (No RETURNING *)
-      const columns = [
-        'id', 'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
-        'latitude', 'longitude', 'status', 'incident_date', 'is_hidden',
-        'province', 'locality', 'department'
-      ];
-      const values = [
-        reportId, anonymousId, sanitizedTitle, sanitizedDescription, category,
-        finalZone, sanitizedAddress, req.body.latitude || null, req.body.longitude || null,
-        normalizeStatus(req.body.status) || 'abierto', incidentDate, isHidden, province, locality, department
-      ];
+        const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
-      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+        // INSERT
+        await client.query(`INSERT INTO reports (${columns.join(', ')}) VALUES (${placeholders})`, values);
 
-      // INSERT
-      await client.query(`INSERT INTO reports (${columns.join(', ')}) VALUES (${placeholders})`, values);
+        // RETRIEVE WITH JOIN (Deduplicated Contract)
+        const retrieveResult = await client.query(`
+          SELECT 
+            r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
+            r.latitude, r.longitude, r.status, r.incident_date, r.created_at, r.is_hidden,
+            r.province, r.locality, r.department,
+            u.alias, u.avatar_url
+          FROM reports r
+          LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+          WHERE r.id = $1
+        `, [reportId]);
 
-      // RETRIEVE WITH JOIN (Deduplicated Contract)
-      const retrieveResult = await client.query(`
-        SELECT 
-          r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
-          r.latitude, r.longitude, r.status, r.incident_date, r.created_at, r.is_hidden,
-          r.province, r.locality, r.department,
-          u.alias, u.avatar_url
-        FROM reports r
-        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-        WHERE r.id = $1
-      `, [reportId]);
+        newReport = retrieveResult.rows[0];
 
-      newReport = retrieveResult.rows[0];
+        // 3.4 Governance M12: executeUserAction (In same transaction)
+        await executeUserAction({
+          actorId: anonymousId,
+          targetType: 'report',
+          targetId: reportId,
+          actionType: 'USER_REPORT_CREATE'
+        }, client);
 
-      // 3.4 Governance M12: executeUserAction (In same transaction)
-      await executeUserAction({
-        actorId: anonymousId,
-        targetType: 'report',
-        targetId: reportId,
-        actionType: 'USER_REPORT_CREATE'
-      }, client);
+        return newReport;
+      });
 
-      await client.query('COMMIT');
       logSuccess('Report created (Atomic)', { id: reportId, anonymousId });
 
       // 4. POST-COMMIT SIDE EFFECTS (Non-blocking, Protected)
@@ -893,16 +893,16 @@ router.post('/',
       const fireAndForget = async () => {
         // SSE
         try {
-          await realtimeEvents.emitNewReport(newReport, req.headers['x-client-id']);
+          await realtimeEvents.emitNewReport(data, req.headers['x-client-id']);
         } catch (e) { logError(e, { context: 'SSE_emitNewReport' }); }
 
         // External Notifications (Telegram)
         try {
           await NotificationService.sendEvent('NEW_REPORT', {
-            reportId: newReport.id,
-            title: newReport.title,
-            category: newReport.category,
-            zone: newReport.zone,
+            reportId: data.id,
+            title: data.title,
+            category: data.category,
+            zone: data.zone,
             timestamp: new Date().toISOString()
           });
         } catch (e) { logError(e, { context: 'Telegram_NewReport' }); }
@@ -919,10 +919,10 @@ router.post('/',
 
         // In-App & Push
         try {
-          await AppNotificationService.notifyNearbyNewReport(newReport);
-          await AppNotificationService.notifySimilarReports(newReport);
+          await AppNotificationService.notifyNearbyNewReport(data);
+          await AppNotificationService.notifySimilarReports(data);
           const pushModule = await import('./push.js');
-          await pushModule.notifyNearbyUsers(newReport);
+          await pushModule.notifyNearbyUsers(data);
         } catch (e) { logError(e, { context: 'Notifications_Push' }); }
       };
 
@@ -932,12 +932,11 @@ router.post('/',
       // 5. CLEAN SSOT RESPONSE
       return res.status(201).json({
         success: true,
-        data: newReport,
+        data,
         message: 'Report created successfully'
       });
 
     } catch (error) {
-      if (client) await client.query('ROLLBACK');
       logError(error, req);
 
       if (error instanceof AppError) {
@@ -1139,6 +1138,14 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
 
     // Update report using queryWithRLS for RLS consistency
     // CTE: Update and Retrieve enriched data in one go
+    // ⚠️ CONTRACT ENFORCEMENT: Explicit projection to exclude legacy fields (likes_count)
+    const CANONICAL_REPORT_FIELDS = `
+      r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
+      r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count,
+      r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
+      r.province, r.locality, r.department, r.threads_count, r.is_hidden, r.deleted_at
+    `;
+
     const updateResult = await queryWithRLS(anonymousId, `
       WITH updated_report AS (
         UPDATE reports SET ${updates.join(', ')}
@@ -1146,7 +1153,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
         RETURNING *
       )
       SELECT 
-        r.*, 
+        ${CANONICAL_REPORT_FIELDS},
         u.alias,
         u.avatar_url
       FROM updated_report r
@@ -1160,6 +1167,15 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     }
 
     const updatedReport = updateResult.rows[0];
+
+    // 🔍 AUDIT LOG: Confirmar datos antes de emitir SSE
+    console.log('[AUDIT PATCH REPORT] Updated data from DB:', {
+      id: updatedReport.id,
+      title: updatedReport.title,
+      description: updatedReport.description?.substring(0, 50),
+      updated_at: updatedReport.updated_at,
+      timestamp: Date.now()
+    });
 
     // REALTIME: Broadcast report update using local enriched data (CTE)
     try {
