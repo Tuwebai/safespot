@@ -70,7 +70,7 @@ const drawLogo = (doc, x, y, size = 32) => {
  * Main PDF Export Controller
  */
 export const exportReportPDF = async (req, res) => {
-    console.log('[PDF] Starting generation for Report ID:', req.params.id); // DEBUG LOG
+    // Debug: console.debug('[PDF] Starting generation for Report ID:', req.params.id);
 
     try {
         const { id } = req.params;
@@ -128,7 +128,7 @@ export const exportReportPDF = async (req, res) => {
         const checkPageBreak = (neededHeight) => {
             // Check if adding neededHeight would exceed limit
             if (currentY + neededHeight > CONTENT_BOTTOM_LIMIT) {
-                console.log('[PDF] Adding new page due to overflow');
+                // Debug: console.debug('[PDF] Adding new page due to overflow');
                 doc.addPage();
                 currentY = 50; // Reset Y to top margin
             }
@@ -249,7 +249,7 @@ export const exportReportPDF = async (req, res) => {
 
         // --- PAGE FOOTER (Global Loop) ---
         const range = doc.bufferedPageRange();
-        console.log(`[PDF] Total pages: ${range.count}`); // DEBUG
+        // Debug: console.debug(`[PDF] Total pages: ${range.count}`);
 
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
@@ -291,7 +291,7 @@ export const exportReportPDF = async (req, res) => {
         }
 
         doc.end();
-        console.log('[PDF] Generation complete');
+        // Debug: console.debug('[PDF] Generation complete');
 
     } catch (error) {
         logError(error, req);

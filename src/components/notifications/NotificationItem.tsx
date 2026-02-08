@@ -21,11 +21,13 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { Notification } from '@/pages/NotificationsPage';
+
 interface NotificationItemProps {
-    notification: any;
+    notification: Notification;
     onRead: (id: string) => void;
     onDelete: (id: string) => void;
-    onOpenContext: (notification: any) => void;
+    onOpenContext: (notification: Notification) => void;
     isMenuOpen: boolean;
     menuPosition: { x: number; y: number } | null;
     onContextMenu: (e: React.MouseEvent) => void;

@@ -3,42 +3,13 @@ import { getClientId } from './clientId';
 // SSOT: ensureAnonymousId removed - using sessionAuthority.requireAnonymousId() instead
 import { isTokenExpired } from './auth/permissions';
 import { ZodSchema } from 'zod';
-import { type Report, type Comment } from './schemas'; // Import Report directly from schemas (already strict)
+import { type Report, type Comment, type GamificationBadge, type NewBadge, type ChatMessage, type ChatRoom, type GeocodeResult, type GamificationSummary } from './schemas'; // Import Report directly from schemas (already strict)
 import { transformReport, transformComment, transformProfile, RawReport, RawComment } from './adapters'; // Adapter integration
 
-export { type Report, type Comment };
+export { type Report, type Comment, type GamificationBadge, type NewBadge, type ChatMessage, type ChatRoom, type GeocodeResult, type GamificationSummary };
 
 // Extended Badge interface to match usage in Gamification.tsx
-export interface GamificationBadge {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  icon: string;
-  points: number;
-  level: number;
-  category: string;
-  category_label?: string;
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  obtained: boolean;
-  obtained_at?: string;
-  progress: {
-    current: number;
-    required: number;
-    percent: number;
-  };
-}
-
-// NewBadge is what we receive in realtime/notifications
-export interface NewBadge {
-  id: string;
-  code: string;
-  name: string;
-  icon: string;
-  description: string;
-  points: number;
-  rarity?: 'common' | 'rare' | 'epic' | 'legendary';
-}
+// Types moved to schemas.ts
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 // Normalize: Ensure BASE_URL ends with /api but WITHOUT a trailing slash
@@ -175,7 +146,7 @@ export async function apiRequest<T>(
 
     // Only set Content-Type to JSON if we have a body and it's NOT FormData
     if (options.body && !(options.body instanceof FormData)) {
-      (headers as any)['Content-Type'] = 'application/json';
+      (headers as Record<string, string>)['Content-Type'] = 'application/json';
     }
 
     // Setup timeout
@@ -291,13 +262,13 @@ export async function apiRequest<T>(
     // Pass through if it is already AppClientError
     if (error instanceof AppClientError) {
       // Inyectar requestId si faltaba
-      if (!error.requestId) (error as any).requestId = requestId;
+      if (!error.requestId) (error as AppClientError & { requestId: string }).requestId = requestId;
       throw error;
     }
 
     // Wrap unknown errors
     throw new AppClientError(
-      (error as any).message || 'Unknown API Error',
+      (error as Error).message || 'Unknown API Error',
       'UNKNOWN',
       500,
       false,
@@ -381,8 +352,8 @@ export const reportsApi = {
     }
     const query = params.toString();
     // Raw response with possible { success, data } wrapper
-    const response: any = await apiRequest(`/reports${query ? `?${query}` : ''}`);
-    const rawData = response.data || response;
+    const response = await apiRequest<{ data?: unknown }>(`/reports${query ? `?${query}` : ''}`);
+    const rawData = (response as { data?: unknown }).data || response;
 
     // ✅ ADAPTER PATTERN: Transform Raw -> Strict
     if (Array.isArray(rawData)) {
@@ -396,9 +367,9 @@ export const reportsApi = {
    * format: north, south, east, west
    */
   getReportsInBounds: async (north: number, south: number, east: number, west: number): Promise<Report[]> => {
-    const response: any = await apiRequest(`/reports?bounds=${north},${south},${east},${west}`);
+    const response = await apiRequest<{ data?: unknown }>(`/reports?bounds=${north},${south},${east},${west}`);
     // apiRequest might return { data: [...] } or [...] depending on backend version, check response structure
-    const rawData = response.data || response;
+    const rawData = (response as { data?: unknown }).data || response;
 
     if (Array.isArray(rawData)) {
       return rawData.map((r: RawReport) => transformReport(r));
@@ -412,7 +383,7 @@ export const reportsApi = {
   getById: async (id: string): Promise<Report> => {
     const rawReport = await apiRequest<RawReport>(`/reports/${id}`);
     // If wrapped in data
-    const actualRaw = (rawReport as any).data || rawReport;
+    const actualRaw = (rawReport as unknown as { data: RawReport }).data || rawReport;
     return transformReport(actualRaw);
   },
 
@@ -487,7 +458,7 @@ export const reportsApi = {
           method: liked ? 'POST' : 'DELETE'
         }
       );
-      return (response as any).data || response;
+      return (response as unknown as { data: { is_liked: boolean; upvotes_count: number } }).data || response;
     }, liked ? 'LIKE_REPORT' : 'UNLIKE_REPORT');
   },
 
@@ -595,22 +566,24 @@ export const commentsApi = {
     params.append('limit', String(limit));
     if (cursor) params.append('cursor', cursor);
 
-    const response = await apiRequest<any | PaginatedComments>(`/comments/${reportId}?${params.toString()}`);
+    const response = await apiRequest<unknown>(`/comments/${reportId}?${params.toString()}`);
 
     // Adjust for raw array vs wrapped response
     let rawComments: RawComment[] = [];
     if (Array.isArray(response)) {
       rawComments = response;
-    } else if (response.comments) {
-      rawComments = response.comments;
-    } else if (Array.isArray((response as any).data)) {
-      rawComments = (response as any).data;
+    } else if (response && typeof response === 'object' && 'comments' in response && Array.isArray((response as { comments: RawComment[] }).comments)) {
+      rawComments = (response as { comments: RawComment[] }).comments;
+    } else if (response && typeof response === 'object' && 'data' in response && Array.isArray((response as { data: RawComment[] }).data)) {
+      rawComments = (response as { data: RawComment[] }).data;
     }
 
     // ✅ ADAPTER PATTERN
     return {
       comments: rawComments.map((c: RawComment) => transformComment(c)),
-      nextCursor: (response as any).nextCursor || null
+      nextCursor: (response && typeof response === 'object' && 'nextCursor' in response)
+        ? (response as { nextCursor: string }).nextCursor
+        : null
     };
   },
 
@@ -876,7 +849,9 @@ export const usersApi = {
    */
   getProfile: async (): Promise<UserProfile> => {
     const raw = await apiRequest<UserProfile>('/users/profile');
-    return transformProfile(raw);
+    const transformed = transformProfile(raw);
+    if (!transformed) throw new Error('Failed to transform profile');
+    return transformed as UserProfile;
   },
 
   /**
@@ -1013,8 +988,8 @@ export const usersApi = {
   /**
    * Get followers list
    */
-  getFollowers: async (identifier: string): Promise<any[]> => {
-    return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/followers`);
+  getFollowers: async (identifier: string): Promise<unknown[]> => {
+    return apiRequest<unknown[]>(`/users/${encodeURIComponent(identifier)}/followers`);
   },
 
   /**
@@ -1035,9 +1010,9 @@ export const usersApi = {
   /**
    * Get following list (Self or User)
    */
-  getFollowing: async (identifier?: string): Promise<any[]> => {
-    if (identifier) return apiRequest<any[]>(`/users/${encodeURIComponent(identifier)}/following`);
-    return apiRequest<any[]>('/users/me/following');
+  getFollowing: async (identifier?: string): Promise<unknown[]> => {
+    if (identifier) return apiRequest<unknown[]>(`/users/${encodeURIComponent(identifier)}/following`);
+    return apiRequest<unknown[]>('/users/me/following');
   },
 
   /**
@@ -1058,7 +1033,7 @@ export interface Notification {
   type: 'comment' | 'mention' | 'like' | 'alert' | 'system' | 'badge';
   title: string;
   message: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   is_read: boolean;
   created_at: string;
 }
@@ -1120,55 +1095,9 @@ export const notificationsApi = {
 // CHATS API
 // ============================================
 
-export interface ChatMessage {
-  id: string;
-  conversation_id: string;
-  sender_id: string;
-  content: string;
-  type: 'text' | 'image' | 'sighting' | 'location';
-  created_at: string;
-  is_read: boolean;
-  is_delivered?: boolean;
-  localUrl?: string; // UI Optimistic
-  localStatus?: 'pending' | 'sent' | 'failed'; // UI Optimistic
-  caption?: string;
-  reply_to_id?: string;
-  reply_to_content?: string;
-  reply_to_type?: string;
-  reply_to_sender_alias?: string;
-  reply_to_sender_id?: string;
-  sender_alias?: string; // Hydrated
-  reactions?: Record<string, string[]>; // emoji -> userIds[]
-  // ✅ FIX: Missing fields from build error
-  is_starred?: boolean;
-  is_edited?: boolean;
-  sender_avatar?: string;
-}
+// Types moved to schemas.ts
 
-export interface ChatRoom {
-  id: string;
-  other_participant_id?: string; // 1:1
-  other_participant_alias?: string;
-  other_participant_avatar?: string;
-  other_participant_last_seen?: string;
-  is_online?: boolean; // Hydrated
-  last_message_content?: string;
-  last_message_at?: string;
-  last_message_sender_id?: string;
-  last_message_type?: string; // ✅ FIX: Added missing field
-  unread_count: number;
-  is_typing?: boolean; // UI state
-  pinned_message_id?: string | null; // ✅ FIX: Allow null
-  // ✅ FIX: Missing fields from build error
-  is_pinned?: boolean;
-  is_manually_unread?: boolean;
-  is_archived?: boolean;
-  report_id?: string;
-  report_title?: string;
-  report_category?: string;
-  type?: 'report' | 'direct' | 'group'; // ✅ FIX: Added type
-  last_message_is_read?: boolean; // ✅ FIX: Added for double tick sync
-}
+// Types moved to schemas.ts
 
 export const chatsApi = {
   getAllRooms: async (): Promise<ChatRoom[]> => {
@@ -1304,22 +1233,7 @@ export const chatsApi = {
 // GEOCODE API
 // ============================================
 
-export interface GeocodeResult {
-  lat: number;
-  lon: number;
-  address: {
-    city?: string;
-    municipality?: string;
-    town?: string;
-    village?: string;
-    neighborhood?: string;
-    suburb?: string;
-    province?: string;
-    state?: string;
-    region?: string;
-    country?: string;
-  }
-}
+// GeocodeResult moved to schemas.ts
 
 export const geocodeApi = {
   reverse: async (lat: number, lng: number): Promise<GeocodeResult> => {
@@ -1365,19 +1279,7 @@ export const userZonesApi = {
 // Helper type alias: We alias Badge to GamificationBadge to avoid breaking other files importing 'Badge'
 export type Badge = GamificationBadge;
 
-export interface GamificationSummary {
-  level: number;
-  points: number;
-  next_level_points: number;
-  title: string; // 'Novato', 'Vigilante', etc
-  badges_count: number;
-  total_badges: number;
-  // ✅ FIX: Missing fields from build error
-  profile?: UserProfile;
-  badges?: Badge[];
-  newBadges?: Badge[];
-  nextAchievement?: any; // Allow loose typing for now
-}
+// GamificationSummary moved to schemas.ts
 
 export const gamificationApi = {
   getSummary: async (): Promise<GamificationSummary> => {

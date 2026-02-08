@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { adminApi } from '../services/adminApi'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/useDebounce'
 import { getAvatarUrl } from '@/lib/avatar'
-import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useConfirm } from '@/components/ui/useConfirm'
 import { useToast } from '@/components/ui/toast/useToast'
 
 interface AdminUser {
@@ -67,18 +68,14 @@ export function UsersPage() {
     const { data, isLoading } = useQuery<UsersResponse>({
         queryKey: ['admin', 'users', page, debouncedSearch],
         queryFn: async () => {
-            const token = localStorage.getItem('safespot_admin_token')
-            const params = new URLSearchParams({
-                page: page.toString(),
-                limit: '20',
-                search: debouncedSearch
-            })
-
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users?${params}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            if (!res.ok) throw new Error('Failed to fetch users')
-            return res.json()
+            const { data } = await adminApi.get('/users', {
+                params: {
+                    page,
+                    limit: 20,
+                    search: debouncedSearch
+                }
+            });
+            return data;
         },
         placeholderData: keepPreviousData
     })
@@ -95,17 +92,8 @@ export function UsersPage() {
     // Ban Mutation
     const banMutation = useMutation({
         mutationFn: async ({ id, ban }: { id: string, ban: boolean }) => {
-            const token = localStorage.getItem('safespot_admin_token')
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/${id}/ban`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ ban })
-            })
-            if (!res.ok) throw new Error('Failed to update user status')
-            return res.json()
+            const { data } = await adminApi.post(`/users/${id}/ban`, { ban });
+            return data;
         },
         onMutate: async ({ id, ban }) => {
             // Cancel outgoing refetches
@@ -157,7 +145,7 @@ export function UsersPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-2">
                         <UsersIcon className="h-6 w-6 text-[#00ff88]" />
@@ -166,12 +154,12 @@ export function UsersPage() {
                     <p className="text-slate-400 text-sm mt-1">Base de datos de ciudadanos anónimos</p>
                 </div>
 
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                     <input
                         type="text"
                         placeholder="Buscar por Alias o ID..."
-                        className="bg-[#0f172a] border border-[#1e293b] rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-[#00ff88]/50 w-64"
+                        className="bg-[#0f172a] border border-[#1e293b] rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-[#00ff88]/50 w-full sm:w-64"
                         value={search}
                         onChange={(e) => {
                             setSearch(e.target.value)
@@ -181,8 +169,85 @@ export function UsersPage() {
                 </div>
             </div>
 
-            <div className="bg-[#0f172a] rounded-xl border border-[#1e293b] overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="space-y-3 sm:bg-[#0f172a] sm:rounded-xl sm:border sm:border-[#1e293b] sm:overflow-hidden">
+                {/* Mobile Cards */}
+                <div className="sm:hidden space-y-3">
+                    {isLoading ? (
+                        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-8 text-center text-[#00ff88]">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                            Cargando...
+                        </div>
+                    ) : data?.users?.length === 0 ? (
+                        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-8 text-center">
+                            <div className="p-4 bg-[#1e293b]/50 rounded-full w-fit mx-auto mb-3">
+                                <UsersIcon className="w-8 h-8 text-slate-600" />
+                            </div>
+                            <p className="font-semibold text-slate-300">No se encontraron usuarios</p>
+                            <p className="text-slate-500 text-xs mt-1">
+                                Intenta con otro término de búsqueda.
+                            </p>
+                        </div>
+                    ) : (
+                        (data?.users || [])
+                            .filter(isValidUser)
+                            .map((user: AdminUser) => (
+                                <div
+                                    key={user.anonymous_id}
+                                    className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-4"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className="h-12 w-12 rounded-full bg-[#1e293b] flex items-center justify-center border border-[#334155] overflow-hidden shrink-0">
+                                            <img
+                                                src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                                                alt=""
+                                                className="h-full w-full object-cover"
+                                            />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between">
+                                                <div className="font-medium text-slate-200 truncate">
+                                                    {user.alias || 'Anónimo'}
+                                                </div>
+                                                <StatusBadge status={user.status} />
+                                            </div>
+                                            <div className="text-xs font-mono text-slate-500 mt-0.5">
+                                                {user.anonymous_id.substring(0, 8)}...
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1e293b]">
+                                                <div className="flex items-center gap-4">
+                                                    <div>
+                                                        <div className="text-[10px] text-slate-500 uppercase">Trust</div>
+                                                        <div className="text-sm font-bold text-slate-300">{user.trust_score}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] text-slate-500 uppercase">Reportes</div>
+                                                        <div className="text-sm font-mono text-slate-300">{user.total_reports}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] text-slate-500 uppercase">Activo</div>
+                                                        <div className="text-xs text-slate-400">
+                                                            {formatDistanceToNow(new Date(user.last_active_at), { addSuffix: true, locale: es })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleBanToggle(user)}
+                                                    disabled={banMutation.isPending}
+                                                    className={`p-2 rounded hover:bg-[#1e293b] transition-colors ${user.status === 'banned' ? 'text-green-400' : 'text-red-400'}`}
+                                                >
+                                                    {user.status === 'banned' ? <UserCheck className="h-5 w-5" /> : <Ban className="h-5 w-5" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                    )}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-400">
                         <thead className="bg-[#1e293b]/50 text-slate-200 font-medium uppercase text-xs">
                             <tr>
@@ -204,8 +269,18 @@ export function UsersPage() {
                                 </tr>
                             ) : data?.users?.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center">
-                                        No se encontraron usuarios
+                                    <td colSpan={6} className="px-6 py-16 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="p-4 bg-[#1e293b]/50 rounded-full">
+                                                <UsersIcon className="w-8 h-8 text-slate-600" />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-slate-300">No se encontraron usuarios</p>
+                                                <p className="text-slate-500 text-xs mt-1">
+                                                    Intenta con otro término de búsqueda.
+                                                </p>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
@@ -219,7 +294,7 @@ export function UsersPage() {
                                                 if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
                                                 hoverTimeoutRef.current = setTimeout(() => {
                                                     setHoveredUser({ user, x: clientX, y: clientY })
-                                                }, 50) // Tiny delay for stability
+                                                }, 50)
                                             }}
                                             onMouseLeave={() => {
                                                 if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
@@ -277,21 +352,21 @@ export function UsersPage() {
                 </div>
 
                 {/* Simple Pagination */}
-                <div className="px-6 py-4 border-t border-[#1e293b] flex justify-between items-center text-xs">
+                <div className="px-4 lg:px-6 py-4 border-t border-[#1e293b] flex justify-between items-center text-xs gap-2">
                     <button
                         disabled={page === 1}
                         onClick={() => setPage(p => p - 1)}
-                        className="px-3 py-1 rounded bg-[#1e293b] text-slate-300 disabled:opacity-50 hover:bg-[#334155]"
+                        className="px-3 py-1.5 rounded bg-[#1e293b] text-slate-300 disabled:opacity-50 hover:bg-[#334155] whitespace-nowrap"
                     >
-                        Anterior
+                        ← Anterior
                     </button>
-                    <span className="text-slate-500">Página {page}</span>
+                    <span className="text-slate-500 font-mono">Página {page}</span>
                     <button
                         disabled={!data || data.users.length < 20} // Assuming limit 20
                         onClick={() => setPage(p => p + 1)}
-                        className="px-3 py-1 rounded bg-[#1e293b] text-slate-300 disabled:opacity-50 hover:bg-[#334155]"
+                        className="px-3 py-1.5 rounded bg-[#1e293b] text-slate-300 disabled:opacity-50 hover:bg-[#334155] whitespace-nowrap"
                     >
-                        Siguiente
+                        Siguiente →
                     </button>
                 </div>
             </div>

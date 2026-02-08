@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { adminApi } from '../services/adminApi';
 import {
     History, Search, ArrowLeft, ArrowRight,
     User, FileText, MessageSquare
@@ -47,21 +48,15 @@ export function ModerationHistory() {
     const { data, isLoading } = useQuery<{ data: AuditLogEntry[], pagination: any }>({
         queryKey: ['admin', 'moderation', 'history', page, typeFilter, entityIdFilter],
         queryFn: async () => {
-            const token = localStorage.getItem('safespot_admin_token');
-            const params = new URLSearchParams({
+            const params: Record<string, string> = {
                 page: page.toString(),
                 limit: '20',
-            });
+            };
+            if (typeFilter) params.type = typeFilter;
+            if (entityIdFilter) params.entityId = entityIdFilter;
 
-            if (typeFilter) params.append('type', typeFilter);
-            if (entityIdFilter) params.append('entityId', entityIdFilter);
-
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/moderation/history?${params}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!res.ok) throw new Error('Failed to fetch history');
-            return res.json();
+            const { data } = await adminApi.get('/moderation/history', { params });
+            return data;
         },
         placeholderData: (prev) => prev
     });
@@ -100,18 +95,18 @@ export function ModerationHistory() {
             </div>
 
             {/* Filters */}
-            <div className="flex gap-4 p-4 bg-[#0f172a] border border-slate-800 rounded-xl">
-                <div className="flex-1 max-w-sm relative">
+            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-[#0f172a] border border-slate-800 rounded-xl">
+                <div className="flex-1 relative">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                     <Input
                         placeholder="Buscar por ID de entidad..."
-                        className="pl-9 bg-slate-900 border-slate-700"
+                        className="pl-9 bg-slate-900 border-slate-700 w-full"
                         value={entityIdFilter}
                         onChange={(e) => setEntityIdFilter(e.target.value)}
                     />
                 </div>
 
-                <div className="w-48">
+                <div className="w-full sm:w-48">
                     <select
                         className="w-full h-10 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         value={typeFilter}
@@ -125,89 +120,165 @@ export function ModerationHistory() {
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="rounded-xl border border-slate-800 bg-[#0f172a] overflow-hidden">
-                <Table>
-                    <TableHeader className="bg-slate-900/50">
-                        <TableRow className="border-slate-800 hover:bg-slate-900/50">
-                            <TableHead className="text-slate-400">Fecha</TableHead>
-                            <TableHead className="text-slate-400">Actor</TableHead>
-                            <TableHead className="text-slate-400">Acción</TableHead>
-                            <TableHead className="text-slate-400">Objetivo</TableHead>
-                            <TableHead className="text-slate-400">Razón</TableHead>
-                            <TableHead className="text-slate-400">Snapshot</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading ? (
-                            <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center text-slate-500">
-                                    Cargando auditoría...
-                                </TableCell>
-                            </TableRow>
-                        ) : data?.data.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center text-slate-500">
-                                    No hay registros de moderación.
-                                </TableCell>
-                            </TableRow>
-                        ) : (
-                            data?.data.map((log) => (
-                                <TableRow key={log.id} className="border-slate-800 hover:bg-slate-800/30">
-                                    <TableCell className="text-slate-300 font-mono text-xs">
-                                        {format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
-                                    </TableCell>
-                                    <TableCell className="text-slate-300">
-                                        <div className="flex flex-col">
-                                            <span className="font-medium text-white">
-                                                {log.admin_users?.alias || 'System'}
-                                            </span>
-                                            <span className="text-xs text-slate-500">
-                                                {log.admin_users?.email || log.actor_id.substring(0, 8)}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={cn("font-mono text-xs border", getActionColor(log.action_type))}>
+            {/* History List - Mobile: Cards, Desktop: Table */}
+            <div className="space-y-3 sm:rounded-xl sm:border sm:border-slate-800 sm:bg-[#0f172a] sm:overflow-hidden">
+                {/* Mobile Cards */}
+                <div className="sm:hidden space-y-3">
+                    {isLoading ? (
+                        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6 text-center text-slate-500">
+                            Cargando auditoría...
+                        </div>
+                    ) : data?.data.length === 0 ? (
+                        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-8 text-center">
+                            <div className="p-4 bg-[#1e293b]/50 rounded-full w-fit mx-auto mb-3">
+                                <History className="w-8 h-8 text-slate-600" />
+                            </div>
+                            <p className="font-semibold text-slate-300">No hay registros</p>
+                            <p className="text-slate-500 text-xs mt-1">
+                                Intenta ajustar los filtros.
+                            </p>
+                        </div>
+                    ) : (
+                        data?.data.map((log) => (
+                            <div key={log.id} className="bg-[#0f172a] border border-slate-800 rounded-xl p-4">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className={cn("font-mono text-[10px] border", getActionColor(log.action_type))}>
                                             {log.action_type}
                                         </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2 text-slate-300">
-                                            {getTargetIcon(log.target_type)}
-                                            <span className="font-mono text-xs text-slate-500 uppercase">
-                                                {log.target_id.substring(0, 8)}...
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="max-w-[200px]">
-                                        <div className="truncate text-slate-300" title={log.reason}>
-                                            {log.reason}
-                                        </div>
-                                        {log.internal_note && (
-                                            <div className="text-xs text-indigo-400 truncate mt-0.5">
-                                                Nota: {log.internal_note}
-                                            </div>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-slate-400 hover:text-white"
-                                            onClick={() => navigate(`/admin/history/${log.id}`)}
-                                        >
-                                            <FileText className="h-4 w-4" />
-                                        </Button>
+                                        <span className="text-[10px] text-slate-500 font-mono">
+                                            {format(new Date(log.created_at), "dd/MM HH:mm")}
+                                        </span>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-slate-400 hover:text-white -mr-2 -mt-2"
+                                        onClick={() => navigate(`/admin/history/${log.id}`)}
+                                    >
+                                        <FileText className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                
+                                <div className="mt-2">
+                                    <div className="flex items-center gap-2 text-slate-300">
+                                        {getTargetIcon(log.target_type)}
+                                        <span className="font-mono text-xs text-slate-500">
+                                            {log.target_id.substring(0, 12)}...
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">
+                                        {log.reason}
+                                    </p>
+                                </div>
+                                
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <User className="h-3 w-3 text-slate-500" />
+                                        <span className="text-xs text-slate-400">
+                                            {log.admin_users?.alias || 'System'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
+                    <Table>
+                        <TableHeader className="bg-slate-900/50">
+                            <TableRow className="border-slate-800 hover:bg-slate-900/50">
+                                <TableHead className="text-slate-400">Fecha</TableHead>
+                                <TableHead className="text-slate-400">Actor</TableHead>
+                                <TableHead className="text-slate-400">Acción</TableHead>
+                                <TableHead className="text-slate-400">Objetivo</TableHead>
+                                <TableHead className="text-slate-400">Razón</TableHead>
+                                <TableHead className="text-slate-400">Snapshot</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center text-slate-500">
+                                        Cargando auditoría...
                                     </TableCell>
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
+                            ) : data?.data.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-32 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="p-4 bg-[#1e293b]/50 rounded-full">
+                                                <History className="w-8 h-8 text-slate-600" />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-slate-300">No hay registros de moderación</p>
+                                                <p className="text-slate-500 text-xs mt-1">
+                                                    Intenta ajustar los filtros de búsqueda.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                data?.data.map((log) => (
+                                    <TableRow key={log.id} className="border-slate-800 hover:bg-slate-800/30">
+                                        <TableCell className="text-slate-300 font-mono text-xs">
+                                            {format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
+                                        </TableCell>
+                                        <TableCell className="text-slate-300">
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-white">
+                                                    {log.admin_users?.alias || 'System'}
+                                                </span>
+                                                <span className="text-xs text-slate-500">
+                                                    {log.admin_users?.email || log.actor_id.substring(0, 8)}
+                                                </span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className={cn("font-mono text-xs border", getActionColor(log.action_type))}>
+                                                {log.action_type}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2 text-slate-300">
+                                                {getTargetIcon(log.target_type)}
+                                                <span className="font-mono text-xs text-slate-500 uppercase">
+                                                    {log.target_id.substring(0, 8)}...
+                                                </span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="max-w-[200px]">
+                                            <div className="truncate text-slate-300" title={log.reason}>
+                                                {log.reason}
+                                            </div>
+                                            {log.internal_note && (
+                                                <div className="text-xs text-indigo-400 truncate mt-0.5">
+                                                    Nota: {log.internal_note}
+                                                </div>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-slate-400 hover:text-white"
+                                                onClick={() => navigate(`/admin/history/${log.id}`)}
+                                            >
+                                                <FileText className="h-4 w-4" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between p-4 border-t border-slate-800 bg-slate-900/50">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-slate-800 bg-slate-900/50">
                     <p className="text-xs text-slate-500">
                         Mostrando {data?.data.length || 0} de {data?.pagination?.total || 0} registros
                     </p>

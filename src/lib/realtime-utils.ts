@@ -9,6 +9,18 @@ interface Identifiable {
     id: string | number;
 }
 
+interface PaginatedPage<T> {
+    items?: T[];
+    data?: T[];
+    comments?: T[];
+}
+
+interface PaginatedData<T> {
+    pages: PaginatedPage<T>[];
+}
+
+type CacheData<T> = T[] | PaginatedData<T> | PaginatedPage<T>;
+
 /**
  * Upserts an item into a list or a set of paginated results.
  * If the item exists (by ID), it updates it.
@@ -16,18 +28,18 @@ interface Identifiable {
  */
 export function upsertInList<T extends Identifiable>(
     queryClient: QueryClient,
-    queryKey: any[],
+    queryKey: string[],
     newItem: T
 ) {
-    queryClient.setQueriesData<any>({ queryKey }, (oldData: any) => {
+    queryClient.setQueriesData<unknown>({ queryKey }, (oldData) => {
         if (!oldData) return oldData;
 
         // Case 1: Infinite Query (Paginated)
-        if (oldData.pages && Array.isArray(oldData.pages)) {
+        if (typeof oldData === 'object' && 'pages' in oldData && Array.isArray((oldData as PaginatedData<T>).pages)) {
             let found = false;
-            const newPages = oldData.pages.map((page: any) => {
+            const newPages = (oldData as PaginatedData<T>).pages.map((page) => {
                 const items = page.items || page.data || [];
-                const index = items.findIndex((item: T) => item.id === newItem.id);
+                const index = items.findIndex((item) => item.id === newItem.id);
                 if (index !== -1) {
                     found = true;
                     const newItems = [...items];
@@ -60,10 +72,12 @@ export function upsertInList<T extends Identifiable>(
         }
 
         // Case 3: Object with 'items', 'data' or 'comments' array
-        const itemsKey = oldData.items ? 'items' : oldData.comments ? 'comments' : oldData.data ? 'data' : null;
-        if (itemsKey && Array.isArray(oldData[itemsKey])) {
-            const items = oldData[itemsKey];
-            const index = items.findIndex((item: T) => item.id === newItem.id);
+        const objData = oldData as PaginatedPage<T>;
+        const itemsKey: 'items' | 'data' | 'comments' | null = 
+            objData.items ? 'items' : objData.comments ? 'comments' : objData.data ? 'data' : null;
+        if (itemsKey && Array.isArray(objData[itemsKey])) {
+            const items = objData[itemsKey] as T[];
+            const index = items.findIndex((item) => item.id === newItem.id);
             if (index !== -1) {
                 const newItems = [...items];
                 newItems[index] = { ...newItems[index], ...newItem };
@@ -79,22 +93,22 @@ export function upsertInList<T extends Identifiable>(
 /**
  * Removes an item from a list or a set of paginated results.
  */
-export function removeFromList(
+export function removeFromList<T extends Identifiable>(
     queryClient: QueryClient,
-    queryKey: any[],
+    queryKey: string[],
     id: string | number
 ) {
-    queryClient.setQueriesData<any>({ queryKey }, (oldData: any) => {
+    queryClient.setQueriesData<CacheData<T>>({ queryKey }, (oldData) => {
         if (!oldData) return oldData;
 
         // Case 1: Infinite Query
-        if (oldData.pages && Array.isArray(oldData.pages)) {
-            const newPages = oldData.pages.map((page: any) => {
-                const itemsKey = page.items ? 'items' : page.data ? 'data' : null;
+        if ('pages' in oldData && Array.isArray(oldData.pages)) {
+            const newPages = oldData.pages.map((page) => {
+                const itemsKey: 'items' | 'data' | null = page.items ? 'items' : page.data ? 'data' : null;
                 if (!itemsKey) return page;
                 return {
                     ...page,
-                    [itemsKey]: page[itemsKey].filter((item: any) => item.id !== id)
+                    [itemsKey]: page[itemsKey]!.filter((item) => item.id !== id)
                 };
             });
             return { ...oldData, pages: newPages };
@@ -102,14 +116,16 @@ export function removeFromList(
 
         // Case 2: Simple Array
         if (Array.isArray(oldData)) {
-            return oldData.filter((item: any) => item.id !== id);
+            return oldData.filter((item) => item.id !== id);
         }
 
         // Case 3: Object with 'items', 'data' or 'comments' array
-        const itemsKey = oldData.items ? 'items' : oldData.comments ? 'comments' : oldData.data ? 'data' : null;
-        if (itemsKey && Array.isArray(oldData[itemsKey])) {
+        const objData = oldData as PaginatedPage<T>;
+        const itemsKey: 'items' | 'data' | 'comments' | null = 
+            objData.items ? 'items' : objData.comments ? 'comments' : objData.data ? 'data' : null;
+        if (itemsKey && Array.isArray(objData[itemsKey])) {
             return {
-                ...oldData,
+                ...objData,
                 [itemsKey]: oldData[itemsKey].filter((item: any) => item.id !== id)
             };
         }

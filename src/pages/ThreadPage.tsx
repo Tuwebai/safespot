@@ -10,7 +10,8 @@ import { EnhancedComment } from '@/components/comments/enhanced-comment'
 import { useReportDetail } from '@/hooks/useReportDetail'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
-import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useConfirm } from '@/components/ui/useConfirm'
+import type { Comment } from '@/lib/schemas'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
 const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
@@ -67,7 +68,7 @@ export function ThreadPage() {
         const target = comments.find(c => c.id === commentId)
         if (!target) return { focusComment: null, ancestors: [] }
 
-        const list: any[] = []
+        const list: Comment[] = []
         let current = target
 
         // Trace back to root
@@ -194,7 +195,7 @@ export function ThreadPage() {
                         </div>
 
                         {/* 3. Reply Box (Always visible under focus if replying) */}
-                        <Card className="bg-card border-border border-neon-green/20">
+                        <Card className="bg-card border-neon-green/20">
                             <CardContent className="p-4">
                                 <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
                                     <MessageCircle className="h-3 w-3" />

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useConfirm } from '@/components/ui/confirmation-manager';
+import { useConfirm } from '@/components/ui/useConfirm';
 import { Button } from '@/components/ui/button';
 import {
     ArrowLeft, Bell, Palette, Monitor, Map as MapIcon,
@@ -21,6 +21,7 @@ import { getAvatarUrl } from '@/lib/avatar';
 import { usersApi } from '@/lib/api';
 import { handleError } from '@/lib/errorHandler';
 import { useToast } from '@/components/ui/toast';
+import { useUpdateProfileMutation } from '@/hooks/mutations/useUpdateProfileMutation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RealtimeStatusIndicator } from '@/components/RealtimeStatusIndicator';
 
@@ -28,6 +29,7 @@ export function SettingsPage() {
     const navigate = useNavigate();
     const { confirm } = useConfirm();
     const toast = useToast();
+    const updateProfile = useUpdateProfileMutation();
     const queryClient = useQueryClient();
     const { theme, setTheme, openCustomizer, savePreferences } = useTheme();
     const anonymousId = getAnonymousIdSafe();
@@ -52,7 +54,7 @@ export function SettingsPage() {
     const [isSavingRadius, setIsSavingRadius] = useState(false);
 
     // Load Profile
-    const { refetch: refetchProfile, data: profile } = useQuery({
+    const { data: profile } = useQuery({
         queryKey: ['profile'],
         queryFn: () => usersApi.getProfile(),
     });
@@ -76,7 +78,7 @@ export function SettingsPage() {
     }, []);
 
     // --- PERSISTENCE HANDLERS ---
-    const persist = (key: string, val: any) => {
+    const persist = (key: string, val: string | boolean | number) => {
         localStorage.setItem(key, String(val));
     };
 
@@ -92,11 +94,10 @@ export function SettingsPage() {
             const randomSeed = Math.random().toString(36).substring(7);
             const newAvatarUrl = getAvatarUrl(`${anonymousId}-${randomSeed}`);
 
-            await usersApi.updateProfile({ avatar_url: newAvatarUrl });
-            await refetchProfile();
+            await updateProfile.mutateAsync({ avatar_url: newAvatarUrl });
             toast.success("Identidad visual regenerada");
         } catch (err) {
-            handleError(err, toast.error, 'Settings.regenerateIdentity');
+            // Error already handled by mutation hook
         }
     };
 
@@ -132,7 +133,7 @@ export function SettingsPage() {
                 queryClient.clear();
                 window.location.reload();
             }, 1500);
-        } catch (err: any) {
+        } catch (err: unknown) {
             handleError(err, toast.error, 'Settings.importIdentity');
             if (fileInputRef.current) fileInputRef.current.value = '';
         } finally {
@@ -224,7 +225,7 @@ export function SettingsPage() {
                                     { id: 'neon', name: 'Neon', color: 'bg-slate-900 border-purple-500' },
                                     { id: 'pastel', name: 'Pastel', color: 'bg-indigo-950 border-pink-400' },
                                     { id: 'minimal', name: 'Minimal', color: 'bg-neutral-900 border-gray-400' }
-                                ].map((t) => (
+                                ].map((t: { id: string, name: string, color: string }) => (
                                     <button
                                         key={t.id}
                                         onClick={() => { setTheme(t.id as any); savePreferences(); }}

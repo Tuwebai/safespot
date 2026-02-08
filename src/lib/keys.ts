@@ -7,7 +7,7 @@
 export const QUERY_KEYS = {
     reports: {
         all: ['reports'] as const,
-        list: (filters: any) => ['reports', 'list', filters] as const,
+        list: (filters: Record<string, unknown>) => ['reports', 'list', filters] as const,
         detail: (id: string) => ['reports', 'detail', id] as const,
         favorites: ['reports', 'favorites'] as const,
     },

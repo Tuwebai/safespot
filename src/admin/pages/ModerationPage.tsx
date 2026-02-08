@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { getAvatarUrl } from '@/lib/avatar';
 import { ModerationNotes } from '../components/ModerationNotes';
 import { useReportLifecycle } from '@/hooks/queries/useReportLifecycle';
+import { adminApi } from '../services/adminApi';
 
 interface ModerationItem {
     id: string;
@@ -47,13 +48,10 @@ export function ModerationPage() {
     const { data: items, isLoading } = useQuery<ModerationItem[]>({
         queryKey: ['admin', 'moderation', 'pending', activeTab],
         queryFn: async () => {
-            const token = localStorage.getItem('safespot_admin_token');
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/moderation/pending?type=${activeTab}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            const { data } = await adminApi.get('/moderation/pending', {
+                params: { type: activeTab }
             });
-            if (!res.ok) throw new Error('Failed to fetch moderation queue');
-            const json = await res.json();
-            return json.data;
+            return data.data;
         }
     });
 
@@ -63,20 +61,10 @@ export function ModerationPage() {
     // Legacy mutation for Comments (or other types)
     const resolveOtherMutation = useMutation({
         mutationFn: async ({ id, type, action, reason, banUser, created_by }: { id: string, type: string, action: string, reason: string, banUser?: boolean, created_by?: string }) => {
-            const token = localStorage.getItem('safespot_admin_token');
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/moderation/${type}/${id}/resolve`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ action, reason, banUser, created_by })
+            const { data } = await adminApi.post(`/moderation/${type}/${id}/resolve`, {
+                action, reason, banUser, created_by
             });
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to resolve');
-            }
-            return res.json();
+            return data;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] });
@@ -176,17 +164,18 @@ export function ModerationPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-4 border-b border-slate-800">
+            <div className="flex gap-2 sm:gap-4 border-b border-slate-800 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('report')}
                     className={cn(
-                        "pb-3 px-4 text-sm font-medium transition-colors relative",
+                        "pb-3 px-3 sm:px-4 text-sm font-medium transition-colors relative whitespace-nowrap",
                         activeTab === 'report' ? "text-orange-500" : "text-slate-400 hover:text-slate-200"
                     )}
                 >
                     <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Reportes Pendientes
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Reportes Pendientes</span>
+                        <span className="sm:hidden">Reportes</span>
                     </div>
                     {activeTab === 'report' && (
                         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
@@ -195,13 +184,14 @@ export function ModerationPage() {
                 <button
                     onClick={() => setActiveTab('comment')}
                     className={cn(
-                        "pb-3 px-4 text-sm font-medium transition-colors relative",
+                        "pb-3 px-3 sm:px-4 text-sm font-medium transition-colors relative whitespace-nowrap",
                         activeTab === 'comment' ? "text-orange-500" : "text-slate-400 hover:text-slate-200"
                     )}
                 >
                     <div className="flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4" />
-                        Comentarios Marcados
+                        <MessageSquare className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Comentarios Marcados</span>
+                        <span className="sm:hidden">Comentarios</span>
                     </div>
                     {activeTab === 'comment' && (
                         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
@@ -217,15 +207,17 @@ export function ModerationPage() {
                         Cargando cola de moderación...
                     </div>
                 ) : items?.length === 0 ? (
-                    <div className="text-center py-20 bg-[#0f172a] rounded-xl border border-slate-800 border-dashed">
-                        <Check className="h-10 w-10 text-green-500 mx-auto mb-3" />
-                        <h3 className="text-lg font-medium text-slate-200">¡Todo limpío!</h3>
-                        <p className="text-slate-400">No hay contenido pendiente de revisión.</p>
+                    <div className="text-center py-16 sm:py-20 bg-[#0f172a] rounded-xl border border-slate-800 border-dashed">
+                        <div className="p-4 bg-[#1e293b]/50 rounded-full w-fit mx-auto mb-3">
+                            <Check className="h-8 w-8 sm:h-10 sm:w-10 text-green-500" />
+                        </div>
+                        <h3 className="text-lg font-medium text-slate-200">¡Todo limpio!</h3>
+                        <p className="text-slate-400 text-sm px-4">No hay contenido pendiente de revisión.</p>
                     </div>
                 ) : (
                     items?.map(item => (
-                        <div key={item.id} className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
-                            <div className="flex items-start justify-between gap-4">
+                        <div key={item.id} className="bg-[#0f172a] border border-slate-800 rounded-xl p-4 lg:p-5 hover:border-slate-700 transition-colors">
+                            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                                 {/* Icon & Status */}
                                 <div className="mt-1">
                                     {item.status === 'hidden' ? (
@@ -284,7 +276,7 @@ export function ModerationPage() {
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex flex-col gap-2">
+                                <div className="flex flex-row lg:flex-col gap-2 mt-2 lg:mt-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-800">
                                     <button
                                         onClick={() => openResolveModal(item, 'approve')}
                                         className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-400 rounded hover:bg-green-500/20 transition-colors text-xs font-medium border border-green-500/20"

@@ -19,9 +19,14 @@ import {
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useConfirm } from '@/components/ui/useConfirm'
 import { useAdminTasks, AdminTask } from '../hooks/useAdminTasks'
 import { v4 as uuidv4 } from 'uuid'
+
+export interface TaskMetadata {
+    report_id?: string;
+    user_id?: string;
+}
 
 function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
     // ✅ ENTERPRISE: Zero-Latency UI
@@ -44,12 +49,12 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
         // We generate the ID here to ensure we own the identity
         createTask.mutate({
             id: uuidv4(), // Client-Generated ID
-            type: formData.type as any,
+            type: formData.type as 'manual' | 'bug' | 'system',
             title: formData.title,
             description: formData.description,
-            severity: formData.severity as any,
+            severity: formData.severity as 'low' | 'medium' | 'high' | 'critical',
             source: 'manual',
-            metadata: {}
+            metadata: {} as TaskMetadata
         })
 
         // 2. Close Immediately (0ms perceived latency)
@@ -65,36 +70,36 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[#0f172a] border border-[#1e293b] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 border-b border-[#1e293b] flex items-center justify-between">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-[#0f172a] border border-[#1e293b] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+                <div className="p-4 sm:p-6 border-b border-[#1e293b] flex items-center justify-between sticky top-0 bg-[#0f172a] z-10">
+                    <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                         <Plus className="h-5 w-5 text-[#00ff88]" />
                         Nueva Tarea
                     </h2>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+                    <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1">
                         <X className="h-5 w-5" />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
                     <div className="space-y-2">
                         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Título</label>
                         <input
                             required
                             type="text"
                             placeholder="Ej: Revisar logs de base de datos"
-                            className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all"
+                            className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-sm sm:text-base text-white focus:border-[#00ff88]/50 outline-none transition-all"
                             value={formData.title}
                             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tipo</label>
                             <select
-                                className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all"
+                                className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-sm text-white focus:border-[#00ff88]/50 outline-none transition-all"
                                 value={formData.type}
                                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                             >
@@ -106,7 +111,7 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
                         <div className="space-y-2">
                             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Severidad</label>
                             <select
-                                className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all"
+                                className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-sm text-white focus:border-[#00ff88]/50 outline-none transition-all"
                                 value={formData.severity}
                                 onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
                             >
@@ -123,17 +128,17 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
                         <textarea
                             rows={3}
                             placeholder="Detalles adicionales sobre la tarea..."
-                            className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-white focus:border-[#00ff88]/50 outline-none transition-all resize-none"
+                            className="w-full bg-[#020617] border border-[#1e293b] rounded-xl px-4 py-3 text-sm text-white focus:border-[#00ff88]/50 outline-none transition-all resize-none"
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         />
                     </div>
 
-                    <div className="pt-4 flex gap-3">
+                    <div className="pt-4 flex flex-col sm:flex-row gap-3">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="flex-1 px-4 py-3 rounded-xl border border-[#1e293b] text-slate-400 font-bold hover:bg-[#1e293b] hover:text-white transition-all"
+                            className="flex-1 px-4 py-3 rounded-xl border border-[#1e293b] text-slate-400 font-bold hover:bg-[#1e293b] hover:text-white transition-all text-sm sm:text-base"
                         >
                             Cancelar
                         </button>
@@ -271,44 +276,51 @@ export function TasksPage() {
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
                         Gestión de Tareas
                         <div className="h-2 w-2 rounded-full bg-[#00ff88] animate-pulse" />
                     </h1>
                     <p className="text-slate-400 mt-1">Control de eventos críticos, bugs y logs del sistema.</p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                     {/* Bulk Actions */}
-                    <div className="flex items-center gap-2 mr-4 border-r border-[#1e293b] pr-6">
+                    <div className="flex items-center gap-2 sm:mr-4 sm:border-r sm:border-[#1e293b] sm:pr-6">
                         <Button
                             variant="ghost"
+                            size="sm"
                             className="text-slate-400 hover:text-[#00ff88]"
                             onClick={handleResolveAll}
                             disabled={tasks.length === 0}
                         >
-                            <CheckCircle2 className="mr-2 h-4 w-4" />
-                            Resolver Todo
+                            <CheckCircle2 className="mr-1 sm:mr-2 h-4 w-4" />
+                            <span className="hidden sm:inline">Resolver Todo</span>
+                            <span className="sm:hidden">Resolver</span>
                         </Button>
                         <Button
                             variant="ghost"
+                            size="sm"
                             className="text-slate-400 hover:text-red-500"
                             onClick={handleDeleteAll}
                             disabled={tasks.length === 0}
                         >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar Todo
+                            <Trash2 className="mr-1 sm:mr-2 h-4 w-4" />
+                            <span className="hidden sm:inline">Eliminar Todo</span>
+                            <span className="sm:hidden">Eliminar</span>
                         </Button>
                     </div>
 
                     <Button
                         variant="neon"
-                        className="gap-2"
+                        size="sm"
+                        className="gap-2 w-full sm:w-auto"
                         onClick={() => setIsModalOpen(true)}
                     >
-                        <Plus className="h-4 w-4" /> Nueva Tarea
+                        <Plus className="h-4 w-4" /> 
+                        <span className="hidden sm:inline">Nueva Tarea</span>
+                        <span className="sm:hidden">Nueva</span>
                     </Button>
                 </div>
             </div>
@@ -329,41 +341,153 @@ export function TasksPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-4 items-center bg-[#0f172a]/50 p-4 border border-[#1e293b] rounded-xl">
-                <div className="flex items-center gap-2 px-3 py-2 bg-[#020617] border border-[#1e293b] rounded-lg focus-within:border-[#00ff88]/50 transition-colors flex-1 min-w-[200px]">
-                    <Search className="h-4 w-4 text-slate-500" />
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center bg-[#0f172a]/50 p-3 sm:p-4 border border-[#1e293b] rounded-xl">
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#020617] border border-[#1e293b] rounded-lg focus-within:border-[#00ff88]/50 transition-colors flex-1 min-w-0">
+                    <Search className="h-4 w-4 text-slate-500 shrink-0" />
                     <input
                         type="text"
                         placeholder="Buscar tareas..."
-                        className="bg-transparent border-none outline-none text-sm text-white w-full"
+                        className="bg-transparent border-none outline-none text-sm text-white w-full min-w-0"
                     />
                 </div>
 
-                <select
-                    className="bg-[#020617] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#00ff88]/50 transition-colors"
-                    onChange={(e) => setFilter({ ...filter, severity: e.target.value })}
-                >
-                    <option value="">Todas las Severidades</option>
-                    <option value="critical">Crítica</option>
-                    <option value="high">Alta</option>
-                    <option value="medium">Media</option>
-                    <option value="low">Baja</option>
-                </select>
+                <div className="flex gap-2 sm:gap-4">
+                    <select
+                        className="bg-[#020617] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#00ff88]/50 transition-colors flex-1 sm:flex-none"
+                        onChange={(e) => setFilter({ ...filter, severity: e.target.value })}
+                    >
+                        <option value="">Todas las Severidades</option>
+                        <option value="critical">Crítica</option>
+                        <option value="high">Alta</option>
+                        <option value="medium">Media</option>
+                        <option value="low">Baja</option>
+                    </select>
 
-                <select
-                    className="bg-[#020617] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#00ff88]/50 transition-colors"
-                    onChange={(e) => setFilter({ ...filter, type: e.target.value })}
-                >
-                    <option value="">Todos los Tipos</option>
-                    <option value="manual">Manual</option>
-                    <option value="bug">Bug</option>
-                    <option value="error">Error</option>
-                </select>
+                    <select
+                        className="bg-[#020617] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#00ff88]/50 transition-colors flex-1 sm:flex-none"
+                        onChange={(e) => setFilter({ ...filter, type: e.target.value })}
+                    >
+                        <option value="">Todos los Tipos</option>
+                        <option value="manual">Manual</option>
+                        <option value="bug">Bug</option>
+                        <option value="error">Error</option>
+                    </select>
+                </div>
             </div>
 
-            {/* Tasks List */}
-            <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl overflow-hidden">
-                <div className="overflow-x-auto">
+            {/* Tasks List - Mobile: Cards, Desktop: Table */}
+            <div className="space-y-3 sm:bg-[#0f172a] sm:border sm:border-[#1e293b] sm:rounded-2xl sm:overflow-hidden">
+                {/* Mobile Cards */}
+                <div className="sm:hidden space-y-3">
+                    {isLoading ? (
+                        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-8 text-center text-slate-500">
+                            <div className="h-6 w-6 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                            Cargando tareas...
+                        </div>
+                    ) : tasks.length === 0 ? (
+                        <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-8 text-center">
+                            <div className="p-4 bg-[#1e293b]/50 rounded-full w-fit mx-auto mb-3">
+                                <CheckCircle2 className="w-8 h-8 text-slate-600" />
+                            </div>
+                            <p className="font-semibold text-slate-300">No hay tareas pendientes</p>
+                            <p className="text-slate-500 text-xs mt-1">
+                                Todas las tareas han sido completadas.
+                            </p>
+                        </div>
+                    ) : (
+                        tasks.map((task) => (
+                            <div
+                                key={task.id}
+                                className={cn(
+                                    "bg-[#0f172a] border border-[#1e293b] rounded-xl p-4",
+                                    task.severity === 'critical' && 'border-red-500/30 bg-red-500/5'
+                                )}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className={cn(
+                                        "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border",
+                                        task.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
+                                            task.type === 'bug' ? 'bg-orange-500/10 border-orange-500/20 text-orange-500' :
+                                                'bg-blue-500/10 border-blue-500/20 text-blue-500'
+                                    )}>
+                                        {getTypeIcon(task.type)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-white text-sm break-words">{task.title}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className={cn(
+                                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border",
+                                                getSeverityColor(task.severity)
+                                            )}>
+                                                {task.severity}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">
+                                                {new Date(task.created_at).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1e293b]">
+                                    <div className="flex items-center gap-2">
+                                        {getStatusIcon(task.status)}
+                                        <span className="text-xs font-medium text-slate-300 capitalize">
+                                            {task.status.replace('_', ' ')}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => handleViewDetails(task)}
+                                            className="p-2 text-slate-400 hover:text-[#00ff88] bg-[#020617] rounded-lg border border-[#1e293b]"
+                                        >
+                                            <ExternalLink className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveDropdownId(activeDropdownId === task.id ? null : task.id)}
+                                            className="p-2 text-slate-400 hover:text-white bg-[#020617] rounded-lg border border-[#1e293b]"
+                                        >
+                                            <MoreVertical className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {/* Mobile Dropdown */}
+                                {activeDropdownId === task.id && (
+                                    <div
+                                        ref={dropdownRef}
+                                        className="mt-3 bg-[#020617] border border-[#1e293b] rounded-lg overflow-hidden"
+                                    >
+                                        {task.status === 'pending' && (
+                                            <button
+                                                onClick={() => handleUpdateStatus(task.id, 'in_progress')}
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-[#1e293b]"
+                                            >
+                                                <Play className="h-4 w-4 text-blue-400" /> Empezar Trabajo
+                                            </button>
+                                        )}
+                                        {task.status !== 'done' && (
+                                            <button
+                                                onClick={() => handleUpdateStatus(task.id, 'done')}
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-[#1e293b]"
+                                            >
+                                                <Check className="h-4 w-4 text-[#00ff88]" /> Marcar Resuelta
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => handleDelete(task.id)}
+                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10"
+                                        >
+                                            <Trash2 className="h-4 w-4" /> Eliminar Tarea
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-[#1e293b]/50 border-b border-[#1e293b]">
@@ -386,9 +510,18 @@ export function TasksPage() {
                                 </tr>
                             ) : tasks.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-20 text-center text-slate-500">
-                                        <Inbox className="h-10 w-10 mx-auto mb-4 opacity-20" />
-                                        No se encontraron tareas.
+                                    <td colSpan={5} className="px-6 py-20 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="p-4 bg-[#1e293b]/50 rounded-full">
+                                                <CheckCircle2 className="w-8 h-8 text-slate-600" />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-slate-300">No hay tareas pendientes</p>
+                                                <p className="text-slate-500 text-xs mt-1">
+                                                    Todas las tareas han sido completadas. ¡Buen trabajo!
+                                                </p>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
@@ -411,7 +544,7 @@ export function TasksPage() {
                                                     {getTypeIcon(task.type)}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="font-bold text-white text-sm truncate max-w-[300px]">{task.title}</p>
+                                                    <p className="font-bold text-white text-sm truncate max-w-[200px] lg:max-w-[300px]">{task.title}</p>
                                                     <p className="text-xs text-slate-500 mt-0.5 uppercase tracking-tighter">
                                                         Source: {task.source} • ID: {task.id.split('-')[0]}
                                                     </p>
@@ -445,50 +578,46 @@ export function TasksPage() {
                                                 <button
                                                     onClick={() => handleViewDetails(task)}
                                                     className="p-2 text-slate-400 hover:text-[#00ff88] bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105"
-                                                    title="Ver origen del evento"
                                                 >
                                                     <ExternalLink className="h-4 w-4" />
                                                 </button>
+                                                <button
+                                                    onClick={() => setActiveDropdownId(activeDropdownId === task.id ? null : task.id)}
+                                                    className="p-2 text-slate-400 hover:text-white bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105"
+                                                >
+                                                    <MoreVertical className="h-4 w-4" />
+                                                </button>
 
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={() => setActiveDropdownId(activeDropdownId === task.id ? null : task.id)}
-                                                        className="p-2 text-slate-400 hover:text-white bg-[#020617] rounded-lg border border-[#1e293b] transition-all hover:scale-105"
+                                                {activeDropdownId === task.id && (
+                                                    <div
+                                                        ref={dropdownRef}
+                                                        className="absolute right-0 top-full mt-2 w-48 bg-[#0f172a] border border-[#1e293b] rounded-xl shadow-2xl z-[100] py-1"
                                                     >
-                                                        <MoreVertical className="h-4 w-4" />
-                                                    </button>
-
-                                                    {activeDropdownId === task.id && (
-                                                        <div
-                                                            ref={dropdownRef}
-                                                            className="absolute right-0 top-full mt-2 w-48 bg-[#0f172a] border border-[#1e293b] rounded-xl shadow-2xl z-[100] py-1 animate-in zoom-in-95 duration-100 overflow-hidden"
-                                                        >
-                                                            {task.status === 'pending' && (
-                                                                <button
-                                                                    onClick={() => handleUpdateStatus(task.id, 'in_progress')}
-                                                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
-                                                                >
-                                                                    <Play className="h-4 w-4 text-blue-400" /> Empezar Trabajo
-                                                                </button>
-                                                            )}
-                                                            {task.status !== 'done' && (
-                                                                <button
-                                                                    onClick={() => handleUpdateStatus(task.id, 'done')}
-                                                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white transition-colors"
-                                                                >
-                                                                    <Check className="h-4 w-4 text-[#00ff88]" /> Marcar Resuelta
-                                                                </button>
-                                                            )}
-                                                            <div className="h-[1px] bg-[#1e293b] my-1" />
+                                                        {task.status === 'pending' && (
                                                             <button
-                                                                onClick={() => handleDelete(task.id)}
-                                                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                                                                onClick={() => handleUpdateStatus(task.id, 'in_progress')}
+                                                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b]"
                                                             >
-                                                                <Trash2 className="h-4 w-4" /> Eliminar Tarea
+                                                                <Play className="h-4 w-4 text-blue-400" /> Empezar Trabajo
                                                             </button>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                        )}
+                                                        {task.status !== 'done' && (
+                                                            <button
+                                                                onClick={() => handleUpdateStatus(task.id, 'done')}
+                                                                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-[#1e293b]"
+                                                            >
+                                                                <Check className="h-4 w-4 text-[#00ff88]" /> Marcar Resuelta
+                                                            </button>
+                                                        )}
+                                                        <div className="h-[1px] bg-[#1e293b] my-1" />
+                                                        <button
+                                                            onClick={() => handleDelete(task.id)}
+                                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" /> Eliminar Tarea
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

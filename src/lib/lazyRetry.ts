@@ -13,10 +13,11 @@ import * as Sentry from '@sentry/react';
 import { AppVersion } from './version';
 
 // Helper: Check if error is likely a version mismatch (404 on chunk)
-const isChunkLoadError = (error: any): boolean => {
-    const message = error?.message || '';
+const isChunkLoadError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) return false;
+    const message = error.message || '';
     return (
-        error?.name === 'ChunkLoadError' ||
+        error.name === 'ChunkLoadError' ||
         message.includes('Loading chunk') ||
         message.includes('Failed to fetch dynamically imported module')
     );
@@ -29,7 +30,7 @@ export function lazyRetry<T extends ComponentType<any>>(
     return lazy(async () => {
         try {
             return await factory();
-        } catch (error: any) {
+        } catch (error: unknown) {
             // CRITICAL: ChunkLoadError means HTML is out of sync with server chunks
             // Only solution: hard reload to get fresh HTML
             if (isChunkLoadError(error)) {

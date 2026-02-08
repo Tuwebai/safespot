@@ -11,7 +11,19 @@ export function AdminDashboard() {
     const navigate = useNavigate()
 
     if (isLoading) {
-        return <div className="p-8 text-[#00ff88] animate-pulse">Establishing Uplink to Mainframe...</div>
+        return (
+            <div className="p-4 lg:p-8 text-[#00ff88] animate-pulse">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="h-24 bg-[#0f172a] rounded-xl border border-[#1e293b] animate-pulse" />
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px] lg:h-[600px]">
+                    <div className="lg:col-span-2 bg-[#0f172a] rounded-xl border border-[#1e293b] animate-pulse" />
+                    <div className="bg-[#0f172a] rounded-xl border border-[#1e293b] animate-pulse" />
+                </div>
+            </div>
+        )
     }
 
     const { kpis, recentActivity } = data || { kpis: {}, recentActivity: [] }
@@ -53,10 +65,10 @@ export function AdminDashboard() {
             </div>
 
             {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[600px]">
 
                 {/* Central Map (Live Implementation) */}
-                <div className="lg:col-span-2 bg-[#0f172a] rounded-xl border border-[#1e293b] p-1 flex flex-col relative overflow-hidden group min-h-[400px]">
+                <div className="lg:col-span-2 bg-[#0f172a] rounded-xl border border-[#1e293b] p-1 flex flex-col relative overflow-hidden group min-h-[300px] lg:min-h-[400px]">
                     {/* Header Overlay */}
                     <div className="absolute top-4 left-4 z-[401] bg-[#0f172a]/90 backdrop-blur px-4 py-2 rounded-lg border border-[#334155] shadow-xl">
                         <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
@@ -88,7 +100,7 @@ export function AdminDashboard() {
                         {recentActivity?.map((activity: any) => (
                             <div
                                 key={activity.id}
-                                onClick={() => navigate(`/reporte/${activity.id}`)}
+                                onClick={() => navigate(`/admin/reports/${activity.id}`)}
                                 className="bg-[#1e293b]/50 p-3 rounded-lg border border-[#334155]/50 hover:bg-[#1e293b] transition-colors cursor-pointer group hover:border-[#00ff88]/30"
                             >
                                 <div className="flex justify-between items-start mb-1">

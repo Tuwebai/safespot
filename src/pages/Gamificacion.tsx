@@ -4,7 +4,8 @@ import confetti from 'canvas-confetti'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Award, Trophy, Star, Lock, Zap } from 'lucide-react'
-import type { GamificationBadge, NewBadge } from '@/lib/api'
+// Types imported from schemas (not API) to follow security rules
+import type { GamificationBadge, NewBadge } from '@/lib/schemas'
 import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
 import { getPointsToNextLevel, MAX_LEVEL } from '@/lib/levelCalculation'
@@ -68,7 +69,7 @@ export function Gamificacion() {
         if (fullBadge) {
           // CHECK FOR LEGENDARY
           if (fullBadge.rarity === 'legendary') {
-            setLegendaryBadgeToReveal(fullBadge as any)
+            setLegendaryBadgeToReveal(fullBadge as Extract<GamificationBadge, { rarity: 'legendary' }>)
           }
 
           // Mark as newly unlocked for animation (visual feedback only)
@@ -96,7 +97,7 @@ export function Gamificacion() {
 
       const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min
 
-      const interval: any = setInterval(function () {
+      const interval: ReturnType<typeof setInterval> = setInterval(function () {
         const timeLeft = animationEnd - Date.now()
 
         if (timeLeft <= 0) {
@@ -297,7 +298,7 @@ export function Gamificacion() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">Progreso al siguiente nivel</span>
                     <span className="text-sm text-muted-foreground">
-                      {profile.level >= MAX_LEVEL ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
+                      {(profile.level || 0) >= MAX_LEVEL ? 'Nivel máximo alcanzado' : `${pointsToNextLevel} puntos restantes`}
                     </span>
                   </div>
                   <div className="w-full bg-dark-bg/50 rounded-full h-5 overflow-hidden relative border border-dark-border/30">

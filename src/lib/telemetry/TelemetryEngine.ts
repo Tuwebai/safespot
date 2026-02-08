@@ -23,7 +23,7 @@ export interface TelemetryEnvelope {
     engineState?: string;
     severity: TelemetrySeverity;
     timestamp: number;
-    payload: any;
+    payload: Record<string, unknown>;
 }
 
 // 1. Instance Identification (Ephemeral per tab)
@@ -86,7 +86,7 @@ class TelemetryEngine {
     public emit(params: {
         engine: string;
         severity: TelemetrySeverity;
-        payload: any;
+        payload: Record<string, unknown>;
         engineState?: string;
         traceId?: string;
         spanId?: string;

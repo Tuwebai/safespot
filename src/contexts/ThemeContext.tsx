@@ -3,12 +3,16 @@ import { usersApi } from '@/lib/api'
 
 export type Theme = 'neon' | 'pastel' | 'minimal' | 'default'
 export type AccentColor = 'green' | 'violet' | 'cyan' | 'orange' | 'red' | 'yellow'
+export type ColorScheme = 'light' | 'dark' | 'system'
 
 interface ThemeContextType {
     theme: Theme
     accentColor: AccentColor
+    colorScheme: ColorScheme
+    resolvedColorScheme: 'light' | 'dark'
     setTheme: (theme: Theme) => void
     setAccentColor: (color: AccentColor) => void
+    setColorScheme: (scheme: ColorScheme) => void
     savePreferences: () => Promise<void>
     isLoaded: boolean
     isCustomizerOpen: boolean
@@ -28,8 +32,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         return (localStorage.getItem('safespot_accent') as AccentColor) || 'green'
     })
 
+    const [colorScheme, setColorSchemeState] = useState<ColorScheme>(() => {
+        return (localStorage.getItem('safespot_admin_pref_theme') as ColorScheme) || 'dark'
+    })
+
+    const [resolvedColorScheme, setResolvedColorScheme] = useState<'light' | 'dark'>('dark')
+
     const [isLoaded, setIsLoaded] = useState(false)
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false)
+
+    // Helper to resolve system preference
+    const resolveSystemScheme = (): 'light' | 'dark' => {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
 
     // Apply to DOM immediately when state changes
     useEffect(() => {
@@ -49,11 +64,43 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             root.setAttribute('data-accent-color', accentColor)
         }
 
+        // Apply Color Scheme (light/dark)
+        const resolved = colorScheme === 'system' ? resolveSystemScheme() : colorScheme
+        setResolvedColorScheme(resolved)
+        
+        root.classList.remove('light', 'dark')
+        root.classList.add(resolved)
+
+        // Update meta theme-color for mobile
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+        if (metaThemeColor) {
+            metaThemeColor.setAttribute('content', resolved === 'dark' ? '#020617' : '#ffffff')
+        }
+
         // Save simple persistence check
         localStorage.setItem('safespot_theme', theme)
         localStorage.setItem('safespot_accent', accentColor)
+        localStorage.setItem('safespot_admin_pref_theme', colorScheme)
 
-    }, [theme, accentColor])
+    }, [theme, accentColor, colorScheme])
+
+    // Listen for system theme changes
+    useEffect(() => {
+        if (colorScheme !== 'system') return
+
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+        const handler = (e: MediaQueryListEvent) => {
+            const newScheme = e.matches ? 'dark' : 'light'
+            setResolvedColorScheme(newScheme)
+            
+            const root = window.document.documentElement
+            root.classList.remove('light', 'dark')
+            root.classList.add(newScheme)
+        }
+
+        mediaQuery.addEventListener('change', handler)
+        return () => mediaQuery.removeEventListener('change', handler)
+    }, [colorScheme])
 
     // Sync with Backend on Mount
     useEffect(() => {
@@ -80,6 +127,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const setTheme = (t: Theme) => setThemeState(t)
     const setAccentColor = (c: AccentColor) => setAccentColorState(c)
+    const setColorScheme = (s: ColorScheme) => setColorSchemeState(s)
 
     const savePreferences = async () => {
         // Persist to backend
@@ -96,8 +144,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const value = {
         theme,
         accentColor,
+        colorScheme,
+        resolvedColorScheme,
         setTheme,
         setAccentColor,
+        setColorScheme,
         savePreferences,
         isLoaded,
         isCustomizerOpen,

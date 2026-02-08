@@ -2,7 +2,7 @@ export interface ReportErrorParams {
     title: string;
     description: string;
     severity: 'low' | 'medium' | 'high' | 'critical';
-    metadata?: any;
+    metadata?: Record<string, unknown>;
 }
 
 /**

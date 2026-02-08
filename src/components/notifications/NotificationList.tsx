@@ -5,11 +5,13 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BellOff } from 'lucide-react';
 
+import { Notification } from '@/pages/NotificationsPage';
+
 interface NotificationListProps {
-    notifications: any[];
+    notifications: Notification[];
     onRead: (id: string) => void;
     onDelete: (id: string) => void;
-    onOpenContext: (notification: any) => void;
+    onOpenContext: (notification: Notification) => void;
 }
 
 export function NotificationList({ notifications, onRead, onDelete, onOpenContext }: NotificationListProps) {
@@ -44,7 +46,7 @@ export function NotificationList({ notifications, onRead, onDelete, onOpenContex
     }
 
     // Grouping Logic
-    const grouped = notifications.reduce((acc: any, notification) => {
+    const grouped = notifications.reduce((acc: Record<string, Notification[]>, notification: Notification) => {
         const date = new Date(notification.created_at);
         let key = 'Anteriormente';
 
@@ -77,7 +79,7 @@ export function NotificationList({ notifications, onRead, onDelete, onOpenContex
                         {group}
                     </div>
                     <div>
-                        {grouped[group].map((notification: any) => (
+                        {grouped[group].map((notification: Notification) => (
                             <NotificationItem
                                 key={notification.id}
                                 notification={notification}

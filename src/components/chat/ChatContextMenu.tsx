@@ -6,11 +6,11 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useChatActions } from "@/hooks/useChatActions";
-import { ChatRoom } from "@/lib/api";
+import type { ChatRoom } from "@/lib/schemas";
 import { Archive, Pin, PinOff, Trash2, Mail, MailOpen } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { useConfirm } from "@/components/ui/confirmation-manager";
+import { useConfirm } from "@/components/ui/useConfirm";
 
 interface ChatContextMenuProps {
     chat: ChatRoom;

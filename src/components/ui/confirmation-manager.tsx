@@ -1,86 +1,86 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback } from 'react';
 import { ConfirmationModal } from './ConfirmationModal';
+import { PromptModal } from './PromptModal';
+import { ConfirmationContext } from './confirmation-context';
+import { ConfirmationOptions, PromptOptions, ConfirmationProviderProps } from './confirmation-types';
 
-interface ConfirmationOptions {
-    title: string;
-    description: string;
-    confirmText?: string;
-    cancelText?: string;
-    variant?: 'danger' | 'default';
-}
-
-interface ConfirmationContextType {
-    confirm: (options: ConfirmationOptions) => Promise<boolean>;
-}
-
-const ConfirmationContext = createContext<ConfirmationContextType | undefined>(undefined);
-
-export function ConfirmationProvider({ children }: { children: ReactNode }) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [options, setOptions] = useState<ConfirmationOptions>({
+export function ConfirmationProvider({ children }: ConfirmationProviderProps) {
+    // Confirmation State
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [confirmOptions, setConfirmOptions] = useState<ConfirmationOptions>({
         title: '',
         description: '',
         variant: 'default',
     });
-    const [resolver, setResolver] = useState<((value: boolean) => void) | null>(null);
+    const [confirmResolver, setConfirmResolver] = useState<((value: boolean) => void) | null>(null);
+
+    // Prompt State
+    const [isPromptOpen, setIsPromptOpen] = useState(false);
+    const [promptOptions, setPromptOptions] = useState<PromptOptions>({
+        title: '',
+        variant: 'default',
+    });
+    const [promptResolver, setPromptResolver] = useState<((value: string | null) => void) | null>(null);
 
     const confirm = useCallback((opts: ConfirmationOptions) => {
-        setOptions(opts);
-        setIsOpen(true);
+        setConfirmOptions(opts);
+        setIsConfirmOpen(true);
         return new Promise<boolean>((resolve) => {
-            setResolver(() => resolve);
+            setConfirmResolver(() => resolve);
         });
     }, []);
 
-    const handleConfirm = useCallback(() => {
-        if (resolver) resolver(true);
-        setIsOpen(false);
-        setResolver(null); // Clean up
-    }, [resolver]);
+    const prompt = useCallback((opts: PromptOptions) => {
+        setPromptOptions(opts);
+        setIsPromptOpen(true);
+        return new Promise<string | null>((resolve) => {
+            setPromptResolver(() => resolve);
+        });
+    }, []);
 
-    const handleCancel = useCallback(() => {
-        if (resolver) resolver(false);
-        setIsOpen(false);
-        setResolver(null); // Clean up
-    }, [resolver]);
+    const handleConfirmOk = useCallback(() => {
+        if (confirmResolver) confirmResolver(true);
+        setIsConfirmOpen(false);
+        setConfirmResolver(null);
+    }, [confirmResolver]);
+
+    const handleConfirmCancel = useCallback(() => {
+        if (confirmResolver) confirmResolver(false);
+        setIsConfirmOpen(false);
+        setConfirmResolver(null);
+    }, [confirmResolver]);
+
+    const handlePromptOk = useCallback((value: string) => {
+        if (promptResolver) promptResolver(value);
+        setIsPromptOpen(false);
+        setPromptResolver(null);
+    }, [promptResolver]);
+
+    const handlePromptCancel = useCallback(() => {
+        if (promptResolver) promptResolver(null);
+        setIsPromptOpen(false);
+        setPromptResolver(null);
+    }, [promptResolver]);
 
     return (
-        <ConfirmationContext.Provider value={{ confirm }}>
+        <ConfirmationContext.Provider value={{ confirm, prompt }}>
             {children}
-            {isOpen && (
-                <ConfirmationModal
-                    isOpen={isOpen}
-                    onClose={handleCancel}
-                    onConfirm={handleConfirm}
-                    title={options.title}
-                    description={options.description}
-                    confirmText={options.confirmText}
-                    cancelText={options.cancelText}
-                    variant={options.variant}
-                />
-            )}
+            <ConfirmationModal
+                isOpen={isConfirmOpen}
+                onClose={handleConfirmCancel}
+                onConfirm={handleConfirmOk}
+                {...confirmOptions}
+            />
+            <PromptModal
+                isOpen={isPromptOpen}
+                onClose={handlePromptCancel}
+                onConfirm={handlePromptOk}
+                {...promptOptions}
+            />
         </ConfirmationContext.Provider>
     );
 }
 
-export function useConfirm() {
-    const context = useContext(ConfirmationContext);
-    if (!context) {
-        // FALLBACK SEGURO: Previene crash en producción
-        console.error('CRITICAL: useConfirm called outside ConfirmationProvider');
-
-        // En desarrollo, lanzamos error para detectar el bug
-        if (import.meta.env.DEV) {
-            throw new Error('useConfirm must be used within a ConfirmationProvider');
-        }
-
-        // En producción, devolvemos una implementación "dummy" segura (o window.confirm si es crítico)
-        return {
-            confirm: async (options: ConfirmationOptions) => {
-                console.warn('Using native fallback for confirmation due to missing provider');
-                return window.confirm(`${options.title}\n\n${options.description}`);
-            }
-        };
-    }
-    return context;
-}
+// Nota: useConfirm se movió a ./useConfirm.ts para cumplir con las reglas de Fast Refresh de Vite.
+// Para mantener la compatibilidad hacia atrás sin disparar la advertencia, re-exportamos solo como tipo/alias si fuera necesario,
+// pero lo ideal es actualizar las importaciones críticas.

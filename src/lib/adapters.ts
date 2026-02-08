@@ -1,4 +1,4 @@
-import { type Comment, type Report, type Author, userProfileSchema } from './schemas';
+import { type Comment, type Report, type Author, type NewBadge, userProfileSchema } from './schemas';
 import { getAvatarUrl } from '@/lib/avatar';
 
 
@@ -42,7 +42,7 @@ export interface RawComment {
     priority_zone?: 'home' | 'work' | 'frequent';
     thread_type?: 'investigation' | 'evidence' | 'coordination' | 'testimony';
     priority?: 'urgent' | 'high' | 'medium' | 'low';
-    newBadges?: any[];
+    newBadges?: NewBadge[];
 }
 
 export interface RawReport {
@@ -176,7 +176,7 @@ export function transformReport(raw: RawReport): Report {
         ),
 
         // Optional props
-        priority_zone: raw.priority_zone as any, // Cast if needed or validate
+        priority_zone: raw.priority_zone as string | null | undefined,
         distance_meters: raw.distance_meters ?? null,
         province: raw.province,
         locality: raw.locality,
@@ -195,7 +195,15 @@ export function transformReport(raw: RawReport): Report {
  * Normaliza avatar_url -> avatarUrl (SSOT)
  * Implementa resiliencia con safeParse (Fase A)
  */
-export function transformProfile(raw: any): any {
+interface RawProfile {
+    avatar_url?: string | null;
+    anonymous_id?: string;
+    [key: string]: unknown;
+}
+
+export function transformProfile(raw: unknown): RawProfile | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const profile = raw as RawProfile;
     if (!raw) return null;
 
     // Phase A Resilience: safeParse prevents contract mismatches from crashing the UI
@@ -208,10 +216,10 @@ export function transformProfile(raw: any): any {
     }
 
     return {
-        ...raw,
-        avatarUrl: raw.avatar_url || getAvatarUrl(raw.anonymous_id),
+        ...profile,
+        avatarUrl: profile.avatar_url || getAvatarUrl(profile.anonymous_id),
         // Preservamos el original para compatibilidad temporal durante la Fase A
-        avatar_url: raw.avatar_url || getAvatarUrl(raw.anonymous_id)
+        avatar_url: profile.avatar_url || getAvatarUrl(profile.anonymous_id)
     };
 }
 

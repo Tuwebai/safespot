@@ -49,7 +49,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
                     throw new Error('Token invalid')
                 }
             } catch (error) {
-                console.warn('[AdminGuard] Security Check Failed:', error)
+                console.error('[AdminGuard] Security Check Failed:', error)
                 localStorage.removeItem('safespot_admin_token')
                 localStorage.removeItem('safespot_admin_user')
                 setStatus('unauthorized')

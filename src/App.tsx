@@ -22,6 +22,9 @@ import { StartupGuard } from '@/components/StartupGuard'
 // Lazy-loaded page components with retry logic to avoid 404 chunk errors
 const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home })), 'Home')
 const Reportes = lazyRetry(() => import('@/pages/Reportes').then(m => ({ default: m.Reportes })), 'Reportes')
+// ✅ WIZARD: Nuevo flujo de creación de reportes por pasos
+const ReportWizard = lazyRetry(() => import('@/components/report-wizard').then(m => ({ default: m.ReportWizard })), 'ReportWizard')
+// LEGACY: Componente antiguo preservado por compatibilidad
 const CrearReporte = lazyRetry(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })), 'CrearReporte')
 const DetalleReporte = lazyRetry(() => import('@/pages/DetalleReporte').then(m => ({ default: m.DetalleReporte })), 'DetalleReporte')
 // ✅ PERFORMANCE FIX: Lazy load Explorar to avoid loading Leaflet (200KB) in main bundle
@@ -135,7 +138,7 @@ function App() {
                               <Routes>
                                 <Route path="/" element={<Home />} />
                                 <Route path="/reportes" element={<Reportes />} />
-                                <Route path="/crear-reporte" element={<CrearReporte />} />
+                                <Route path="/crear-reporte" element={<ReportWizard />} />
                                 <Route
                                   path="/reporte/:id"
                                   element={

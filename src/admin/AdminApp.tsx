@@ -13,10 +13,12 @@ const AdminLayout = lazy(() => import('./layouts/AdminLayout').then(m => ({ defa
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })))
 const UsersPage = lazy(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })))
 const AdminReportsPage = lazy(() => import('./pages/ReportsPage').then(m => ({ default: m.ReportsPage })))
+const AdminReportModerationPage = lazy(() => import('./pages/ReportModerationPage').then(m => ({ default: m.ReportModerationPage })))
 const AdminModerationPage = lazy(() => import('./pages/ModerationPage').then(m => ({ default: m.ModerationPage })))
 const AdminModerationHistoryPage = lazy(() => import('./pages/HistoryPage').then(m => ({ default: m.ModerationHistory })))
 const AdminModerationDetailPage = lazy(() => import('./pages/ModerationActionDetailPage').then(m => ({ default: m.ModerationActionDetailPage })))
 const AdminTasksPage = lazy(() => import('./pages/TasksPage').then(m => ({ default: m.TasksPage })))
+const AdminProfilePage = lazy(() => import('./pages/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })))
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -35,7 +37,12 @@ export function AdminApp() {
                     <ThemeProvider>
                         <ToastProvider>
                             <ConfirmationProvider>
-                                <BrowserRouter>
+                                <BrowserRouter
+                                    future={{
+                                        v7_startTransition: true,
+                                        v7_relativeSplatPath: true,
+                                    }}
+                                >
                                     <Routes>
                                         <Route path="/admin/*" element={
                                             <AdminGuard>
@@ -46,11 +53,13 @@ export function AdminApp() {
                                         }>
                                             <Route index element={<AdminDashboard />} />
                                             <Route path="reports" element={<AdminReportsPage />} />
+                                            <Route path="reports/:id" element={<AdminReportModerationPage />} />
                                             <Route path="users" element={<UsersPage />} />
                                             <Route path="moderation" element={<AdminModerationPage />} />
                                             <Route path="history" element={<AdminModerationHistoryPage />} />
                                             <Route path="history/:id" element={<AdminModerationDetailPage />} />
                                             <Route path="tasks" element={<AdminTasksPage />} />
+                                            <Route path="profile" element={<AdminProfilePage />} />
                                         </Route>
                                         {/* Fallback to root or 404 */}
                                         <Route path="*" element={<Navigate to="/admin" replace />} />

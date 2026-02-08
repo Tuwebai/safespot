@@ -2,7 +2,7 @@ import express from 'express';
 import { supabaseAdmin } from '../utils/db.js';
 import pool from '../config/database.js'; // Added for atomic transactions
 import { verifyAdminToken } from '../utils/adminMiddleware.js';
-import { logError, logSuccess } from '../utils/logger.js';
+import { logError } from '../utils/logger.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { executeModeration } from '../utils/governance.js';
 
@@ -138,13 +138,24 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
         });
 
         // 3. Post-Transaction Auxiliary Operations (Best Effort / Non-blocking)
-        // A. Resolve Flags
+        // A. Resolve Flags y actualizar contador
         const flagStatus = (action === 'approve' || action === 'dismiss') ? 'dismissed' : 'resolved';
+
+        // Marcar flags como resueltos
         pool.query(`
             UPDATE ${flagsTable} 
             SET status = $1, resolved_at = NOW(), admin_id = $2 
             WHERE ${foreignKey} = $3
         `, [flagStatus, req.adminUser.id, id]).catch(e => logError(e, { context: 'resolve_flags_error', id }));
+
+        // NUEVO: Resetear flags_count a 0 si se aprueba/descarta
+        if (action === 'approve' || action === 'dismiss') {
+            pool.query(`
+                UPDATE ${table} 
+                SET flags_count = 0
+                WHERE id = $1
+            `, [id]).catch(e => logError(e, { context: 'reset_flags_count_error', id }));
+        }
 
         // B. Realtime Events
         const currentItem = result.snapshot;
@@ -324,7 +335,6 @@ router.get('/actions/:id', verifyAdminToken, async (req, res) => {
         const dbUser = action.admin_users;
 
         // If DB has the user, trust DB. Otherwise fallback to System.
-        const isSystemFallback = !dbUser;
 
         const actor = {
             id: action.actor_id,

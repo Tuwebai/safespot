@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { adminApi } from '../services/adminApi';
 import {
     ShieldAlert, ShieldCheck, User, Bot, AlertTriangle,
     FileText, ArrowLeft, Download, Clock,
@@ -66,12 +67,8 @@ export function ModerationActionDetailPage() {
     const { data, isLoading, error } = useQuery<ActionDetailResponse>({
         queryKey: ['admin', 'moderation', 'action', id],
         queryFn: async () => {
-            const token = localStorage.getItem('safespot_admin_token');
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/moderation/actions/${id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!res.ok) throw new Error('Failed to fetch action detail');
-            return res.json();
+            const { data } = await adminApi.get(`/moderation/actions/${id}`);
+            return data;
         },
         retry: 1
     });
@@ -101,34 +98,34 @@ export function ModerationActionDetailPage() {
     return (
         <div className="max-w-6xl mx-auto space-y-8 pb-20 fade-in">
             {/* Header Navigation */}
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 <Button variant="ghost" className="text-slate-400 hover:text-white" onClick={() => navigate('/admin/history')}>
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Volver
                 </Button>
-                <div className="h-4 w-px bg-slate-800" />
+                <div className="h-4 w-px bg-slate-800 hidden sm:block" />
                 <Badge variant="outline" className="font-mono text-xs text-slate-500">
                     EXP-ID: {actionId.substring(0, 8)}
                 </Badge>
             </div>
 
             {/* Main Header Block */}
-            <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-lg relative overflow-hidden">
+            <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-4 sm:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 sm:gap-6 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500/50" />
 
-                <div className="space-y-2">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-bold text-white tracking-tight">Expediente de Moderación</h1>
-                        <Badge className={cn("border", getSeverityColor(action.severity))}>
+                <div className="space-y-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Expediente de Moderación</h1>
+                        <Badge className={cn("border shrink-0", getSeverityColor(action.severity))}>
                             {action.severity}
                         </Badge>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-slate-400">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-400">
                         <span className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
+                            <Clock className="h-4 w-4 shrink-0" />
                             {format(new Date(created_at), "dd MMM yyyy, HH:mm:ss", { locale: es })}
                         </span>
-                        <span className="flex items-center gap-1 text-slate-500">
+                        <span className="hidden sm:flex items-center gap-1 text-slate-500">
                             • zona horaria local
                         </span>
                     </div>
@@ -296,14 +293,14 @@ export function ModerationActionDetailPage() {
             </div>
 
             {/* Legal Footer */}
-            <div className="border-t border-slate-800 pt-6 mt-12 text-center space-y-2">
+            <div className="border-t border-slate-800 pt-6 mt-12 text-center space-y-2 px-4">
                 <p className="text-xs text-slate-500 max-w-2xl mx-auto">
                     Este documento digital constituye prueba inmutable de una acción administrativa realizada en la plataforma SafeSpot.
                     Cualquier alteración de este registro invalida su validez legal.
                 </p>
-                <div className="flex justify-center items-center gap-2 text-[10px] text-slate-600 font-mono">
+                <div className="flex flex-col sm:flex-row justify-center items-center gap-1 sm:gap-2 text-[10px] text-slate-600 font-mono">
                     <span>REQ-ID: {data.meta.request_id}</span>
-                    <span>•</span>
+                    <span className="hidden sm:inline">•</span>
                     <span>TS: {data.meta.timestamp}</span>
                 </div>
             </div>

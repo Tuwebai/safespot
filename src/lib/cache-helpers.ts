@@ -7,6 +7,10 @@ import type { Comment } from '@/lib/api';
 import type { NormalizedReport } from '@/lib/normalizeReport';
 import { normalizeReportForUI } from '@/lib/normalizeReport';
 
+// Tipos para estructuras de caché de comentarios
+type CommentList = string[];
+type CommentDataStructure = CommentList | { comments: CommentList } | undefined;
+
 /**
  * CACHE HELPERS (SSOT Architecture)
  */
@@ -237,11 +241,11 @@ export const commentsCache = {
         // 🔴 NO USAR invalidateQueries: queryClient tiene guard que bloquea operaciones en comments.
         // ✅ USAR setQueryData(undefined): Marca la query como inexistente sin triggerar refetch.
 
-        queryClient.setQueriesData<any>(
+        queryClient.setQueriesData<CommentDataStructure>(
             { queryKey: queryKeys.comments.byReport(reportId) },
-            (old: any) => {
+            (old) => {
                 if (!old) return old;
-                const removeAction = (list: any) => {
+                const removeAction = (list: CommentList) => {
                     const sanitizedList = Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
                     if (!sanitizedList.includes(commentId)) return sanitizedList;
 
@@ -267,10 +271,10 @@ export const commentsCache = {
 
     append: (queryClient: QueryClient, newComment: Comment) => {
         queryClient.setQueryData(queryKeys.comments.detail(newComment.id), newComment);
-        queryClient.setQueriesData<any>(
+        queryClient.setQueriesData<CommentDataStructure>(
             { queryKey: queryKeys.comments.byReport(newComment.report_id) },
-            (old: any) => {
-                const appendAction = (list: any) => {
+            (old) => {
+                const appendAction = (list: CommentList) => {
                     const sanitizedList = Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
                     if (sanitizedList.includes(newComment.id)) return sanitizedList;
                     reportsCache.applyCommentDelta(queryClient, newComment.report_id, 1);
@@ -289,10 +293,10 @@ export const commentsCache = {
 
     prepend: (queryClient: QueryClient, newComment: Comment) => {
         queryClient.setQueryData(queryKeys.comments.detail(newComment.id), newComment);
-        queryClient.setQueriesData<any>(
+        queryClient.setQueriesData<CommentDataStructure>(
             { queryKey: queryKeys.comments.byReport(newComment.report_id) },
-            (old: any) => {
-                const prependAction = (list: any) => {
+            (old) => {
+                const prependAction = (list: CommentList) => {
                     const sanitizedList = Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
                     if (sanitizedList.includes(newComment.id)) return sanitizedList;
                     reportsCache.applyCommentDelta(queryClient, newComment.report_id, 1);
@@ -343,7 +347,7 @@ export const commentsCache = {
 
 export const statsCache = {
     applyDelta: (queryClient: QueryClient, field: string, delta: number) => {
-        queryClient.setQueryData(queryKeys.stats.global, (old: any) => {
+        queryClient.setQueryData<Record<string, number>>(queryKeys.stats.global, (old) => {
             if (!old) return old;
             return { ...old, [field]: Math.max(0, (old[field] || 0) + delta) };
         });
@@ -352,7 +356,7 @@ export const statsCache = {
     applyReportCreate: (queryClient: QueryClient, category: string, status?: string) => {
         statsCache.applyDelta(queryClient, 'total_reports', 1);
         if (status === 'resuelto') statsCache.applyDelta(queryClient, 'resolved_reports', 1);
-        queryClient.setQueryData(queryKeys.stats.categories, (old: any) => {
+        queryClient.setQueryData<Record<string, number>>(queryKeys.stats.categories, (old) => {
             if (!old) return old;
             return { ...old, [category]: (old[category] || 0) + 1 };
         });

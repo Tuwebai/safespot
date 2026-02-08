@@ -458,7 +458,7 @@ export function ensureAnonymousId(): string {
 // ENTERPRISE WATCHDOG (M2 + M8 + M11)
 // ============================================
 
-let watchdogInterval: any = null;
+let watchdogInterval: ReturnType<typeof setInterval> | null = null;
 
 function startSessionWatchdog() {
   if (watchdogInterval || typeof window === 'undefined') return;

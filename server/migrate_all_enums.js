@@ -16,6 +16,16 @@ async function runMigration() {
         await client.connect();
         console.log('Connected.');
 
+        // 0. report_status_enum
+        const reportStatuses = [
+            'abierto', 'en_progreso', 'resuelto', 'verificado', 'rechazado', 'archivado', 'pendiente'
+        ];
+        console.log('Syncing report_status_enum...');
+        for (const val of reportStatuses) {
+            await client.query(`ALTER TYPE report_status_enum ADD VALUE IF NOT EXISTS '${val}'`);
+            console.log(`Checked report_status_enum: ${val}`);
+        }
+
         // 1. user_action_type
         const userActions = [
             'LIKE_REPORT', 'UNLIKE_REPORT',
@@ -34,6 +44,7 @@ async function runMigration() {
         // 2. moderation_action_type
         const modActions = [
             'ADMIN_RESTORE', 'ADMIN_HIDE', 'ADMIN_DISMISS_FLAGS', 'ADMIN_BAN',
+            'ADMIN_REPORT_STATUS_CHANGE', 'ADMIN_DELETE', 'ADMIN_EDIT',
             'AUTO_HIDE', 'HIDE', 'RESTORE', 'SHADOW_BAN', 'AUTO_SHADOW_BAN',
             'SYSTEM_SHADOW_BAN', 'AUTO_HIDE_THRESHOLD'
         ];

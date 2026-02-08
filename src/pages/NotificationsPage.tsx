@@ -12,9 +12,21 @@ import { NotificationList } from '@/components/notifications/NotificationList';
 import { Trash2, CheckCircle2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserNotifications } from '@/hooks/useUserNotifications';
-import { useConfirm } from '@/components/ui/confirmation-manager';
+import { useConfirm } from '@/components/ui/useConfirm';
 // 🔴 CRITICAL FIX: Auth guard for notification delete
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+
+export interface Notification {
+    id: string;
+    title: string;
+    message: string;
+    type: string;
+    entity_id?: string;
+    entity_type?: string;
+    report_id?: string;
+    is_read: boolean;
+    created_at: string;
+}
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
@@ -22,7 +34,7 @@ export default function NotificationsPage() {
     const { success } = useToast();
     const queryClient = useQueryClient();
     const { data: notifications = [], isLoading } = useNotificationsQuery();
-    const [undoState, setUndoState] = useState<{ id: string, notification: any } | null>(null);
+    const [undoState, setUndoState] = useState<{ id: string, notification: Notification } | null>(null);
 
     const markReadMutation = useMarkNotificationReadMutation();
     const markAllReadMutation = useMarkAllNotificationsReadMutation();
@@ -65,14 +77,13 @@ export default function NotificationsPage() {
     // Delete Logic with Undo
     const handleDelete = async (id: string) => {
         const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
-        const previousNotifications = notifications;
+        const previousNotifications = notifications as Notification[];
         const notificationToDelete = previousNotifications.find(n => n.id === id);
 
         if (!notificationToDelete) return;
 
         // Optimistic Remove (Manual since we need undo logic)
-        // We use the same key logic as the query hook
-        queryClient.setQueryData(activeKey, (old: any[]) =>
+        queryClient.setQueryData(activeKey, (old: Notification[] | undefined) =>
             Array.isArray(old) ? old.filter(n => n.id !== id) : []
         );
 
@@ -85,10 +96,9 @@ export default function NotificationsPage() {
         if (!undoState) return;
 
         // Restore to cache
-        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: any[]) => {
+        queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: Notification[] | undefined) => {
             const list = Array.isArray(old) ? [...old] : [];
             list.push(undoState.notification);
-            // Sort again? simplified: just push.
             return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         });
 
@@ -100,9 +110,7 @@ export default function NotificationsPage() {
         if (!undoState) return;
 
         const timer = setTimeout(async () => {
-            // 🔴 CRITICAL FIX: Block anonymous users
             if (!checkAuth()) {
-                // Revert optimistic delete if user is not authenticated
                 const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
                 queryClient.invalidateQueries({ queryKey: activeKey });
                 setUndoState(null);
@@ -110,12 +118,10 @@ export default function NotificationsPage() {
             }
 
             try {
-                // Manual call since it's delayed
                 const { notificationsApi } = await import('@/lib/api');
                 await notificationsApi.delete(undoState.id);
             } catch (err) {
                 console.error('Failed to delete notification', err);
-                // Revert
                 const activeKey = ['notifications', 'list', queryClient.getQueryData(['anonymous_id'])];
                 queryClient.invalidateQueries({ queryKey: activeKey });
             } finally {
@@ -126,9 +132,8 @@ export default function NotificationsPage() {
         return () => clearTimeout(timer);
     }, [undoState, queryClient, checkAuth]);
 
-    // Open Context Logic (The Core Requirement)
-    const handleOpenContext = (n: any) => {
-        // Mark read first
+    // Open Context Logic
+    const handleOpenContext = (n: Notification) => {
         if (!n.is_read) handleRead(n.id);
 
         const type = n.entity_type || n.type;

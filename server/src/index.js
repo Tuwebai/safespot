@@ -1,7 +1,8 @@
+/* eslint-disable no-undef */
 // SILENCIO TOTAL: Interceptar inmediatamente console.log/warn para eliminar ruido de infraestructura
 const originalLog = console.log;
 const originalWarn = console.warn;
-const IS_PROD = process.env.NODE_ENV === 'production';
+// const IS_PROD = process.env.NODE_ENV === 'production'; // Unused
 const DEBUG = process.env.DEBUG;
 
 const silenceFilter = (...args) => {
@@ -19,7 +20,7 @@ console.log = (...args) => { if (!silenceFilter(...args)) originalLog(...args); 
 console.warn = (...args) => { if (!silenceFilter(...args)) originalWarn(...args); };
 
 import dotenv from 'dotenv';
-import { NotificationWorker } from './engine/NotificationWorker.js';
+// import { NotificationWorker } from './engine/NotificationWorker.js'; // Unused
 
 dotenv.config();
 
@@ -73,12 +74,15 @@ import adminHeatmapRouter from './routes/adminHeatmap.js';
 import adminUsersRouter from './routes/adminUsers.js';
 import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
+import adminProfileRouter from './routes/adminProfile.js';
+import adminReportsRouter from './routes/adminReports.js';
+// Router implements internal verifyAdminToken middleware
 import contactRouter from './routes/contact.js';
 
 
 import diagnosticsRouter from './routes/diagnostics.js';
 import syncRouter from './routes/sync.js';
-import { logCriticalError } from './utils/adminTasks.js';
+// import { logCriticalError } from './utils/adminTasks.js'; // Unused
 import { NotificationService } from './utils/notificationService.js';
 import { strictAdminGateway } from './utils/adminGateway.js';
 
@@ -142,7 +146,7 @@ const baseOrigins = [
 // Generate authorized origins including www. versions and stripping trailing slashes
 const allowedOrigins = baseOrigins.flatMap(origin => {
   const normalized = origin.replace(/\/$/, ''); // Remove trailing slash
-  const domain = normalized.replace(/^https?:\/\//, '');
+  // const domain = normalized.replace(/^https?:\/\//, ''); // Unused
   return [
     normalized,
     normalized.replace('//', '//www.') // Add www version
@@ -311,6 +315,7 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/*
 // Strict limiter for sensitive actions (Reports/Comments): 5 req / 10 min
 const actionLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -325,6 +330,7 @@ const actionLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: false, // Count all attempts (even failed ones) against the limit
 });
+*/
 
 // app.use('/api/realtime', realtimeRouter); // Moved up
 
@@ -377,18 +383,35 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/contact', contactRouter); // Register Contact Route
 app.use('/api/presence', presenceRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
-// Admins (Authentication is PUBLIC, functionality is PROTECTED)
+// ============================================
+// ADMIN ROUTES – ENTERPRISE ROUTING STRUCTURE
+// ============================================
+// SECURITY MODEL:
+// 1. /api/admin/auth – PUBLIC (gateway bypass, internal protection)
+// 2. /api/admin/profile – PROTECTED (uses internal verifyAdminToken)
+// 3. /api/admin/* – GATEWAY PROTECTED (strictAdminGateway)
+
+// 1. Public admin routes (bypass strict gateway)
 app.use('/api/admin/auth', adminAuthRouter);
 
-// Apply strict gateway to all functional administrative sectors
+// 2. Protected admin routes with INTERNAL middleware
+//    These use verifyAdminToken internally, no need for gateway
+app.use('/api/admin/profile', (req, res, next) => {
+  // Debug log silenced: console.debug('[Mount] /api/admin/profile hit');
+  next();
+}, adminProfileRouter);
+
+// 3. Apply strict gateway to remaining admin routes
+//    Everything after this line requires gateway validation
 app.use('/api/admin', strictAdminGateway);
 
-// Mount Admin Sub-Routers
+// 4. Gateway-protected admin routes
 app.use('/api/admin/stats', adminStatsRouter);
 app.use('/api/admin/heatmap', adminHeatmapRouter);
 app.use('/api/admin/users', adminUsersRouter);
 app.use('/api/admin/moderation', adminModerationRouter);
 app.use('/api/admin/tasks', adminTasksRouter);
+app.use('/api/admin/reports', adminReportsRouter);
 
 app.use('/api/user-zones', userZonesRouter);
 
@@ -470,7 +493,7 @@ app.get('/', (req, res) => {
 
 // This backend is API-only. Any non-API route should return 404 JSON.
 // The frontend is served separately by Netlify.
-app.use((req, res, next) => {
+app.use((req, res, _next) => {
   // If we reach here, no route matched. 
   // If it's an API or SEO route, send a specific 404.
   if (req.path.startsWith('/api/') || req.path.startsWith('/seo/')) {
@@ -502,7 +525,7 @@ app.use('/api/*', (req, res) => {
 // GLOBAL ERROR HANDLER
 // ============================================
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   const requestId = getCorrelationId();
 
   // 1. Normalize Error to AppError
@@ -539,6 +562,7 @@ app.use((err, req, res, next) => {
   const logLevel = error.isOperational ? 'warn' : 'error';
 
   // Log metadata
+  /*
   const logContext = {
     code: error.code,
     statusCode: error.statusCode,
@@ -546,6 +570,7 @@ app.use((err, req, res, next) => {
     method: req.method,
     ip: req.ip
   };
+  */
 
   if (logLevel === 'error') {
     // Critical errors get full stack trace in logs (both dev and prod logs should have stacks for 500s)

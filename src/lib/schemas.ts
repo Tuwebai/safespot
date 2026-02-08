@@ -26,7 +26,47 @@ export const userProfileSchema = z.object({
     role: z.string().optional(),
     points: z.number().optional(),
     level: z.number().optional(),
+    total_reports: z.number().optional(),
+    total_votes: z.number().optional(),
+    total_comments: z.number().optional(),
+    email: z.string().optional(),
+    provider: z.string().optional(),
+    recent_reports: z.array(z.any()).optional(),
 });
+
+export type UserProfile = z.infer<typeof userProfileSchema>;
+
+// --- Gamification Types ---
+
+export interface GamificationBadge {
+    id: string;
+    code: string;
+    name: string;
+    description: string;
+    icon: string;
+    points: number;
+    level: number;
+    category: string;
+    category_label?: string;
+    rarity: 'common' | 'rare' | 'epic' | 'legendary';
+    obtained: boolean;
+    obtained_at?: string;
+    progress: {
+        current: number;
+        required: number;
+        percent: number;
+    };
+}
+
+export interface NewBadge {
+    id: string;
+    code: string;
+    name: string;
+    icon: string;
+    description: string;
+    points: number;
+    rarity?: 'common' | 'rare' | 'epic' | 'legendary';
+}
 
 // --- Comment Schema (Strict) ---
 
@@ -68,7 +108,57 @@ export interface Comment {
     priority_zone?: 'home' | 'work' | 'frequent';
 
     // Gamification
-    newBadges?: any[];
+    newBadges?: NewBadge[];
+}
+
+// --- Chat Types ---
+
+export interface ChatMessage {
+    id: string;
+    conversation_id: string;
+    sender_id: string;
+    content: string;
+    type: 'text' | 'image' | 'sighting' | 'location';
+    created_at: string;
+    is_read: boolean;
+    is_delivered?: boolean;
+    localUrl?: string;
+    localStatus?: 'pending' | 'sent' | 'failed';
+    caption?: string;
+    reply_to_id?: string;
+    reply_to_content?: string;
+    reply_to_type?: string;
+    reply_to_sender_alias?: string;
+    reply_to_sender_id?: string;
+    sender_alias?: string;
+    reactions?: Record<string, string[]>;
+    is_starred?: boolean;
+    is_edited?: boolean;
+    sender_avatar?: string;
+}
+
+export interface ChatRoom {
+    id: string;
+    other_participant_id?: string;
+    other_participant_alias?: string;
+    other_participant_avatar?: string;
+    other_participant_last_seen?: string;
+    is_online?: boolean;
+    last_message_content?: string;
+    last_message_at?: string;
+    last_message_sender_id?: string;
+    last_message_type?: string;
+    unread_count: number;
+    is_typing?: boolean;
+    pinned_message_id?: string | null;
+    is_pinned?: boolean;
+    is_manually_unread?: boolean;
+    is_archived?: boolean;
+    report_id?: string;
+    report_title?: string;
+    report_category?: string;
+    type?: 'report' | 'direct' | 'group';
+    last_message_is_read?: boolean;
 }
 
 // --- Report Schema (Strict) ---
@@ -154,4 +244,53 @@ export interface ReportFilters {
     followed_only?: boolean
     limit?: number
     offset?: number
+}
+
+// --- Geocode & Search Types ---
+
+export interface GeocodeResult {
+    lat: number;
+    lon: number;
+    address: {
+        city?: string;
+        municipality?: string;
+        town?: string;
+        village?: string;
+        neighborhood?: string;
+        suburb?: string;
+        province?: string;
+        state?: string;
+        region?: string;
+        country?: string;
+    }
+}
+
+// --- Gamification Summary ---
+
+export interface NextAchievement {
+    name: string;
+    icon: string;
+    description: string;
+    points: number;
+    rarity: 'common' | 'rare' | 'epic' | 'legendary';
+    missing: number;
+    metric_label?: string;
+    progress: {
+        current: number;
+        required: number;
+        percent: number;
+    };
+}
+
+export interface GamificationSummary {
+    level: number;
+    points: number;
+    next_level_points: number;
+    title: string;
+    badges_count: number;
+    total_badges: number;
+    profile?: UserProfile;
+    badges?: GamificationBadge[];
+    newBadges?: GamificationBadge[];
+    nextAchievement?: NextAchievement;
 }

@@ -11,7 +11,7 @@ import { SightingActions, SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
 import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
-import { useConfirm } from '@/components/ui/confirmation-manager'
+import { useConfirm } from '@/components/ui/useConfirm'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
@@ -193,6 +193,7 @@ export function CommentsSection({
                     }
                 }
             } catch (err) {
+                // Ignore parsing errors for non-JSON comments
             }
             discussionList.push(c)
         })
@@ -325,37 +326,37 @@ export function CommentsSection({
                         <>
                             <div className="space-y-4">
                                 {topLevelComments.map((comment) => (
-                                        <div key={comment.id} className="pb-4">
-                                            <CommentThread
-                                                comment={comment}
-                                                allComments={comments}
-                                                depth={0}
-                                                onReply={startReply}
-                                                onEdit={startEdit}
-                                                onDelete={handleDeleteComment}
-                                                onFlag={handleFlagComment}
-                                                onLikeChange={handleLikeChange}
-                                                // ✅ SSOT: Ownership se calcula internamente en EnhancedComment vía useIsOwner
-                                                // No pasar isOwner aquí para evitar doble fuente de verdad
-                                                isMod={currentUserId === reportOwnerId}
-                                                onPin={pinComment}
-                                                onUnpin={unpinComment}
-                                                replyingTo={replyingTo}
-                                                replyText={replyText}
-                                                onReplyTextChange={setReplyText}
-                                                onReplySubmit={submitReply}
-                                                onReplyCancel={cancelReply}
-                                                submittingReply={submitting === 'reply' && isProcessing(comment.id)}
-                                                editingCommentId={editingId}
-                                                editText={editText}
-                                                onEditTextChange={setEditText}
-                                                onEditSubmit={submitEdit}
-                                                onEditCancel={cancelEdit}
-                                                submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
-                                                activeMenuId={activeMenuId}
-                                                onMenuOpen={setActiveMenuId}
-                                            />
-                                        </div>
+                                    <div key={comment.id} className="pb-4">
+                                        <CommentThread
+                                            comment={comment}
+                                            allComments={comments}
+                                            depth={0}
+                                            onReply={startReply}
+                                            onEdit={startEdit}
+                                            onDelete={handleDeleteComment}
+                                            onFlag={handleFlagComment}
+                                            onLikeChange={handleLikeChange}
+                                            // ✅ SSOT: Ownership se calcula internamente en EnhancedComment vía useIsOwner
+                                            // No pasar isOwner aquí para evitar doble fuente de verdad
+                                            isMod={currentUserId === reportOwnerId}
+                                            onPin={pinComment}
+                                            onUnpin={unpinComment}
+                                            replyingTo={replyingTo}
+                                            replyText={replyText}
+                                            onReplyTextChange={setReplyText}
+                                            onReplySubmit={submitReply}
+                                            onReplyCancel={cancelReply}
+                                            submittingReply={submitting === 'reply' && isProcessing(comment.id)}
+                                            editingCommentId={editingId}
+                                            editText={editText}
+                                            onEditTextChange={setEditText}
+                                            onEditSubmit={submitEdit}
+                                            onEditCancel={cancelEdit}
+                                            submittingEdit={submitting === 'edit' && isProcessing(comment.id)}
+                                            activeMenuId={activeMenuId}
+                                            onMenuOpen={setActiveMenuId}
+                                        />
+                                    </div>
                                 ))}
                             </div>
 
