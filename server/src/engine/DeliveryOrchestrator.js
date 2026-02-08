@@ -48,35 +48,22 @@ export const DeliveryOrchestrator = {
             }
 
             // MESSAGING / ACTIVITY
-            // 🧠 ENTERPRISE FIX: DUAL DELIVERY ARCHITECTURE
-            // We NO LONGER suppress Push based on "Online" status (Redis is soft-state and unreliable for exact socket connectivity).
-            // Strategy: Send BOTH (SSE + Push). 
-            // - If user is truly online: App consumes SSE. Service Worker suppresses Push (if focused).
-            // - If user is background/dead socket: Push ensures delivery.
+            // 🧠 FASE 1 FIX: Single Channel Delivery
+            // Push is for WAKE-UP only, not for delivery when user is online.
+            // - Online: SSE (Realtime) - user has app open
+            // - Offline: Push (WebPush) - wake up the device
+            // This eliminates duplicate notifications and race conditions.
 
             if (isOnline) {
-                console.log(`[Orchestrator][${traceId}] User "Online" in Redis.Sending SSE...`);
-                // 1. Mark as dispatched via SSE
+                console.log(`[Orchestrator][${traceId}] User ONLINE. Routing to SSE only.`);
                 await eventDeduplicator.markDispatched(jobData.id, 'sse');
-
-                // 2. Send Realtime (Best Effort)
-                this._dispatchSSE(jobData);
-
-                // 3. Fallthrough to Push (Guaranteed Delivery)
-                console.log(`[Orchestrator][${traceId}] Proceeding to Push(Dual Strategy) to ensure delivery.`);
+                const sseResult = await this._dispatchSSE(jobData);
+                return sseResult ? DispatchResult.SUCCESS : DispatchResult.RETRYABLE_ERROR;
             } else {
-                console.log(`[Orchestrator][${traceId}] User OFFLINE.Routing to Push.`);
+                console.log(`[Orchestrator][${traceId}] User OFFLINE. Routing to Push.`);
                 await eventDeduplicator.markDispatched(jobData.id, 'push');
+                return await this._dispatchPush(jobData);
             }
-
-            // 3. Push Delivery (Fallback or Primary)
-            const pushResult = await this._dispatchPush(jobData);
-
-            // 🏛️ ARCHITECTURAL FIX: Backend NO marca delivered proactivamente
-            // ACK de mensajes es responsabilidad EXCLUSIVA del cliente (RealtimeOrchestrator)
-            // El backend solo despacha SSE/Push, el cliente confirma recepción
-
-            return pushResult;
 
         } catch (err) {
             logError(err, { context: 'DeliveryOrchestrator', traceId });
@@ -215,6 +202,26 @@ export const DeliveryOrchestrator = {
         const results = await Promise.allSettled(subscriptions.map(sub =>
             sendPushNotification({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, pushPayload)
         ));
+
+        // 🏛️ FASE 2: Track push_sent_at for notifications (not chat messages)
+        const anySuccess = results.some(r => r.status === 'fulfilled' && r.value.success);
+        if (anySuccess && type !== 'CHAT_MESSAGE' && payload.reportId) {
+            // Fire-and-forget: Update push_sent_at for activity notifications
+            // Uses report_id + anonymous_id as composite key for matching
+            db.query(
+                `UPDATE notifications 
+                 SET push_sent_at = NOW() 
+                 WHERE anonymous_id = $1 
+                   AND report_id = $2 
+                   AND push_sent_at IS NULL
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [target.anonymousId, payload.reportId]
+            ).catch(err => {
+                // Silent fail - tracking is best effort
+                console.warn(`[Orchestrator] Failed to update push_sent_at: ${err.message}`);
+            });
+        }
 
         // Basic classification
         const allRetryable = results.every(r => r.status === 'rejected');

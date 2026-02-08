@@ -6,11 +6,11 @@ import redis from '../config/redis.js';
  * SOLO para deduplicación técnica de eventos (eventId).
  * NO es autoridad de delivered/read - esos estados están en PostgreSQL.
  * 
- * TTL: 5 minutos (eventos son efímeros)
+ * TTL: 15 minutos (eventos son efímeros)
  */
 class EventDeduplicator {
     constructor() {
-        this.TTL = 300; // 5 minutos (antes era 1 hora, causaba bugs)
+        this.TTL = 900; // 15 minutos (Fase 2: mejor cobertura reconexión sin duplicados)
         this.PREFIX = 'event:processed:';
     }
 
