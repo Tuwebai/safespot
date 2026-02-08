@@ -17,6 +17,7 @@ import { queryClient } from '@/lib/queryClient';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { dataIntegrityEngine } from '@/engine/integrity';
 import { eventAuthorityLog } from '@/lib/realtime/EventAuthorityLog';
+import { viewReconciliationEngine } from '@/lib/view-reconciliation/ViewReconciliationEngine';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 export enum BootstrapState {
@@ -135,6 +136,9 @@ class ApplicationBootstrapManager {
 
             // 👑 MOTOR D: Start Event Authority Log (enterprise persistence)
             eventAuthorityLog.start();
+
+            // 🎨 MOTOR 10: Start View Reconciliation Engine (enterprise)
+            viewReconciliationEngine.start();
         } catch (error) {
             console.error('[Bootstrap] ⚠️ Critical Failure or Timeout during Boot:', error);
             // GUARANTEE: Always end in RUNNING state to show UI
