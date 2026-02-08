@@ -50,13 +50,37 @@ export interface WizardFormData extends Step1Data, Step2Data, Step3Data {}
 
 const DRAFT_KEY = 'safespot_wizard_draft'
 const STEP_KEY = 'safespot_wizard_step'
+const SESSION_KEY = 'safespot_wizard_session'
+
+// Función para verificar/limpiar sesión antes de inicializar estado
+function checkAndCleanSession(): { isNewSession: boolean; sessionId: string } {
+    const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const savedSession = localStorage.getItem(SESSION_KEY)
+    
+    // Si no hay sesión guardada o es diferente, es nueva sesión
+    const isNewSession = !savedSession || savedSession !== sessionId
+    
+    if (isNewSession) {
+        // Limpiar datos residuales de sesión anterior completada
+        localStorage.removeItem(DRAFT_KEY)
+        localStorage.removeItem(STEP_KEY)
+        localStorage.setItem(SESSION_KEY, sessionId)
+    }
+    
+    return { isNewSession, sessionId }
+}
 
 export function useReportWizard() {
     const navigate = useNavigate()
     const toast = useToast()
     const createdUrlsRef = useRef<string[]>([])
     
+    // Verificar sesión UNA VEZ al inicio (antes de inicializar form)
+    const sessionRef = useRef(checkAndCleanSession())
+    const { isNewSession } = sessionRef.current
+    
     const [currentStep, setCurrentStep] = useState(() => {
+        if (isNewSession) return 1
         const saved = localStorage.getItem(STEP_KEY)
         return saved ? parseInt(saved, 10) : 1
     })
@@ -67,7 +91,7 @@ export function useReportWizard() {
     const [isCompressing, setIsCompressing] = useState(false)
     const [compressionProgress, setCompressionProgress] = useState('')
 
-    // Form principal
+    // Form principal - defaultValues depende de si es nueva sesión
     const form = useForm<WizardFormData>({
         resolver: zodResolver(z.object({
             ...step1Schema.shape,
@@ -75,6 +99,22 @@ export function useReportWizard() {
             ...step3Schema.shape,
         })),
         defaultValues: (() => {
+            // Si es nueva sesión, SIEMPRE usar valores limpios (no leer localStorage)
+            if (isNewSession) {
+                return {
+                    title: '',
+                    category: undefined,
+                    description: '',
+                    location: {
+                        location_name: '',
+                        latitude: undefined,
+                        longitude: undefined,
+                    },
+                    incidentDate: new Date().toISOString()
+                }
+            }
+            
+            // Si es misma sesión, intentar recuperar borrador
             try {
                 const saved = localStorage.getItem(DRAFT_KEY)
                 if (saved) {
@@ -85,6 +125,7 @@ export function useReportWizard() {
                     }
                 }
             } catch { /* ignore */ }
+            
             return {
                 title: '',
                 category: undefined,
@@ -278,12 +319,29 @@ export function useReportWizard() {
         
         setIsSubmitting(true)
         
+        // ✅ LIMPIAR INMEDIATAMENTE - antes de navegar para evitar que persista al volver
+        localStorage.removeItem(DRAFT_KEY)
+        localStorage.removeItem(STEP_KEY)
+        localStorage.removeItem(SESSION_KEY) // Invalidar sesión para que la próxima vez inicie limpio
+        
+        // Resetear form a valores iniciales (por si el usuario vuelve atrás)
+        form.reset({
+            title: '',
+            category: undefined,
+            description: '',
+            location: {
+                location_name: '',
+                latitude: undefined,
+                longitude: undefined,
+            },
+            incidentDate: new Date().toISOString()
+        })
+        setCurrentStep(1)
+        setImageFiles([])
+        setImagePreviews([])
+        
         createReport(payload, {
             onSuccess: (serverReport) => {
-                // Limpiar draft solo en éxito confirmado
-                localStorage.removeItem(DRAFT_KEY)
-                localStorage.removeItem(STEP_KEY)
-                
                 // Invalidar gamification (badges pueden cambiar)
                 queryClient.invalidateQueries({ queryKey: queryKeys.gamification.all })
                 
@@ -313,7 +371,7 @@ export function useReportWizard() {
         navigate('/reportes')
         toast.success('¡Creando reporte...!')
         
-    }, [getValues, validateStep, createReport, imageFiles, navigate, toast, queryClient])
+    }, [getValues, validateStep, createReport, imageFiles, navigate, toast, queryClient, form])
 
     const clearDraft = useCallback(() => {
         localStorage.removeItem(DRAFT_KEY)

@@ -16,13 +16,12 @@ const navItems: NavItem[] = [
     { icon: User, label: 'Perfil', path: '/perfil' },
 ]
 
-
 export function BottomNav() {
     const location = useLocation()
 
     return (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-50 safe-area-bottom">
-            <div className="flex justify-around items-center h-16">
+            <div className="flex items-center h-14">
                 {navItems.map((item) => {
                     const isActive = location.pathname === item.path
                     const Icon = item.icon
@@ -33,7 +32,7 @@ export function BottomNav() {
                             to={item.path}
                             aria-current={isActive ? 'page' : undefined}
                             className={cn(
-                                'flex flex-col items-center justify-center flex-1 h-full transition-all duration-200',
+                                'flex flex-col items-center justify-center flex-1 h-full min-w-0 transition-all duration-200',
                                 'active:scale-95',
                                 isActive
                                     ? 'text-neon-green'
@@ -42,13 +41,13 @@ export function BottomNav() {
                         >
                             <Icon
                                 className={cn(
-                                    'h-6 w-6 transition-transform',
+                                    'h-5 w-5 transition-transform',
                                     isActive && 'scale-110'
                                 )}
                                 aria-hidden="true"
                             />
                             <span className={cn(
-                                'text-xs mt-1 font-medium transition-all',
+                                'text-[10px] mt-0.5 font-medium transition-all truncate max-w-full px-1',
                                 isActive && 'text-neon-green'
                             )}>
                                 {item.label}

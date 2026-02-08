@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useConfirm } from '@/components/ui/useConfirm'
 import { useReportWizard } from './useReportWizard'
 import { WizardStepIndicator } from './WizardStepIndicator'
 import { Step1BasicInfo } from './Step1BasicInfo'
@@ -19,6 +20,7 @@ const steps = [
 
 export function ReportWizard() {
     const navigate = useNavigate()
+    const { confirm } = useConfirm()
     const {
         currentStep,
         totalSteps,
@@ -40,8 +42,13 @@ export function ReportWizard() {
         getValues,
     } = useReportWizard()
 
-    const handleCancel = () => {
-        if (confirm('¿Salir sin guardar? Se perderá el borrador.')) {
+    const handleCancel = async () => {
+        const confirmed = await confirm({
+            title: '¿Salir sin guardar?',
+            description: 'Se perderá el borrador del reporte.',
+            variant: 'warning'
+        })
+        if (confirmed) {
             clearDraft()
             navigate('/reportes')
         }
