@@ -17,6 +17,8 @@ import { IdentityInvariantViolation } from '../../lib/errors/IdentityInvariantVi
 import { eventAuthorityLog } from '../../lib/realtime/EventAuthorityLog';
 import { viewReconciliationEngine } from '../../lib/view-reconciliation/ViewReconciliationEngine';
 import { realtimeOrchestrator } from '../../lib/realtime/RealtimeOrchestrator';
+import { dataIntegrityEngine } from '../../engine/integrity';
+import { trafficController } from '../../engine/traffic/TrafficController';
 
 export enum SessionState {
     UNINITIALIZED = 'UNINITIALIZED',
@@ -288,6 +290,8 @@ class SessionAuthority {
         eventAuthorityLog.clear();
         viewReconciliationEngine.clear();
         realtimeOrchestrator.clear();
+        dataIntegrityEngine.clear();
+        trafficController.clear();
 
         // ✅ SECURITY: Preserve existing signature on logout
         // Signature is tied to anonymousId, which persists across auth sessions
@@ -319,6 +323,8 @@ class SessionAuthority {
         eventAuthorityLog.clear();
         viewReconciliationEngine.clear();
         realtimeOrchestrator.clear();
+        dataIntegrityEngine.clear();
+        trafficController.clear();
         
         this.notify();
     }

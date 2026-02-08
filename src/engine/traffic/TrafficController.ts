@@ -149,6 +149,31 @@ class TrafficController {
     getState() {
         return this.state;
     }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia serialQueue, queueDepth y estado
+     * Llamar en logout para prevenir memory leaks y contaminación de sesión
+     */
+    clear(): void {
+        // Resetear la cadena de promesas para liberar referencias acumuladas
+        this.serialQueue = Promise.resolve();
+        this.queueDepth = 0;
+        
+        // Resetear backoff para el próximo usuario
+        this.globalBackoff.reset();
+        
+        // Limpiar estado de rate limiting si está activo
+        if (this.state !== TrafficState.IDLE) {
+            if (this.resumeResolver) {
+                this.resumeResolver();
+                this.resumeResolver = null;
+                this.resumePromise = null;
+            }
+            this.state = TrafficState.IDLE;
+        }
+        
+        console.debug('[Traffic] 🧹 Cleared queue and reset backoff');
+    }
 }
 
 export const trafficController = new TrafficController();

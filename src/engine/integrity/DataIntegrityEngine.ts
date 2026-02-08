@@ -109,6 +109,8 @@ function getThresholdForQuery(queryKey: unknown[]): number {
 class DataIntegrityEngine {
     private state: DataIntegrityState = DataIntegrityState.DATA_HEALTHY;
     private trackedQueries: Map<string, TrackedQuery> = new Map();
+    private trackedQueriesOrder: string[] = []; // 🧹 LRU: Orden de inserción para eviction
+    private readonly MAX_TRACKED_QUERIES = 100; // 🧹 MEMORY FIX: Límite de queries trackeadas
     private stateListeners: Set<StateListener> = new Set();
     private decisionListeners: Set<DecisionListener> = new Set();
 
@@ -127,8 +129,48 @@ class DataIntegrityEngine {
     private realtimeDegradedSince: number | null = null;
     private readonly DEGRADED_THRESHOLD_MS = 30_000; // 30s in DEGRADED triggers suspect
 
+    // 🧹 MEMORY FIX: Unsubscribe handlers para limpieza
+    private leaderElectionUnsub: (() => void) | null = null;
+    private telemetryUnsub: (() => void) | null = null;
+
+    // 🏛️ FIX #4: BroadcastChannel para coordinación entre tabs
+    // Solo el líder emite decisiones de healing, los followers escuchan
+    private syncChannel: BroadcastChannel | null = null;
+    private readonly SYNC_CHANNEL_NAME = 'safespot-integrity-sync';
+
     constructor() {
         console.debug('[Integrity] Motor 4 initialized');
+        this.setupSyncChannel();
+    }
+
+    /**
+     * 🏛️ FIX #4: Setup BroadcastChannel para coordinación entre tabs
+     * Solo el líder emite decisiones de healing, los followers escuchan
+     */
+    private setupSyncChannel(): void {
+        if (typeof window === 'undefined') return;
+
+        try {
+            this.syncChannel = new BroadcastChannel(this.SYNC_CHANNEL_NAME);
+            this.syncChannel.onmessage = (event) => {
+                // Solo procesar mensajes de healing de otros tabs
+                if (event.data?.type === 'HEALING_STARTED') {
+                    console.debug('[Integrity] 🛰️ Healing started in another tab, skipping local healing');
+                    // Pausar nuestro tick mientras otro tab hace healing
+                    this.isTickPaused = true;
+                } else if (event.data?.type === 'HEALING_COMPLETED') {
+                    console.debug('[Integrity] 🛰️ Healing completed in another tab, resuming');
+                    this.isTickPaused = false;
+                    // Resetear nuestro estado ya que otro tab ya hizo el healing
+                    if (this.state === DataIntegrityState.DATA_SUSPECT) {
+                        this.setState(DataIntegrityState.DATA_HEALTHY);
+                    }
+                }
+            };
+        } catch (e) {
+            console.warn('[Integrity] BroadcastChannel not supported, falling back to independent mode');
+            this.syncChannel = null;
+        }
     }
 
     // ===========================================
@@ -150,14 +192,14 @@ class DataIntegrityEngine {
         // 🚀 PROACTIVE SUBSCRIPTIONS (M11 + M8)
 
         // 1. Leader Failover (P1)
-        leaderElection.onChange((state) => {
+        this.leaderElectionUnsub = leaderElection.onChange((state) => {
             if (state === LeadershipState.LEADING) {
                 this.processEvent({ type: 'leader:failover_completed' });
             }
         });
 
         // 2. Telemetry Anomalies (P3)
-        telemetry.subscribe((env) => {
+        this.telemetryUnsub = telemetry.subscribe((env) => {
             // Only care about SYSTEM signals or ERRORs that might indicate data loss
             if (env.severity === TelemetrySeverity.ERROR ||
                 (env.severity === TelemetrySeverity.WARN && env.engine === 'SSE')) {
@@ -170,6 +212,7 @@ class DataIntegrityEngine {
 
     /**
      * Detiene el motor
+     * 🏛️ FIX #4: Cerrar BroadcastChannel
      */
     public stop(): void {
         if (this.tickIntervalId) {
@@ -179,6 +222,20 @@ class DataIntegrityEngine {
         if (this.healingTimeoutId) {
             clearTimeout(this.healingTimeoutId);
             this.healingTimeoutId = null;
+        }
+        // 🧹 MEMORY FIX: Limpiar suscripciones externas
+        if (this.leaderElectionUnsub) {
+            this.leaderElectionUnsub();
+            this.leaderElectionUnsub = null;
+        }
+        if (this.telemetryUnsub) {
+            this.telemetryUnsub();
+            this.telemetryUnsub = null;
+        }
+        // 🏛️ FIX #4: Cerrar BroadcastChannel
+        if (this.syncChannel) {
+            this.syncChannel.close();
+            this.syncChannel = null;
         }
         console.log('[Integrity] Engine stopped');
     }
@@ -375,12 +432,21 @@ class DataIntegrityEngine {
         const keyStr = JSON.stringify(queryKey);
 
         if (!this.trackedQueries.has(keyStr)) {
+            // 🧹 MEMORY FIX: LRU eviction cuando excede límite
+            if (this.trackedQueries.size >= this.MAX_TRACKED_QUERIES) {
+                const toRemove = Math.ceil(this.MAX_TRACKED_QUERIES * 0.2); // Eliminar 20% más antiguas
+                const victims = this.trackedQueriesOrder.splice(0, toRemove);
+                victims.forEach(key => this.trackedQueries.delete(key));
+                console.debug(`[Integrity] 🧹 LRU eviction: removed ${toRemove} old tracked queries`);
+            }
+
             this.trackedQueries.set(keyStr, {
                 queryKey,
                 lastFreshAt: Date.now(),
                 errorCount: 0,
                 threshold,
             });
+            this.trackedQueriesOrder.push(keyStr);
             console.debug(`[Integrity] Tracking query: ${keyStr} (threshold: ${threshold / 1000}s)`);
         }
     }
@@ -395,6 +461,12 @@ class DataIntegrityEngine {
         if (tracked) {
             tracked.lastFreshAt = Date.now();
             tracked.errorCount = 0;
+            // 🧹 MEMORY FIX: Mover al final (más reciente en LRU)
+            const idx = this.trackedQueriesOrder.indexOf(keyStr);
+            if (idx > -1) {
+                this.trackedQueriesOrder.splice(idx, 1);
+                this.trackedQueriesOrder.push(keyStr);
+            }
         }
     }
 
@@ -463,6 +535,8 @@ class DataIntegrityEngine {
 
     /**
      * ⚠️ AJUSTE 2: Trigger healing con protección contra re-entrada
+     * 🏛️ FIX #4: Solo el líder ejecuta healing, los followers esperan
+     * 🏛️ FIX #6: Protección contra deadlock con finally block
      */
     private triggerHealing(reason: string): void {
         // Guard: no re-entrar si ya estamos en healing
@@ -471,8 +545,21 @@ class DataIntegrityEngine {
             return;
         }
 
+        // 🏛️ FIX #4: Solo el líder ejecuta healing global
+        // Los followers reciben el estado vía BroadcastChannel
+        const isLeader = leaderElection.isLeader();
+        if (!isLeader) {
+            console.debug(`[Integrity] Not leader, skipping healing. Waiting for leader to heal...`);
+            return;
+        }
+
         this.isHealingInProgress = true;
         this.setState(DataIntegrityState.HEALING);
+
+        // 🏛️ FIX #4: Notificar a otros tabs que empezamos healing
+        if (this.syncChannel) {
+            this.syncChannel.postMessage({ type: 'HEALING_STARTED', reason, timestamp: Date.now() });
+        }
 
         console.log(`[Integrity] 🏥 HEALING started: ${reason}`);
 
@@ -482,12 +569,18 @@ class DataIntegrityEngine {
             this.completeHealing(false);
         }, this.HEALING_TIMEOUT_MS);
 
-        // Ejecutar acciones de healing
-        this.executeHealing(reason);
+        // 🏛️ FIX #6: Ejecutar con protección de deadlock
+        try {
+            this.executeHealing(reason);
+        } catch (error) {
+            console.error('[Integrity] ❌ Unexpected error in healing, forcing completion:', error);
+            this.completeHealing(false);
+        }
     }
 
     /**
      * Ejecuta las acciones de healing
+     * 🏛️ FIX #6: Protección contra deadlock con try-catch-finally
      */
     private async executeHealing(reason: string): Promise<void> {
         try {
@@ -519,19 +612,21 @@ class DataIntegrityEngine {
                 }
             }
 
-            // Simular tiempo de healing (en realidad las decisiones son async)
-            setTimeout(() => {
-                this.completeHealing(true);
-            }, 500);
+            // 🏛️ FIX #6: Simular tiempo de healing con promesa para mejor manejo de errores
+            await new Promise(resolve => setTimeout(resolve, 500));
+            this.completeHealing(true);
 
         } catch (error) {
             console.error('[Integrity] Healing error:', error);
             this.completeHealing(false);
         }
+        // 🏛️ FIX #6: Nota: No hay finally aquí porque completeHealing debe llamarse siempre,
+        // y el timeout de seguridad (30s) actúa como último recurso
     }
 
     /**
      * Completa el proceso de healing
+     * 🏛️ FIX #4: Notificar a otros tabs cuando healing termina
      */
     private completeHealing(success: boolean): void {
         if (this.healingTimeoutId) {
@@ -539,7 +634,17 @@ class DataIntegrityEngine {
             this.healingTimeoutId = null;
         }
 
+        // 🏛️ FIX #6: Siempre resetear el flag, incluso si falló
         this.isHealingInProgress = false;
+
+        // 🏛️ FIX #4: Notificar a otros tabs que terminamos
+        if (this.syncChannel) {
+            this.syncChannel.postMessage({ 
+                type: 'HEALING_COMPLETED', 
+                success, 
+                timestamp: Date.now() 
+            });
+        }
 
         if (success) {
             console.debug('[Integrity] ✅ Healing completed successfully');
@@ -615,6 +720,27 @@ class DataIntegrityEngine {
                 // Solo log, no acción
                 break;
         }
+    }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia trackedQueries, trackedQueriesOrder y listeners
+     * 🏛️ FIX #6: Resetear isHealingInProgress para evitar deadlock
+     * Llamar en logout para prevenir memory leaks en sesiones largas
+     */
+    public clear(): void {
+        this.trackedQueries.clear();
+        this.trackedQueriesOrder = [];
+        this.stateListeners.clear();
+        this.decisionListeners.clear();
+        
+        // 🏛️ FIX #6: Resetear healing state para evitar deadlock en nueva sesión
+        this.isHealingInProgress = false;
+        if (this.healingTimeoutId) {
+            clearTimeout(this.healingTimeoutId);
+            this.healingTimeoutId = null;
+        }
+        
+        console.debug('[Integrity] 🧹 Cleared tracked queries, listeners and reset healing state');
     }
 }
 
