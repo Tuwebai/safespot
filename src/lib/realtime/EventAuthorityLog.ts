@@ -19,9 +19,11 @@ export interface AuthorityRecord {
 
 const STORAGE_KEY = 'safespot_authority_log';
 const MAX_LOG_SIZE = 100; // Keep only recent events in localStorage for performance
+const MAX_MEMORY_SIZE = 1000; // 🧹 MEMORY FIX: Límite para Set en RAM
 
 class EventAuthorityLog {
     private inMemoryLog: Set<string> = new Set();
+    private inMemoryOrder: string[] = []; // 🧹 LRU: Orden de inserción para eviction
     private observers: Set<(eventId: string) => void> = new Set();
 
     constructor() {
@@ -84,12 +86,28 @@ class EventAuthorityLog {
      */
     record(record: AuthorityRecord, secondaryKey?: string) {
         if (this.inMemoryLog.has(record.eventId)) {
-            if (secondaryKey) this.inMemoryLog.add(secondaryKey);
+            if (secondaryKey && !this.inMemoryLog.has(secondaryKey)) {
+                this.inMemoryLog.add(secondaryKey);
+                this.inMemoryOrder.push(secondaryKey);
+            }
             return;
         }
 
+        // 🧹 MEMORY FIX: LRU eviction cuando excede límite
+        if (this.inMemoryLog.size >= MAX_MEMORY_SIZE) {
+            const toRemove = Math.ceil(MAX_MEMORY_SIZE * 0.2); // Eliminar 20% más antiguos
+            const victims = this.inMemoryOrder.splice(0, toRemove);
+            victims.forEach(id => this.inMemoryLog.delete(id));
+            console.debug(`[AuthorityLog] 🧹 LRU eviction: removed ${toRemove} old entries`);
+        }
+
         this.inMemoryLog.add(record.eventId);
-        if (secondaryKey) this.inMemoryLog.add(secondaryKey);
+        this.inMemoryOrder.push(record.eventId);
+        
+        if (secondaryKey) {
+            this.inMemoryLog.add(secondaryKey);
+            this.inMemoryOrder.push(secondaryKey);
+        }
 
         // 3. Update Sync Storage (Non-blocking)
         this.schedulePersistence(record);
@@ -124,6 +142,16 @@ class EventAuthorityLog {
     onPeerProcessed(cb: (eventId: string) => void): () => void {
         this.observers.add(cb);
         return () => this.observers.delete(cb);
+    }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia inMemoryLog y inMemoryOrder
+     * Llamar en logout para prevenir memory leaks en sesiones largas
+     */
+    clear(): void {
+        this.inMemoryLog.clear();
+        this.inMemoryOrder = [];
+        console.debug('[AuthorityLog] 🧹 Cleared in-memory log');
     }
 }
 

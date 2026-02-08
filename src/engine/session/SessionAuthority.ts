@@ -14,6 +14,9 @@
 
 import { versionedStorage } from '../../lib/storage/VersionedStorageManager';
 import { IdentityInvariantViolation } from '../../lib/errors/IdentityInvariantViolation';
+import { eventAuthorityLog } from '../../lib/realtime/EventAuthorityLog';
+import { viewReconciliationEngine } from '../../lib/view-reconciliation/ViewReconciliationEngine';
+import { realtimeOrchestrator } from '../../lib/realtime/RealtimeOrchestrator';
 
 export enum SessionState {
     UNINITIALIZED = 'UNINITIALIZED',
@@ -280,6 +283,12 @@ class SessionAuthority {
 
         console.log('[SessionAuthority] Logout - preserving anonymous:', this.token.anonymousId.substring(0, 8));
 
+        // 🧹 MEMORY FIX: Limpiar logs de memoria para prevenir leaks
+        // Solo en logout completo, no afecta la experiencia del usuario
+        eventAuthorityLog.clear();
+        viewReconciliationEngine.clear();
+        realtimeOrchestrator.clear();
+
         // ✅ SECURITY: Preserve existing signature on logout
         // Signature is tied to anonymousId, which persists across auth sessions
         // Only bootstrap can issue new signatures
@@ -305,6 +314,12 @@ class SessionAuthority {
         this.state = SessionState.UNINITIALIZED;
         localStorage.removeItem(this.STORAGE_KEY);
         localStorage.removeItem(this.LEGACY_KEY);
+        
+        // 🧹 MEMORY FIX: Limpiar logs de memoria en reset completo
+        eventAuthorityLog.clear();
+        viewReconciliationEngine.clear();
+        realtimeOrchestrator.clear();
+        
         this.notify();
     }
 

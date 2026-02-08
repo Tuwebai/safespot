@@ -2,7 +2,7 @@ import { Users, AlertTriangle, Activity, TrendingUp, MapPin } from 'lucide-react
 import { useAdminStats } from '../hooks/useAdminData'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import AdminMap from '../components/AdminMap'
+import { LazyAdminMap } from '../components/LazyAdminMap'
 import { useNavigate } from 'react-router-dom'
 import { getAvatarUrl } from '@/lib/avatar'
 
@@ -85,7 +85,7 @@ export function AdminDashboard() {
 
                     {/* The Map */}
                     <div className="flex-1 rounded-lg overflow-hidden w-full h-full">
-                        <AdminMap />
+                        <LazyAdminMap />
                     </div>
                 </div>
 

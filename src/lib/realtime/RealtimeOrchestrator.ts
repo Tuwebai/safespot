@@ -807,6 +807,24 @@ class RealtimeOrchestrator {
         this.dynamicSubscriptions.clear();
         console.debug('[Orchestrator] ⚰️ Destroyed');
     }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia listeners y dynamicSubscriptions
+     * Llamar en logout para prevenir memory leaks por callbacks huérfanos
+     */
+    clear(): void {
+        this.listeners.clear();
+        this.dynamicSubscriptions.forEach(unsub => unsub());
+        this.dynamicSubscriptions.clear();
+        
+        // 🧹 MEMORY FIX: Cerrar BroadcastChannel para liberar recursos del navegador
+        // Evita acumulación de channels en HMR o múltiples instancias
+        if (this.syncChannel) {
+            this.syncChannel.close();
+        }
+        
+        console.debug('[Orchestrator] 🧹 Cleared listeners and subscriptions');
+    }
 }
 
 export const realtimeOrchestrator = new RealtimeOrchestrator();

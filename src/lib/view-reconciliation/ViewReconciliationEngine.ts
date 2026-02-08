@@ -188,6 +188,16 @@ class ViewReconciliationEngine {
             this.listeners.delete(fn);
         };
     }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia executionLog y pendingQueue
+     * Llamar en logout para prevenir memory leaks en sesiones largas
+     */
+    public clear(): void {
+        this.executionLog.clear();
+        this.pendingQueue = [];
+        console.debug('[ViewReconciliationEngine] 🧹 Cleared execution log and pending queue');
+    }
 }
 
 export const viewReconciliationEngine = new ViewReconciliationEngine();
