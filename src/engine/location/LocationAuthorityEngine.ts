@@ -74,8 +74,16 @@ class LocationAuthorityEngine {
     // Cached fallbacks (set by consumers)
     private fallbacks: LocationFallbacks = {}
 
+    // 🏛️ FIX #1: Lifecycle management
+    private isStarted: boolean = false
+
+    // 🏛️ FIX #2: Cross-tab synchronization
+    private syncChannel: BroadcastChannel | null = null
+    private readonly SYNC_CHANNEL_NAME = 'safespot-location-sync'
+
     private constructor() {
         console.debug('[Location] Engine initialized')
+        this.setupSyncChannel()
     }
 
     // ===========================================
@@ -87,6 +95,108 @@ class LocationAuthorityEngine {
             LocationAuthorityEngine.instance = new LocationAuthorityEngine()
         }
         return LocationAuthorityEngine.instance
+    }
+
+    // ===========================================
+    // LIFECYCLE MANAGEMENT (Fix #1)
+    // ===========================================
+
+    /**
+     * Inicia el motor y configura listeners de visibilidad
+     */
+    public start(): void {
+        if (this.isStarted) return
+        this.isStarted = true
+
+        // Listen for visibility changes to pause/resume expensive operations
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', this.handleVisibilityChange)
+        }
+
+        console.debug('[Location] Engine started')
+    }
+
+    /**
+     * Detiene el motor y limpia listeners
+     */
+    public stop(): void {
+        if (!this.isStarted) return
+        this.isStarted = false
+
+        // Remove visibility listener
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+        }
+
+        // Abort any pending resolution
+        this.abort()
+
+        console.debug('[Location] Engine stopped')
+    }
+
+    /**
+     * Pausa operaciones costosas cuando tab está en background
+     */
+    private handleVisibilityChange = (): void => {
+        if (document.hidden) {
+            console.debug('[Location] Tab hidden, pausing active resolution')
+            this.abort()
+        }
+    }
+
+    // ===========================================
+    // CROSS-TAB SYNC (Fix #2)
+    // ===========================================
+
+    /**
+     * Setup BroadcastChannel para sincronización entre tabs
+     */
+    private setupSyncChannel(): void {
+        if (typeof window === 'undefined') return
+
+        try {
+            this.syncChannel = new BroadcastChannel(this.SYNC_CHANNEL_NAME)
+            this.syncChannel.onmessage = (event) => {
+                this.handleSyncMessage(event.data)
+            }
+        } catch (e) {
+            console.warn('[Location] BroadcastChannel not supported')
+            this.syncChannel = null
+        }
+    }
+
+    /**
+     * Maneja mensajes de otros tabs
+     */
+    private handleSyncMessage(data: { type: string; position?: LocationPosition; timestamp?: number }): void {
+        switch (data.type) {
+            case 'LOCATION_RESOLVED':
+                // Otro tab resolvió ubicación, usar como fallback
+                if (data.position && !this.isResolved()) {
+                    console.debug('[Location] 🛰️ Location resolved in another tab, using as fallback')
+                    this.setState(LocationState.RESOLVED, data.position)
+                }
+                break
+            case 'LOCATION_DENIED':
+                // Otro tab recibió denied, sincronizar estado
+                if (this.state === LocationState.UNKNOWN || this.state === LocationState.RESOLVING) {
+                    this.setState(LocationState.DENIED)
+                }
+                break
+        }
+    }
+
+    /**
+     * Notifica a otros tabs sobre resolución
+     */
+    private notifyOtherTabs(type: string, data?: { position?: LocationPosition }): void {
+        if (!this.syncChannel) return
+        
+        this.syncChannel.postMessage({
+            type,
+            ...data,
+            timestamp: Date.now()
+        })
     }
 
     // ===========================================
@@ -273,6 +383,13 @@ class LocationAuthorityEngine {
 
         if (newState === LocationState.RESOLVED && position) {
             this.lastResolvedAt = Date.now()
+            // 🏛️ FIX #2: Notificar a otros tabs que resolvimos
+            this.notifyOtherTabs('LOCATION_RESOLVED', { position })
+        }
+
+        if (newState === LocationState.DENIED) {
+            // 🏛️ FIX #2: Notificar a otros tabs sobre denegación
+            this.notifyOtherTabs('LOCATION_DENIED')
         }
 
         this.notify()
@@ -442,6 +559,46 @@ class LocationAuthorityEngine {
             lat !== 0 &&
             lng !== 0
         )
+    }
+
+    /**
+     * 🧹 MEMORY FIX: Limpia listeners, position, fallbacks y estado
+     * 🏛️ FIX #1 & #2: Limpia lifecycle y sync channel
+     * Llamar en logout para prevenir memory leaks y eliminar datos sensibles
+     */
+    public clear(): void {
+        // Abortar cualquier resolución en progreso
+        if (this.abortController) {
+            this.abortController.abort()
+            this.abortController = null
+        }
+        this.isResolving = false
+
+        // Limpiar listeners para liberar referencias a componentes
+        this.listeners.clear()
+
+        // Limpiar datos de ubicación y fallbacks (privacidad)
+        this.position = null
+        this.fallbacks = {}
+        this.statusMessage = ''
+        this.lastResolvedAt = null
+
+        // Resetear estado a UNKNOWN
+        this.state = LocationState.UNKNOWN
+
+        // 🏛️ FIX #1: Limpiar listener de visibilidad
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+        }
+        this.isStarted = false
+
+        // 🏛️ FIX #2: Cerrar sync channel
+        if (this.syncChannel) {
+            this.syncChannel.close()
+            this.syncChannel = null
+        }
+
+        console.debug('[Location] 🧹 Cleared location data, listeners and stopped engine')
     }
 }
 

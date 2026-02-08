@@ -16,6 +16,7 @@ import { sessionAuthority, SessionState } from '@/engine/session/SessionAuthorit
 import { queryClient } from '@/lib/queryClient';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { dataIntegrityEngine } from '@/engine/integrity';
+import { eventAuthorityLog } from '@/lib/realtime/EventAuthorityLog';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 
 export enum BootstrapState {
@@ -131,6 +132,9 @@ class ApplicationBootstrapManager {
             // 🧠 MOTOR 4: Start Data Integrity Engine
             dataIntegrityEngine.start();
             dataIntegrityEngine.processEvent({ type: 'lifecycle:running' });
+
+            // 👑 MOTOR D: Start Event Authority Log (enterprise persistence)
+            eventAuthorityLog.start();
         } catch (error) {
             console.error('[Bootstrap] ⚠️ Critical Failure or Timeout during Boot:', error);
             // GUARANTEE: Always end in RUNNING state to show UI

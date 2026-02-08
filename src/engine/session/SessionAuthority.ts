@@ -19,6 +19,7 @@ import { viewReconciliationEngine } from '../../lib/view-reconciliation/ViewReco
 import { realtimeOrchestrator } from '../../lib/realtime/RealtimeOrchestrator';
 import { dataIntegrityEngine } from '../../engine/integrity';
 import { trafficController } from '../../engine/traffic/TrafficController';
+import { locationAuthority } from '../../engine/location/LocationAuthorityEngine';
 
 export enum SessionState {
     UNINITIALIZED = 'UNINITIALIZED',
@@ -292,6 +293,7 @@ class SessionAuthority {
         realtimeOrchestrator.clear();
         dataIntegrityEngine.clear();
         trafficController.clear();
+        locationAuthority.clear();
 
         // ✅ SECURITY: Preserve existing signature on logout
         // Signature is tied to anonymousId, which persists across auth sessions
@@ -325,6 +327,7 @@ class SessionAuthority {
         realtimeOrchestrator.clear();
         dataIntegrityEngine.clear();
         trafficController.clear();
+        locationAuthority.clear();
         
         this.notify();
     }

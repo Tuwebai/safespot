@@ -1,7 +1,7 @@
 # SafeSpot Enterprise - AGENTS.md
 
-> **Última actualización:** 2026-02-07  
-> **Versión:** 2.1  
+> **Última actualización:** 2026-02-08  
+> **Versión:** 2.2  
 > **Propósito:** Guía definitiva para agentes de código en el proyecto SafeSpot
 
 ---
@@ -38,6 +38,21 @@ SafeSpot es una aplicación **Enterprise Grade** con requisitos de auditoría M1
 | **Validación Zod** | En todos los bordes de API | `schema.parse(data)` o `safeParse()` |
 | **Auditoría M12** | `executeModeration()` para acciones de admin | Razón obligatoria (min 5 chars) |
 | **Soft deletes** | Nunca `DELETE` hard, siempre `deleted_at` | Recuperable, trazable |
+
+### 🏛️ ENTERPRISE GRADE (Obligatorio para todo código nuevo)
+
+> **Todo fix o feature debe ser ENTERPRISE GRADE. Nada básico, nada a medias.**
+
+| Categoría | Mínimo Enterprise | No Aceptable |
+|-----------|-------------------|--------------|
+| **Motores/Engines** | Lifecycle completo (start/stop/clear), métricas/telemetry, persistencia donde aplique, circuit breakers | Solo `clear()` o cleanup básico |
+| **Caches** | LRU con límites estrictos, TTL automático, persistencia en IndexedDB, invalidación coordinada | Solo `Map` o `Set` sin límites |
+| **Subscripciones** | Unsubscribe handlers guardados, cleanup en logout, BroadcastChannel para cross-tab | Solo retornar función de cleanup |
+| **Resiliencia** | Retry con backoff exponencial, dead letter queues, health checks, auto-healing | Try-catch básico |
+| **Métricas** | Telemetry en cada operación crítica, tracing de requests, alertas de anomalías | Solo console.log |
+| **Sync entre tabs** | BroadcastChannel para coordinación de estado, leader election donde aplique | Estado aislado por tab |
+
+**Principio:** Si no incluye métricas, persistencia y coordinación cross-tab, **NO es enterprise**.
 
 ### 📋 LEGACY (Congelado)
 
