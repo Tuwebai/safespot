@@ -851,7 +851,8 @@ export const usersApi = {
     const raw = await apiRequest<UserProfile>('/users/profile');
     const transformed = transformProfile(raw);
     if (!transformed) throw new Error('Failed to transform profile');
-    return transformed as UserProfile;
+    // 🔒 TYPE FIX: Double cast through unknown to handle type mismatch between RawProfile and UserProfile
+    return transformed as unknown as UserProfile;
   },
 
   /**

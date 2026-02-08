@@ -46,7 +46,7 @@ export function ReportWizard() {
         const confirmed = await confirm({
             title: '¿Salir sin guardar?',
             description: 'Se perderá el borrador del reporte.',
-            variant: 'warning'
+            variant: 'default' // 🔒 FIX: 'warning' no es válido, usar 'default' o 'danger'
         })
         if (confirmed) {
             clearDraft()

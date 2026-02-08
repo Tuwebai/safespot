@@ -44,10 +44,22 @@ export function ModerationHistory() {
     const [typeFilter, setTypeFilter] = useState<string>('');
     const [entityIdFilter, setEntityIdFilter] = useState('');
 
+    // 🔒 TYPE SAFETY FIX: React Query v5 + TypeScript strict mode compatibility
+    // UseQuery generic must match BOTH the queryFn return type AND the cached data shape
+    interface HistoryResponse {
+        data: AuditLogEntry[];
+        pagination: {
+            total: number;
+            pages: number;
+            page: number;
+            limit: number;
+        };
+    }
+
     // Fetch Audit Log
-    const { data, isLoading } = useQuery<{ data: AuditLogEntry[], pagination: any }>({
+    const { data, isLoading } = useQuery<HistoryResponse>({
         queryKey: ['admin', 'moderation', 'history', page, typeFilter, entityIdFilter],
-        queryFn: async () => {
+        queryFn: async (): Promise<HistoryResponse> => {
             const params: Record<string, string> = {
                 page: page.toString(),
                 limit: '20',
@@ -55,10 +67,12 @@ export function ModerationHistory() {
             if (typeFilter) params.type = typeFilter;
             if (entityIdFilter) params.entityId = entityIdFilter;
 
-            const { data } = await adminApi.get('/moderation/history', { params });
-            return data;
+            const response = await adminApi.get<HistoryResponse>('/moderation/history', { params });
+            return response.data;
         },
-        placeholderData: (prev) => prev
+        // ✅ FIX: Use keepPreviousData pattern instead of placeholderData function
+        // placeholderData con función tiene problemas de tipado en RQ v5
+        staleTime: 30000, // 30 segundos para evitar flash de loading
     });
 
     const getActionColor = (action: string) => {

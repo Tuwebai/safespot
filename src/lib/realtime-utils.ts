@@ -31,7 +31,8 @@ export function upsertInList<T extends Identifiable>(
     queryKey: string[],
     newItem: T
 ) {
-    queryClient.setQueriesData<unknown>({ queryKey }, (oldData) => {
+    // 🔒 TYPE FIX: Explicitly type oldData to avoid implicit any
+    queryClient.setQueriesData<unknown>({ queryKey }, (oldData: unknown) => {
         if (!oldData) return oldData;
 
         // Case 1: Infinite Query (Paginated)
@@ -123,10 +124,12 @@ export function removeFromList<T extends Identifiable>(
         const objData = oldData as PaginatedPage<T>;
         const itemsKey: 'items' | 'data' | 'comments' | null = 
             objData.items ? 'items' : objData.comments ? 'comments' : objData.data ? 'data' : null;
+        // 🔒 TYPE FIX: Cast to access dynamic property safely
         if (itemsKey && Array.isArray(objData[itemsKey])) {
+            const items = objData[itemsKey] as T[];
             return {
                 ...objData,
-                [itemsKey]: oldData[itemsKey].filter((item: any) => item.id !== id)
+                [itemsKey]: items.filter((item) => item.id !== id)
             };
         }
 

@@ -1,5 +1,6 @@
+// 🔒 CLEANUP: Removed unused Camera import
 import { cn } from '@/lib/utils'
-import { Check, FileText, MapPin, Camera, Eye } from 'lucide-react'
+import { Check, FileText, MapPin, Eye } from 'lucide-react'
 
 interface WizardStepIndicatorProps {
     currentStep: number
@@ -92,7 +93,7 @@ export function WizardStepIndicator({
             {/* Mobile: Compact horizontal */}
             <div className="sm:hidden">
                 <div className="flex items-center justify-between mb-2">
-                    {steps.map((step, index) => {
+                    {steps.map((_step, index) => { // 🔒 FIX: Renamed unused 'step' to '_step'
                         const stepNumber = index + 1
                         const isActive = stepNumber === currentStep
                         const isCompleted = stepNumber < currentStep

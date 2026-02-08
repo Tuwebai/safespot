@@ -10,8 +10,8 @@
  * - Parsing robusto de respuestas
  */
 
-// Detectar si estamos en modo desarrollo
-const isDev = import.meta.env.DEV;
+// 🔒 DEBUG UTILITY: Preservado para futura implementación de logs condicionales
+// const isDev = import.meta.env.DEV;
 
 // La URL base debe apuntar al endpoint /api/admin del backend
 // En desarrollo: http://localhost:3000/api/admin

@@ -176,7 +176,8 @@ export function transformReport(raw: RawReport): Report {
         ),
 
         // Optional props
-        priority_zone: raw.priority_zone as string | null | undefined,
+        // 🔒 TYPE FIX: Filter out undefined to match type string | null
+        priority_zone: raw.priority_zone === undefined ? null : raw.priority_zone as string | null,
         distance_meters: raw.distance_meters ?? null,
         province: raw.province,
         locality: raw.locality,

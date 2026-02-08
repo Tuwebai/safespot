@@ -64,13 +64,17 @@ export function ModerationActionDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
+    // 🔒 TYPE SAFETY FIX: Explicit Promise return type ensures RQ v5 compatibility
+    // El tipo ActionDetailResponse debe coincidir exactamente con la respuesta de la API
     const { data, isLoading, error } = useQuery<ActionDetailResponse>({
         queryKey: ['admin', 'moderation', 'action', id],
-        queryFn: async () => {
-            const { data } = await adminApi.get(`/moderation/actions/${id}`);
-            return data;
+        queryFn: async (): Promise<ActionDetailResponse> => {
+            const response = await adminApi.get<ActionDetailResponse>(`/moderation/actions/${id}`);
+            return response.data;
         },
-        retry: 1
+        retry: 1,
+        // ✅ FIX: Add staleTime para mantener datos visibles durante navegación
+        staleTime: 60000,
     });
 
     if (isLoading) {

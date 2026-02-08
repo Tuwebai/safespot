@@ -7,14 +7,13 @@ import { ThreadList } from '@/components/comments/thread-list'
 import { useCommentsManager } from '@/hooks/useCommentsManager'
 
 import { MessageCircle } from 'lucide-react'
-import { SightingActions, SightingType } from './SightingActions'
+import { SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
 import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
 import { useConfirm } from '@/components/ui/useConfirm'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
-import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { getCurrentUserId } from '@/lib/permissions'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
@@ -46,7 +45,6 @@ export function CommentsSection({
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
-    const { checkAuth } = useAuthGuard()
 
     // 🔴 CRITICAL FIX: Use protected mutation instead of direct API call
     const { mutateAsync: createComment } = useCreateCommentMutation()
@@ -242,16 +240,18 @@ export function CommentsSection({
 
     return (
         <div>
-            {/* Header Row */}
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-foreground">Comentarios</h2>
+            {/* Header Row - Responsive */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-foreground">
+                    Comentarios <span className="text-sm sm:text-lg text-muted-foreground">({totalCount})</span>
+                </h2>
                 {/* View Toggle */}
                 <div className="flex items-center space-x-2">
                     <Button
                         variant={viewMode === 'comments' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('comments')}
-                        className={viewMode === 'comments' ? 'bg-neon-green text-black' : 'border-border text-foreground'}
+                        className={`text-xs sm:text-sm h-8 ${viewMode === 'comments' ? 'bg-neon-green text-black' : 'border-border text-foreground'}`}
                     >
                         Comentarios
                     </Button>
@@ -259,22 +259,12 @@ export function CommentsSection({
                         variant={viewMode === 'threads' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('threads')}
-                        className={viewMode === 'threads' ? 'bg-neon-green text-black' : 'border-border text-foreground'}
+                        className={`text-xs sm:text-sm h-8 ${viewMode === 'threads' ? 'bg-neon-green text-black' : 'border-border text-foreground'}`}
                     >
                         Hilos
                     </Button>
                 </div>
             </div>
-
-            {/* ACTIONABLE SIGHTINGS BUTTONS - Always visible in comments view */}
-            {viewMode === 'comments' && (
-                <SightingActions
-                    onActionClick={(type) => {
-                        if (checkAuth()) setSightingModalType(type)
-                    }}
-                    disabled={isSubmittingSighting}
-                />
-            )}
 
             {/* Add Comment Card - ONLY in comments view */}
             {viewMode === 'comments' && (

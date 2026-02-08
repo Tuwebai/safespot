@@ -1,8 +1,9 @@
-import { Upload, X, Eye, FileText, MapPin, Calendar, AlertCircle } from 'lucide-react'
+// 🔒 CLEANUP: Removed unused imports (FileText, AlertCircle)
+import { Upload, X, Eye, MapPin, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { WizardFormData } from './useReportWizard'
-import { formatDistanceToNow } from '@/lib/date-utils'
+// import { formatDistanceToNow } from '@/lib/date-utils' // FIXME: Module not found, implement or use date-fns directly
 
 interface Step4ReviewSubmitProps {
     formData: WizardFormData

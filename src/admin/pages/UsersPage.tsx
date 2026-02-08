@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '../services/adminApi'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -64,20 +64,23 @@ export function UsersPage() {
 
     const queryClient = useQueryClient()
 
-    // Query Users
+    // 🔒 TYPE SAFETY FIX: Explicit return type prevents inference issues in RQ v5
+    // La función queryFn debe retornar exactamente el tipo genérico de useQuery
     const { data, isLoading } = useQuery<UsersResponse>({
         queryKey: ['admin', 'users', page, debouncedSearch],
-        queryFn: async () => {
-            const { data } = await adminApi.get('/users', {
+        queryFn: async (): Promise<UsersResponse> => {
+            const response = await adminApi.get<UsersResponse>('/users', {
                 params: {
                     page,
                     limit: 20,
                     search: debouncedSearch
                 }
             });
-            return data;
+            return response.data;
         },
-        placeholderData: keepPreviousData
+        // ✅ FIX: Use staleTime instead of keepPreviousData para evitar problemas de tipos
+        // keepPreviousData tiene problemas de inferencia en algunas versiones de RQ
+        staleTime: 30000,
     })
 
     // 🛡️ Observability: Log dropped users

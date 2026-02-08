@@ -42,3 +42,5 @@ Chat_Global_Messenger_Grade.md
 REDIS_INTEGRATION_AUDIT.md
 server/scripts/migrate_google_oauth.js
 DEPLOY_AUDIT.md
+AGENTS.md
+PAGE_AUDIT_REPORT.md

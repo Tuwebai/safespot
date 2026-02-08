@@ -49,13 +49,14 @@ export class CausalStitcher {
             signals = history.filter(s => s.traceId === traceIdFound);
         }
 
+        // 🔒 TYPE FIX: Build timeline with explicit type casting for each step
         const timeline = signals
             .sort((a, b) => a.timestamp - b.timestamp)
-            .map(s => ({
+            .map((s): CausalTraceStep => ({
                 t: s.timestamp,
                 engine: s.engine,
-                signal: s.payload?.action || 'unknown_signal',
-                payload: s.payload
+                signal: (s.payload?.action as string) || 'unknown_signal',
+                payload: s.payload as Record<string, unknown>
             }));
 
         // 2. Cross-Reference con AuthorityLog (Solo lectura)

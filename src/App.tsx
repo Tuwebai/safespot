@@ -24,8 +24,8 @@ const Home = lazyRetry(() => import('@/pages/Home').then(m => ({ default: m.Home
 const Reportes = lazyRetry(() => import('@/pages/Reportes').then(m => ({ default: m.Reportes })), 'Reportes')
 // ✅ WIZARD: Nuevo flujo de creación de reportes por pasos
 const ReportWizard = lazyRetry(() => import('@/components/report-wizard').then(m => ({ default: m.ReportWizard })), 'ReportWizard')
-// LEGACY: Componente antiguo preservado por compatibilidad
-const CrearReporte = lazyRetry(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })), 'CrearReporte')
+// 🔒 LEGACY: Componente antiguo preservado por compatibilidad (no usado actualmente)
+// const CrearReporte = lazyRetry(() => import('@/pages/CrearReporte').then(m => ({ default: m.CrearReporte })), 'CrearReporte')
 const DetalleReporte = lazyRetry(() => import('@/pages/DetalleReporte').then(m => ({ default: m.DetalleReporte })), 'DetalleReporte')
 // ✅ PERFORMANCE FIX: Lazy load Explorar to avoid loading Leaflet (200KB) in main bundle
 // Leaflet icons are initialized inside Explorar.tsx when the map component loads

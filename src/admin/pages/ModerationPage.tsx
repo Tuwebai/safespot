@@ -44,14 +44,19 @@ export function ModerationPage() {
 
     const queryClient = useQueryClient();
 
+    // 🔒 TYPE SAFETY FIX: Explicitly type the API response to avoid 'unknown' type
+    interface PendingItemsResponse {
+        data: ModerationItem[];
+    }
+
     // Fetch Pending Items
     const { data: items, isLoading } = useQuery<ModerationItem[]>({
         queryKey: ['admin', 'moderation', 'pending', activeTab],
-        queryFn: async () => {
-            const { data } = await adminApi.get('/moderation/pending', {
+        queryFn: async (): Promise<ModerationItem[]> => {
+            const response = await adminApi.get<PendingItemsResponse>('/moderation/pending', {
                 params: { type: activeTab }
             });
-            return data.data;
+            return response.data.data;
         }
     });
 

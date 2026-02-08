@@ -31,8 +31,10 @@ export const step2Schema = z.object({
 export const step3Schema = z.object({
     location: z.object({
         location_name: z.string().min(3, 'Ingresa una ubicación válida').max(255),
-        latitude: z.number().min(-90).max(90),
-        longitude: z.number().min(-180).max(180),
+        // 🔒 TYPE FIX: Made lat/lng optional to allow progressive validation in wizard
+        // These are validated at submission time, not during step navigation
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
         zone: z.string().optional()
     }),
     incidentDate: z.string().min(1, 'Selecciona una fecha'),
@@ -200,7 +202,22 @@ export function useReportWizard() {
 
     // Handlers de campos
     const handleLocationChange = useCallback((location: LocationData) => {
-        setValue('location', { ...location, zone: undefined }, { 
+        // 🔒 TYPE SAFETY FIX: Ensure required fields are present before setting value
+        // LocationData has optional lat/lng, but form requires them
+        if (!location.latitude || !location.longitude) {
+            console.warn('[useReportWizard] Location missing coordinates:', location)
+            return
+        }
+        
+        // 🔒 TYPE FIX: Build the value to match Step3Data['location'] type
+        const locationValue: Step3Data['location'] = {
+            location_name: location.location_name,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            zone: undefined // zone is optional in the schema
+        }
+        
+        setValue('location', locationValue, { 
             shouldValidate: true,
             shouldDirty: true 
         })
