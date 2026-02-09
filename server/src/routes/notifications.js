@@ -69,6 +69,7 @@ router.patch('/read-all', requireAnonymousId, async (req, res) => {
         try {
             const { realtimeEvents } = await import('../utils/eventEmitter.js');
             realtimeEvents.emitUserNotification(anonymousId, {
+                eventId: `read-all-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
                 type: 'notifications-read-all'
             });
         } catch (err) {
@@ -208,6 +209,7 @@ router.delete('/', requireAnonymousId, async (req, res) => {
         try {
             const { realtimeEvents } = await import('../utils/eventEmitter.js');
             realtimeEvents.emitUserNotification(anonymousId, {
+                eventId: `deleted-all-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
                 type: 'notifications-deleted-all'
             });
         } catch (err) {

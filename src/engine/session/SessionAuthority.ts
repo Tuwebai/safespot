@@ -20,6 +20,7 @@ import { realtimeOrchestrator } from '../../lib/realtime/RealtimeOrchestrator';
 import { dataIntegrityEngine } from '../../engine/integrity';
 import { trafficController } from '../../engine/traffic/TrafficController';
 import { locationAuthority } from '../../engine/location/LocationAuthorityEngine';
+import { stopSessionWatchdog } from '../../lib/identity';
 
 export enum SessionState {
     UNINITIALIZED = 'UNINITIALIZED',
@@ -294,6 +295,7 @@ class SessionAuthority {
         dataIntegrityEngine.clear();
         trafficController.clear();
         locationAuthority.clear();
+        stopSessionWatchdog(); // 🧹 Stop identity watchdog to prevent memory leaks
 
         // ✅ SECURITY: Preserve existing signature on logout
         // Signature is tied to anonymousId, which persists across auth sessions
@@ -328,6 +330,7 @@ class SessionAuthority {
         dataIntegrityEngine.clear();
         trafficController.clear();
         locationAuthority.clear();
+        stopSessionWatchdog(); // 🧹 Stop identity watchdog to prevent memory leaks
         
         this.notify();
     }

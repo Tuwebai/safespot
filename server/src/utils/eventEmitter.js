@@ -146,7 +146,6 @@ class RealtimeEvents extends EventEmitter {
      */
     async emitCommentUpdate(reportId, comment, originClientId) {
         await this.broadcast(`comment-update:${reportId}`, { comment, originClientId });
-        console.log(`[Realtime] Broadcasted comment update for report ${reportId}`);
     }
 
     /**
@@ -160,7 +159,6 @@ class RealtimeEvents extends EventEmitter {
             aggregateType: 'report',
             aggregateId: reportId
         });
-        console.log(`[Realtime] Broadcasted comment delete for report ${reportId} (ID: ${eventId || 'new'})`);
     }
 
     /**
@@ -210,7 +208,6 @@ class RealtimeEvents extends EventEmitter {
     emitChatMessage(roomId, message, originClientId) {
         // Broad message for all participants
         this.broadcast(`chat:${roomId}`, { message, originClientId });
-        console.log(`[Realtime] Broadcasted chat message for room ${roomId}`);
     }
 
     /**
@@ -226,10 +223,25 @@ class RealtimeEvents extends EventEmitter {
     /**
      * Emit a targeted chat update for a specific user
      * @param {string} userId
-     * @param {object} payload
+     * @param {object} payload - { eventId, type, message, ... }
+     * 
+     * 🔴 ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinístico.
+     * - Para mensajes persistidos: usar message.id de la DB
+     * - Para eventos de control (typing, etc.): usar formato `action-conversationId-userId-timestamp`
      */
     emitUserChatUpdate(userId, payload) {
-        this.broadcast(`user-chat-update:${userId}`, payload);
+        if (!payload?.eventId) {
+            throw new Error(`[EnterpriseGuard] emitUserChatUpdate requires deterministic eventId. Received: ${JSON.stringify(payload)}`);
+        }
+        
+        // Enrich with eventId and serverTimestamp for SSE contract
+        const enrichedPayload = {
+            ...payload,
+            eventId: payload.eventId,
+            serverTimestamp: payload.serverTimestamp || Date.now()
+        };
+        
+        this.broadcast(`user-chat-update:${userId}`, enrichedPayload);
     }
 
     /**
@@ -238,8 +250,15 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - { messageId, conversationId, deliveredAt, traceId }
      */
     emitMessageDelivered(userId, payload) {
-        console.log(`[RealtimeEvents] 📬 Emitting message.delivered to ${userId?.substring(0, 8)}...`, payload);
-        this.broadcast(`user-message-delivered:${userId}`, payload);
+        // 🏛️ ENTERPRISE FIX: Enrich with required SSE contract fields
+        const enrichedPayload = {
+            ...payload,
+            eventId: payload.traceId || `ack_${Date.now()}`, // Use traceId as eventId
+            serverTimestamp: payload.deliveredAt || Date.now(),
+            originClientId: 'backend',
+            type: 'message.delivered'
+        };
+        this.broadcast(`user-message-delivered:${userId}`, enrichedPayload);
     }
 
     /**
@@ -248,7 +267,15 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - { roomId, readerId }
      */
     emitMessageRead(userId, payload) {
-        this.broadcast(`user-message-read:${userId}`, payload);
+        // 🏛️ ENTERPRISE FIX: Enrich with required SSE contract fields
+        const enrichedPayload = {
+            ...payload,
+            eventId: `read_${Date.now()}`,
+            serverTimestamp: Date.now(),
+            originClientId: 'backend',
+            type: 'message.read'
+        };
+        this.broadcast(`user-message-read:${userId}`, enrichedPayload);
     }
 
     /**
@@ -341,7 +368,6 @@ class RealtimeEvents extends EventEmitter {
             type: 'achievement',
             notification
         });
-        console.log(`[Realtime] Broadcasted badge earned for ${anonymousId}`);
     }
 
     /**
@@ -353,7 +379,6 @@ class RealtimeEvents extends EventEmitter {
             type: 'new-user',
             anonymousId
         });
-        console.log(`[Realtime] Broadcasted new user creation: ${anonymousId}`);
     }
 
     /**
@@ -374,7 +399,6 @@ class RealtimeEvents extends EventEmitter {
             aggregateType: 'report',
             aggregateId: reportId
         });
-        console.log(`[Realtime] Broadcasted status change for ${reportId}`);
     }
 
     /**
@@ -384,17 +408,29 @@ class RealtimeEvents extends EventEmitter {
      */
     emitUserBan(anonymousId, payload) {
         this.broadcast(`user-status:${anonymousId}`, payload);
-        console.log(`[Realtime] Broadcasted ban event for ${anonymousId}`);
     }
 
     /**
      * Emit a user-specific notification
      * @param {string} anonymousId
-     * @param {object} payload - { type, notification, ... }
+     * @param {object} payload - { eventId, type, notification, ... }
+     * 
+     * 🔴 ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinístico (DB ID).
+     * NUNCA usar crypto.randomUUID() aquí. El eventId debe venir de la entidad persistida.
      */
     emitUserNotification(anonymousId, payload) {
-        this.broadcast(`user-notification:${anonymousId}`, payload);
-        console.log(`[Realtime] Broadcasted notification for user ${anonymousId}`);
+        if (!payload?.eventId) {
+            throw new Error(`[EnterpriseGuard] emitUserNotification requires deterministic eventId from database. Received: ${JSON.stringify(payload)}`);
+        }
+        
+        // Enrich with eventId if not present at root level (for SSE contract)
+        const enrichedPayload = {
+            ...payload,
+            eventId: payload.eventId,
+            serverTimestamp: payload.serverTimestamp || Date.now()
+        };
+        
+        this.broadcast(`user-notification:${anonymousId}`, enrichedPayload);
     }
 
     /**
@@ -407,17 +443,10 @@ class RealtimeEvents extends EventEmitter {
             report,
             originClientId
         };
-        console.log(`[AUDIT emitReportUpdate] Broadcasting for ${report.id}:`, {
-            title: report.title,
-            hasReport: !!report,
-            payloadKeys: Object.keys(eventPayload),
-            timestamp: Date.now()
-        });
         await this.broadcast(`report-update:${report.id}`, eventPayload, {
             aggregateType: 'report',
             aggregateId: report.id
         });
-        console.log(`[Realtime] Broadcasted report update for ${report.id}`);
     }
 
     /**

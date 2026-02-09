@@ -1133,6 +1133,18 @@ export const chatsApi = {
       method: 'POST',
     });
   },
+  // 🏛️ ENTERPRISE FIX: Reconcile message status for offline delivery receipts
+  reconcileStatus: async (params: { delivered?: string[]; read?: string[] }): Promise<{
+    reconciled: { delivered: string[]; read: string[] };
+    alreadyDelivered: string[];
+    alreadyRead: string[];
+    errors: Array<{ messageId: string; error: string }>;
+  }> => {
+    return apiRequest('/chats/messages/reconcile-status', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
   uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append('image', file);

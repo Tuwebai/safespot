@@ -31,6 +31,14 @@ class TrafficController {
     private queueDepth = 0;
     private readonly MAX_QUEUE_DEPTH = 50; // 🛑 Bounded Queue Limit (Phase F)
 
+    // 📊 Stats básicos (proporcional al volumen de SafeSpot)
+    private stats = {
+        rateLimitHits: 0,
+        queuedActions: 0,
+        completedActions: 0,
+        rejectedActions: 0,
+    };
+
     /**
      * Semáforo: Wait until traffic is allowed
      */
@@ -58,6 +66,7 @@ class TrafficController {
     reportRateLimit() {
         if (this.state === TrafficState.RATE_LIMITED || this.state === TrafficState.BACKING_OFF) return;
 
+        this.stats.rateLimitHits++;
         this.state = TrafficState.RATE_LIMITED;
         const delay = this.globalBackoff.getDelay();
 
@@ -98,10 +107,12 @@ class TrafficController {
     async enqueueSerial<T>(action: () => Promise<T>, label = 'anonymous'): Promise<T> {
         // 🛑 Bounded Queue Check (M7 Fix)
         if (this.queueDepth >= this.MAX_QUEUE_DEPTH) {
+            this.stats.rejectedActions++;
             console.error(`[Traffic] 🛑 SERIAL_QUEUE FULL (${this.queueDepth}). Rejecting: ${label}`);
             throw new Error('Traffic Congestion: Serial Queue Full');
         }
 
+        this.stats.queuedActions++;
         this.queueDepth++;
 
         const result = this.serialQueue.then(async () => {
@@ -118,6 +129,7 @@ class TrafficController {
 
             try {
                 const result = await action();
+                this.stats.completedActions++;
                 telemetry.emit({
                     engine: 'Traffic',
                     severity: TelemetrySeverity.DEBUG,
@@ -150,6 +162,25 @@ class TrafficController {
         return this.state;
     }
 
+    // 📊 Métricas básicas
+    getMetrics(): { rateLimitHits: number; queuedActions: number; completedActions: number; rejectedActions: number } {
+        return { ...this.stats };
+    }
+
+    getHealthStatus(): 'HEALTHY' | 'CONGESTED' | 'RATE_LIMITED' {
+        if (this.state === TrafficState.RATE_LIMITED || this.state === TrafficState.BACKING_OFF) {
+            return 'RATE_LIMITED';
+        }
+        if (this.queueDepth > this.MAX_QUEUE_DEPTH * 0.8 || this.state === TrafficState.CONGESTED) {
+            return 'CONGESTED';
+        }
+        return 'HEALTHY';
+    }
+
+    resetMetrics(): void {
+        this.stats = { rateLimitHits: 0, queuedActions: 0, completedActions: 0, rejectedActions: 0 };
+    }
+
     /**
      * 🧹 MEMORY FIX: Limpia serialQueue, queueDepth y estado
      * Llamar en logout para prevenir memory leaks y contaminación de sesión
@@ -171,6 +202,9 @@ class TrafficController {
             }
             this.state = TrafficState.IDLE;
         }
+        
+        // Resetear stats
+        this.resetMetrics();
         
         console.debug('[Traffic] 🧹 Cleared queue and reset backoff');
     }

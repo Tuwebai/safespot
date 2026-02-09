@@ -169,7 +169,10 @@ self.addEventListener('push', (event: any) => {
             const messageId = chatData.messageId || chatData.entityId;
             const recipientId = chatData.recipientId;
 
-            // SSOT Check: PostgreSQL is the ONLY truth
+            // 🏛️ ENTERPRISE FIX: Suppress ONLY if READ (not delivered)
+            // delivered = device received message (via SSE/Push)
+            // read = user actually saw the message
+            // We show Push notification for delivered messages because user may not have seen them
             if (messageId) {
                 try {
                     const response = await fetch(`${__API_BASE_URL__}/realtime/message-status/${messageId}`, {
@@ -177,9 +180,10 @@ self.addEventListener('push', (event: any) => {
                     });
                     if (response.ok) {
                         const status = await response.json();
-                        // delivered OR read → SUPPRESS
-                        if (status.delivered === true || status.read === true) {
-                            console.log(`[SW] 🔕 Message ${messageId} already delivered/read (SSOT). Suppressing Push.`);
+                        // read → SUPPRESS (user already saw it)
+                        // delivered → SHOW (device got it but user may not have seen)
+                        if (status.read === true) {
+                            console.log(`[SW] 🔕 Message ${messageId} already READ (SSOT). Suppressing Push.`);
                             return;
                         }
                     }
@@ -193,6 +197,9 @@ self.addEventListener('push', (event: any) => {
             // El SW SOLO confirma recepción, NO hace lógica de dominio
             // Orchestrator sigue siendo autoridad para SSE (app abierta)
             if ((chatData.type === 'chat' || data.type === 'chat') && messageId && recipientId) {
+                // DEBUG: Log ACK attempt
+                console.log(`[SW] 📬 Attempting ACK for message: ${messageId}, recipient: ${recipientId}`);
+                
                 // Fire-and-forget ACK: NO retry, NO lógica, NO persistencia
                 fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
                     method: 'POST',
@@ -200,11 +207,17 @@ self.addEventListener('push', (event: any) => {
                         'Content-Type': 'application/json',
                         'X-Anonymous-Id': recipientId
                     }
-                }).then(() => {
-                    console.log(`[SW] 📬📬 Push ACK sent for message: ${messageId}`);
-                }).catch(() => {
-                    // Silently fail - Orchestrator will ACK when app opens
-                    console.warn(`[SW] Push ACK failed for ${messageId} (will retry on app open)`);
+                }).then((response) => {
+                    if (response.ok) {
+                        console.log(`[SW] 📬📬 Push ACK sent successfully for message: ${messageId}`);
+                    } else if (response.status === 404) {
+                        console.warn(`[SW] ⚠️ Message ${messageId} not found (404). Stopping ACK attempts.`);
+                        // Don't retry 404s - message doesn't exist or no access
+                    } else {
+                        console.warn(`[SW] ⚠️ Push ACK failed with status ${response.status} for ${messageId}`);
+                    }
+                }).catch((err) => {
+                    console.warn(`[SW] Push ACK network error for ${messageId}:`, err);
                 });
             }
 

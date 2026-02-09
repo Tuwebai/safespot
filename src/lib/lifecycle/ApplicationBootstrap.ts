@@ -110,16 +110,12 @@ class ApplicationBootstrapManager {
             } else {
                 // ✅ ENTERPRISE FIX: Subscribe to SessionAuthority state changes
                 // If identity is not ready yet (BOOTSTRAPPING), connect when it becomes READY
-                console.debug('[Bootstrap] Identity not ready. Subscribing to state changes...');
-
                 const unsubscribe = sessionAuthority.subscribe((state) => {
                     if (state === SessionState.READY || state === SessionState.DEGRADED) {
                         const currentId = sessionAuthority.getAnonymousId();
 
                         if (currentId) {
-                            console.debug(`[Bootstrap] Identity ready (${state}). Connecting SSE...`);
                             realtimeOrchestrator.connect(currentId);
-
                             // Cleanup: Unsubscribe after first successful connection
                             unsubscribe();
                         }

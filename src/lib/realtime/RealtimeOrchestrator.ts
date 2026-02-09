@@ -8,7 +8,9 @@ import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 import { reportsCache, statsCache, commentsCache } from '../cache-helpers';
 import { reportSchema, Comment } from '../schemas';
 import { upsertInList } from '@/lib/realtime-utils';
-import { NOTIFICATIONS_QUERY_KEY } from '@/hooks/queries/useNotificationsQuery';
+// NOTIFICATIONS_QUERY_KEY dinámico - debe incluir anonymousId para consistencia
+const getNotificationsQueryKey = (anonymousId: string | null): string[] => 
+    anonymousId ? ['notifications', 'list', anonymousId] : ['notifications', 'list'];
 import { eventAuthorityLog } from './EventAuthorityLog';
 import { queryKeys } from '../queryKeys';
 import { leaderElection, LeadershipState } from './LeaderElection';
@@ -32,10 +34,12 @@ import { leaderElection, LeadershipState } from './LeaderElection';
  * - Hooks = Idempotent reflections for UI responsiveness.
  */
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface RealtimeEvent {
     eventId: string;
     serverTimestamp: number;
     type: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     payload: any;
     originClientId?: string;
     isReplay?: boolean;
@@ -43,7 +47,25 @@ export interface RealtimeEvent {
 
 type EventCallback = (event: RealtimeEvent) => void;
 
-const CONTROL_EVENTS = ['connected', 'heartbeat', 'presence', 'presence-update', 'typing', 'chat-typing', 'chat-presence', 'notification', 'error'];
+/**
+ * PROTOCOL_EVENTS: Eventos de infraestructura del canal SSE.
+ * Estos eventos NO representan cambios de dominio, sino metadatos del canal
+ * (heartbeats, estado de conexión, indicadores de escritura, etc.).
+ * Se descartan del pipeline de dominio porque no requieren persistencia ni lógica de negocio.
+ * 
+ * ⚠️ NUNCA agregar eventos de dominio aquí (ej: 'notification', 'message', 'report-create').
+ * Esos deben pasar a processValidatedData() para su manejo apropiado.
+ */
+const PROTOCOL_EVENTS = [
+  'connected',
+  'heartbeat',
+  'presence',
+  'presence-update',
+  'typing',
+  'chat-typing',
+  'chat-presence',
+  'error'
+];
 
 // 🏛️ STATUS_EVENTS: Eventos de ACK/status que NO necesitan persistencia en IndexedDB
 // pero SÍ necesitan notificar a los listeners para actualizar UI
@@ -70,6 +92,9 @@ const CHAT_EVENTS = [
     'message-pinned'
 ];
 
+// 🏛️ ENTERPRISE: Circuit Breaker State
+enum CircuitState { CLOSED = 'CLOSED', OPEN = 'OPEN', HALF_OPEN = 'HALF_OPEN' }
+
 class RealtimeOrchestrator {
     private listeners: Set<EventCallback> = new Set();
     private activeSubscriptions: string[] = [];
@@ -79,15 +104,44 @@ class RealtimeOrchestrator {
     private status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
     private syncChannel!: BroadcastChannel; // Definite assignment via constructor
 
+    // 🏛️ ENTERPRISE: Circuit Breaker (previene cascada de fallos)
+    private circuitState: CircuitState = CircuitState.CLOSED;
+    private circuitFailureCount: number = 0;
+    private readonly CIRCUIT_THRESHOLD = 5;
+    private readonly CIRCUIT_TIMEOUT_MS = 30000;
+    private circuitResetTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // 📊 Stats básicos (suficiente para volumen de SafeSpot)
+    private stats = {
+        received: 0,
+        processed: 0,
+        dropped: 0,
+        failed: 0,
+    };
+
+    // 🛡️ MEM-ROOT-001: Flag para prevenir inicialización múltiple
+    private isInitialized = false;
+
     constructor() {
         // 🛡️ MEM-ROOT-001: SSE Safety Guard
         // Prevent multiple instances during HMR or component remounts
-        if ((window as any).__REALTIME_ORCHESTRATOR_ACTIVE__) {
-            console.warn('[Orchestrator] ⚠️ Instance already active. Reusing existing.');
-            return (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((window as any).__REALTIME_ORCHESTRATOR_INSTANCE__) {
+            console.warn('[Orchestrator] ⚠️ Instance already exists. Use getInstance() or realtimeOrchestrator export.');
+            return;
         }
-        (window as any).__REALTIME_ORCHESTRATOR_ACTIVE__ = true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__ = this;
+
+        this.initialize();
+    }
+
+    /**
+     * 🛡️ MEM-ROOT-001: Inicialización lazy para evitar doble setup
+     */
+    private initialize(): void {
+        if (this.isInitialized) return;
+        this.isInitialized = true;
 
         this.syncChannel = new BroadcastChannel('safespot-m11-events');
         this.syncChannel.onmessage = (e) => this.handleSyncEvent(e.data);
@@ -95,16 +149,13 @@ class RealtimeOrchestrator {
         // 👑 Leadership Failover handler
         leaderElection.onChange((state) => {
             if (state === LeadershipState.LEADING) {
-                console.log('[Orchestrator] 👑 Leadership assumed. Waking up context...');
                 this.wake('leadership_assumed');
-            } else {
-                // Too noisy
-                console.debug('[Orchestrator] 👥 Following active leader.');
             }
         });
 
         // 🚑 SSE Wake listener (Idle Recovery)
         if (typeof window !== 'undefined') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             window.addEventListener('safespot:sse_wake', (e: any) => {
                 console.log(`[Orchestrator] 🚑 SSE Wake detected for ${e.detail?.url}. Triggering catchup...`);
                 this.resync().catch(err => {
@@ -118,17 +169,6 @@ class RealtimeOrchestrator {
         }
     }
 
-    // 🚥 PHASE D TELEMETRY
-    private stats = {
-        received: 0,
-        processed: 0,
-        dropped: 0
-    };
-
-    public getHealthStatus() {
-        return this.status;
-    }
-
     /**
      * connect() - Subscribes to ssePool and starts orchestration
      */
@@ -139,8 +179,9 @@ class RealtimeOrchestrator {
 
         // 1. User Stream (Domain Events: Chats, Notifications, Presence)
         if (!this.activeSubscriptions.includes(userUrl)) {
-            console.debug('[Orchestrator] 🚀 Connecting to user stream...');
             ssePool.subscribe(userUrl, 'message', (event) => this.processRawEvent(event, 'user'));
+            ssePool.subscribe(userUrl, 'message.delivered', (event) => this.processRawEvent(event, 'user'));
+            ssePool.subscribe(userUrl, 'message.read', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'notification', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'presence-update', (event) => this.processRawEvent(event, 'user'));
             this.activeSubscriptions.push(userUrl);
@@ -160,6 +201,7 @@ class RealtimeOrchestrator {
      * processRawEvent() - Entry point for SSE network events
      */
     private async processRawEvent(event: MessageEvent, channel: string) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let data: any;
         try {
             data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -169,6 +211,22 @@ class RealtimeOrchestrator {
         }
 
         const type = data.type || event.type;
+        
+        // Message-related events processed silently in production
+        
+        // 🏛️ WHATSAPP-GRADE: ACK inmediato para mensajes nuevos
+        // Esto debe hacerse ANTES de cualquier procesamiento que pueda fallar
+        // Soporta tanto 'new-message' (room stream) como 'chat-update' (user stream)
+        if ((type === 'new-message' || type === 'chat-update') && leaderElection.isLeader()) {
+            const payload = data.partial || data.payload || data;
+            const message = payload.message || (payload.id && !payload.action ? payload : null);
+            
+            if (message?.id && message.sender_id && message.sender_id !== this.userId) {
+                this.acknowledgeMessageDelivered(message.id).catch(() => {});
+            }
+        }
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const traceId = (event as any).traceId || telemetry.getTraceId();
 
         // 📡 MOTOR 8: Propagate Root Trace
@@ -186,11 +244,19 @@ class RealtimeOrchestrator {
      * processValidatedData() - The Core Engine (Invariante de Oro)
      * Authoritative logic for persistence, notification, and ACK.
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async processValidatedData(data: any, type: string, channel: string) {
         const { eventId, serverTimestamp, originClientId } = data;
+        
+        // 🏛️ ENTERPRISE: Circuit breaker check
+        if (this.isCircuitOpen()) {
+            console.warn(`[Orchestrator] 🔴 Circuit open, dropping event: ${eventId}`);
+            this.stats.dropped++;
+            return;
+        }
 
         // 1. Classification & Control Bypass
-        if (CONTROL_EVENTS.includes(type)) {
+        if (PROTOCOL_EVENTS.includes(type)) {
             // 📡 MOTOR 8: Signal Control Event Bypass
             telemetry.emit({
                 engine: 'Orchestrator',
@@ -198,7 +264,7 @@ class RealtimeOrchestrator {
                 payload: {
                     action: 'event_discarded_by_filter',
                     type,
-                    reason: 'control_event',
+                    reason: 'protocol_event',
                     context: { route: window.location.pathname }
                 }
             });
@@ -208,12 +274,11 @@ class RealtimeOrchestrator {
         // 1.5 🏛️ STATUS_EVENTS: Notificar sin persistir (Ticks de entrega/lectura)
         // Estos eventos son idempotentes y no críticos, solo actualizan UI
         if (STATUS_EVENTS.includes(type)) {
-            console.debug(`[Orchestrator] 📬 Status event received: ${type}`);
             const statusEvent: RealtimeEvent = {
                 eventId: data.eventId || `status_${Date.now()}`,
                 serverTimestamp: data.serverTimestamp || Date.now(),
                 type,
-                payload: data.payload || data,
+                payload: data.partial || data.payload || data,
                 originClientId: data.originClientId,
                 isReplay: false
             };
@@ -250,7 +315,8 @@ class RealtimeOrchestrator {
             eventAuthorityLog.record({
                 eventId,
                 type,
-                domain: (channel.startsWith('social') ? 'social' : channel) as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            domain: (channel.startsWith('social') ? 'social' : channel) as any,
                 serverTimestamp,
                 processedAt: Date.now(),
                 originClientId: originClientId || 'unknown'
@@ -308,29 +374,29 @@ class RealtimeOrchestrator {
             await this.processSocialDomainLogic(type, data);
         }
 
-        // 🏛️ ARCHITECTURAL FIX: ACK de mensaje (INVARIANTE 1.5 - Después de PERSIST)
-        // SOLO el Orchestrator puede marcar mensajes como delivered
-        // Motor 11: SOLO el líder envía ACKs al backend
+        // 🏛️ WHATSAPP-GRADE DELIVERY RECEIPTS
+        // Segundo tick = mensaje entregado al dispositivo del receptor
+        // Esto ocurre en dos escenarios:
+        // 1. App cerrada/background: Push llega → SW envía ACK
+        // 2. App abierta (SSE): Orchestrator recibe mensaje → envía ACK
         if (leaderElection.isLeader() && (type === 'new-message' || type === 'chat-update')) {
-            // Robust Message Resolution
-            // Try explicit 'message' field, or fallback to payload itself if it looks like a message
-            const payload = data.payload || data;
-            const message = payload.message || (payload.id && !payload.action ? payload : null);
+            // El mensaje puede venir en diferentes estructuras:
+            // - new-message: data.message o data.payload.message
+            // - chat-update: data.partial.message
+            const payload = data.partial || data.payload || data;
+            const message = payload.message || data.message || (payload.id && !payload.action ? payload : null);
 
-            // 🛡️ ACK DEFENSIVE GUARD
-            // Validate it is truly an ACK-able persistent message, NOT a control signal.
-            const isAckable = message?.id
-                && !payload.action // 'action' implies signal (typing, read, deleted) -> NO ACK
-                && !message.is_read // Optimization: don't ack read messages
-                && message.sender_id // Must have sender
-                && message.sender_id !== this.userId; // Don't ACK own messages
+            // Solo ACK si:
+            // - Es un mensaje real (no signal de typing/read)
+            // - El mensaje no es mío (no ACK mis propios mensajes)
+            const isDeliverable = message?.id
+                && !payload.action
+                && message.sender_id
+                && message.sender_id !== this.userId;
 
-            if (isAckable) {
-                this.acknowledgeMessageDelivered(message.id).catch(err => {
-                    // Suppress 404s from logs if they happen (race condition), but log others
-                    if (!String(err).includes('404')) {
-                        console.error('[Orchestrator] ⚠️ Message ACK failed for:', message.id, err);
-                    }
+            if (isDeliverable) {
+                this.acknowledgeMessageDelivered(message.id).catch(() => {
+                    // Silently fail - no crítico
                 });
             }
         }
@@ -353,6 +419,7 @@ class RealtimeOrchestrator {
                 cb(realtimeEvent);
             } catch (err) {
                 console.error('[Orchestrator] Error in listener callback:', err);
+                this.recordFailure();
             }
         });
 
@@ -368,6 +435,7 @@ class RealtimeOrchestrator {
         eventAuthorityLog.record({
             eventId,
             type,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             domain: (channel.startsWith('social') ? 'social' : channel) as any,
             serverTimestamp,
             processedAt: Date.now(),
@@ -375,11 +443,13 @@ class RealtimeOrchestrator {
         });
 
         this.stats.processed++;
+        this.recordSuccess(); // 🏛️ Cierra circuit breaker si estaba HALF_OPEN
     }
 
     /**
      * handleSyncEvent() - Entry for events received from the Leader
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private handleSyncEvent(sync: { data: any, type: string, channel: string }) {
         if (leaderElection.isLeader()) return; // Leaders ignore their own (or others') broadcast
 
@@ -390,6 +460,7 @@ class RealtimeOrchestrator {
     /**
      * processSocialDomainLogic() - Authoritative state changes for comments and likes
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async processSocialDomainLogic(type: string, data: any) {
         const payload = data.partial || data.payload || data;
         const id = data.id || payload.id;
@@ -406,8 +477,9 @@ class RealtimeOrchestrator {
                     // Problema: Si comentario optimista está en lista pero sin detail query → doble delta
                     // Solución: Verificar contra la lista normalizada primero
 
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const list = queryClient.getQueryData<any>(
-                        queryKeys.comments.byReport(comment.report_id)
+                        queryKeys.comments.byReport(comment.report_id as string)
                     );
 
                     // Normalizar lista (puede ser array directo o { comments: [...] })
@@ -470,22 +542,27 @@ class RealtimeOrchestrator {
     /**
      * processUserDomainLogic() - Authoritative state changes for the personal user stream
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async processUserDomainLogic(type: string, data: any) {
         const payload = data.payload || data;
+        // 🏛️ ENTERPRISE FIX: Query key consistente con useNotificationsQuery
+        const notificationsQueryKey = getNotificationsQueryKey(this.userId);
 
         try {
             switch (type) {
                 case 'notification': {
                     if (payload.notification) {
-                        upsertInList(queryClient, NOTIFICATIONS_QUERY_KEY, payload.notification);
+                        upsertInList(queryClient, notificationsQueryKey, payload.notification);
                     }
                     if (payload.type === 'notifications-read-all') {
-                        queryClient.setQueryData(['notifications', 'list', this.userId], (old: any) =>
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        queryClient.setQueryData(notificationsQueryKey, (old: any) =>
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             Array.isArray(old) ? old.map((n: any) => ({ ...n, is_read: true })) : []
                         );
                     }
                     if (payload.type === 'notifications-deleted-all') {
-                        queryClient.setQueryData(['notifications', 'list', this.userId], []);
+                        queryClient.setQueryData(notificationsQueryKey, []);
                     }
                     if (payload.type === 'follow') {
                         queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
@@ -512,6 +589,7 @@ class RealtimeOrchestrator {
                         }
 
                         // 🏅 SOCIAL SSOT: Update gamification cache and profile
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         queryClient.setQueryData(queryKeys.gamification.summary, (old: any) => {
                             if (!old) return old;
                             return {
@@ -539,6 +617,7 @@ class RealtimeOrchestrator {
     /**
      * processFeedDomainLogic() - Authoritative state changes for the global feed
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async processFeedDomainLogic(type: string, data: any) {
         // SSOT: Use partial for data, data.id for identity
         const payload = data.partial || data.payload || data;
@@ -608,21 +687,15 @@ class RealtimeOrchestrator {
     }
 
     /**
-     * Este método es el SOLO lugar que puede marcar mensajes como "entregados".
-     * Reemplaza los paths de ACK proactivos anteriores.
-     * 
-     * Invariante:
-     * - RealtimeOrchestrator (SSE) y ServiceWorker (Push) son los únicos que reportan "delivered"
-     *   al recibir el payload crudo del transporte.
+     * Acknowledge message delivered to backend
+     * Called when this client receives a message (via SSE or Push)
+     * INVARIANTE: WhatsApp-grade delivery receipts
      */
     private async acknowledgeMessageDelivered(messageId: string): Promise<void> {
-        if (!this.userId) {
-            console.warn('[Orchestrator] Cannot ACK message: No userId');
-            return;
-        }
+        if (!this.userId) return;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/chats/messages/${messageId}/ack-delivered`, {
+            await fetch(`${API_BASE_URL}/chats/messages/${messageId}/ack-delivered`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -630,14 +703,9 @@ class RealtimeOrchestrator {
                     'X-Client-Id': this.myClientId
                 }
             });
-
-            if (response.ok) {
-                console.debug(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
-            } else {
-                console.warn(`[Orchestrator] Message ACK failed: ${response.status} for ${messageId}`);
-            }
-        } catch (err) {
-            console.error('[Orchestrator] ⚠️ Message delivery ACK network error:', messageId, err);
+            console.debug(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
+        } catch {
+            // Silently fail - no es crítico
         }
     }
 
@@ -676,6 +744,7 @@ class RealtimeOrchestrator {
         } catch (err) {
             console.error('[Orchestrator] ❌ Resync failed. Entering DEGRADED mode.', err);
             this.status = 'DEGRADED';
+            this.recordFailure(); // 🏛️ ENTERPRISE: Track failure
 
             // 🧠 MOTOR 4: Notify status change
             dataIntegrityEngine.processEvent({ type: 'realtime:status', status: 'DEGRADED' });
@@ -793,6 +862,7 @@ class RealtimeOrchestrator {
     /**
      * processChatDomainLogic() - Domain logic for chat events (presence, typing, etc.)
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private async processChatDomainLogic(_type: string, _data: any) {
         // Many chat events are ephemeral (typing) and don't need cache persistence
         // but some (new-message, delivered) do.
@@ -823,8 +893,73 @@ class RealtimeOrchestrator {
             this.syncChannel.close();
         }
         
+        // 🏛️ ENTERPRISE: Limpiar circuit breaker
+        if (this.circuitResetTimeout) {
+            clearTimeout(this.circuitResetTimeout);
+            this.circuitResetTimeout = null;
+        }
+        this.circuitState = CircuitState.CLOSED;
+        this.circuitFailureCount = 0;
+        
         console.debug('[Orchestrator] 🧹 Cleared listeners and subscriptions');
+    }
+
+    // 🏛️ ENTERPRISE: Circuit Breaker Methods
+    private recordSuccess(): void {
+        if (this.circuitState === CircuitState.HALF_OPEN) {
+            this.circuitState = CircuitState.CLOSED;
+            this.circuitFailureCount = 0;
+            console.log('[Orchestrator] 🔓 Circuit breaker CLOSED');
+        }
+    }
+
+    private recordFailure(): void {
+        this.circuitFailureCount++;
+        this.stats.failed++;
+        
+        if (this.circuitFailureCount >= this.CIRCUIT_THRESHOLD) {
+            this.openCircuit();
+        }
+    }
+
+    private openCircuit(): void {
+        this.circuitState = CircuitState.OPEN;
+        console.error(`[Orchestrator] 🔴 Circuit breaker OPEN (threshold: ${this.CIRCUIT_THRESHOLD})`);
+        
+        telemetry.emit({
+            engine: 'Orchestrator',
+            severity: TelemetrySeverity.ERROR,
+            payload: { action: 'circuit_breaker_open', failures: this.circuitFailureCount }
+        });
+        
+        // Auto-reset después de timeout
+        this.circuitResetTimeout = setTimeout(() => {
+            this.circuitState = CircuitState.HALF_OPEN;
+            console.log('[Orchestrator] 🟡 Circuit breaker HALF_OPEN, testing...');
+        }, this.CIRCUIT_TIMEOUT_MS);
+    }
+
+    private isCircuitOpen(): boolean {
+        return this.circuitState === CircuitState.OPEN;
+    }
+
+    // 📊 Métricas básicas
+    getMetrics(): { received: number; processed: number; dropped: number; failed: number; circuitState: CircuitState } {
+        return { ...this.stats, circuitState: this.circuitState };
+    }
+
+    getHealthStatus(): 'HEALTHY' | 'DEGRADED' | 'CRITICAL' | 'DISCONNECTED' {
+        if (this.circuitState === CircuitState.OPEN) return 'CRITICAL';
+        if (this.stats.failed > this.stats.processed * 0.1) return 'DEGRADED';
+        return this.status;
+    }
+
+    resetMetrics(): void {
+        this.stats = { received: 0, processed: 0, dropped: 0, failed: 0 };
     }
 }
 
-export const realtimeOrchestrator = new RealtimeOrchestrator();
+// 🛡️ MEM-ROOT-001: Singleton getter para evitar instancias múltiples
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const existingInstance = (typeof window !== 'undefined' && (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__) as RealtimeOrchestrator | undefined;
+export const realtimeOrchestrator = existingInstance || new RealtimeOrchestrator();

@@ -40,18 +40,33 @@ router.get('/catchup', async (req, res) => {
     try {
         const sinceTs = parseInt(since);
 
-        // 1. Fetch missed Chat Messages OR missed Delivery ACKs
+        // 2. Get user ID first
+        const anonymousId = req.headers['x-anonymous-id'] || '00000000-0000-0000-0000-000000000000';
+        
+        // 1. Fetch missed Chat Messages (ONLY from user's conversations)
+        // 🏛️ SECURITY FIX: Filter by conversation membership
         const messageTask = pool.query(
             `SELECT m.* FROM chat_messages m
-             WHERE (EXTRACT(EPOCH FROM m.created_at) * 1000 > $1)
-             OR (EXTRACT(EPOCH FROM m.delivered_at) * 1000 > $1)
-             ORDER BY GREATEST(m.created_at, m.delivered_at) ASC LIMIT 50`,
-            [sinceTs]
+             INNER JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+             WHERE cm.user_id = $2
+               AND (EXTRACT(EPOCH FROM m.created_at) * 1000 > $1)
+             ORDER BY m.created_at ASC LIMIT 50`,
+            [sinceTs, anonymousId]
         );
-
-        // 2. Fetch missed Reports (New or Updated)
-        const anonymousId = req.headers['x-anonymous-id'] || '00000000-0000-0000-0000-000000000000';
         const userRole = req.user?.role || 'citizen';
+
+        // 1b. Fetch Delivery ACKs for messages that became delivered AFTER since
+        // 🏛️ ENTERPRISE FIX: Include delivery status updates for background sync
+        const deliveryTask = pool.query(
+            `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read, 
+                    m.delivered_at, m.read_at
+             FROM chat_messages m
+             WHERE m.sender_id = $2 
+               AND m.is_delivered = true
+               AND (EXTRACT(EPOCH FROM m.delivered_at) * 1000 > $1)
+             ORDER BY m.delivered_at ASC LIMIT 50`,
+            [sinceTs, anonymousId]
+        );
 
         const reportTask = pool.query(
             `SELECT 
@@ -76,9 +91,51 @@ router.get('/catchup', async (req, res) => {
             [sinceTs]
         );
 
-        const [messagesResult, reportsResult, commentsResult] = await Promise.all([messageTask, reportTask, commentTask]);
+        const [messagesResult, reportsResult, commentsResult, deliveryResult] = await Promise.all([messageTask, reportTask, commentTask, deliveryTask]);
 
         const events = [];
+
+        // Process Delivery ACKs (for background sync when app was closed)
+        // 🏛️ ENTERPRISE FIX: Sync delivery/read status for messages sent by this user
+        deliveryResult.rows.forEach(m => {
+            const deliveredAtTs = new Date(m.delivered_at).getTime();
+            
+            // Emit message.delivered event
+            events.push({
+                eventId: `ack_${m.id}_${deliveredAtTs}`,
+                serverTimestamp: deliveredAtTs,
+                type: 'message.delivered',
+                payload: {
+                    id: m.id,
+                    messageId: m.id,
+                    conversationId: m.conversation_id,
+                    deliveredAt: m.delivered_at,
+                    isDelivered: m.is_delivered,
+                    isRead: m.is_read,
+                    originClientId: 'system_catchup'
+                },
+                isReplay: true
+            });
+
+            // Also emit message.read if already read
+            if (m.is_read && m.read_at) {
+                const readAtTs = new Date(m.read_at).getTime();
+                events.push({
+                    eventId: `read_${m.id}_${readAtTs}`,
+                    serverTimestamp: readAtTs,
+                    type: 'message.read',
+                    payload: {
+                        id: m.id,
+                        messageId: m.id,
+                        conversationId: m.conversation_id,
+                        readAt: m.read_at,
+                        isRead: true,
+                        originClientId: 'system_catchup'
+                    },
+                    isReplay: true
+                });
+            }
+        });
 
         // Process Reports
         reportsResult.rows.forEach(r => {

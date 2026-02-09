@@ -1,7 +1,7 @@
 # SafeSpot Enterprise - AGENTS.md
 
 > **Última actualización:** 2026-02-08  
-> **Versión:** 2.2  
+> **Versión:** 2.3  
 > **Propósito:** Guía definitiva para agentes de código en el proyecto SafeSpot
 
 ---
@@ -28,6 +28,98 @@ SafeSpot es una aplicación **Enterprise Grade** con requisitos de auditoría M1
 | **NO** expandir el scope del cambio solicitado | "Mientras estoy acá..." → 💥 |
 | **NO** eliminar funciones, exports o campos existentes | APIs rotas, frontend crash |
 | **NO** usar `any` en código nuevo | Pérdida de type safety, errores en runtime |
+| **NO** pasarse de la raya con over-engineering | "Convertir un manejador SSE en mini-Kafka" → 💥 |
+| **NO** asumir sin verificar en código | Fixes en el lugar equivocado, regresiones |
+
+### 🧱 Regla Absoluta: Catchup & Realtime Isolation
+
+Un sistema de catchup o replay:
+- **NUNCA** puede devolver eventos, mensajes o estados que el usuario NO esté autorizado a recibir
+- **NUNCA** debe confiar en que el consumidor filtre eventos incorrectos
+- **DEBE** aplicar las mismas reglas de autorización que el realtime
+
+❌ **Está prohibido:**
+- Catchup global sin filtro por membresía
+- "Traer todo y que el frontend descarte"
+- Emitir eventos que luego producen 404 en ACKs
+
+✅ **Regla de oro:**
+> Si un evento llega al Orchestrator, ese evento DEBE ser válido, autorizable y ack‑able para ese usuario.
+
+Cualquier bug de realtime debe analizarse primero en la **FUENTE DE DATOS** antes de aplicar fixes reactivos.
+
+### 🆔 Regla Absoluta: ID Semántica
+
+🚫 **`tempId` NO EXISTE**
+
+Si un ID:
+- Se genera en el cliente
+- Pasa validación
+- Se persiste
+- Se emite por SSE
+
+**ENTONCES es el ID FINAL.**
+
+Nombrarlo `tempId` es un bug semántico. Si aparece `tempId` en el código:
+→ El diseño está mal  
+→ No se parchea, se elimina.
+
+### 🚨 REGLA INQUEBRANTABLE: No Asumir, Siempre Verificar en Código
+
+#### ❌ PROHIBIDO
+- Declarar "ENCONTRÉ EL PROBLEMA" sin haber recorrido el flujo completo
+- Proponer fixes basados en suposiciones
+- Inferir causas sin confirmar:
+  - Flujo backend → emitter → transporte → frontend
+  - Estado en base de datos
+  - Logs reales
+  - Código exacto involucrado
+- Aplicar cambios antes de aislar el origen real del bug
+
+#### ✅ OBLIGATORIO
+Antes de afirmar que se encontró el problema:
+1. **Trazar el flujo completo**
+   - Origen del evento
+   - Transformaciones intermedias
+   - Transporte (SSE / WS / Push)
+   - Recepción
+   - Procesamiento
+   - Estado persistido
+
+2. **Confirmar con código real**
+   - Leer archivos involucrados
+   - Verificar condiciones exactas
+   - Validar nombres de eventos y filtros
+   - Revisar deduplicación, guards y side effects
+
+3. **Confirmar con evidencia**
+   - Logs
+   - Breakpoints
+   - Estado en DB
+   - Payload real
+
+**Solo después:**
+- Formular hipótesis final
+- Proponer fix mínimo
+- Explicar por qué ese fix resuelve el problema raíz
+
+#### 🎯 Principio Técnico
+**Nunca arreglar síntomas. Siempre encontrar la causa raíz confirmada por código y flujo real.**
+
+#### 🧠 Regla de Oro
+Si el análisis incluye frases como:
+- "Probablemente..."
+- "Seguramente..."
+- "Puede que..."
+
+Entonces: **El problema no está confirmado todavía.**
+
+#### 🏗 Estándar de Calidad
+Un problema solo se considera confirmado cuando:
+- Se puede reproducir
+- Se puede explicar con el flujo exacto
+- Se puede señalar la línea específica que causa el comportamiento
+- El fix está alineado con esa línea
 
 ### ✅ OBLIGACIONES EN CÓDIGO NUEVO
 
@@ -61,6 +153,48 @@ SafeSpot es una aplicación **Enterprise Grade** con requisitos de auditoría M1
 - Los `any` existentes se mantienen hasta refactorización planificada
 - Los tipos legacy no se tocan salvo que sean el root cause del bug
 - Solo correcciones quirúrgicas, nunca refactorizaciones "oportunistas"
+
+---
+
+## ⚖️ REGLA DE PROPORCIONALIDAD (Anti Over-Engineering)
+
+> **"La infraestructura debe escalar con el problema real, no con el ego técnico."**
+
+### 🚫 NO Pasarse de la Raya
+
+| Contexto SafeSpot | Solución Correcta | Over-Engineering (Prohibido) |
+|-------------------|-------------------|------------------------------|
+| **< 100 eventos/minuto** | Circuit breaker simple + stats básicos | Batch ACKs, DLQ, métricas por canal/tipo |
+| **1-10 reportes/minuto** | ACK individual | Batch processing, colas persistentes |
+| **Single-node frontend** | BroadcastChannel para cross-tab | Kafka, Redis, infra distribuida |
+| **Errores de listener** | Try-catch + telemetry | DLQ "en memoria" sin persistencia real |
+
+### ✅ Checklist Proporcional
+
+Antes de agregar cualquier feature enterprise, responder:
+
+- [ ] ¿Cuál es el volumen real de operaciones/segundo?
+- [ ] ¿El problema ya existe o es hipotético?
+- [ ] ¿Sin esta feature, el sistema falla o solo es "menos perfecto"?
+- [ ] ¿Estoy construyendo infraestructura para 10k req/s cuando tengo 10 req/min?
+
+### 🔴 Señales de Over-Engineering
+
+```
+❌ "Por si acaso cuando tengamos 1M usuarios..."
+❌ "Es más limpio/mantenible así..." (sin problema real)
+❌ "Así es como lo hacen en Netflix/Google..."
+❌ Agregar complejidad que "no duele ahora"
+```
+
+### 🟢 Señales de Proporcionalidad Correcta
+
+```
+✅ "Esto resuelve un bug/fallo actual"
+✅ "Sin esto, el sistema colapsa con el volumen actual"
+✅ "Es más simple de mantener que la alternativa básica"
+✅ "El costo de complejidad se justifica por el riesgo"
+```
 
 ---
 

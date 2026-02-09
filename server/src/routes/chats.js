@@ -109,7 +109,6 @@ router.post('/rooms', async (req, res) => {
     if (!anonymousId) return res.status(400).json({ error: 'Anonymous ID required' });
 
     try {
-        console.log(`[Chats] Using RealtimeEvents Instance: ${realtimeEvents.instanceId}`);
         let conversationId;
         let participantB = final_recipient_id;
 
@@ -246,15 +245,12 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
             );
 
             if (referenceCheck.rows.length === 0) {
-                console.warn(`[GapRecovery] 🚨 Reference message ${since} not found (Deleted?). Returning 410.`);
                 return res.status(410).json({
                     error: 'Gap Recovery Failed: Reference message missing',
                     code: 'REF_GONE',
                     retry_strategy: 'full_resync'
                 });
             }
-
-            console.log(`[GapRecovery] Fetching messages for room ${roomId} since ${since}`);
         } else {
             // NORMAL MODE: Fetch all messages
             messagesQuery = `
@@ -278,10 +274,6 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
         }
 
         const result = await queryWithRLS(anonymousId, messagesQuery, params);
-
-        if (since) {
-            console.log(`[GapRecovery] Found ${result.rows.length} missed messages`);
-        }
 
         res.json(result.rows);
     } catch (err) {
@@ -311,6 +303,7 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
 
         // Client-Generated ID for idempotency (Support both 'id' and 'temp_id')
         let newMessageId = providedId || req.body.temp_id;
+        
         if (!newMessageId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newMessageId)) {
             newMessageId = crypto.randomUUID();
         }
@@ -387,6 +380,7 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
                 members.forEach(member => {
                     if (member.user_id !== anonymousId) {
                         realtimeEvents.emitUserChatUpdate(member.user_id, {
+                            eventId: broadcastMessage.id, // ✅ Enterprise: ID determinístico de DB
                             roomId,
                             message: broadcastMessage,
                             originClientId: clientId
@@ -458,6 +452,7 @@ router.delete('/rooms/:roomId/messages/:messageId', async (req, res) => {
 
         memberResult.rows.forEach(member => {
             realtimeEvents.emitUserChatUpdate(member.user_id, {
+                eventId: `deleted-${messageId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
                 roomId,
                 action: 'message-deleted',
                 messageId
@@ -512,6 +507,7 @@ router.post('/rooms/:roomId/read', async (req, res) => {
 
             // 4. Notify current user tabs (clear unread count)
             realtimeEvents.emitUserChatUpdate(anonymousId, {
+                eventId: `read-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
                 roomId,
                 action: 'read'
             });
@@ -549,14 +545,10 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
         // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous query, but RLS might block UPDATE if user isn't the sender)
         const { default: pool } = await import('../config/database.js');
 
-        console.log(`[Delivered-Debug] Attempting to mark delivered for room ${roomId}. MyID: ${anonymousId}. Pending senders: ${senderIds.join(',')}`);
-
         const result = await pool.query(
             'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
             [roomId, anonymousId]
         );
-
-        console.log(`[Delivered-Debug] ROWS UPDATED: ${result.rowCount}`);
 
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
         if (result.rowCount > 0 || senderIds.length > 0) {
@@ -594,8 +586,6 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
     const { messageId } = req.params;
     const anonymousId = req.headers['x-anonymous-id'];
 
-    console.log(`[ACK-REQ] Received delivered request for ${messageId} from ${anonymousId?.substring(0, 8)}`);
-
     if (!messageId || !anonymousId) {
         return res.status(400).json({ error: 'MessageId and X-Anonymous-Id are required' });
     }
@@ -609,7 +599,7 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
              WHERE m.id = $1 AND cm.user_id = $2`,
             [messageId, anonymousId]
         );
-
+        
         if (msgCheck.rows.length === 0) {
             return res.status(404).json({ error: 'Message not found or access denied' });
         }
@@ -647,7 +637,6 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
                 receiverId: anonymousId
             });
 
-            console.log(`[ACK-OK] Message ${messageId} confirmed delivered. Notifying room ${message.conversation_id?.substring(0, 8)}`);
         }
 
         res.json({ success: true });
@@ -699,6 +688,7 @@ router.post('/rooms/:roomId/typing', async (req, res) => {
 
             memberResult.rows.forEach(member => {
                 realtimeEvents.emitUserChatUpdate(member.user_id, {
+                    eventId: `typing-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
                     roomId,
                     action: 'typing',
                     isTyping: !!isTyping
@@ -801,6 +791,7 @@ router.post('/rooms/:roomId/pin', async (req, res) => {
 
         // Notify user's other devices
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `pin-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'pin',
             isPinned: isPinned !== undefined ? isPinned : true
@@ -824,6 +815,7 @@ router.delete('/rooms/:roomId/pin', async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `unpin-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'pin',
             isPinned: false
@@ -852,6 +844,7 @@ router.post('/rooms/:roomId/archive', async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `archive-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'archive',
             isArchived: isArchived !== undefined ? isArchived : true
@@ -875,6 +868,7 @@ router.delete('/rooms/:roomId/archive', async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `unarchive-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'archive',
             isArchived: false
@@ -903,6 +897,7 @@ router.patch('/rooms/:roomId/unread', async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `unread-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'unread',
             isUnread
@@ -934,6 +929,7 @@ router.delete('/rooms/:roomId', async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
+            eventId: `delete-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
             roomId,
             action: 'delete'
         });
@@ -1262,6 +1258,146 @@ router.patch('/rooms/:roomId/messages/:messageId', async (req, res) => {
 
         logSuccess('Message edited', { messageId, anonymousId });
         res.json({ success: true, message: updatedMessage });
+
+    } catch (err) {
+        logError(err, req);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /api/chats/messages/reconcile-status
+ * Reconciliación de estados delivered/read para mensajes históricos
+ * 
+ * ✅ WhatsApp-Grade:
+ * - El receptor confirma que tiene mensajes en su dispositivo
+ * - Funciona para mensajes recibidos vía carga histórica (no solo SSE/Push)
+ * - Idempotente (llamar múltiples veces no rompe)
+ * - Batch (múltiples mensajes en una llamada)
+ */
+router.post('/messages/reconcile-status', async (req, res) => {
+    const anonymousId = req.headers['x-anonymous-id'];
+    const { delivered = [], read = [] } = req.body;
+
+    if (!anonymousId) {
+        return res.status(400).json({ error: 'X-Anonymous-Id required' });
+    }
+
+    const results = {
+        delivered: { reconciled: [], alreadyDelivered: [], failed: [] },
+        read: { reconciled: [], alreadyRead: [], failed: [] }
+    };
+
+    try {
+        const { default: pool } = await import('../config/database.js');
+
+        // Procesar delivered
+        for (const messageId of delivered) {
+            try {
+                // 1. Verificar que el mensaje existe y el usuario tiene acceso
+                const accessCheck = await pool.query(
+                    `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
+                     FROM chat_messages m
+                     JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                     WHERE m.id = $1 AND cm.user_id = $2`,
+                    [messageId, anonymousId]
+                );
+
+                if (accessCheck.rows.length === 0) {
+                    results.delivered.failed.push({ messageId, reason: 'not_found_or_no_access' });
+                    continue;
+                }
+
+                const message = accessCheck.rows[0];
+
+                // 2. Si ya está delivered, solo registrar
+                if (message.is_delivered) {
+                    results.delivered.alreadyDelivered.push(messageId);
+                    continue;
+                }
+
+                // 3. Marcar como delivered
+                const deliveredAt = new Date();
+                await pool.query(
+                    'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
+                    [messageId, deliveredAt]
+                );
+
+                results.delivered.reconciled.push(messageId);
+
+                // 4. Emitir evento al emisor (async, no bloquear respuesta)
+                realtimeEvents.emitMessageDelivered(message.sender_id, {
+                    messageId: messageId,
+                    id: messageId,
+                    conversationId: message.conversation_id,
+                    deliveredAt: deliveredAt,
+                    receiverId: anonymousId,
+                    traceId: `reconcile_${Date.now()}`
+                });
+
+            } catch (err) {
+                results.delivered.failed.push({ messageId, reason: err.message });
+            }
+        }
+
+        // Procesar read (similar a delivered)
+        for (const messageId of read) {
+            try {
+                const accessCheck = await pool.query(
+                    `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
+                     FROM chat_messages m
+                     JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                     WHERE m.id = $1 AND cm.user_id = $2`,
+                    [messageId, anonymousId]
+                );
+
+                if (accessCheck.rows.length === 0) {
+                    results.read.failed.push({ messageId, reason: 'not_found_or_no_access' });
+                    continue;
+                }
+
+                const message = accessCheck.rows[0];
+
+                if (message.is_read) {
+                    results.read.alreadyRead.push(messageId);
+                    continue;
+                }
+
+                const readAt = new Date();
+                await pool.query(
+                    'UPDATE chat_messages SET is_read = true, read_at = $2 WHERE id = $1',
+                    [messageId, readAt]
+                );
+
+                results.read.reconciled.push(messageId);
+
+                realtimeEvents.emitMessageRead(message.sender_id, {
+                    messageId: messageId,
+                    id: messageId,
+                    conversationId: message.conversation_id,
+                    readAt: readAt,
+                    readerId: anonymousId
+                });
+
+            } catch (err) {
+                results.read.failed.push({ messageId, reason: err.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                delivered: {
+                    processed: delivered.length,
+                    newlyReconciled: results.delivered.reconciled.length
+                },
+                read: {
+                    processed: read.length,
+                    newlyReconciled: results.read.reconciled.length
+                }
+            }
+        });
 
     } catch (err) {
         logError(err, req);

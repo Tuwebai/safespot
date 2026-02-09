@@ -44,3 +44,5 @@ server/scripts/migrate_google_oauth.js
 DEPLOY_AUDIT.md
 AGENTS.md
 PAGE_AUDIT_REPORT.md
+server/.env.feature_flag_example
+full_changes.txt

@@ -57,7 +57,10 @@ export class SSEResponse {
      * @param {object} data - Data payload (will be JSON stringified)
      */
     send(type, data) {
-        if (!this.res.writable) return;
+        if (!this.res.writable) {
+            console.warn(`[SSE] ⚠️ Cannot send '${type}': response not writable`);
+            return false;
+        }
 
         try {
             const formattedData = JSON.stringify({ type, ...data });
@@ -67,9 +70,11 @@ export class SSEResponse {
             if (typeof this.res.flush === 'function') {
                 this.res.flush();
             }
+            return true;
         } catch (error) {
             console.error('[SSE] Error sending data:', error);
             this.cleanup();
+            return false;
         }
     }
 

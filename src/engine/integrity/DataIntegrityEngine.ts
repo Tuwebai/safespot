@@ -403,7 +403,6 @@ class DataIntegrityEngine {
     }
 
     private onLeaderFailover(): void {
-        console.log('[Integrity] 👑 Leader Failover detected. Verifying consistency...');
         // Force immediate verification regardless of state
         // This is P1 Priority
         this.verifyAllTrackedQueries();

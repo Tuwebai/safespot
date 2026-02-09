@@ -146,6 +146,7 @@ export const NotificationService = {
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
                         realtimeEvents.emitUserNotification(notification.anonymous_id, {
+                            eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                             type: 'proximity',
                             notification
                         });
@@ -244,8 +245,9 @@ export const NotificationService = {
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emitUserNotification(report.anonymous_id, {
+                    eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                     type: type,
-                    notification // SSOT: Send the full object from DB (contains .id)
+                    notification // SSOT: Send the full object from DB
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
@@ -325,6 +327,7 @@ export const NotificationService = {
                 import('./eventEmitter.js').then(({ realtimeEvents }) => {
                     notifications.forEach(notification => {
                         realtimeEvents.emitUserNotification(notification.anonymous_id, {
+                            eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                             type: 'similar',
                             notification
                         });
@@ -426,6 +429,7 @@ export const NotificationService = {
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emitUserNotification(parent.anonymous_id, {
+                    eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                     type: 'reply',
                     notification
                 });
@@ -493,8 +497,9 @@ export const NotificationService = {
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emitUserNotification(targetAnonymousId, {
+                    eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                     type: 'mention',
-                    notification // SSOT: Includes .id for deduplication
+                    notification
                 });
             } catch (sseErr) {
                 console.error('[Notify] SSE Emit failed:', sseErr);
@@ -578,10 +583,9 @@ export const NotificationService = {
 
                 // 4a. Private Notification (to owner)
                 realtimeEvents.emitUserNotification(owner.anonymous_id, {
+                    eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                     type: 'like',
                     notification,
-                    // Keep these for potential counter updates if valid, 
-                    // though frontend uses global-report-update mostly.
                     targetType,
                     targetId,
                     reportId: owner.report_id
@@ -694,6 +698,7 @@ export const NotificationService = {
             try {
                 const { realtimeEvents } = await import('./eventEmitter.js');
                 realtimeEvents.emitUserNotification(followedId, {
+                    eventId: notification.id, // ✅ Enterprise: ID determinístico de DB
                     type: 'follow',
                     notification,
                     followerId,

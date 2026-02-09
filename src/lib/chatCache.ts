@@ -19,6 +19,10 @@ const KEYS = {
     messages: (convId: string, anonymousId: string) => ['chats', 'messages', anonymousId, convId] as const,
 };
 
+// 🏛️ ENTERPRISE FIX: Pending delivery updates for race condition handling
+// Key: `${roomId}:${messageId}`, Value: { is_delivered: boolean, is_read: boolean }
+const pendingDeliveryUpdates = new Map<string, Partial<ChatMessage>>();
+
 export const chatCache = {
     /**
      * INBOX AUTHORITY: Handles a new message for the Global Room List.
@@ -123,15 +127,34 @@ export const chatCache = {
      */
     applyDeliveryUpdate: (queryClient: QueryClient, roomId: string, currentUserId: string, data: { messageId?: string, id?: string }) => {
         const targetId = data.messageId || data.id;
+        
+        if (!targetId) return;
 
-        // 1. Messages Sync (active chat)
+        const cacheKey = `${roomId}:${targetId}`;
+        let messageFound = false;
+
+        // Try to update existing message
         queryClient.setQueryData<ChatMessage[]>(KEYS.messages(roomId, currentUserId), (old) => {
             if (!old) return old;
-            if (targetId) {
+            
+            const found = old.find(m => m.id === targetId);
+            if (found) {
+                messageFound = true;
                 return old.map(m => m.id === targetId ? { ...m, is_delivered: true } : m);
             }
-            // Bulk update fallback (for entire conversation)
-            return old.map(m => m.sender_id === currentUserId ? { ...m, is_delivered: true } : m);
+            
+            return old;
+        });
+        
+        // If message not found, store as pending
+        if (!messageFound) {
+            pendingDeliveryUpdates.set(cacheKey, { is_delivered: true });
+        }
+        
+        // Also update sidebar
+        queryClient.setQueryData(KEYS.rooms(currentUserId), (old: ChatRoom[] | undefined) => {
+            if (!old) return old;
+            return old.map(r => r.id === roomId ? { ...r, last_message_is_delivered: true } : r);
         });
 
         // 2. Sidebar Sync (last message status)
@@ -159,9 +182,20 @@ export const chatCache = {
      * 1. Idempotency: If ID exists, update fields (merge).
      * 2. Insertion: If new, insert.
      * 3. Sort: ALWAYS re-sort by created_at to handle network jitter.
+     * 
+     * 🏛️ ENTERPRISE FIX: Apply pending delivery updates on insert
+     * If a delivery update arrived before the message was created, apply it now.
      */
     upsertMessage: (queryClient: QueryClient, message: ChatMessage, anonymousId: string) => {
         const roomId = message.conversation_id;
+        const cacheKey = `${roomId}:${message.id}`;
+        
+        // Check for pending delivery updates
+        const pendingUpdate = pendingDeliveryUpdates.get(cacheKey);
+        if (pendingUpdate) {
+            Object.assign(message, pendingUpdate);
+            pendingDeliveryUpdates.delete(cacheKey);
+        }
 
         queryClient.setQueryData(KEYS.messages(roomId, anonymousId), (oldMessages: ChatMessage[] | undefined) => {
             let nextState = oldMessages ? [...oldMessages] : [];
@@ -228,7 +262,7 @@ export const chatCache = {
             const nextState = Array.from(messageMap.values());
             nextState.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-            console.log(`[GapRecovery] Merged ${messages.length} messages, total: ${nextState.length}`);
+
 
             return nextState;
         });

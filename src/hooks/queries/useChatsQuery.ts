@@ -186,7 +186,36 @@ export function useChatMessages(convId: string | undefined) {
 
     const query = useQuery({
         queryKey: ['chats', 'messages', anonymousId, convId || ''],  // ✅ Include ID
-        queryFn: () => convId ? chatsApi.getMessages(convId) : Promise.resolve([]),
+        queryFn: async () => {
+            if (!convId) return [];
+            const messages = await chatsApi.getMessages(convId);
+            
+            // 🏛️ ENTERPRISE FIX: Offline Delivery Reconciliation
+            // Cuando cargamos mensajes, reconciliamos el estado de entrega/leído
+            // para mensajes que fueron enviados por OTROS y aún no están marcados
+            const messagesNeedingReconciliation = messages.filter(m => 
+                m.sender_id !== anonymousId && (!m.is_delivered || !m.is_read)
+            );
+            
+            if (messagesNeedingReconciliation.length > 0) {
+                const toMarkDelivered = messagesNeedingReconciliation
+                    .filter(m => !m.is_delivered)
+                    .map(m => m.id);
+                const toMarkRead = messagesNeedingReconciliation
+                    .filter(m => !m.is_read)
+                    .map(m => m.id);
+                
+                // Fire-and-forget reconciliation (no await to not block UI)
+                chatsApi.reconcileStatus({
+                    delivered: toMarkDelivered,
+                    read: toMarkRead
+                }).catch(() => {
+                    // Silently fail - will retry on next load
+                });
+            }
+            
+            return messages;
+        },
         enabled: !!convId && !!anonymousId,  // ✅ Both required
         staleTime: Infinity, // ✅ ENTERPRISE: No refetch automático - SSE es la fuente de actualizaciones
         gcTime: 1000 * 60 * 30, // 30 min garbage collection
@@ -201,7 +230,6 @@ export function useChatMessages(convId: string | undefined) {
     useEffect(() => {
         const handleFocus = () => {
             if (convId && anonymousId) {
-                console.log('[Chat] Window focused - Reconciling message statuses (Anti-Lost Write)');
                 // Invalidate forcea un refetch aunque staleTime sea Infinity
                 queryClient.invalidateQueries({ queryKey: CHATS_KEYS.messages(convId, anonymousId) });
             }
@@ -228,10 +256,11 @@ export function useChatMessages(convId: string | undefined) {
         // 2. Listen for UI Side-Effects
         const unsubscribe = realtimeOrchestrator.onEvent((event) => {
             const { type, payload, originClientId } = event;
-            const actualPayload = payload.partial || payload;
+            // Orchestrator now normalizes payload to use 'partial' directly
+            const actualPayload = payload;
 
             // Filter for THIS room
-            const roomId = actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId;
+            const roomId = actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId || actualPayload.conversation_id;
             if (roomId !== convId) return;
 
             // Echo suppression
@@ -420,6 +449,8 @@ export function useSendMessageMutation() {
             // Generate stable temp ID for tracking
             // ✅ Enterprise: Use crypto.randomUUID for globally unique Client-Side ID
             const tempId = variables.id || self.crypto.randomUUID();
+            
+
 
             const optimisticMessage: ChatMessage = {
                 id: tempId,
@@ -474,7 +505,6 @@ export function useSendMessageMutation() {
             // ✅ ENTERPRISE FIX: IdentityNotReadyError no es un error de red
             // No hacer rollback porque no hubo optimistic update
             if (err instanceof IdentityNotReadyError || err instanceof IdentityInvariantViolation) {
-                console.log('[useSendMessageMutation] Mutation blocked by identity guard:', err.message);
                 return; // Early return, no rollback necesario
             }
 
@@ -484,7 +514,6 @@ export function useSendMessageMutation() {
             const isNetworkError = !navigator.onLine || err.message === 'Failed to fetch' || (err as any).status === 0;
 
             if (isNetworkError) {
-                console.log('[Offline] Message queued in UI, waiting for Background Sync');
                 // Optional: Update local status to 'failed' if different icon desired, 
                 // but 'pending' (clock) is usually fine for "Waiting".
                 return;

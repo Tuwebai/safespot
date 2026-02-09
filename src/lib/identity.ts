@@ -43,8 +43,30 @@ function generateUUID(): string {
 function isValidUUID(uuid: unknown): uuid is string {
   if (typeof uuid !== 'string') return false;
   // Handle optional version prefix (e.g., "v1|uuid")
-  const rawId = uuid.includes('|') ? uuid.split('|')[1] : uuid;
+  const rawId = parseVersionedId(uuid).id;
   return UUID_V4_REGEX.test(rawId);
+}
+
+/** Parse versioned ID format "v2|uuid" or legacy "uuid" */
+function parseVersionedId(versionedId: string): { version: string | null; id: string } {
+  if (!versionedId.includes('|')) {
+    return { version: null, id: versionedId };
+  }
+  const [version, id] = versionedId.split('|');
+  return { version, id };
+}
+
+/** Wrap a promise with a timeout */
+function withTimeout<T>(promise: Promise<T>, ms: number, context: string): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => {
+      setTimeout(() => {
+        console.warn(`[Identity] ${context} timeout (${ms}ms)`);
+        resolve(null);
+      }, ms);
+    })
+  ]);
 }
 
 // --------------------------------------------
@@ -74,15 +96,6 @@ function setCookie(name: string, value: string, days = 3650) { // 10 years defau
 // --------------------------------------------
 
 async function getIDB(key: string): Promise<string | null> {
-  // ENTERPRISE FIX: Dual timeout to prevent infinite hangs
-  // Outer timeout: 1000ms hard limit for entire operation
-  const globalTimeout = new Promise<null>((resolve) => {
-    setTimeout(() => {
-      console.warn('[Identity] IndexedDB get timeout (1000ms)');
-      resolve(null);
-    }, 1000);
-  });
-
   const operation = new Promise<string | null>((resolve) => {
     try {
       const request = indexedDB.open(L3_DB, 1);
@@ -143,18 +156,10 @@ async function getIDB(key: string): Promise<string | null> {
     }
   });
 
-  return Promise.race([operation, globalTimeout]);
+  return withTimeout(operation, 1000, 'IndexedDB get');
 }
 
 async function setIDB(key: string, value: string): Promise<void> {
-  // ENTERPRISE FIX: Dual timeout matching getIDB pattern
-  const globalTimeout = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      console.warn('[Identity] IndexedDB set timeout (1000ms)');
-      resolve();
-    }, 1000);
-  });
-
   const operation = new Promise<void>((resolve) => {
     try {
       const request = indexedDB.open(L3_DB, 1);
@@ -208,7 +213,7 @@ async function setIDB(key: string, value: string): Promise<void> {
     }
   });
 
-  return Promise.race([operation, globalTimeout]);
+  await withTimeout(operation, 1000, 'IndexedDB set');
 }
 
 // ============================================
@@ -238,9 +243,9 @@ export async function initializeIdentity(): Promise<string> {
 
   // Prefer L1, then L2
   if (l1 && isValidUUID(l1)) {
-    winner = l1.includes('|') ? l1.split('|')[1] : l1;
+    winner = parseVersionedId(l1).id;
   } else if (l2 && isValidUUID(l2)) {
-    winner = l2.includes('|') ? l2.split('|')[1] : l2;
+    winner = parseVersionedId(l2).id;
   }
 
   // If found in sync layers, we are good to go.
@@ -310,7 +315,7 @@ export async function initializeIdentity(): Promise<string> {
   }
 
   if (l3 && isValidUUID(l3)) {
-    winner = l3.includes('|') ? l3.split('|')[1] : l3;
+    winner = parseVersionedId(l3).id;
     console.log('[Identity] ✅ Recovered from IDB:', winner);
   } else {
     // 3. GENERATION: Only after exhausting ALL layers + retries
@@ -385,7 +390,7 @@ export function getAnonymousId(): string {
 
     // Traditional Legacy Fallback (v1 string)
     if (isValidUUID(raw)) {
-      const cleanId = raw.includes('|') ? raw.split('|')[1] : raw;
+      const { id: cleanId } = parseVersionedId(raw);
       cachedId = cleanId;
 
       // Migrate to v2 in background
@@ -408,7 +413,7 @@ export function ensureAnonymousId(): string {
   const id = getAnonymousId();
   if (id) {
     // Ensure what we return is always clean
-    return id.includes('|') ? id.split('|')[1] : id;
+    return parseVersionedId(id).id;
   }
 
   // ✅ EXTREME RECOVERY: Before generating a new ID, check if Motor 2 has a session
@@ -477,7 +482,7 @@ function startSessionWatchdog() {
 
         if (l3 && isValidUUID(l3)) {
           // RESTORE L1 FROM L3
-          const cleanId = l3.includes('|') ? l3.split('|')[1] : l3;
+          const { id: cleanId } = parseVersionedId(l3);
 
           if (cleanId === cachedId) {
             versionedStorage.putVersioned(L1_KEY, cleanId, 365);
@@ -504,6 +509,15 @@ function startSessionWatchdog() {
   }, 5000); // Check every 5s
 }
 
+/** Stop session watchdog - call on logout to prevent memory leaks */
+export function stopSessionWatchdog(): void {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+    console.debug('[Identity] 🛡️ Watchdog stopped');
+  }
+}
+
 /** Legacy support */
 export function getAnonymousIdSafe(): string {
   return ensureAnonymousId();
@@ -520,7 +534,7 @@ export function validateAnonymousId(id: string): void {
 export async function updateIdentity(newId: string): Promise<void> {
   if (!isValidUUID(newId)) throw new Error('Invalid Anonymous ID');
 
-  const cleanId = newId.includes('|') ? newId.split('|')[1] : newId;
+  const { id: cleanId } = parseVersionedId(newId);
   cachedId = cleanId;
   const versionedId = `${ID_VERSION}|${cleanId}`;
 
@@ -580,6 +594,7 @@ export async function importIdentity(file: File): Promise<boolean> {
 /** Reset identity (Testing only) */
 export function resetIdentity(): void {
   cachedId = null;
+  stopSessionWatchdog(); // 🧹 Stop watchdog to prevent memory leaks
   if (typeof window === 'undefined') return;
   localStorage.removeItem(L1_KEY);
   document.cookie = `${L2_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
