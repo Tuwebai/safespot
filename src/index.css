@@ -557,6 +557,35 @@
   cursor: none !important;
 }
 
+/* 🏛️ SAFE MODE: UI overlays must show cursor even in placement mode */
+/* === PANEL DE ZONAS - CURSOR NORMAL === */
+/* El panel de "Mis Zonas" debe mostrar cursor normal, no el pin oculto */
+.map-placement-mode .absolute.top-2,
+.map-placement-mode .absolute.top-20,
+.map-placement-mode .absolute[class*="top-"][class*="left-"] {
+  cursor: auto !important;
+}
+
+/* Todo dentro del panel tiene cursor auto por defecto */
+.map-placement-mode .absolute.top-2 *,
+.map-placement-mode .absolute.top-20 *,
+.map-placement-mode .absolute[class*="top-"][class*="left-"] * {
+  cursor: auto !important;
+}
+
+/* === BOTONES DEL PANEL - CURSOR POINTER (MANITA) === */
+/* Los botones específicamente deben mostrar la manita */
+.map-placement-mode .absolute.top-2 button,
+.map-placement-mode .absolute.top-20 button,
+.map-placement-mode .absolute[class*="top-"][class*="left-"] button,
+.map-placement-mode .absolute.top-2 [class*="bg-emerald-500"],
+.map-placement-mode .absolute.top-2 [class*="bg-blue-500"],
+.map-placement-mode .absolute.top-2 [class*="bg-amber-500"],
+.map-placement-mode .absolute.top-2 [class*="hover:bg-"],
+.map-placement-mode .absolute.top-20 [class*="hover:bg-"] {
+  cursor: pointer !important;
+}
+
 /* Ripple Effect Animation */
 @keyframes ripple {
   0% {

@@ -1,5 +1,5 @@
 import { divIcon } from 'leaflet'
-import { useState, useEffect, Fragment, useMemo } from 'react'
+import { useState, useEffect, Fragment, useMemo, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl, Circle } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Button } from '@/components/ui/button'
@@ -286,8 +286,8 @@ const AlertZoneControl = ({
     const hasZone = (type: string) => zones.some(z => z.type === type);
 
     return (
-        <div className="absolute top-2 sm:top-20 left-2 sm:left-4 z-[1000] flex flex-col gap-2 scale-90 sm:scale-100 origin-top-left">
-            <div className="bg-zinc-950 p-2 sm:p-3 rounded-2xl border border-zinc-800 shadow-[0_0_30px_rgba(0,0,0,0.6)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px]">
+        <div className="absolute top-2 sm:top-20 left-2 sm:left-4 z-[9999] flex flex-col gap-2 scale-90 sm:scale-100 origin-top-left pointer-events-auto">
+            <div className="bg-zinc-950/95 p-2 sm:p-3 rounded-2xl border border-zinc-700 shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col gap-2 sm:gap-3 min-w-[180px] sm:min-w-[200px] pointer-events-auto">
                 <div className="flex items-center justify-between gap-2 sm:gap-4 px-1">
                     <div className="flex items-center gap-2">
                         <div className="p-1 sm:p-1.5 bg-neon-green/10 rounded-lg">
@@ -487,6 +487,9 @@ export function SafeSpotMapClient({
 
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
     const { zones, saveZone } = useUserZones()
+    
+    // 🏛️ SAFE MODE: Trackear última zona activada externamente para evitar duplicados
+    const lastActivatedZoneRef = useRef<string | null>(null)
 
     // ✅ OPTIMIZATION: Resolve all reports in one batch for clustering
     const reports = useReportsBatch(reportIds)
@@ -519,9 +522,11 @@ export function SafeSpotMapClient({
         ? [position.lat, position.lng]
         : null
 
-    // Sync external activation from props (e.g. from Profile)
+    // Sync external activation from props (e.g. from Profile/Ajustes)
+    // Solo activar si cambia el valor externo y es diferente al último procesado
     useEffect(() => {
-        if (externalActivateZoneType) {
+        if (externalActivateZoneType && externalActivateZoneType !== lastActivatedZoneRef.current) {
+            lastActivatedZoneRef.current = externalActivateZoneType
             setActiveZoneType(externalActivateZoneType)
         }
     }, [externalActivateZoneType])
@@ -540,11 +545,13 @@ export function SafeSpotMapClient({
                 lng,
                 radius_meters: 500
             })
-            // Only exit mode on success
-            setActiveZoneType(null)
+            // Only exit mode on success - small delay for smooth cursor transition
+            setTimeout(() => {
+                setActiveZoneType(null)
+                setIsSavingZone(false)
+            }, 300)
         } catch (error) {
             console.error("Failed to save zone", error)
-        } finally {
             setIsSavingZone(false)
         }
     }
