@@ -1182,7 +1182,7 @@ export const chatsApi = {
   },
   reactToMessage: async (roomId: string, messageId: string, emoji: string): Promise<{ success: boolean }> => {
     return trafficController.enqueueSerial(async () => {
-      return apiRequest(`chats/rooms/${roomId}/messages/${messageId}/reactions`, {
+      return apiRequest(`chats/rooms/${roomId}/messages/${messageId}/react`, {
         method: 'POST',
         body: JSON.stringify({ emoji })
       });

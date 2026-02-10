@@ -8,7 +8,6 @@ import {
     useChatMessages,
     useSendMessageMutation,
     useMarkAsReadMutation,
-    useMarkAsDeliveredMutation,
     useUserPresence,
     useDeleteMessageMutation,
     useReactionMutation,
@@ -456,7 +455,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const sendMessageMutation = useSendMessageMutation();
     const deleteMessageMutation = useDeleteMessageMutation();
     const markAsReadMutation = useMarkAsReadMutation();
-    const markAsDeliveredMutation = useMarkAsDeliveredMutation();
     const reactionMutation = useReactionMutation();
     const retryMessageMutation = useRetryMessageMutation();
 
@@ -548,13 +546,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     useEffect(() => {
         if (!room.id || hasMarkedRead.current) return;
 
+        // 🏛️ WHATSAPP-GRADE: Delivery ahora es backend-authoritative
+        // El backend marca delivered automáticamente cuando el receptor pide mensajes
+        // Solo llamamos markAsRead para los checks AZULES (leído)
         const performInitialMarking = async () => {
-            if (markAsReadMutation.isPending || markAsDeliveredMutation.isPending) return;
+            if (markAsReadMutation.isPending) return;
 
             if (room.unread_count > 0) {
                 markAsReadMutation.mutate(room.id);
-            } else {
-                markAsDeliveredMutation.mutate(room.id);
             }
             hasMarkedRead.current = true;
         };

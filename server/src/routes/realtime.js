@@ -709,6 +709,63 @@ router.get('/user/:anonymousId', (req, res) => {
     // FASE 3: Registrar conexión con contador de sesiones (Multi-tab)
     presenceTracker.trackConnect(anonymousId);
 
+    // 🏛️ WHATSAPP-GRADE: Enviar mensajes pendientes y marcar delivered
+    // Cuando el receptor se conecta, buscar mensajes no delivered donde él es receptor
+    (async () => {
+        try {
+            const pendingMessages = await pool.query(
+                `SELECT cm.*, u.alias as sender_alias, u.avatar_url as sender_avatar
+                 FROM chat_messages cm
+                 JOIN conversation_members mem ON cm.conversation_id = mem.conversation_id
+                 JOIN anonymous_users u ON cm.sender_id = u.anonymous_id
+                 WHERE mem.user_id = $1
+                   AND cm.sender_id != $1
+                   AND cm.is_delivered = false
+                 ORDER BY cm.created_at ASC
+                 LIMIT 50`,
+                [anonymousId]
+            );
+
+            if (pendingMessages.rows.length > 0) {
+                console.log(`[SSE] Sending ${pendingMessages.rows.length} pending messages to ${anonymousId}`);
+                
+                const deliveredAt = new Date();
+                
+                for (const msg of pendingMessages.rows) {
+                    // Emitir mensaje al receptor
+                    stream.send('new-message', {
+                        id: msg.id,
+                        partial: {
+                            message: msg,
+                            originClientId: 'system_pending'
+                        },
+                        originClientId: 'system_pending',
+                        eventId: `pending_${msg.id}`,
+                        serverTimestamp: new Date(msg.created_at).getTime()
+                    });
+
+                    // Marcar como delivered
+                    await pool.query(
+                        'UPDATE chat_messages SET is_delivered = true, delivered_at = $1 WHERE id = $2',
+                        [deliveredAt, msg.id]
+                    );
+
+                    // Notificar al sender
+                    realtimeEvents.emitMessageDelivered(msg.sender_id, {
+                        messageId: msg.id,
+                        id: msg.id,
+                        conversationId: msg.conversation_id,
+                        deliveredAt: deliveredAt,
+                        receiverId: anonymousId,
+                        traceId: `auto_reconnect_${Date.now()}`
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('[SSE] Error sending pending messages:', err);
+        }
+    })();
+
     req.on('close', () => {
         // FASE 3: Decrementar sesiones (Stateless multi-tab)
         // Solo si es la última pestaña, se emite 'offline' dentro de trackDisconnect.

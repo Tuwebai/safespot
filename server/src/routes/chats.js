@@ -275,6 +275,58 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
 
         const result = await queryWithRLS(anonymousId, messagesQuery, params);
 
+        // 🏛️ WHATSAPP-GRADE: Auto-mark delivered on fetch
+        // Cuando el receptor pide mensajes (tiene internet), marcar automáticamente como delivered
+        const messagesToMark = result.rows.filter(m => 
+            m.sender_id !== anonymousId && !m.is_delivered
+        );
+        
+        if (messagesToMark.length > 0) {
+            const { default: pool } = await import('../config/database.js');
+            const deliveredAt = new Date();
+            const messageIds = messagesToMark.map(m => m.id);
+            
+            // UPDATE automático sin esperar frontend
+            await pool.query(
+                `UPDATE chat_messages 
+                 SET is_delivered = true, delivered_at = $1 
+                 WHERE id = ANY($2) AND is_delivered = false`,
+                [deliveredAt, messageIds]
+            );
+            
+            // Notificar a senders (fire-and-forget)
+            const senderNotifications = {};
+            messagesToMark.forEach(m => {
+                if (!senderNotifications[m.sender_id]) senderNotifications[m.sender_id] = [];
+                senderNotifications[m.sender_id].push({
+                    messageId: m.id,
+                    roomId,
+                    deliveredAt
+                });
+            });
+            
+            Object.entries(senderNotifications).forEach(([senderId, updates]) => {
+                updates.forEach(u => {
+                    realtimeEvents.emitMessageDelivered(senderId, {
+                        messageId: u.messageId,
+                        id: u.messageId,
+                        conversationId: u.roomId,
+                        deliveredAt: u.deliveredAt,
+                        receiverId: anonymousId,
+                        traceId: `auto_fetch_${Date.now()}`
+                    });
+                });
+            });
+            
+            // Actualizar resultado para consistencia inmediata
+            result.rows.forEach(m => {
+                if (messageIds.includes(m.id)) {
+                    m.is_delivered = true;
+                    m.delivered_at = deliveredAt;
+                }
+            });
+        }
+
         res.json(result.rows);
     } catch (err) {
         logError(err, req);
@@ -371,22 +423,45 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
                     [roomId]
                 ).catch(e => console.error('[Deferred] Conversation update error:', e));
 
-                // 4. SSE Broadcast
+                // 4. SSE Broadcast & Auto-Delivery (WhatsApp-Grade)
                 const broadcastMessage = { ...fullMessage, is_optimistic: false };
+                const { default: pool } = await import('../config/database.js');
 
-                // ✅ REDUNDANCY REDUCTION
+                // ✅ REDUNDANCY REDUCTION + DELIVERY TRACKING
                 // Only send individual update to OTHER members for their inbox.
                 // Room update will handle active tabs for everyone.
-                members.forEach(member => {
+                for (const member of members) {
                     if (member.user_id !== anonymousId) {
+                        // Emit message to recipient
                         realtimeEvents.emitUserChatUpdate(member.user_id, {
-                            eventId: broadcastMessage.id, // ✅ Enterprise: ID determinístico de DB
+                            eventId: broadcastMessage.id,
                             roomId,
                             message: broadcastMessage,
                             originClientId: clientId
                         });
+
+                        // 🏛️ WHATSAPP-GRADE: Auto-mark delivered if recipient is online
+                        // Presence indicates active SSE connection
+                        const isOnline = await presenceTracker.isOnline(member.user_id);
+                        if (isOnline) {
+                            // Mark as delivered immediately (backend-authoritative)
+                            await pool.query(
+                                'UPDATE chat_messages SET is_delivered = true, delivered_at = NOW() WHERE id = $1 AND is_delivered = false',
+                                [newMessage.id]
+                            );
+                            
+                            // Notify sender of delivery
+                            realtimeEvents.emitMessageDelivered(anonymousId, {
+                                messageId: newMessage.id,
+                                id: newMessage.id,
+                                conversationId: roomId,
+                                deliveredAt: new Date(),
+                                receiverId: member.user_id,
+                                traceId: `auto_online_${Date.now()}`
+                            });
+                        }
                     }
-                });
+                }
                 realtimeEvents.emitChatMessage(roomId, broadcastMessage, clientId);
 
                 // 5. Enqueue Push Notifications (Enterprise Engine)
