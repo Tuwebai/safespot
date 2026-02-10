@@ -508,41 +508,34 @@ export function useSendMessageMutation() {
             return { previousMessages, blobUrl: optimisticContent.startsWith('blob:') ? optimisticContent : null };
         },
 
-        onError: (err, variables, context) => {
+        onError: (err, variables, _context) => {
             // ✅ ENTERPRISE FIX: IdentityNotReadyError no es un error de red
-            // No hacer rollback porque no hubo optimistic update
             if (err instanceof IdentityNotReadyError || err instanceof IdentityInvariantViolation) {
-                return; // Early return, no rollback necesario
-            }
-
-            // ✅ ENTERPRISE FIX: Offline Resilience
-            // If network fails, the SW Background Sync has likely queued the request (Outbox).
-            // We should NOT rollback the UI, but leave it as 'pending' (clock icon).
-            const isNetworkError = !navigator.onLine || err.message === 'Failed to fetch' || (err as any).status === 0;
-
-            if (isNetworkError) {
-                // Optional: Update local status to 'failed' if different icon desired, 
-                // but 'pending' (clock) is usually fine for "Waiting".
                 return;
             }
 
-            // Real Server Error (400/500) -> Rollback
-            if (context?.previousMessages) {
-                const rollbackId = sessionAuthority.getAnonymousId() || '';
-                queryClient.setQueryData(CHATS_KEYS.messages(variables.roomId, rollbackId), context.previousMessages);
-            }
-            // ✅ PERSISTENCE: Cleanup invalid pending message (best effort)
-            // Si no tenemos ID válido en variables, intentamos con tempId del contexto si existe
-            const pendingId = variables.id;
-            if (pendingId) {
-                chatCache.removePendingMessage(variables.roomId, pendingId);
+            const senderId = sessionAuthority.getAnonymousId() || '';
+            const isNetworkError = !navigator.onLine || err.message === 'Failed to fetch' || (err as any).status === 0;
+            const messageId = variables.id || '';
+
+            // 🆕 UX FEATURE: Mark as failed instead of rollback
+            // Both network errors and server errors show as "failed" with retry option
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId, senderId), (old) => {
+                if (!old) return old;
+                return old.map(m => m.id === messageId 
+                    ? { ...m, localStatus: 'failed' as const }
+                    : m
+                );
+            });
+
+            // Keep in persistence so user can retry after F5
+            if (isNetworkError) {
+                // Network errors: keep pending state for background sync
+                return;
             }
 
-            // Revocamos solo en error real
-            if (context?.blobUrl) URL.revokeObjectURL(context.blobUrl);
-
-            // Notificar al usuario del error y el rollback
-            toast.error('Error enviando mensaje.');
+            // Server errors: notify but keep message visible with failed status
+            toast.error('Error al enviar. Tocá el mensaje para reintentar.');
         },
 
 
@@ -760,3 +753,74 @@ export const useDeleteMessageMutation = () => {
         // SSE handles deletion sync across clients
     });
 };
+
+/**
+ * 🆕 RETRY FEATURE: Reintentar mensajes fallidos
+ * 
+ * Permite al usuario reintentar enviar un mensaje que falló.
+ * Reutiliza el mismo ID para mantener el orden y las referencias.
+ */
+export function useRetryMessageMutation() {
+    const queryClient = useQueryClient();
+    const toast = useToast();
+    const { checkAuth } = useAuthGuard();
+
+    return useMutation({
+        mutationFn: async ({
+            roomId,
+            messageId,
+            content,
+            type,
+            caption,
+            replyToId
+        }: {
+            roomId: string;
+            messageId: string;
+            content: string;
+            type?: 'text' | 'image' | 'sighting' | 'location';
+            caption?: string;
+            replyToId?: string;
+        }) => {
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            // Reuse the same ID for retry (idempotency)
+            return chatsApi.sendMessage(roomId, content, type, caption, replyToId, messageId);
+        },
+        onMutate: async ({ roomId, messageId }) => {
+            const senderId = sessionAuthority.getAnonymousId() || '';
+            
+            // Mark as pending again (show clock icon)
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(roomId, senderId), (old) => {
+                if (!old) return old;
+                return old.map(m => m.id === messageId 
+                    ? { ...m, localStatus: 'pending' as const }
+                    : m
+                );
+            });
+        },
+        onSuccess: (newMessage, variables) => {
+            const currentId = sessionAuthority.getAnonymousId();
+            if (!currentId) return;
+
+            // Confirm the message
+            chatCache.upsertMessage(queryClient, newMessage, currentId);
+            chatCache.removePendingMessage(variables.roomId, newMessage.id);
+            chatCache.applyInboxUpdate(queryClient, newMessage, currentId, true);
+        },
+        onError: (_err, variables) => {
+            const senderId = sessionAuthority.getAnonymousId() || '';
+            
+            // Mark as failed again
+            queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(variables.roomId, senderId), (old) => {
+                if (!old) return old;
+                return old.map(m => m.id === variables.messageId 
+                    ? { ...m, localStatus: 'failed' as const }
+                    : m
+                );
+            });
+
+            toast.error('No se pudo reenviar. Intentá de nuevo.');
+        }
+    });
+}

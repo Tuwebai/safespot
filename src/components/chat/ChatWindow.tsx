@@ -11,7 +11,8 @@ import {
     useMarkAsDeliveredMutation,
     useUserPresence,
     useDeleteMessageMutation,
-    useReactionMutation
+    useReactionMutation,
+    useRetryMessageMutation
 } from '../../hooks/queries/useChatsQuery';
 import useLongPress from '../../hooks/useLongPress';
 
@@ -457,6 +458,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const markAsReadMutation = useMarkAsReadMutation();
     const markAsDeliveredMutation = useMarkAsDeliveredMutation();
     const reactionMutation = useReactionMutation();
+    const retryMessageMutation = useRetryMessageMutation();
 
     // Virtualization Refs
     const parentRef = useRef<HTMLDivElement>(null);
@@ -583,6 +585,19 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     const handleReaction = (messageId: string, emoji: string) => {
         reactionMutation.mutate({ roomId: room.id, messageId, emoji });
+    };
+
+    const handleRetry = (msg: ChatMessage) => {
+        if (msg.localStatus !== 'failed') return;
+        
+        retryMessageMutation.mutate({
+            roomId: room.id,
+            messageId: msg.id,
+            content: msg.content,
+            type: msg.type,
+            caption: msg.caption,
+            replyToId: msg.reply_to_id
+        });
     };
 
     const handlePinMessage = async (messageId: string | null) => {
@@ -1030,6 +1045,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                         <div className="flex items-center">
                                                                             {msg.localStatus === 'pending' ? (
                                                                                 <Clock className="w-3 h-3 text-muted-foreground mr-1" />
+                                                                            ) : msg.localStatus === 'failed' ? (
+                                                                                <button 
+                                                                                    onClick={() => handleRetry(msg)}
+                                                                                    className="text-[10px] text-red-400 font-bold underline mr-1 cursor-pointer hover:text-red-300"
+                                                                                    title="Tocá para reintentar"
+                                                                                >
+                                                                                    Error
+                                                                                </button>
                                                                             ) : msg.is_read ? (
                                                                                 <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                                                                             ) : msg.is_delivered ? (
@@ -1133,6 +1156,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                                     <div className="flex items-center">
                                                                         {msg.localStatus === 'pending' ? (
                                                                             <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
+                                                                        ) : msg.localStatus === 'failed' ? (
+                                                                            <button 
+                                                                                onClick={() => handleRetry(msg)}
+                                                                                className="text-[10px] text-red-200 font-bold underline mr-1 cursor-pointer hover:text-red-100"
+                                                                                title="Tocá para reintentar"
+                                                                            >
+                                                                                Error
+                                                                            </button>
                                                                         ) : msg.is_read ? (
                                                                             <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                                                                         ) : msg.is_delivered ? (

@@ -123,7 +123,7 @@ export interface ChatMessage {
     is_read: boolean;
     is_delivered?: boolean;
     localUrl?: string;
-    localStatus?: 'pending' | 'sent' | 'failed';
+    localStatus?: 'pending' | 'sent' | 'failed' | 'retrying';
     caption?: string;
     reply_to_id?: string;
     reply_to_content?: string;
