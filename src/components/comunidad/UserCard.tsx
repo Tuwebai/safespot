@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { UserPlus, UserCheck, MessageCircle, MapPin, BadgeCheck, Sparkles } from 'lucide-react';
+import { UserPlus, UserCheck, MessageCircle, MapPin, BadgeCheck, Sparkles, MoreHorizontal, Tag } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,14 @@ import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { differenceInDays } from 'date-fns';
+import { usePersonalAliasMutation } from '@/hooks/mutations/usePersonalAliasMutation';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { AliasEditModal } from '@/components/ui/AliasEditModal';
 
 interface UserCardProps {
     user: UserProfile;
@@ -52,6 +60,14 @@ export function UserCard({
     const queryClient = useQueryClient();
     const { success, error } = useToast();
     const [isFollowing, setIsFollowing] = useState(user.is_following);
+    const [isAliasDialogOpen, setIsAliasDialogOpen] = useState(false);
+    const [aliasInput, setAliasInput] = useState(user.personal_alias || '');
+    
+    const { setAlias, removeAlias } = usePersonalAliasMutation();
+
+    // Usar display_alias (calculado en backend) o fallback
+    const displayName = user.display_alias || user.alias || 'Usuario Anónimo';
+    const hasPersonalAlias = !!user.personal_alias;
 
     const followMutation = useMutation({
         mutationFn: () => usersApi.follow(user.anonymous_id),
@@ -68,7 +84,7 @@ export function UserCard({
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['users', 'global'] });
             queryClient.invalidateQueries({ queryKey: ['users', 'nearby'] });
-            success(`Ahora sigues a ${user.alias || 'Usuario'}`);
+            success(`Ahora sigues a ${displayName}`);
         },
     });
 
@@ -105,15 +121,15 @@ export function UserCard({
         if (user.alias) {
             navigate(`/usuario/${user.alias}`);
         }
-    }
+    };
 
     return (
         <div 
-            className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4 animate-in fade-in duration-300 hover:border-neon-green/20 transition-colors"
+            className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4 animate-in fade-in duration-300 hover:border-neon-green/20 transition-colors user-card"
             style={style}
-            onMouseEnter={onMouseEnter}
-            onMouseLeave={onMouseLeave}
-            onMouseMove={onMouseMove}
+            onMouseEnter={isAliasDialogOpen ? undefined : onMouseEnter}
+            onMouseLeave={isAliasDialogOpen ? undefined : onMouseLeave}
+            onMouseMove={isAliasDialogOpen ? undefined : onMouseMove}
         >
             <div
                 className="flex items-center gap-3 cursor-pointer group"
@@ -132,7 +148,23 @@ export function UserCard({
 
                 <div className="flex flex-col min-w-0">
                     <span className="font-semibold text-foreground group-hover:text-neon-green transition-colors flex items-center gap-1.5">
-                        {user.alias || 'Usuario Anónimo'}
+                        {hasPersonalAlias ? (
+                            <span className="flex flex-col">
+                                {/* Alias personal - destacado */}
+                                <span className="flex items-center gap-1 text-base">
+                                    <span className="text-neon-green font-bold">#</span>
+                                    <span className="font-bold">{user.personal_alias}</span>
+                                </span>
+                                {/* Alias global - secundario */}
+                                {user.global_alias && (
+                                    <span className="text-[11px] text-muted-foreground/70 font-normal">
+                                        @{user.global_alias}
+                                    </span>
+                                )}
+                            </span>
+                        ) : (
+                            <span>{user.global_alias || 'Usuario Anónimo'}</span>
+                        )}
                         {user.is_official && (
                             <span title="Cuenta verificada">
                                 <BadgeCheck className="w-4 h-4 text-blue-500" aria-label="Verificado" />
@@ -163,6 +195,25 @@ export function UserCard({
             </div>
 
             <div className="flex items-center gap-2">
+                {/* Menú de alias personal */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                        >
+                            <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setIsAliasDialogOpen(true)}>
+                            <Tag className="w-4 h-4 mr-2" />
+                            {hasPersonalAlias ? 'Editar alias' : 'Agregar alias'}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
                 <Button
                     variant="outline"
                     size="icon"
@@ -198,6 +249,24 @@ export function UserCard({
                     )}
                 </Button>
             </div>
+
+            {/* Modal para editar alias */}
+            <AliasEditModal
+                isOpen={isAliasDialogOpen}
+                onClose={() => setIsAliasDialogOpen(false)}
+                onSave={(alias) => {
+                    setAlias(user.anonymous_id, alias);
+                    setIsAliasDialogOpen(false);
+                }}
+                onRemove={() => {
+                    removeAlias(user.anonymous_id);
+                    setAliasInput('');
+                    setIsAliasDialogOpen(false);
+                }}
+                initialAlias={aliasInput}
+                targetName={user.global_alias || 'este usuario'}
+                hasExistingAlias={hasPersonalAlias}
+            />
         </div>
     );
 }

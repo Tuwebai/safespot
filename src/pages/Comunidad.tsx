@@ -70,7 +70,7 @@ export function Comunidad() {
         refetchInterval: 1000 * 30,
     });
 
-    // Fetch Global Users
+    // Fetch Global Users - Cargar suficientes para búsqueda client-side fluida
     const {
         data: globalUsers,
         isLoading: isLoadingGlobal,
@@ -79,8 +79,10 @@ export function Comunidad() {
     } = useQuery({
         queryKey: ['users', 'global'],
         queryFn: async () => {
-            const response = await usersApi.getGlobalUsers(1);
             setLastUpdated(new Date());
+            // 🎯 Cargar más usuarios (hasta 200) para búsqueda client-side fluida
+            // Esto permite búsqueda inmediata sin perder focus del input
+            const response = await usersApi.getGlobalUsers(1, 200);
             return response;
         },
         select: (data) => normalizeUsers(data),
@@ -94,13 +96,15 @@ export function Comunidad() {
     const error = activeTab === 'nearby' ? errorNearby : errorGlobal;
     const rawUsers = (activeTab === 'nearby' ? nearbyUsers : globalUsers) || [];
 
-    // ✅ Búsqueda local client-side
+    // ✅ Búsqueda fluida client-side (como estaba originalmente)
+    // Filtra sobre los usuarios cargados en memoria sin re-render que pierda focus
     const filteredUsers = useMemo(() => {
         if (!searchQuery.trim()) return rawUsers;
         const query = searchQuery.toLowerCase().trim();
         return rawUsers.filter(user => 
             user.alias?.toLowerCase().includes(query) ||
-            user.anonymous_id?.toLowerCase().includes(query)
+            user.anonymous_id?.toLowerCase().includes(query) ||
+            user.display_alias?.toLowerCase().includes(query)
         );
     }, [rawUsers, searchQuery]);
 

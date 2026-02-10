@@ -31,6 +31,11 @@ const logger = {
  * Internal Log Function
  */
 function log(level, message, context, error = null) {
+  // 🏛️ SAFE MODE: Ensure context is always an object
+  const safeContext = (context && typeof context === 'object' && !Array.isArray(context)) 
+    ? context 
+    : {};
+  
   const requestId = getCorrelationId();
   const timestamp = new Date().toISOString();
 
@@ -40,7 +45,7 @@ function log(level, message, context, error = null) {
     timestamp,
     requestId,
     message,
-    ...context
+    ...safeContext
   };
 
   if (error) {
@@ -60,7 +65,7 @@ function log(level, message, context, error = null) {
   } else {
     // Development: Pretty Print
     const color = getColor(level);
-    const contextStr = Object.keys(context).length ? JSON.stringify(context) : '';
+    const contextStr = Object.keys(safeContext).length ? JSON.stringify(safeContext) : '';
     const reqStr = requestId !== 'NO_CONTEXT' ? `[${requestId}]` : '';
 
     console.log(`${color}[${timestamp}] ${level.toUpperCase()} ${reqStr}: ${message}\x1b[0m`, contextStr);

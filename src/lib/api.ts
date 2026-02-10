@@ -795,6 +795,10 @@ export interface UserProfile {
   current_city?: string | null;
   current_province?: string | null;
   last_geo_update?: string | null;
+  // Personal Alias (owner-only)
+  global_alias?: string | null;
+  personal_alias?: string | null;
+  display_alias?: string;
 }
 
 export interface GlobalStats {
@@ -986,8 +990,19 @@ export const usersApi = {
    * Get global users discovery feed
    * Paginated list of all users with aliases
    */
-  getGlobalUsers: async (page = 1): Promise<{ data: UserProfile[]; meta: { page: number; has_more: boolean } }> => {
-    return apiRequest(`/users/global?page=${page}`);
+  getGlobalUsers: async (page = 1, limit = 20): Promise<{ data: UserProfile[]; meta: { page: number; has_more: boolean } }> => {
+    return apiRequest(`/users/global?page=${page}&limit=${limit}`);
+  },
+
+  /**
+   * Search users globally (searches ALL users, not just loaded ones)
+   * Use this for Community page search instead of client-side filtering
+   */
+  searchGlobalUsers: async (query: string, page = 1): Promise<{ 
+    data: UserProfile[]; 
+    meta: { page: number; has_more: boolean; total: number; query: string } 
+  }> => {
+    return apiRequest(`/users/search-global?q=${encodeURIComponent(query)}&page=${page}`);
   },
 
   /**
@@ -996,6 +1011,29 @@ export const usersApi = {
   getFollowing: async (identifier?: string): Promise<unknown[]> => {
     if (identifier) return apiRequest<unknown[]>(`/users/${encodeURIComponent(identifier)}/following`);
     return apiRequest<unknown[]>('/users/me/following');
+  },
+
+  /**
+   * Set personal alias for a user (owner-only, visible only to owner)
+   */
+  setPersonalAlias: async (targetId: string, alias: string): Promise<{ target_id: string; alias: string; updated_at: string }> => {
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ target_id: string; alias: string; updated_at: string }>(`/users/${encodeURIComponent(targetId)}/personal-alias`, {
+        method: 'POST',
+        body: JSON.stringify({ alias }),
+      });
+    }, 'SET_PERSONAL_ALIAS');
+  },
+
+  /**
+   * Remove personal alias for a user
+   */
+  removePersonalAlias: async (targetId: string): Promise<{ success: boolean; message: string }> => {
+    return trafficController.enqueueSerial(async () => {
+      return apiRequest<{ success: boolean; message: string }>(`/users/${encodeURIComponent(targetId)}/personal-alias`, {
+        method: 'DELETE',
+      });
+    }, 'REMOVE_PERSONAL_ALIAS');
   },
 
   /**

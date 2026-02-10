@@ -29,6 +29,45 @@ Antes de modificar cualquier archivo, el agente DEBE:
 
 ---
 
+## 0️⃣.1️⃣ REGLA CRÍTICA — DB SSOT ANTES QUE ARCHIVOS SQL
+
+> **La Base de Datos en producción es la ÚNICA fuente de verdad (SSOT).**
+> **Los archivos `.sql` estáticos pueden estar desactualizados, incompletos o ser solo documentación.**
+
+### ✅ OBLIGATORIO cuando se toca persistencia:
+
+1. **Conectar a la DB real** usando credenciales de `.env` (servidor)
+2. **Auditar schema en vivo** con queries reales:
+   ```sql
+   SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
+   SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'X';
+   SELECT indexname FROM pg_indexes WHERE tablename = 'X';
+   SELECT relrowsecurity FROM pg_class WHERE relname = 'X'; -- RLS status
+   ```
+3. **Comparar con archivos SQL** solo como referencia, no como verdad
+4. **Detectar discrepancias** entre código/migraciones y DB real
+
+### 🚫 PROHIBIDO:
+- Asumir que `schema.sql` refleja la DB real
+- Crear migraciones basadas solo en archivos estáticos
+- No verificar si tablas/columnas/índices ya existen
+- Ignorar estado real de RLS, constraints, triggers
+
+### 📋 CHECKLIST DB SSOT:
+```markdown
+- [ ] Conexión a DB real exitosa (Pooler/Direct)
+- [ ] Tablas verificadas en information_schema
+- [ ] Columnas verificadas (tipos, nullable)
+- [ ] Índices existentes documentados
+- [ ] RLS status confirmado (pg_class.relrowsecurity)
+- [ ] Constraints verificados
+- [ ] Discrepancias con archivos SQL documentadas
+```
+
+**Principio:** *Si la DB real contradice el archivo SQL, gana la DB real. El SQL es un artefacto, la DB es el sistema.*
+
+---
+
 1️⃣ PRINCIPIOS ARQUITECTÓNICOS FUNDAMENTALES
 1.1 Seguridad Primero
 Toda acción sensible debe dejar traza auditada
@@ -59,6 +98,32 @@ No scope creep
 No refactors oportunistas
 
 No "mientras estoy acá..."
+
+1.5 Zero Regresión Obligatorio
+> **"Si algo funcionaba antes, debe seguir funcionando después."**
+
+**Mandamiento:**
+- ✅ Nunca renombrar/remover campos de respuesta API sin mantener compatibilidad
+- ✅ Si agregás nuevos campos, los viejos deben seguir existiendo
+- ✅ Si cambiás tipos, debe haber conversión/transición
+- ✅ Si movés componentes, las importaciones deben seguir funcionando
+
+**Checklist Anti-Regresión:**
+```markdown
+- [ ] Verificar que campos de API aún existen para código legacy
+- [ ] Verificar que funciones públicas siguen exportándose
+- [ ] Verificar que rutas de navegación siguen funcionando
+- [ ] Verificar que props de componentes siguen siendo válidas
+- [ ] TypeScript compila sin errores en TODO el proyecto
+- [ ] Pruebas manuales de flujos críticos (navegación, displays)
+```
+
+**Ejemplo de error (PROHIBIDO):**
+```typescript
+// ❌ ANTES funcionaba: user.alias
+// ❌ DESPUÉS rompe: user.alias renombrado a user.global_alias
+// ✅ CORRECTO: Mantener user.alias + agregar user.global_alias
+```
 
 2️⃣ REGLAS INQUEBRANTABLES
 🚫 Prohibiciones Absolutas

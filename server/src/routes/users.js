@@ -1001,40 +1001,91 @@ router.get('/nearby', requireAnonymousId, async (req, res) => {
     }
 
     // 2. Fetch users in that locality
-    // Join on anonymous_users (SSOT) instead of settings/reports
-    const usersResult = await queryWithRLS(
-      anonymousId,
-      `SELECT DISTINCT ON (u.anonymous_id) 
-         u.anonymous_id, 
-         u.alias, 
-         u.avatar_url, 
-         u.level,
-         u.points,
-         u.is_official,
-         u.last_active_at,
-         u.current_city,
-         $2 as common_locality,
-         EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
-       FROM anonymous_users u
-       WHERE 
-         u.anonymous_id != $1
-         AND u.alias IS NOT NULL AND u.alias != ''
-         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
-         -- Excluir usuarios del sistema (por role o alias específico)
-         AND (
-           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
-           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
-           AND u.alias NOT ILIKE '%SystemAdmin%'
-         )
-         AND (
-           u.current_city = $2
-           OR
-           translate(lower(u.current_city), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') = translate(lower($2), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
-         )
-       ORDER BY u.anonymous_id, u.last_active_at DESC
-       LIMIT 50`,
-      [anonymousId, locality]
-    );
+    // Join on anonymous_users (SSOT) + personal_aliases (si existe)
+    let usersResult;
+    try {
+      usersResult = await queryWithRLS(
+        anonymousId,
+        `SELECT DISTINCT ON (u.anonymous_id) 
+           u.anonymous_id, 
+           u.alias,                           -- Backward compatibility
+           u.alias as global_alias,
+           pa.alias as personal_alias,
+           COALESCE(pa.alias, u.alias, 'Usuario Anónimo') as display_alias,
+           u.avatar_url, 
+           u.level,
+           u.points,
+           u.is_official,
+           u.last_active_at,
+           u.current_city,
+           $2 as common_locality,
+           EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+         FROM anonymous_users u
+         LEFT JOIN user_personal_aliases pa 
+           ON pa.target_anonymous_id = u.anonymous_id 
+           AND pa.owner_anonymous_id = $1
+         WHERE 
+           u.anonymous_id != $1
+           AND u.alias IS NOT NULL AND u.alias != ''
+           AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           -- Excluir usuarios del sistema (por role o alias específico)
+           AND (
+             (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+             AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+             AND u.alias NOT ILIKE '%SystemAdmin%'
+           )
+           AND (
+             u.current_city = $2
+             OR
+             translate(lower(u.current_city), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') = translate(lower($2), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
+           )
+         ORDER BY u.anonymous_id, u.last_active_at DESC
+         LIMIT 50`,
+        [anonymousId, locality]
+      );
+    } catch (error) {
+      // Fallback: tabla no existe (migración pendiente)
+      if (error.code === '42P01') {
+        logger.warn('[NEARBY] user_personal_aliases no existe, usando fallback');
+        usersResult = await queryWithRLS(
+          anonymousId,
+          `SELECT DISTINCT ON (u.anonymous_id) 
+             u.anonymous_id, 
+             u.alias,                           -- Backward compatibility
+             u.alias as global_alias,
+             NULL as personal_alias,
+             u.alias as display_alias,
+             u.avatar_url, 
+             u.level,
+             u.points,
+             u.is_official,
+             u.last_active_at,
+             u.current_city,
+             $2 as common_locality,
+             EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+           FROM anonymous_users u
+           WHERE 
+             u.anonymous_id != $1
+             AND u.alias IS NOT NULL AND u.alias != ''
+             AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+             AND (
+               (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+               AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+               AND u.alias NOT ILIKE '%SystemAdmin%'
+             )
+             AND (
+               u.current_city = $2
+               OR
+               translate(lower(u.current_city), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') = translate(lower($2), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
+             )
+           ORDER BY u.anonymous_id, u.last_active_at DESC
+           LIMIT 50`,
+          [anonymousId, locality]
+        );
+      } else {
+        throw error;
+      }
+    }
 
     res.json({
       success: true,
@@ -1060,33 +1111,77 @@ router.get('/global', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
     const page = parseInt(req.query.page) || 1;
-    const limit = 20;
+    const requestedLimit = parseInt(req.query.limit) || 20;
+    // 🎯 Cap max a 200 para evitar sobrecarga, min 1
+    const limit = Math.min(Math.max(requestedLimit, 1), 200);
     const offset = (page - 1) * limit;
 
-    const result = await queryWithRLS(
-      anonymousId,
-      `SELECT 
-         u.anonymous_id, 
-         u.alias, 
-         u.avatar_url, 
-         u.level,
-         u.points,
-         u.is_official,
-         u.last_active_at
-       FROM anonymous_users u
-       WHERE u.anonymous_id != $1
-         AND u.alias IS NOT NULL AND u.alias != ''
-         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
-         -- Excluir usuarios del sistema (por role o alias específico)
-         AND (
-           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
-           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
-           AND u.alias NOT ILIKE '%SystemAdmin%'
-         )
-       ORDER BY u.last_active_at DESC
-       LIMIT $2 OFFSET $3`,
-      [anonymousId, limit, offset]
-    );
+    let result;
+    try {
+      result = await queryWithRLS(
+        anonymousId,
+        `SELECT 
+           u.anonymous_id, 
+           u.alias,                           -- Backward compatibility
+           u.alias as global_alias,
+           pa.alias as personal_alias,
+           COALESCE(pa.alias, u.alias, 'Usuario Anónimo') as display_alias,
+           u.avatar_url, 
+           u.level,
+           u.points,
+           u.is_official,
+           u.last_active_at
+         FROM anonymous_users u
+         LEFT JOIN user_personal_aliases pa 
+           ON pa.target_anonymous_id = u.anonymous_id 
+           AND pa.owner_anonymous_id = $1
+         WHERE u.anonymous_id != $1
+           AND u.alias IS NOT NULL AND u.alias != ''
+           AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           -- Excluir usuarios del sistema (por role o alias específico)
+           AND (
+             (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+             AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+             AND u.alias NOT ILIKE '%SystemAdmin%'
+           )
+         ORDER BY u.last_active_at DESC
+         LIMIT $2 OFFSET $3`,
+        [anonymousId, limit, offset]
+      );
+    } catch (error) {
+      // Fallback: tabla no existe
+      if (error.code === '42P01') {
+        logger.warn('[GLOBAL] user_personal_aliases no existe, usando fallback');
+        result = await queryWithRLS(
+          anonymousId,
+          `SELECT 
+             u.anonymous_id, 
+             u.alias,                           -- Backward compatibility
+             u.alias as global_alias,
+             NULL as personal_alias,
+             u.alias as display_alias,
+             u.avatar_url, 
+             u.level,
+             u.points,
+             u.is_official,
+             u.last_active_at
+           FROM anonymous_users u
+           WHERE u.anonymous_id != $1
+             AND u.alias IS NOT NULL AND u.alias != ''
+             AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+             AND (
+               (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+               AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+               AND u.alias NOT ILIKE '%SystemAdmin%'
+             )
+           ORDER BY u.last_active_at DESC
+           LIMIT $2 OFFSET $3`,
+          [anonymousId, limit, offset]
+        );
+      } else {
+        throw error;
+      }
+    }
 
     res.json({
       success: true,
@@ -1097,6 +1192,210 @@ router.get('/global', requireAnonymousId, async (req, res) => {
   } catch (error) {
     logError(error, req);
     res.status(500).json({ error: 'Failed to fetch global community' });
+  }
+});
+
+/**
+ * POST /api/users/:targetId/personal-alias
+ * Create or update personal alias for a user
+ */
+router.post('/:targetId/personal-alias', requireAnonymousId, async (req, res) => {
+  try {
+    const ownerId = req.anonymousId;
+    const { targetId } = req.params;
+    const { alias } = req.body;
+
+    // Validaciones
+    if (!alias || typeof alias !== 'string') {
+      return res.status(400).json({ error: 'Alias requerido' });
+    }
+
+    const trimmedAlias = alias.trim();
+    
+    if (trimmedAlias.length === 0) {
+      return res.status(400).json({ error: 'Alias no puede estar vacío' });
+    }
+    
+    if (trimmedAlias.length > 40) {
+      return res.status(400).json({ error: 'Máximo 40 caracteres' });
+    }
+
+    // No auto-alias
+    if (ownerId === targetId) {
+      return res.status(400).json({ error: 'No puedes asignarte un alias a ti mismo' });
+    }
+
+    // Validar que target existe
+    const targetCheck = await queryWithRLS(
+      '',
+      'SELECT 1 FROM anonymous_users WHERE anonymous_id = $1',
+      [targetId]
+    );
+    
+    if (targetCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Validar caracteres (solo letras, números, espacios, guiones, underscores)
+    const validAliasRegex = /^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s_-]+$/;
+    if (!validAliasRegex.test(trimmedAlias)) {
+      return res.status(400).json({ error: 'Alias contiene caracteres inválidos' });
+    }
+
+    // Insert o Update (UPSERT)
+    const result = await queryWithRLS(
+      ownerId,
+      `INSERT INTO user_personal_aliases (owner_anonymous_id, target_anonymous_id, alias)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (owner_anonymous_id, target_anonymous_id)
+       DO UPDATE SET alias = $3, updated_at = NOW()
+       RETURNING *`,
+      [ownerId, targetId, trimmedAlias]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        target_id: targetId,
+        alias: result.rows[0].alias,
+        updated_at: result.rows[0].updated_at
+      }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error al guardar alias personal' });
+  }
+});
+
+/**
+ * DELETE /api/users/:targetId/personal-alias
+ * Remove personal alias for a user
+ */
+router.delete('/:targetId/personal-alias', requireAnonymousId, async (req, res) => {
+  try {
+    const ownerId = req.anonymousId;
+    const { targetId } = req.params;
+
+    await queryWithRLS(
+      ownerId,
+      `DELETE FROM user_personal_aliases 
+       WHERE owner_anonymous_id = $1 AND target_anonymous_id = $2`,
+      [ownerId, targetId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Alias personal eliminado'
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error al eliminar alias personal' });
+  }
+});
+
+/**
+ * GET /api/users/search-global
+ * Búsqueda global de usuarios (para página Comunidad)
+ * Busca en TODOS los usuarios, no solo los cargados en memoria
+ */
+router.get('/search-global', requireAnonymousId, async (req, res) => {
+  try {
+    const anonymousId = req.anonymousId;
+    const { q, page = 1 } = req.query;
+    const limit = 20;
+    const offset = (parseInt(page) - 1) * limit;
+
+    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      return res.status(400).json({ 
+        error: 'Query debe tener al menos 2 caracteres' 
+      });
+    }
+
+    const searchTerm = `%${q.trim()}%`;
+
+    // Buscar en TODOS los usuarios con alias coincidente
+    const result = await queryWithRLS(
+      anonymousId,
+      `SELECT 
+         u.anonymous_id, 
+         u.alias,                           -- Backward compatibility
+         u.alias as global_alias,
+         pa.alias as personal_alias,
+         COALESCE(pa.alias, u.alias, 'Usuario Anónimo') as display_alias,
+         u.avatar_url, 
+         u.level,
+         u.points,
+         u.is_official,
+         u.last_active_at,
+         EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+       FROM anonymous_users u
+       LEFT JOIN user_personal_aliases pa 
+         ON pa.target_anonymous_id = u.anonymous_id 
+         AND pa.owner_anonymous_id = $1
+       WHERE u.anonymous_id != $1
+         AND u.alias IS NOT NULL 
+         AND u.alias != ''
+         AND (
+           u.alias ILIKE $2 
+           OR u.alias ILIKE $3
+           OR translate(lower(u.alias), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') 
+              LIKE translate(lower($4), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
+         )
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+         AND u.alias NOT ILIKE '%SystemAdmin%'
+       ORDER BY 
+         CASE WHEN u.alias ILIKE $5 THEN 0 ELSE 1 END,  -- Exact match primero
+         u.last_active_at DESC
+       LIMIT $6 OFFSET $7`,
+      [
+        anonymousId, 
+        searchTerm,           // $2: ILIKE match
+        searchTerm,           // $3: ILIKE match (sin tildes)
+        `%${q.trim().toLowerCase()}%`,  // $4: sin tildes
+        `${q.trim()}%`,       // $5: prefijo exacto para prioridad
+        limit, 
+        offset
+      ]
+    );
+
+    // Contar total para paginación
+    const countResult = await queryWithRLS(
+      anonymousId,
+      `SELECT COUNT(*) as total
+       FROM anonymous_users u
+       WHERE u.anonymous_id != $1
+         AND u.alias IS NOT NULL 
+         AND u.alias != ''
+         AND (
+           u.alias ILIKE $2 
+           OR translate(lower(u.alias), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU') 
+              LIKE translate(lower($3), 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')
+         )
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+         AND u.alias NOT ILIKE '%SystemAdmin%'`,
+      [anonymousId, searchTerm, `%${q.trim().toLowerCase()}%`]
+    );
+
+    const total = parseInt(countResult.rows[0].total);
+
+    res.json({
+      success: true,
+      data: result.rows,
+      meta: { 
+        page: parseInt(page), 
+        has_more: total > offset + result.rows.length,
+        total,
+        query: q.trim()
+      }
+    });
+
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Error en búsqueda' });
   }
 });
 
