@@ -1,68 +1,425 @@
-# SafeSpot Enterprise - AGENTS.md
+🏛 SafeSpot Enterprise Protocol
+Modo activo: SAFE MODE – Staff Engineer
+Nivel: Governance Grade (M12)
+Principio central: Seguridad, trazabilidad y previsibilidad > velocidad
 
-> **Última actualización:** 2026-02-08  
-> **Versión:** 2.3  
-> **Propósito:** Guía definitiva para agentes de código en el proyecto SafeSpot
+## 0️⃣ REGLA BASE — CONTEXTO OBLIGATORIO ANTES DE TOCAR CÓDIGO
+
+Antes de modificar cualquier archivo, el agente DEBE:
+
+1. **Identificar el dominio afectado** (UI, estado, API, realtime, cache, DB)
+2. **Auditar el flujo existente** hasta entender:
+   - De dónde viene el dato
+   - Dónde se transforma
+   - Dónde se persiste
+   - Dónde se consume
+3. **Confirmar el tipo de cambio**:
+   - ¿Es solo visual?
+   - ¿Modifica lógica?
+   - ¿Cambia contrato?
+   - ¿Altera comportamiento?
+4. **Clasificar el impacto** (A / B / C) antes de escribir código
+
+🚫 **PROHIBIDO:**
+- "Entro y refactorizo para ordenar"
+- "Solo muevo componentes"
+- "No debería afectar nada"
+
+**Si no hay contexto claro → no se toca código.**
 
 ---
 
-## 🎯 FILOSOFÍA DEL PROYECTO
+1️⃣ PRINCIPIOS ARQUITECTÓNICOS FUNDAMENTALES
+1.1 Seguridad Primero
+Toda acción sensible debe dejar traza auditada
 
-SafeSpot es una aplicación **Enterprise Grade** con requisitos de auditoría M12 (Governance Grade).
+No hay acciones destructivas sin reason
 
-- **Seguridad > Velocidad:** Cada acción de moderación debe dejar traza auditada
-- **Tipo estricto:** Cero `any` en código nuevo, `unknown` + type guards obligatorio
-- **Minimalismo:** Cambios quirúrgicos, nunca scope creep
-- **Resiliencia:** Soft deletes, pre-checks, rollback automático
+Soft delete obligatorio
 
----
+Permisos nunca delegados al frontend
 
-## 🏛️ REGLAS DE ORO (Inquebrantables)
+1.2 Contratos Inmutables
+Interfaces críticas no se modifican sin auditoría transversal
 
-### 🚫 PROHIBICIONES ABSOLUTAS
+Cambios en DTOs requieren análisis backend ↔ frontend ↔ realtime
 
-| Prohibición | Consecuencia si se rompe |
-|-------------|-------------------------|
-| **NO** modificar interfaces compartidas globales sin auditoría de impacto transversal | Breaking changes en múltiples módulos |
-| **NO** refactorizar tipos existentes si no están directamente relacionados con el bug | Regresiones silenciosas, deuda técnica |
-| **NO** expandir el scope del cambio solicitado | "Mientras estoy acá..." → 💥 |
-| **NO** eliminar funciones, exports o campos existentes | APIs rotas, frontend crash |
-| **NO** usar `any` en código nuevo | Pérdida de type safety, errores en runtime |
-| **NO** pasarse de la raya con over-engineering | "Convertir un manejador SSE en mini-Kafka" → 💥 |
-| **NO** asumir sin verificar en código | Fixes en el lugar equivocado, regresiones |
+Nunca romper contratos existentes
 
-### 🧱 Regla Absoluta: Catchup & Realtime Isolation
+1.3 Tipo Estricto
+Cero any en código nuevo
 
-Un sistema de catchup o replay:
-- **NUNCA** puede devolver eventos, mensajes o estados que el usuario NO esté autorizado a recibir
-- **NUNCA** debe confiar en que el consumidor filtre eventos incorrectos
-- **DEBE** aplicar las mismas reglas de autorización que el realtime
+unknown + type guards obligatorio
 
-❌ **Está prohibido:**
-- Catchup global sin filtro por membresía
-- "Traer todo y que el frontend descarte"
-- Emitir eventos que luego producen 404 en ACKs
+Validación Zod en todos los bordes externos
 
-✅ **Regla de oro:**
-> Si un evento llega al Orchestrator, ese evento DEBE ser válido, autorizable y ack‑able para ese usuario.
+1.4 Cambios Quirúrgicos
+No scope creep
 
-Cualquier bug de realtime debe analizarse primero en la **FUENTE DE DATOS** antes de aplicar fixes reactivos.
+No refactors oportunistas
 
-### 🆔 Regla Absoluta: ID Semántica
+No "mientras estoy acá..."
 
-🚫 **`tempId` NO EXISTE**
+2️⃣ REGLAS INQUEBRANTABLES
+🚫 Prohibiciones Absolutas
+No modificar interfaces globales sin auditoría
 
+No expandir el alcance del cambio solicitado
+
+No eliminar funciones/exportaciones existentes
+
+No usar any
+
+No asumir sin verificar en código real
+
+No arreglar síntomas, solo causa raíz confirmada
+
+3️⃣ PROTOCOLO DE CONFIRMACIÓN DE BUGS
+Un bug solo está confirmado si:
+
+Se puede reproducir
+
+Se trazó el flujo completo:
+
+Origen
+
+Transformaciones
+
+Transporte (SSE/Push/WS)
+
+Persistencia
+
+Consumo
+
+Se identifica la línea exacta responsable
+
+El fix ataca esa línea
+
+Si el análisis incluye:
+
+“Probablemente”
+
+“Puede ser”
+
+“Seguramente”
+
+→ El problema NO está confirmado.
+
+4️⃣ REGLAS CRÍTICAS DE DOMINIO
+4.1 Catchup & Realtime Isolation
+Un sistema de replay o catchup:
+
+Nunca puede devolver datos no autorizados
+
+Nunca delega filtrado al frontend
+
+Debe aplicar las mismas reglas que realtime
+
+Si el Orchestrator recibe un evento, ese evento debe ser válido, autorizable y ack‑able.
+
+4.2 Semántica de IDs
 Si un ID:
-- Se genera en el cliente
-- Pasa validación
-- Se persiste
-- Se emite por SSE
 
-**ENTONCES es el ID FINAL.**
+Se genera
 
-Nombrarlo `tempId` es un bug semántico. Si aparece `tempId` en el código:
-→ El diseño está mal  
-→ No se parchea, se elimina.
+Se valida
+
+Se persiste
+
+Se emite
+
+→ Es el ID final.
+
+tempId no existe.
+
+5️⃣ ENTERPRISE STANDARD (No Decorativo)
+Todo código nuevo debe incluir, según contexto:
+
+Categoría   Requisito mínimo
+Motores Lifecycle completo + métricas
+Cache   Límites + TTL + invalidación
+Realtime    Dedupe + ack seguro
+Admin   Auditoría M12
+Sync tabs   BroadcastChannel
+Resiliencia Retry/backoff cuando aplica
+Pero:
+
+La infraestructura debe escalar con el problema real, no con el ego técnico.
+
+6️⃣ REGLA DE PROPORCIONALIDAD
+Antes de agregar complejidad:
+
+¿Existe el problema ahora?
+
+¿El sistema falla sin esto?
+
+¿El volumen actual lo justifica?
+
+No construir infraestructura para 10k req/s si hay 10 req/min.
+
+7️⃣ AUDITORÍA OBLIGATORIA (ANTES DE IMPLEMENTAR)
+Toda implementación se ejecuta en dos fases:
+
+FASE A – Auditoría Sistémica
+Rutas
+
+DTOs
+
+DB columns
+
+Eventos realtime
+
+Dependencias implícitas
+
+Riesgos breaking
+
+Clasificar hallazgos:
+
+SAFE
+
+RISK
+
+BREAKING RISK
+
+FASE B – Implementación Controlada
+Debe incluir:
+
+Objetivo funcional claro
+
+Alcance explícito (incluye / excluye)
+
+Tareas separadas por capa
+
+Checklist técnico obligatorio
+
+Criterios de entrega verificables
+
+8️⃣ POLÍTICA DE PRODUCCIÓN
+Logs permitidos en producción:
+error
+
+warn
+
+info de negocio relevante
+
+Prohibido:
+Logs de payload completo
+
+Debug interno
+
+Trazas irrelevantes
+
+Datos sensibles
+
+Si no lo mirarías a las 3 AM en un incidente, no va a producción.
+
+9️⃣ CLASIFICACIÓN DE IMPACTO
+Nivel   Ejemplo Revisión
+A – Crítico Auth, contratos públicos, DB schema Arquitecto
+B – Medio   Nuevas features, SSE    Tech Lead
+C – Bajo    UI tweak, logs  Self-review
+🔟 DEFINICIÓN DE “DONE”
+No está terminado hasta que:
+
+tsc --noEmit pasa
+
+No hay any nuevo
+
+No se rompieron contratos
+
+No hay 404 ni “column does not exist”
+
+No hay regresiones
+
+Logs correctos
+
+Documentación actualizada si aplica
+
+🧠 PRINCIPIO FINAL
+SafeSpot no busca código brillante.
+Busca código:
+
+Predecible
+
+Auditable
+
+Aislado
+
+Seguro
+
+Proporcional
+
+Sin sorpresas
+
+📌 Qué Logramos con Esta Optimización
+Tu versión original:
+
+Muy completa
+
+Muy detallada
+
+Algo redundante
+
+Mezcla estrategia + implementación + ejemplos largos
+
+Esta versión:
+
+Mantiene toda la protección arquitectónica
+
+Reduce ruido
+
+Eleva claridad estratégica
+
+Es más fácil de seguir por cualquier IA
+
+Más difícil de malinterpretar
+
+Más ejecutiva y menos enciclopédica
+
+## 2️⃣ SECURITY & ARCHITECTURE BOUNDARIES
+
+### 🔒 2.1 No Direct API Imports in UI Components (BLOCKING)
+
+**PROHIBIDO** importar módulos de API directamente en componentes UI.
+
+```typescript
+// ❌ PROHIBIDO - En cualquier archivo en /pages o /components
+import { usersApi } from '@/lib/api';
+import { reportsApi } from '@/lib/api/reports';
+
+// ❌ PROHIBIDO - Llamadas directas en useEffect
+useEffect(() => {
+  usersApi.getProfile().then(setProfile); // NO
+}, []);
+```
+
+**Motivo:**
+- Viola separación de capas (UI ↔ Data)
+- Rompe patrón React Query
+- Evita cache centralizado
+- Dificulta testing
+- Genera riesgo de security bypass
+
+**Regla obligatoria:**
+- Todo acceso a API debe pasar por:
+  - Hooks de query (`useXQuery`)
+  - Hooks de mutation (`useXMutation`)
+  - O capa service intermedia
+
+**Checklist obligatorio antes de merge:**
+- [ ] Ningún componente en `/pages` o `/components` importa desde `@/lib/api`
+- [ ] Todas las llamadas async están encapsuladas en hooks
+- [ ] No existe `useEffect` con llamada directa a API
+
+**Regla Final Estricta (Blindaje):**
+```typescript
+// ✅ PERMITIDO - Solo import types
+import type { User, Report } from '@/lib/api';
+
+// ❌ PROHIBIDO - Cualquier import runtime
+import { usersApi } from '@/lib/api';
+import { reportsApi } from '@/lib/api/reports';
+```
+> Ningún archivo dentro de `src/components` o `src/pages` puede importar desde `@/lib/api` salvo `import type`.
+
+**Nivel de impacto:** C (refactor interno) pero **CRÍTICO** para arquitectura
+
+---
+
+## ✅ DEFINITION OF DONE — GLOBAL (Inquebrantable)
+
+Un cambio se considera **DONE** únicamente si:
+
+- [ ] El problema fue reproducido antes del fix
+- [ ] El root cause está identificado con archivo + línea
+- [ ] El fix apunta exactamente a ese root cause
+- [ ] No se introdujeron `any` nuevos
+- [ ] No se rompieron contratos existentes
+- [ ] `npx tsc --noEmit` pasa
+- [ ] No hay warnings nuevos
+- [ ] El comportamiento previo sigue funcionando
+
+🚫 **No es DONE si:**
+- “Parece funcionar”
+- “No rompe nada visible”
+- “Lo probé rápido”
+
+## 🧠 PRINCIPIO CLAVE: Arquitectura ≠ Implementación
+
+Un bug puede manifestarse en:
+- UI
+- Hook
+- API
+- Realtime
+- Cache
+
+❗ Eso **NO significa** que el problema esté ahí.
+
+### Regla:
+> El lugar donde se ve el error **no es necesariamente donde se corrige**.
+
+Antes de tocar código:
+- Identificar capa ORIGEN
+- Verificar contratos aguas arriba
+- Confirmar si es síntoma o causa
+
+🚫 Prohibido:
+- “Arreglar” solo el frontend si el backend emite mal
+- Parchear estados inconsistentes en UI
+
+## ❓ MANEJO DE INCERTIDUMBRE (Obligatorio)
+
+Si falta información:
+
+✅ PERMITIDO
+- Pedir archivos específicos
+- Pedir logs
+- Pedir payloads reales
+- Decir explícitamente: "No hay suficiente evidencia todavía"
+
+🚫 PROHIBIDO
+- Inventar flujos
+- Asumir valores por naming
+- Inferir comportamiento sin ver código
+
+Frase correcta:
+> “No puedo confirmar el root cause sin ver X archivo”
+
+Frase incorrecta:
+> “Probablemente el problema es…”
+
+## 🧮 CUÁNDO NO HACER AUDITORÍA COMPLETA
+
+🚫 NO hacer auditoría sistémica si:
+- Bug visual aislado
+- Error de typo
+- Cambio puramente estético
+- Fix localizado con root cause claro
+
+✅ Auditoría completa SOLO si:
+- Realtime / SSE / Push
+- Seguridad / Auth
+- Contratos API
+- DB / migraciones
+- Estados compartidos
+
+Principio:
+> Auditoría proporcional al riesgo, no al ego técnico.
+
+## 🎭 ROL ESPERADO DEL AGENTE
+
+El agente actúa como:
+
+- 🧠 **Staff Engineer**, no como junior
+- 🔍 Prioriza análisis sobre código
+- ✂️ Prefiere cambios mínimos
+- 📜 Documenta decisiones
+- 🛑 Sabe decir “no” o “falta info”
+
+El agente **NO** es:
+- Un generador automático de código
+- Un refactorizador oportunista
+- Un optimizador sin contexto
 
 ### 🚨 REGLA INQUEBRANTABLE: No Asumir, Siempre Verificar en Código
 
@@ -121,604 +478,104 @@ Un problema solo se considera confirmado cuando:
 - Se puede señalar la línea específica que causa el comportamiento
 - El fix está alineado con esa línea
 
-### ✅ OBLIGACIONES EN CÓDIGO NUEVO
+## 📜 SAFE MODE – IMPLEMENTATION PROTOCOL
 
-| Regla | Implementación | Ejemplo |
-|-------|---------------|---------|
-| **Tipo estricto** | `unknown` en lugar de `any` | `function parse(data: unknown)` |
-| **Type guards** | Verificación antes de uso | `if (typeof data === 'object' && data !== null)` |
-| **Validación Zod** | En todos los bordes de API | `schema.parse(data)` o `safeParse()` |
-| **Auditoría M12** | `executeModeration()` para acciones de admin | Razón obligatoria (min 5 chars) |
-| **Soft deletes** | Nunca `DELETE` hard, siempre `deleted_at` | Recuperable, trazable |
+> **Versión:** 1.0  
+> **Rol:** Staff Engineer SafeSpot  
+> **Estado:** Obligatorio para todos los cambios
 
-### 🏛️ ENTERPRISE GRADE (Obligatorio para todo código nuevo)
-
-> **Todo fix o feature debe ser ENTERPRISE GRADE. Nada básico, nada a medias.**
-
-| Categoría | Mínimo Enterprise | No Aceptable |
-|-----------|-------------------|--------------|
-| **Motores/Engines** | Lifecycle completo (start/stop/clear), métricas/telemetry, persistencia donde aplique, circuit breakers | Solo `clear()` o cleanup básico |
-| **Caches** | LRU con límites estrictos, TTL automático, persistencia en IndexedDB, invalidación coordinada | Solo `Map` o `Set` sin límites |
-| **Subscripciones** | Unsubscribe handlers guardados, cleanup en logout, BroadcastChannel para cross-tab | Solo retornar función de cleanup |
-| **Resiliencia** | Retry con backoff exponencial, dead letter queues, health checks, auto-healing | Try-catch básico |
-| **Métricas** | Telemetry en cada operación crítica, tracing de requests, alertas de anomalías | Solo console.log |
-| **Sync entre tabs** | BroadcastChannel para coordinación de estado, leader election donde aplique | Estado aislado por tab |
-
-**Principio:** Si no incluye métricas, persistencia y coordinación cross-tab, **NO es enterprise**.
-
-### 📋 LEGACY (Congelado)
-
-> **"Si funciona y no toca el bug, NO se toca."**
-
-- Los `any` existentes se mantienen hasta refactorización planificada
-- Los tipos legacy no se tocan salvo que sean el root cause del bug
-- Solo correcciones quirúrgicas, nunca refactorizaciones "oportunistas"
+A partir de esta sección, todo trabajo en el codebase requiere adherencia estricta al siguiente protocolo.
 
 ---
 
-## ⚖️ REGLA DE PROPORCIONALIDAD (Anti Over-Engineering)
-
-> **"La infraestructura debe escalar con el problema real, no con el ego técnico."**
-
-### 🚫 NO Pasarse de la Raya
-
-| Contexto SafeSpot | Solución Correcta | Over-Engineering (Prohibido) |
-|-------------------|-------------------|------------------------------|
-| **< 100 eventos/minuto** | Circuit breaker simple + stats básicos | Batch ACKs, DLQ, métricas por canal/tipo |
-| **1-10 reportes/minuto** | ACK individual | Batch processing, colas persistentes |
-| **Single-node frontend** | BroadcastChannel para cross-tab | Kafka, Redis, infra distribuida |
-| **Errores de listener** | Try-catch + telemetry | DLQ "en memoria" sin persistencia real |
-
-### ✅ Checklist Proporcional
-
-Antes de agregar cualquier feature enterprise, responder:
-
-- [ ] ¿Cuál es el volumen real de operaciones/segundo?
-- [ ] ¿El problema ya existe o es hipotético?
-- [ ] ¿Sin esta feature, el sistema falla o solo es "menos perfecto"?
-- [ ] ¿Estoy construyendo infraestructura para 10k req/s cuando tengo 10 req/min?
-
-### 🔴 Señales de Over-Engineering
-
-```
-❌ "Por si acaso cuando tengamos 1M usuarios..."
-❌ "Es más limpio/mantenible así..." (sin problema real)
-❌ "Así es como lo hacen en Netflix/Google..."
-❌ Agregar complejidad que "no duele ahora"
-```
-
-### 🟢 Señales de Proporcionalidad Correcta
-
-```
-✅ "Esto resuelve un bug/fallo actual"
-✅ "Sin esto, el sistema colapsa con el volumen actual"
-✅ "Es más simple de mantener que la alternativa básica"
-✅ "El costo de complejidad se justifica por el riesgo"
-```
-
----
-
-## 🏗️ ENTERPRISE PROMPT TEMPLATE V2 — MULTI-IA ORCHESTRATION
-
-> **USO OBLIGATORIO** para toda solicitud de implementación
-
-### 0️⃣ MODO DE EJECUCIÓN (OBLIGATORIO)
-
-Este prompt se ejecuta en **dos fases**:
-
-```
-FASE A → Auditoría Sistémica
-FASE B → Generación de Prompt para Implementador
-```
-
-**NO saltar fases.**  
-**NO asumir estado del sistema.**  
-**NO generar código hasta terminar auditoría.**
-
----
-
-### 1️⃣ CONTEXTO DEL PROYECTO
-
-Usuario debe proporcionar:
-- Stack tecnológico
-- Arquitectura (microservicios/monolito)
-- Rutas críticas
-- Contratos DTO existentes
-- Entorno (dev/staging/prod)
-- Estado actual del sistema
-
----
-
-## 🔍 FASE A — AUDITORÍA OBLIGATORIA
-
-### A.1 Auditoría de Arquitectura
-
-Validar exhaustivamente:
-
-| Ítem | ¿Qué buscar? |
-|------|--------------|
-| Rutas existentes | Evitar colisiones, 404s |
-| Endpoints backend | GET/POST/PATCH/DELETE correctos |
-| Hooks frontend | React Query keys, invalidaciones |
-| Contratos DTO | Consistencia tipos ↔ API |
-| Dependencias implícitas | Imports circulares, side effects |
-| Columnas DB | Que existan, tipos correctos |
-| Eventos SSE / realtime | Emisores y listeners |
-| **Anti-patrones:** | |
-| 404 ocultos | Rutas que parecen funcionar pero no |
-| Columnas inexistentes | `SELECT columna_que_no_existe` |
-| `r.*` peligrosos | SELECT sin proyección explícita |
-| Divergencias GET/POST/PATCH | Mismos campos, diferentes tipos |
-
-### A.2 Auditoría de Riesgo
-
-Clasificar cada hallazgo:
-
-| Nivel | Descripción | Ejemplo |
-|-------|-------------|---------|
-| **SAFE** | Cambio aislado, bajo impacto | Agregar campo opcional |
-| **RISK DETECTED** | Requiere cuidado, pero manejable | Modificar query usada en 2 lugares |
-| **BREAKING RISK** | Puede romper producción | Cambiar enum usado en frontend y backend |
-
-**Formato de reporte:**
-```
-Archivo: src/lib/api.ts
-Línea: 45
-Impacto: Hook useReports depende de este tipo
-Severidad: BREAKING RISK
-```
-
-### A.3 Confirmación Pre-Implementación
-
-Antes de generar el prompt final, responder sí/no:
-
-- [ ] ¿Se puede implementar sin migración DB?
-- [ ] ¿Se requiere migración? (ALTER TABLE, ADD VALUE a enum)
-- [ ] ¿Se requiere refactor? (cambio arquitectónico)
-- [ ] ¿Existe deuda técnica previa que bloquea?
-- [ ] ¿Hay inconsistencias de contrato detectadas?
-
----
-
-## 🏗️ FASE B — GENERACIÓN DE PROMPT PARA IMPLEMENTADOR
-
-Solo después de terminar auditoría:
-
-### 2️⃣ OBJETIVO FUNCIONAL
-Qué se quiere logar a nivel producto (no técnico)
-
-**Ejemplo:** *"El admin puede filtrar reportes eliminados desde el panel"*
-
-### 3️⃣ ALCANCE
-
-**Incluye:**
-- Backend: endpoint + query
-- Frontend: filtro + UI
-
-**Excluye:**
-- Exportación CSV
-- Bulk actions
-- Notificaciones realtime
-
-### 4️⃣ TAREAS A REALIZAR
-
-Separado por capa:
-
-#### Backend
+#### 1.3 Evaluación de Riesgos
 ```markdown
-- [ ] Modificar validación de status en adminReports.js
-- [ ] Agregar 'deleted' a validStatuses
-- [ ] Verificar filtro not('deleted_at', 'is', null) funciona
+**Riesgos Identificados:**
+1. **Riesgo:** Race condition en cache  
+   **Mitigación:** Invalidación explícita post-mutación
+   
+2. **Riesgo:** Breaking change en API  
+   **Mitigación:** Versionamiento o backward compatibility
+
+**Estrategia de Rollback:**
+- Feature flag: `ENABLE_NEW_FEATURE_X`
+- Database migration reversible
+- Hotfix branch listo
 ```
 
-#### Frontend
+#### 1.4 Clasificación de Impacto
+
+| Nivel | Criterios | Aprobación Requerida |
+|-------|-----------|---------------------|
+| **A - Crítico** | Cambia contratos públicos, modifica auth/security, afecta billing | Arquitecto + Tech Lead |
+| **B - Medio** | Nuevas features, cambios en DB schema, modificaciones a SSE/chat | Tech Lead |
+| **C - Bajo** | Refactors internos, UI tweaks, optimizaciones, cleanup de logs | Self-approved (con registro) |
+
+---
+
+### 🔧 FASE 3: EJECUCIÓN
+
+#### 3.1 Principios
+- **Cambios quirúrgicos:** Mínimos posibles
+- **Un cambio por commit:** No agrupar features
+- **TypeScript strict:** Cero `any`, cero `@ts-ignore`
+- **Tests:** Si existen tests, deben pasar. Si no existen, no crear (fuera de scope)
+
+#### 3.2 Checklist Durante Implementación
 ```markdown
-- [ ] Opción "Eliminados" ya existe en dropdown
-- [ ] Badge "Eliminado" ya renderiza
-```
-
-#### Database
-```markdown
-- [ ] No requiere migración
-```
-
-### 5️⃣ REGLAS ESTRICTAS (Checklist para implementador)
-
-Implementador debe verificar:
-
-- [ ] No romper contratos existentes
-- [ ] No modificar endpoints existentes (salvo bugfix)
-- [ ] No introducir columnas inexistentes
-- [ ] No usar `r.*` en queries
-- [ ] No usar `any` (usar `unknown` + type guard)
-- [ ] No introducir deuda técnica nueva
-- [ ] No hacer refactors innecesarios
-
-### 6️⃣ VALIDACIONES
-
-Verificar en:
-
-| Capa | Validación |
-|------|------------|
-| Backend | Endpoint responde 200, no 500 |
-| Frontend | Hook refetch correctamente |
-| DB | Query usa índices (EXPLAIN) |
-| Seguridad | Solo admins acceden |
-| Realtime | No emitir eventos innecesarios |
-
-### 7️⃣ CRITERIOS DE ENTREGA
-
-Definición de "terminado":
-
-- [ ] Sin errores 404
-- [ ] Sin "column does not exist"
-- [ ] Sin contrato roto (tipos ↔ API)
-- [ ] Sin regresiones (lo que funcionaba sigue funcionando)
-- [ ] `npx tsc --noEmit` pasa
-- [ ] Sin warnings nuevos
-- [ ] Logs correctos (no errores en consola)
-
-### 8️⃣ CHECKLIST FINAL
-
-Lista verificable antes de marcar como done:
-
-```markdown
-- [ ] Código commiteado
-- [ ] PR creado con descripción
-- [ ] Review propio (self-review)
-- [ ] Tests pasan (si existen)
-- [ ] QA manual en local
-- [ ] Documentación actualizada (si aplica)
+- [ ] `npx tsc --noEmit` pasa en cada commit
+- [ ] No se modificaron archivos fuera del scope aprobado
+- [ ] No se agregaron dependencias nuevas
+- [ ] Logs de debug fueron removidos o condicionales
+- [ ] No hay hardcoded values (usar constants/env)
 ```
 
 ---
 
-## 🧩 ESTRUCTURA DE PROMPTS (Versión Simple)
+### 🚫 ANTI-PATRONES PROHIBIDOS
 
-Para tareas menores (fix rápido, ajuste de UI):
-
-### Template: Corrección de Bug
-
-```markdown
-## 🐛 Bug Report
-**Descripción:** [Qué pasa y cuándo]
-**Error:** [Mensaje exacto]
-**Archivo:** `ruta/al/archivo.ts:linea`
-
-## 🔍 Diagnóstico
-[Root cause en 1-2 líneas]
-
-## ✅ Solución
 ```typescript
-// ❌ ANTES (línea X)
-código problemático
+// ❌ PROHIBIDO: Cambiar múltiples sistemas en un PR
+// Sistema A + Sistema B + Refactor C = 💥
 
-// ✅ DESPUÉS  
-código corregido
-```
+// ❌ PROHIBIDO: "Mientras estoy acá..."
+// Fixear bug + Optimizar query + Limpiar logs = Scope creep
 
-## ⚠️ Restricciones
-- Solo modificar [archivo específico]
-- No tocar [interfaz relacionada]
-- Verificar que [X] siga funcionando
+// ❌ PROHIBIDO: Sin planificación
+// "Lo veo y lo arreglo" = Regresión garantizada
+
+// ❌ PROHIBIDO: Omitir walkthrough
+// "Es obvio lo que hice" = Conocimiento perdido
+
+// ✅ CORRECTO: Plan → Aprobación → Cambio mínimo → Walkthrough
+// ✅ CORRECTO: Un sistema por cambio
+// ✅ CORRECTO: Documentar intencionalidad
 ```
 
 ---
 
-## 🎭 PATRONES DE CÓDIGO
+### 📊 EJEMPLOS DE CLASIFICACIÓN
 
-### Backend (Node + Express + Supabase)
+#### Nivel A (Crítico)
+- Modificar validación de JWT
+- Cambiar esquema de base de datos
+- Modificar contrato SSE (nuevo campo obligatorio)
+- Cambiar lógica de billing/pagos
+- Modificar permisos de admin
 
-#### 1. Endpoint Admin (M12 Governance)
+#### Nivel B (Medio)
+- Nueva feature de búsqueda
+- Agregar endpoint API
+- Modificar flujo de onboarding
+- Cambios en gamificación
+- Optimizaciones de queries
 
-```javascript
-// ✅ CORRECTO
-router.delete('/:id', verifyAdminToken, async (req, res) => {
-    const { id } = req.params;
-    const { reason } = req.body;
-    
-    // Validación
-    if (!reason || reason.trim().length < 5) {
-        return res.status(400).json({ 
-            error: 'Reason required for audit trail' 
-        });
-    }
-    
-    // Pre-check
-    const { data: existing } = await supabaseAdmin
-        .from('reports')
-        .select('deleted_at')
-        .eq('id', id)
-        .single();
-    
-    if (existing?.deleted_at) {
-        return res.status(400).json({ error: 'Already deleted' });
-    }
-    
-    // Ejecución con auditoría
-    await executeModeration({
-        actorId: req.adminUser.id,
-        targetType: 'report',
-        targetId: id,
-        actionType: 'ADMIN_HIDE', // o ADMIN_DELETE si existe en enum
-        updateQuery: 'UPDATE reports SET deleted_at = NOW() WHERE id = $1',
-        updateParams: [id],
-        reason: reason.trim()
-    });
-    
-    res.json({ success: true });
-});
-```
-
-#### 2. Query Supabase (Select Explícito)
-
-```javascript
-// ✅ CORRECTO - Nunca usar r.*
-const { data } = await supabaseAdmin
-    .from('reports')
-    .select(`
-        id, title, description, category, status,
-        created_at, deleted_at, is_hidden,
-        anonymous_users!inner (alias, avatar_url)
-    `)
-    .eq('id', id)
-    .single();
-
-// Transformación a interfaz del frontend
-const report = {
-    ...data,
-    author: {
-        alias: data.anonymous_users?.alias || null,
-        avatar_url: data.anonymous_users?.avatar_url || null
-    }
-};
-```
-
-### Frontend (React 18 + TypeScript + TanStack Query)
-
-#### 1. Hook de React Query
-
-```typescript
-// ✅ CORRECTO
-import { useQuery } from '@tanstack/react-query';
-import { adminApi } from '@/admin/services/adminApi';
-import type { ReportModerationDetail } from '@/admin/types/reports';
-
-export const useReportModerationDetail = (reportId?: string) => {
-    return useQuery<ReportModerationDetail>({
-        queryKey: ['admin', 'reports', 'detail', reportId],
-        queryFn: async () => {
-            if (!reportId) throw new Error('Report ID required');
-            const { data } = await adminApi.get<{
-                success: boolean;
-                data: ReportModerationDetail;
-            }>(`/reports/${reportId}`);
-            return data.data;
-        },
-        enabled: !!reportId,
-        staleTime: 60000
-    });
-};
-```
-
-#### 2. Manejo de Errores (unknown, no any)
-
-```typescript
-// ✅ CORRECTO
-try {
-    await mutateAsync(data);
-} catch (err: unknown) {
-    const message = err instanceof Error 
-        ? err.message 
-        : 'Error desconocido';
-    addToast(message, 'error');
-}
-
-// ❌ INCORRECTO
-catch (err: any) {
-    addToast(err.message, 'error'); // err podría no ser Error
-}
-```
-
-#### 3. Modales (Sin window.alert/confirm/prompt)
-
-```typescript
-// ✅ CORRECTO
-const { confirm, prompt } = useConfirm();
-
-const onDelete = async () => {
-    const confirmed = await confirm({
-        title: '¿Eliminar?',
-        description: 'Esta acción no se puede deshacer',
-        variant: 'danger'
-    });
-    if (!confirmed) return;
-    
-    const reason = await prompt({
-        title: 'Motivo',
-        minLength: 10,
-        variant: 'danger'
-    });
-    if (!reason) return;
-    
-    await deleteReport.mutateAsync({ reason });
-};
-
-// ❌ INCORRECTO
-if (!window.confirm('¿Eliminar?')) return;
-const reason = window.prompt('Motivo:');
-```
-
----
-
-## 🗄️ ESTRUCTURA DE ARCHIVOS CLAVE
-
-```
-src/
-├── admin/                    # Panel de administración (M12)
-│   ├── pages/               # Reportes, Moderación, Historial
-│   ├── hooks/               # useAdminReports, useModeration
-│   ├── types/               # AdminReport, ModerationAction
-│   └── services/            # adminApi (con query params)
-├── lib/                     # Core compartido
-│   ├── schemas.ts           # Zod schemas + tipos
-│   ├── adapters.ts          # Transformaciones API→UI
-│   ├── cache-helpers.ts     # React Query cache utils
-│   ├── queryKeys.ts         # Centralized query keys
-│   └── errors.ts            # Error handling
-├── components/ui/           # Componentes base
-│   ├── confirmation-manager.tsx  # Modales (NO nativos)
-│   └── toast/               # Notificaciones
-└── pages/                   # Rutas públicas
-
-server/
-├── src/
-│   ├── routes/
-│   │   ├── adminReports.js      # GET /api/admin/reports
-│   │   ├── adminModeration.js   # Moderation actions
-│   │   └── reports.js           # API pública
-│   ├── utils/
-│   │   └── governance.js        # executeModeration()
-│   └── middleware/
-│       └── adminMiddleware.js   # verifyAdminToken
-```
-
----
-
-## 🔧 COMANDOS ÚTILES
-
-```bash
-# Verificar TypeScript
-npx tsc --noEmit
-
-# Lint específico
-npx eslint src/admin/pages/ReportModerationPage.tsx
-
-# Test relacionado
-npm test -- ReportModeration
-
-# Verificar build
-npm run build
-
-# Check enum PostgreSQL
-cd server && node check_enum_values.js
-```
-
----
-
-## 🚨 CHECKLIST PRE-COMMIT
-
-Antes de finalizar cualquier tarea:
-
-- [ ] `npx tsc --noEmit` pasa sin errores
-- [ ] No hay `any` nuevo en el código modificado
-- [ ] Los hooks invalidan queries correctamente
-- [ ] Las acciones de admin usan `executeModeration`
-- [ ] Soft delete (no hard) para eliminaciones
-- [ ] Razón obligatoria en acciones de moderación
-- [ ] No se rompió navegación ni filtros
-
----
-
-## 📞 CONTEXTO ESPECÍFICO DEL PROYECTO
-
-### Estado Actual (Nivel 2 Completado)
-
-- ✅ Backend: CRUD completo con auditoría M12
-- ✅ Frontend: Lista, filtros, paginación
-- ✅ Detalle: ReportModerationPage con acciones
-- ✅ Modales: Personalizados (no nativos)
-- ✅ Soft delete: Implementado con restore
-- ⚠️ Deuda técnica: ~120 `any` en legacy (no críticos)
-
-### Enums Importantes (PostgreSQL)
-
-```sql
-report_status_enum: ('abierto', 'en_progreso', 'resuelto', 'verificado', 'rechazado', 'archivado')
-moderation_action_type: ('ADMIN_RESTORE', 'ADMIN_HIDE', 'ADMIN_BAN', ...)
-```
-
-### Interfaces Críticas
-
-```typescript
-// Nunca modificar sin auditoría:
-- AdminReport (src/admin/types/reports.ts)
-- ReportModerationDetail
-- GamificationBadge (src/lib/schemas.ts)
-```
-
----
-
-## 💬 EJEMPLOS DE INTERACCIÓN
-
-### ✅ Usuario hace bien:
-> "Corrige el error 400 en el filtro deleted de adminReports.js"
-
-Respuesta: Prompt quirúrgico, una línea cambiada.
-
-### ❌ Usuario hace mal:
-> "Mejora el código de gamificación"
-
-Respuesta: "Necesito más detalle. ¿Bug específico o feature? ¿Qué archivo?"
-
-### ✅ Usuario pide auditoría:
-> "Audita todos los any de src/lib/"
-
-Respuesta: Lista priorizada, Fase 1 (críticos), Fase 2 (mejora), Fase 3 (polish).
-
----
-
-## 🎯 POLÍTICA DE LOGGING (Producción vs Desarrollo)
-
-### ✅ SIEMPRE EN PRODUCCIÓN
-
-| Nivel | Cuándo usar | Ejemplo |
-|-------|-------------|---------|
-| **`error`** | Fallos críticos del sistema | DB caída, 500, contrato roto, error de seguridad |
-| **`warn`** | Issues operacionales recuperables | 401/403, validaciones fallidas, rate limits |
-| **`info`** | Eventos de negocio importantes | Usuario creado, reporte enviado, moderación aplicada |
-
-```typescript
-// ✅ PRODUCCIÓN - Siempre visibles
-console.error('[Database] Connection failed:', err);
-console.warn('[Auth] Token expired for user:', userId);
-console.info('[Moderation] Report resolved:', { reportId, action, adminId });
-```
-
-### ❌ NUNCA EN PRODUCCIÓN
-
-| Tipo | Ejemplo | Razón |
-|------|---------|-------|
-| **Debug de payloads** | `console.log('Request body:', body)` | Expone datos sensibles (PII) |
-| **Trazas de ejecución** | `console.log('Entering function X')` | Ruido, innecesario |
-| **Logs de infraestructura** | `console.log('[Mount] Route hit')` | No aporta valor de negocio |
-| **Diagnóstico interno** | `console.debug('[PDF] Processing...')` | Detalle de librería, irrelevante |
-
-```typescript
-// ❌ SOLO DESARROLLO
-console.debug('[PDF] Starting generation...');
-console.log('[Mount] /api/admin/profile hit');
-console.log('Full request:', req.body); // ¡Expone PII!
-```
-
-### 🛠️ IMPLEMENTACIÓN
-
-```typescript
-// Pattern condicional
-if (process.env.NODE_ENV === 'development') {
-    console.debug('Debug info:', data);  // Solo dev
-}
-console.info('Business event:', data);    // Siempre
-```
-
-### 📋 CHECKLIST PRE-DEPLOY
-
-- [ ] ¿Este log aporta valor si el sistema falla en producción?
-- [ ] ¿No expone datos sensibles (PII, tokens, passwords)?
-- [ ] ¿Es accionable? (¿alguien hará algo con este log?)
-- [ ] ¿No es ruido de infraestructura?
-
-> **Regla de oro:** *"Si no lo mirarías a las 3 AM durante un incidente, no va a producción."*
+#### Nivel C (Bajo)
+- Fix de typo en UI
+- Renombrar variable interna
+- Eliminar console.log
+- Agregar comentario JSDoc
+- Cambiar color de botón
 
 ---
 

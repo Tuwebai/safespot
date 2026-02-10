@@ -21,7 +21,7 @@ export function EmptyCommunityState({ type, locality, isLocationMissing }: Empty
     };
 
     const handleConfigureLocation = () => {
-        navigate('/perfil/configuracion');
+        navigate('/ajustes');
     };
 
     if (type === 'nearby' && isLocationMissing) {

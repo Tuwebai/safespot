@@ -77,46 +77,52 @@ export function useChatRooms() {
         // 👑 NEW: Unified Orchestrator Authority for Domain Events
         const unsubOrchestrator = realtimeOrchestrator.onEvent((event) => {
             const { type, payload } = event;
-            const actualPayload = payload.partial || payload;
+            // 🏛️ SAFE MODE: Type assertion para compatibilidad durante migración
+            const payloadObj = payload as Record<string, unknown>;
+            const actualPayload = (payloadObj.partial as Record<string, unknown>) || payloadObj;
 
             if (type === 'chat-update') {
                 const convId = actualPayload.roomId;
                 if (!convId) return;
 
                 if (actualPayload.message) {
-                    const message = actualPayload.message;
-                    const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId}`);
+                    const message = actualPayload.message as ChatMessage;
+                    const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId as string}`);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
                 } else if (actualPayload.action === 'read') {
-                    chatCache.markRoomAsRead(queryClient, convId, anonymousId);
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
+                    chatCache.markRoomAsRead(queryClient, convId as string, anonymousId);
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId as string, anonymousId), (old) => {
                         if (!old) return old;
                         return old.map(m => m.sender_id !== anonymousId ? { ...m, is_read: true, is_delivered: true } : m);
                     });
                 } else if (actualPayload.action === 'typing') {
-                    queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: any) => {
+                    queryClient.setQueryData(CHATS_KEYS.rooms(anonymousId), (old: unknown) => {
                         if (!old || !Array.isArray(old)) return old;
-                        return old.map(r => r.id === convId ? { ...r, is_typing: actualPayload.isTyping } : r);
+                        return old.map((r: { id: string }) => r.id === convId ? { ...r, is_typing: actualPayload.isTyping as boolean } : r);
                     });
                 }
             } else if (type === 'message.delivered') {
-                const convId = actualPayload.conversationId;
+                const convId = actualPayload.conversationId as string;
                 if (!convId) return;
-                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload);
+                chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload as { messageId?: string; id?: string });
             } else if (type === 'message.read') {
                 if (actualPayload.readerId !== anonymousId && actualPayload.roomId) {
-                    chatCache.applyReadReceipt(queryClient, actualPayload.roomId, anonymousId);
+                    chatCache.applyReadReceipt(queryClient, actualPayload.roomId as string, anonymousId);
                 }
             } else if (type === 'chat-rollback') {
                 if (actualPayload.roomId && actualPayload.messageId) {
-                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(actualPayload.roomId, anonymousId), (old) => {
+                    queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(actualPayload.roomId as string, anonymousId), (old) => {
                         if (!old) return old;
-                        return old.filter(m => m.id !== actualPayload.messageId);
+                        return old.filter(m => m.id !== (actualPayload.messageId as string));
                     });
                 }
             } else if (type === 'presence-update' || type === 'presence') {
                 if (actualPayload.userId) {
-                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(actualPayload.userId), actualPayload);
+                    const presence: UserPresence = {
+                        status: actualPayload.status as 'online' | 'offline',
+                        last_seen_at: (actualPayload.last_seen_at as string) || null
+                    };
+                    queryClient.setQueryData<UserPresence>(CHATS_KEYS.presence(actualPayload.userId as string), presence);
                     queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
                         if (!old || !Array.isArray(old)) return old;
                         return old.map(r => r.other_participant_id === actualPayload.userId
@@ -256,11 +262,11 @@ export function useChatMessages(convId: string | undefined) {
         // 2. Listen for UI Side-Effects
         const unsubscribe = realtimeOrchestrator.onEvent((event) => {
             const { type, payload, originClientId } = event;
-            // Orchestrator now normalizes payload to use 'partial' directly
-            const actualPayload = payload;
+            // 🏛️ SAFE MODE: Type assertion para compatibilidad durante migración
+            const actualPayload = payload as Record<string, unknown>;
 
             // Filter for THIS room
-            const roomId = actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId || actualPayload.conversation_id;
+            const roomId = (actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId) as string;
             if (roomId !== convId) return;
 
             // Echo suppression
@@ -268,32 +274,32 @@ export function useChatMessages(convId: string | undefined) {
 
             switch (type) {
                 case 'new-message':
-                    chatCache.upsertMessage(queryClient, actualPayload, anonymousId);
-                    if (actualPayload.sender_id !== anonymousId) {
+                    chatCache.upsertMessage(queryClient, actualPayload as unknown as ChatMessage, anonymousId);
+                    if ((actualPayload.sender_id as string) !== anonymousId) {
                         playNotificationSound();
                     }
                     break;
                 case 'typing':
-                    if (actualPayload.senderId !== anonymousId) {
+                    if ((actualPayload.senderId as string) !== anonymousId) {
                         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-                        setIsTyping(actualPayload.isTyping);
+                        setIsTyping(actualPayload.isTyping as boolean);
                         if (actualPayload.isTyping) {
                             typingTimeoutRef.current = setTimeout(() => setIsTyping(false), TYPING_TIMEOUT_MS);
                         }
                     }
                     break;
                 case 'message.read':
-                    if (actualPayload.readerId !== anonymousId) {
+                    if ((actualPayload.readerId as string) !== anonymousId) {
                         chatCache.applyReadReceipt(queryClient, convId, anonymousId);
                     }
                     break;
                 case 'message.delivered':
-                    chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload);
+                    chatCache.applyDeliveryUpdate(queryClient, convId, anonymousId, actualPayload as { messageId?: string; id?: string });
                     break;
                 case 'presence':
                     if (actualPayload.userId) {
-                        queryClient.setQueryData(CHATS_KEYS.presence(actualPayload.userId), {
-                            status: actualPayload.status,
+                        queryClient.setQueryData(CHATS_KEYS.presence(actualPayload.userId as string), {
+                            status: actualPayload.status as 'online' | 'offline',
                             last_seen_at: actualPayload.status === 'offline' ? new Date().toISOString() : null
                         });
                     }
@@ -307,19 +313,20 @@ export function useChatMessages(convId: string | undefined) {
                     if (actualPayload.messageId && actualPayload.reactions) {
                         queryClient.setQueryData<ChatMessage[]>(CHATS_KEYS.messages(convId, anonymousId), (old) => {
                             if (!old) return old;
-                            return old.map(m => m.id === actualPayload.messageId ? { ...m, reactions: actualPayload.reactions } : m);
+                            return old.map(m => m.id === actualPayload.messageId ? { ...m, reactions: actualPayload.reactions as Record<string, string[]> } : m);
                         });
                     }
                     break;
                 case 'message-pinned':
                     // Update cache... (logic same as before, but from actualPayload)
+                    const pinnedId = actualPayload.pinnedMessageId as string | null;
                     queryClient.setQueryData<ChatRoom[]>(CHATS_KEYS.rooms(anonymousId), (old) => {
                         if (!old) return old;
-                        return old.map(r => r.id === convId ? { ...r, pinned_message_id: actualPayload.pinnedMessageId } : r);
+                        return old.map(r => r.id === convId ? { ...r, pinned_message_id: pinnedId } : r);
                     });
                     queryClient.setQueryData<ChatRoom>(CHATS_KEYS.conversation(convId, anonymousId), (old) => {
                         if (!old) return old;
-                        return { ...old, pinned_message_id: actualPayload.pinnedMessageId };
+                        return { ...old, pinned_message_id: pinnedId } as ChatRoom;
                     });
                     break;
             }

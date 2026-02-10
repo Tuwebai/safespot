@@ -14,6 +14,19 @@ const getNotificationsQueryKey = (anonymousId: string | null): string[] =>
 import { eventAuthorityLog } from './EventAuthorityLog';
 import { queryKeys } from '../queryKeys';
 import { leaderElection, LeadershipState } from './LeaderElection';
+// 🏛️ SAFE MODE: Importar nuevos tipos de eventos
+import type { 
+    RealtimeEvent as TypedRealtimeEvent,
+    TypedRealtimeEvent as TypedEventUnion,
+    UntypedRealtimeEvent,
+    RealtimeEventLegacy
+} from './eventTypes';
+export type { TypedRealtimeEvent, TypedEventUnion, UntypedRealtimeEvent };
+
+// 🏛️ SAFE MODE: Type aliases para datos de evento durante migración
+type EventData = Record<string, unknown>;
+/** @deprecated Usar tipos específicos de eventTypes.ts */
+type LegacyPayload = Record<string, unknown> & { [key: string]: unknown };
 
 /**
  * 👑 RealtimeOrchestrator
@@ -34,16 +47,31 @@ import { leaderElection, LeadershipState } from './LeaderElection';
  * - Hooks = Idempotent reflections for UI responsiveness.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/**
+ * 🏛️ SAFE MODE: Interfaz de evento con payload unknown (type-safe)
+ * 
+ * ANTES: payload: any (permite cualquier acceso sin verificación)
+ * AHORA: payload: unknown (requiere type guards o narrowing)
+ * 
+ * Para acceder al payload tipado:
+ * 1. Usar isTypedEvent(event) para eventos conocidos
+ * 2. Usar type guards específicos: isNewMessageEvent(), etc.
+ * 3. Cast manual con verificación para casos edge
+ */
 export interface RealtimeEvent {
     eventId: string;
     serverTimestamp: number;
     type: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    payload: any;
+    payload: unknown;
     originClientId?: string;
     isReplay?: boolean;
 }
+
+/**
+ * @deprecated Usar RealtimeEvent con type guards en su lugar
+ * Tipo legacy para compatibilidad durante transición
+ */
+export type RealtimeEventAny = RealtimeEventLegacy;
 
 type EventCallback = (event: RealtimeEvent) => void;
 
@@ -125,13 +153,12 @@ class RealtimeOrchestrator {
     constructor() {
         // 🛡️ MEM-ROOT-001: SSE Safety Guard
         // Prevent multiple instances during HMR or component remounts
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((window as any).__REALTIME_ORCHESTRATOR_INSTANCE__) {
+        const win = window as Window & { __REALTIME_ORCHESTRATOR_INSTANCE__?: RealtimeOrchestrator };
+        if (win.__REALTIME_ORCHESTRATOR_INSTANCE__) {
             console.warn('[Orchestrator] ⚠️ Instance already exists. Use getInstance() or realtimeOrchestrator export.');
             return;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__ = this;
+        win.__REALTIME_ORCHESTRATOR_INSTANCE__ = this;
 
         this.initialize();
     }
@@ -155,8 +182,7 @@ class RealtimeOrchestrator {
 
         // 🚑 SSE Wake listener (Idle Recovery)
         if (typeof window !== 'undefined') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            window.addEventListener('safespot:sse_wake', (e: any) => {
+            window.addEventListener('safespot:sse_wake', ((e: CustomEvent<{ url: string }>) => {
                 console.log(`[Orchestrator] 🚑 SSE Wake detected for ${e.detail?.url}. Triggering catchup...`);
                 this.resync().catch(err => {
                     telemetry.emit({
@@ -165,7 +191,7 @@ class RealtimeOrchestrator {
                         payload: { action: 'wake_resync_failed', error: err.message }
                     });
                 });
-            });
+            }) as EventListener);
         }
     }
 
@@ -201,16 +227,21 @@ class RealtimeOrchestrator {
      * processRawEvent() - Entry point for SSE network events
      */
     private async processRawEvent(event: MessageEvent, channel: string) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let data: any;
+        let rawData: unknown;
         try {
-            data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+            rawData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         } catch (e) {
             // console.error('[Orchestrator] ❌ Failed to parse event data');
             return;
         }
 
-        const type = data.type || event.type;
+        // 🏛️ SAFE MODE: Validar que rawData es un objeto antes de acceder a propiedades
+        if (typeof rawData !== 'object' || rawData === null) {
+            return;
+        }
+        
+        const data = rawData as Record<string, unknown>;
+        const type = (data.type as string) || event.type;
         
         // Message-related events processed silently in production
         
@@ -218,16 +249,16 @@ class RealtimeOrchestrator {
         // Esto debe hacerse ANTES de cualquier procesamiento que pueda fallar
         // Soporta tanto 'new-message' (room stream) como 'chat-update' (user stream)
         if ((type === 'new-message' || type === 'chat-update') && leaderElection.isLeader()) {
-            const payload = data.partial || data.payload || data;
-            const message = payload.message || (payload.id && !payload.action ? payload : null);
+            // 🏛️ SAFE MODE: Type assertion para acceso a propiedades dinámicas
+            const payload = (data.partial || data.payload || data) as Record<string, unknown>;
+            const message = (payload.message || (payload.id && !payload.action ? payload : null)) as { id: string; sender_id: string } | null;
             
             if (message?.id && message.sender_id && message.sender_id !== this.userId) {
                 this.acknowledgeMessageDelivered(message.id).catch(() => {});
             }
         }
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const traceId = (event as any).traceId || telemetry.getTraceId();
+        const traceId = (data.traceId as string) || telemetry.getTraceId();
 
         // 📡 MOTOR 8: Propagate Root Trace
         telemetry.emit({
@@ -243,10 +274,15 @@ class RealtimeOrchestrator {
     /**
      * processValidatedData() - The Core Engine (Invariante de Oro)
      * Authoritative logic for persistence, notification, and ACK.
+     * 
+     * 🏛️ SAFE MODE: data ahora es unknown, requiere type narrowing
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async processValidatedData(data: any, type: string, channel: string) {
-        const { eventId, serverTimestamp, originClientId } = data;
+    private async processValidatedData(rawData: unknown, type: string, channel: string) {
+        // 🏛️ SAFE MODE: Type assertion a Record para acceso controlado a propiedades
+        const data = rawData as Record<string, unknown>;
+        const eventId = data.eventId as string;
+        const serverTimestamp = data.serverTimestamp as number;
+        const originClientId = data.originClientId as string | undefined;
         
         // 🏛️ ENTERPRISE: Circuit breaker check
         if (this.isCircuitOpen()) {
@@ -274,12 +310,13 @@ class RealtimeOrchestrator {
         // 1.5 🏛️ STATUS_EVENTS: Notificar sin persistir (Ticks de entrega/lectura)
         // Estos eventos son idempotentes y no críticos, solo actualizan UI
         if (STATUS_EVENTS.includes(type)) {
+            // 🏛️ SAFE MODE: Type assertions para extraer propiedades de evento
             const statusEvent: RealtimeEvent = {
-                eventId: data.eventId || `status_${Date.now()}`,
-                serverTimestamp: data.serverTimestamp || Date.now(),
+                eventId: (data.eventId as string) || `status_${Date.now()}`,
+                serverTimestamp: (data.serverTimestamp as number) || Date.now(),
                 type,
                 payload: data.partial || data.payload || data,
-                originClientId: data.originClientId,
+                originClientId: data.originClientId as string | undefined,
                 isReplay: false
             };
             this.listeners.forEach(cb => {
@@ -316,7 +353,7 @@ class RealtimeOrchestrator {
                 eventId,
                 type,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            domain: (channel.startsWith('social') ? 'social' : channel) as any,
+            domain: (channel.startsWith('social') ? 'social' : channel) as 'feed' | 'user' | 'system' | 'social',
                 serverTimestamp,
                 processedAt: Date.now(),
                 originClientId: originClientId || 'unknown'
@@ -383,8 +420,9 @@ class RealtimeOrchestrator {
             // El mensaje puede venir en diferentes estructuras:
             // - new-message: data.message o data.payload.message
             // - chat-update: data.partial.message
-            const payload = data.partial || data.payload || data;
-            const message = payload.message || data.message || (payload.id && !payload.action ? payload : null);
+            const payload = (data.partial || data.payload || data) as EventData;
+            const message = (payload.message as EventData) || (data.message as EventData) || 
+                ((payload.id && !payload.action) ? payload : null);
 
             // Solo ACK si:
             // - Es un mensaje real (no signal de typing/read)
@@ -394,8 +432,8 @@ class RealtimeOrchestrator {
                 && message.sender_id
                 && message.sender_id !== this.userId;
 
-            if (isDeliverable) {
-                this.acknowledgeMessageDelivered(message.id).catch(() => {
+            if (isDeliverable && message?.id) {
+                this.acknowledgeMessageDelivered(message.id as string).catch(() => {
                     // Silently fail - no crítico
                 });
             }
@@ -436,7 +474,7 @@ class RealtimeOrchestrator {
             eventId,
             type,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            domain: (channel.startsWith('social') ? 'social' : channel) as any,
+            domain: (channel.startsWith('social') ? 'social' : channel) as 'feed' | 'user' | 'system' | 'social',
             serverTimestamp,
             processedAt: Date.now(),
             originClientId: originClientId || 'unknown'
@@ -450,7 +488,7 @@ class RealtimeOrchestrator {
      * handleSyncEvent() - Entry for events received from the Leader
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private handleSyncEvent(sync: { data: any, type: string, channel: string }) {
+    private handleSyncEvent(sync: { data: unknown, type: string, channel: string }) {
         if (leaderElection.isLeader()) return; // Leaders ignore their own (or others') broadcast
 
         console.debug(`[Orchestrator] 🛰️ Processing sync event from leader: ${sync.type}`);
@@ -461,16 +499,18 @@ class RealtimeOrchestrator {
      * processSocialDomainLogic() - Authoritative state changes for comments and likes
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async processSocialDomainLogic(type: string, data: any) {
-        const payload = data.partial || data.payload || data;
+    private async processSocialDomainLogic(type: string, data: Record<string, unknown>) {
+        const payload = (data.partial || data.payload || data) as LegacyPayload;
         const id = data.id || payload.id;
-        const reportId = payload.reportId || payload.report_id;
+        const reportId = payload.reportId || payload.report_id as string;
 
         try {
             switch (type) {
                 case 'new-comment': {
                     const comment = payload.comment || payload;
-                    if (!comment || !comment.id) return;
+                    const commentId = (comment as LegacyPayload).id as string;
+                    const reportIdComment = (comment as LegacyPayload).report_id as string;
+                    if (!comment || !commentId) return;
 
                     // ✅ ENTERPRISE FIX: Deduplicación determinística basada en LISTA
                     // Principio: La fuente de verdad es el estado de la lista, no solo el detail cache
@@ -479,7 +519,7 @@ class RealtimeOrchestrator {
 
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const list = queryClient.getQueryData<any>(
-                        queryKeys.comments.byReport(comment.report_id as string)
+                        queryKeys.comments.byReport(reportIdComment)
                     );
 
                     // Normalizar lista (puede ser array directo o { comments: [...] })
@@ -487,49 +527,50 @@ class RealtimeOrchestrator {
                         ? list
                         : (list?.comments || []);
 
-                    const alreadyInList = normalizedList.includes(comment.id);
+                    const alreadyInList = normalizedList.includes(commentId);
 
                     if (alreadyInList) {
                         // Ya existe en la lista → verificar si es optimista para reconciliar
                         const existing = queryClient.getQueryData<Comment>(
-                            queryKeys.comments.detail(comment.id)
+                            queryKeys.comments.detail(commentId)
                         );
 
                         if (existing?.is_optimistic) {
                             // Reconciliar optimista con datos reales (sin delta)
-                            commentsCache.store(queryClient, comment);
+                            commentsCache.store(queryClient, comment as Comment);
                         }
                         // Si no es optimista o no existe detail → skip (ya fue procesado)
                         return;
                     }
 
                     // No existe en lista → es comentario realmente nuevo → aplicar delta
-                    commentsCache.append(queryClient, comment);
+                    commentsCache.append(queryClient, comment as Comment);
                     break;
                 }
                 case 'comment-update': {
-                    const commentId = id || payload.commentId || (payload.comment && payload.comment.id);
+                    const commentId = (id || payload.commentId || (payload.comment as LegacyPayload)?.id) as string;
                     if (!commentId) return;
 
                     if (data.isLikeDelta || payload.isLikeDelta) {
-                        commentsCache.applyLikeDelta(queryClient, commentId, data.delta || payload.delta);
+                        commentsCache.applyLikeDelta(queryClient, commentId, (data.delta || payload.delta) as number);
                     } else {
                         const patch = payload.comment || payload;
-                        commentsCache.patch(queryClient, commentId, patch);
+                        commentsCache.patch(queryClient, commentId, patch as Record<string, unknown>);
                     }
                     break;
                 }
                 case 'comment-delete': {
-                    const commentId = id || payload.commentId;
-                    const finalReportId = reportId || payload.reportId || payload.report_id;
-                    if (commentId && finalReportId) {
-                        commentsCache.remove(queryClient, commentId, finalReportId);
+                    const commentIdDelete = (id || payload.commentId) as string;
+                    const finalReportId = (reportId || payload.reportId || payload.report_id) as string;
+                    if (commentIdDelete && finalReportId) {
+                        commentsCache.remove(queryClient, commentIdDelete, finalReportId);
                     }
                     break;
                 }
                 case 'report-update': {
-                    if (id) {
-                        reportsCache.patch(queryClient, id, payload);
+                    const updateId = id as string;
+                    if (updateId) {
+                        reportsCache.patch(queryClient, updateId, payload as Record<string, unknown>);
                     }
                     break;
                 }
@@ -543,22 +584,22 @@ class RealtimeOrchestrator {
      * processUserDomainLogic() - Authoritative state changes for the personal user stream
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async processUserDomainLogic(type: string, data: any) {
-        const payload = data.payload || data;
+    private async processUserDomainLogic(type: string, data: Record<string, unknown>) {
+        const payload = (data.payload || data) as LegacyPayload;
         // 🏛️ ENTERPRISE FIX: Query key consistente con useNotificationsQuery
         const notificationsQueryKey = getNotificationsQueryKey(this.userId);
 
         try {
             switch (type) {
                 case 'notification': {
-                    if (payload.notification) {
-                        upsertInList(queryClient, notificationsQueryKey, payload.notification);
+                    const notifPayload = payload.notification as LegacyPayload & { id: string };
+                    if (notifPayload?.id) {
+                        upsertInList(queryClient, notificationsQueryKey, notifPayload);
                     }
                     if (payload.type === 'notifications-read-all') {
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        queryClient.setQueryData(notificationsQueryKey, (old: any) =>
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            Array.isArray(old) ? old.map((n: any) => ({ ...n, is_read: true })) : []
+                        type NotificationItem = { is_read: boolean; [key: string]: unknown };
+                        queryClient.setQueryData<NotificationItem[]>(notificationsQueryKey, (old) =>
+                            Array.isArray(old) ? old.map((n) => ({ ...n, is_read: true })) : []
                         );
                     }
                     if (payload.type === 'notifications-deleted-all') {
@@ -567,8 +608,8 @@ class RealtimeOrchestrator {
                     if (payload.type === 'follow') {
                         queryClient.invalidateQueries({ queryKey: ['users', 'public', 'profile'] });
                     }
-                    if (payload.type === 'achievement' && payload.notification) {
-                        const badgeId = payload.notification.code || payload.notification.id;
+                    if (payload.type === 'achievement' && notifPayload) {
+                        const badgeId = (notifPayload.code || notifPayload.id) as string;
                         if (this.userId && badgeId) {
                             // 🏅 Idempotencia Semántica (Fase C½ / Hardening de Dominio):
                             // Protección de negocio para evitar duplicados en la UX incluso si el eventId varía.
@@ -579,18 +620,18 @@ class RealtimeOrchestrator {
 
                             // Registrar la insignia en la autoridad para futuras deduplicaciones
                             eventAuthorityLog.record({
-                                eventId: data.eventId,
-                                type: data.type,
+                                eventId: data.eventId as string,
+                                type: data.type as string,
                                 domain: 'user',
-                                serverTimestamp: data.serverTimestamp,
+                                serverTimestamp: data.serverTimestamp as number,
                                 processedAt: Date.now(),
-                                originClientId: data.originClientId || 'unknown'
+                                originClientId: (data.originClientId as string) || 'unknown'
                             }, `badge_${this.userId}_${badgeId}`);
                         }
 
                         // 🏅 SOCIAL SSOT: Update gamification cache and profile
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        queryClient.setQueryData(queryKeys.gamification.summary, (old: any) => {
+                        type GamificationSummary = { newBadges: unknown[]; [key: string]: unknown };
+                        queryClient.setQueryData<GamificationSummary>(queryKeys.gamification.summary, (old) => {
                             if (!old) return old;
                             return {
                                 ...old,
@@ -618,10 +659,10 @@ class RealtimeOrchestrator {
      * processFeedDomainLogic() - Authoritative state changes for the global feed
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async processFeedDomainLogic(type: string, data: any) {
+    private async processFeedDomainLogic(type: string, data: Record<string, unknown>) {
         // SSOT: Use partial for data, data.id for identity
-        const payload = data.partial || data.payload || data;
-        const id = data.id || payload.id;
+        const payload = (data.partial || data.payload || data) as LegacyPayload;
+        const id = data.id || payload.id as string;
 
 
 
@@ -636,33 +677,35 @@ class RealtimeOrchestrator {
                     break;
                 }
                 case 'report-update': {
+                    const reportIdUpdate = id as string;
                     if (data.isLikeDelta || payload.isLikeDelta) {
-                        reportsCache.applyLikeDelta(queryClient, id, data.delta || payload.delta);
+                        reportsCache.applyLikeDelta(queryClient, reportIdUpdate, (data.delta || payload.delta) as number);
                     } else if (data.isCommentDelta || payload.isCommentDelta) {
-                        reportsCache.applyCommentDelta(queryClient, id, data.delta || payload.delta);
+                        reportsCache.applyCommentDelta(queryClient, reportIdUpdate, (data.delta || payload.delta) as number);
                     } else {
                         const parsed = reportSchema.partial().safeParse(payload);
                         if (parsed.success) {
                             // SYSTEMIC FIX: If report is hidden, it must be removed from list caches immediately
                             if (parsed.data.is_hidden === true) {
-                                console.debug(`[Orchestrator] 🛡️ Removing hidden report from cache: ${id}`);
-                                reportsCache.remove(queryClient, id);
+                                console.debug(`[Orchestrator] 🛡️ Removing hidden report from cache: ${reportIdUpdate}`);
+                                reportsCache.remove(queryClient, reportIdUpdate);
                             } else {
-                                reportsCache.patch(queryClient, id, parsed.data);
+                                reportsCache.patch(queryClient, reportIdUpdate, parsed.data);
                             }
                         }
                     }
                     break;
                 }
                 case 'status-change': {
-                    statsCache.applyStatusChange(queryClient, payload.prevStatus, payload.newStatus);
-                    reportsCache.patch(queryClient, id, { status: payload.newStatus });
+                    statsCache.applyStatusChange(queryClient, payload.prevStatus as string, payload.newStatus as string);
+                    reportsCache.patch(queryClient, id as string, { status: payload.newStatus as 'pendiente' | 'en_proceso' | 'resuelto' | 'cerrado' | 'rechazado' });
                     break;
                 }
                 case 'report-delete': {
-                    reportsCache.remove(queryClient, id);
+                    const reportIdDelete = id as string;
+                    reportsCache.remove(queryClient, reportIdDelete);
                     if (payload.category) {
-                        statsCache.applyReportDelete(queryClient, payload.category, payload.status);
+                        statsCache.applyReportDelete(queryClient, payload.category as string, payload.status as string);
                     }
                     break;
                 }
@@ -863,7 +906,7 @@ class RealtimeOrchestrator {
      * processChatDomainLogic() - Domain logic for chat events (presence, typing, etc.)
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async processChatDomainLogic(_type: string, _data: any) {
+    private async processChatDomainLogic(_type: string, _data: Record<string, unknown>) {
         // Many chat events are ephemeral (typing) and don't need cache persistence
         // but some (new-message, delivered) do.
         // For now, Orchestrator focuses on side-effects and persistence.
@@ -960,6 +1003,6 @@ class RealtimeOrchestrator {
 }
 
 // 🛡️ MEM-ROOT-001: Singleton getter para evitar instancias múltiples
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const existingInstance = (typeof window !== 'undefined' && (window as any).__REALTIME_ORCHESTRATOR_INSTANCE__) as RealtimeOrchestrator | undefined;
+const existingInstance = (typeof window !== 'undefined' && 
+    (window as Window & { __REALTIME_ORCHESTRATOR_INSTANCE__?: RealtimeOrchestrator }).__REALTIME_ORCHESTRATOR_INSTANCE__) || undefined;
 export const realtimeOrchestrator = existingInstance || new RealtimeOrchestrator();

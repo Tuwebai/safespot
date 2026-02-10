@@ -6,7 +6,7 @@ import { ALL_CATEGORIES } from '@/lib/constants'
 import { LocationData } from '@/components/LocationSelector'
 import { useToast } from '@/components/ui/toast'
 import { useCreateReportMutation } from '@/hooks/mutations/useCreateReportMutation'
-import { reportsApi } from '@/lib/api'
+import { useUploadReportImagesMutation } from '@/hooks/mutations/useUploadReportImagesMutation'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { useNavigate } from 'react-router-dom'
 import { compressImage, formatFileSize } from '@/lib/imageCompression'
@@ -92,6 +92,9 @@ export function useReportWizard() {
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
     const [isCompressing, setIsCompressing] = useState(false)
     const [compressionProgress, setCompressionProgress] = useState('')
+    
+    // 🏛️ SAFE MODE: Hook para subir imágenes (reemplaza import directo de API)
+    const uploadImagesMutation = useUploadReportImagesMutation()
 
     // Form principal - defaultValues depende de si es nueva sesión
     const form = useForm<WizardFormData>({
@@ -364,14 +367,18 @@ export function useReportWizard() {
                 
                 // Subir imágenes en background
                 if (imageFiles.length > 0) {
-                    reportsApi.uploadImages(serverReport.id, imageFiles)
-                        .then(() => {
-                            console.log('[Wizard] Imágenes subidas correctamente')
-                        })
-                        .catch((error) => {
-                            handleErrorSilently(error, 'wizard.uploadImages')
-                            toast.warning('Error al subir imágenes, pero el reporte se guardó.')
-                        })
+                    uploadImagesMutation.mutate(
+                        { reportId: serverReport.id, files: imageFiles },
+                        {
+                            onSuccess: () => {
+                                console.log('[Wizard] Imágenes subidas correctamente')
+                            },
+                            onError: (error) => {
+                                handleErrorSilently(error, 'wizard.uploadImages')
+                                toast.warning('Error al subir imágenes, pero el reporte se guardó.')
+                            }
+                        }
+                    )
                 }
                 
                 toast.success('¡Reporte publicado con éxito!')

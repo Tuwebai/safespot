@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Share2, X as XIcon, MessageCircle, Facebook, Link2, Check } from 'lucide-react';
-import { reportsApi } from '@/lib/api';
-import { logError } from '@/lib/logger';
+import { useRegisterShareMutation } from '@/hooks/mutations/useRegisterShareMutation';
 
 interface ShareButtonProps {
     category: string;
@@ -13,6 +12,7 @@ interface ShareButtonProps {
 export function ShareButton({ category, zone, reportId, variant = 'default' }: ShareButtonProps) {
     const [showMenu, setShowMenu] = useState(false);
     const [copied, setCopied] = useState(false);
+    const registerShare = useRegisterShareMutation();
 
     const shareUrl = typeof window !== 'undefined'
         ? `${window.location.origin}/reporte/${reportId}`
@@ -32,7 +32,7 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                 url: shareUrl
             });
             // Register share on successful trigger
-            reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+            registerShare.mutate(reportId);
         } catch (err) {
             // User cancelled or error - fail silently
             console.log('Share cancelled');
@@ -129,7 +129,7 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
                                 onClick={() => {
                                     setShowMenu(false);
-                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                    registerShare.mutate(reportId);
                                 }}
                             >
                                 <MessageCircle className="h-5 w-5 text-green-500" />
@@ -144,7 +144,7 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
                                 onClick={() => {
                                     setShowMenu(false);
-                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                    registerShare.mutate(reportId);
                                 }}
                             >
                                 <XIcon className="h-5 w-5" />
@@ -159,7 +159,7 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                                 className="flex items-center gap-3 px-4 py-3 hover:bg-dark-border/50 transition-colors"
                                 onClick={() => {
                                     setShowMenu(false);
-                                    reportsApi.registerShare(reportId).catch(err => logError(err, 'ShareButton.registerShare'));
+                                    registerShare.mutate(reportId);
                                 }}
                             >
                                 <Facebook className="h-5 w-5 text-blue-500" />

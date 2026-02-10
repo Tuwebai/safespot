@@ -22,7 +22,7 @@ export const NotificationService = {
     async notifyNearbyNewReport(report) {
         if (!report.latitude || !report.longitude) return;
 
-        console.log(`[Notify] Bulk Event: notifyNearbyNewReport for report ${report.id}`);
+        if (process.env.DEBUG) console.log(`[Notify] Bulk: notifyNearbyNewReport for report ${report.id}`);
 
         try {
             const db = DB.public();
@@ -163,7 +163,7 @@ export const NotificationService = {
      * Notify report owner of new activity (comment, share, sighting)
      */
     async notifyActivity(reportId, type, entityId, triggerAnonymousId) {
-        console.log(`[Notify] Event: notifyActivity type=${type} report=${reportId}`);
+        if (process.env.DEBUG) console.log(`[Notify] Event: notifyActivity type=${type} report=${reportId}`);
         try {
             const db = DB.public();
 
@@ -180,15 +180,15 @@ export const NotificationService = {
 
             // Don't notify if user triggered own activity or has disabled this type
             if (report.anonymous_id === triggerAnonymousId) {
-                console.log('[Notify] Skipped: Self-activity');
+                // Self-activity skipped silently
                 return;
             }
             if (!report.report_activity) {
-                console.log('[Notify] Skipped: report_activity disabled by user');
+                // User preference - skipped silently
                 return;
             }
             if (report.notifications_today >= report.max_notifications_per_day) {
-                console.log('[Notify] Skipped: Daily limit reached');
+                // Rate limit - skipped silently
                 return;
             }
 
@@ -376,7 +376,7 @@ export const NotificationService = {
      * Notify parent comment author of a reply
      */
     async notifyCommentReply(parentCommentId, replyId, triggerAnonymousId) {
-        console.log(`[Notify] Event: notifyCommentReply parent=${parentCommentId} reply=${replyId}`);
+        if (process.env.DEBUG) console.log(`[Notify] Event: notifyCommentReply parent=${parentCommentId}`);
         try {
             const db = DB.public();
 
@@ -446,7 +446,7 @@ export const NotificationService = {
      * Notify user when mentioned in a comment
      */
     async notifyMention(targetAnonymousId, commentId, triggerAnonymousId, reportId) {
-        console.log(`[Notify] Event: notifyMention target=${targetAnonymousId} comment=${commentId}`);
+        if (process.env.DEBUG) console.log(`[Notify] Event: notifyMention target=${targetAnonymousId.substring(0, 8)}...`);
         try {
             const db = DB.public();
 
@@ -514,7 +514,7 @@ export const NotificationService = {
      * Notify author of a like/vote
      */
     async notifyLike(targetType, targetId, triggerAnonymousId) {
-        console.log(`[Notify] Event: notifyLike type=${targetType} id=${targetId}`);
+        if (process.env.DEBUG) console.log(`[Notify] Event: notifyLike type=${targetType}`);
         try {
             const db = DB.public();
             let ownerQuery = '';
@@ -639,7 +639,7 @@ export const NotificationService = {
      * Notify user of a new follower
      */
     async notifyNewFollower(followerId, followedId) {
-        console.log(`[Notify] Event: notifyNewFollower follower = ${followerId} followed = ${followedId}`);
+        if (process.env.DEBUG) console.log(`[Notify] Event: notifyNewFollower`);
         try {
             const db = DB.public();
 
@@ -659,7 +659,7 @@ export const NotificationService = {
             // Check limits
             const targetSettings = targetResult.rows[0];
             if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
-                console.log(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day}) - IGNORING FOR TESTING`);
+                if (process.env.DEBUG) console.log(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day})`);
             }
 
             // 2. Create Notification

@@ -67,7 +67,7 @@ export function Explorar() {
       let data: Report[]
       if (parsedBounds) {
         const { north, south, east, west } = parsedBounds
-        console.log('[MapSearch] REQUEST_SENT', { north, south, east, west })
+        // Map search request
         data = await reportsApi.getReportsInBounds(north, south, east, west)
       } else {
         data = await reportsApi.getAll()

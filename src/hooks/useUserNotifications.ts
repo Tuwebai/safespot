@@ -34,11 +34,13 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                 if (originClientId === myClientId) return;
 
                 // SSOT: Standardize access to partial data
-                const actualPayload = payload.partial || payload;
+                // 🏛️ SAFE MODE: Type assertion para compatibilidad durante migración
+                const payloadObj = payload as Record<string, unknown>;
+                const actualPayload = (payloadObj.partial as Record<string, unknown>) || payloadObj;
 
                 // 1. Notification Side-Effects
                 if (type === 'notification' && actualPayload.notification) {
-                    const notif = actualPayload.notification;
+                    const notif = actualPayload.notification as Record<string, unknown>;
                     const isBadgeNotification = notif.type === 'badge';
 
                     // sound and tracking
@@ -52,7 +54,7 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                 }
 
                 // 2. Custom Callbacks
-                if (onNotification) onNotification(actualPayload);
+                if (onNotification) onNotification(actualPayload as unknown as { type: string; [key: string]: unknown });
             }
         });
 

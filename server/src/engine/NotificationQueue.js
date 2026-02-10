@@ -55,7 +55,9 @@ export const NotificationQueue = {
             }
         });
 
-        console.log(`[NotificationEngine] [${traceId}] [v1] Enqueued. type=${event.type} jobId=${job.id} priority=${jobData.delivery.priority}`);
+        if (process.env.DEBUG) {
+            console.log(`[NotificationEngine] [${traceId}] [v1] Enqueued. type=${event.type} jobId=${job.id}`);
+        }
         return job;
     },
 

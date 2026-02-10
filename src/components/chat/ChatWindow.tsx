@@ -205,7 +205,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                         className="rounded-full"
                         onPointerDown={(e) => {
                             e.stopPropagation();
-                            console.log('[TopBar] Responder clicked', selectedMessage.id);
+                            // Action handled silently
                             onReply(selectedMessage);
                             onClose();
                         }}
@@ -220,7 +220,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                         className="rounded-full"
                         onPointerDown={(e) => {
                             e.stopPropagation();
-                            console.log('[TopBar] Copiar clicked', selectedMessage.id);
+                            // Action handled silently
                             onCopy(selectedMessage);
                             onClose();
                         }}
@@ -235,7 +235,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                         className="rounded-full"
                         onPointerDown={(e) => {
                             e.stopPropagation();
-                            console.log('[TopBar] Fijar clicked', selectedMessage.id);
+                            // Action handled silently
                             onPin(selectedMessage.id);
                             onClose();
                         }}
@@ -250,7 +250,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                         className="rounded-full"
                         onPointerDown={(e) => {
                             e.stopPropagation();
-                            console.log('[TopBar] Favorito clicked', selectedMessage.id);
+                            // Action handled silently
                             onStar(selectedMessage);
                             onClose();
                         }}
@@ -266,7 +266,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                             className="rounded-full"
                             onPointerDown={(e) => {
                                 e.stopPropagation();
-                                console.log('[TopBar] Editar clicked', selectedMessage.id);
+                                // Action handled silently
                                 onEdit(selectedMessage);
                                 onClose();
                             }}
@@ -283,7 +283,7 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                             className="rounded-full"
                             onPointerDown={(e) => {
                                 e.stopPropagation();
-                                console.log('[TopBar] Eliminar clicked', selectedMessage.id);
+                                // Action handled silently
                                 onDelete(selectedMessage);
                                 onClose();
                             }}
@@ -431,7 +431,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         const draftKey = `chat_draft_${room.id}`;
         const savedDraft = localStorage.getItem(draftKey);
         if (savedDraft) {
-            console.log('[Drafts] Restored draft for room', room.id);
+            // Draft restored silently
             setMessage(savedDraft);
         }
     }, [room?.id]);

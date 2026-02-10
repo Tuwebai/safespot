@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, X, User } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
-import { usersApi } from '@/lib/api';
+import { useUpdateProfileMutation } from '@/hooks/mutations/useUpdateProfileMutation';
 
 interface EditAliasModalProps {
     isOpen: boolean;
@@ -16,8 +16,8 @@ interface EditAliasModalProps {
 
 export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isForced = false }: EditAliasModalProps) {
     const toast = useToast();
+    const updateProfile = useUpdateProfileMutation();
     const [alias, setAlias] = useState(currentAlias || '');
-    const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Reset state when opening
@@ -45,22 +45,22 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isFor
             return;
         }
 
-        setSubmitting(true);
         setError(null);
 
-        try {
-            await usersApi.updateProfile({ alias });
-            toast.success('Alias actualizado correctamente');
-            onSuccess(alias);
-            if (!isForced) onClose(); // Only close if not forced (parent might handle closing)
-        } catch (err: any) {
-            console.error(err);
-            // Mostrar mensaje específico del backend si existe (ej: "Este alias ya está en uso")
-            const backendMessage = err.response?.data?.message || err.message;
-            setError(backendMessage || 'Error al guardar el alias. Intenta nuevamente.');
-        } finally {
-            setSubmitting(false);
-        }
+        updateProfile.mutate(
+            { alias },
+            {
+                onSuccess: () => {
+                    toast.success('Alias actualizado correctamente');
+                    onSuccess(alias);
+                    if (!isForced) onClose();
+                },
+                onError: (err: any) => {
+                    const backendMessage = err.response?.data?.message || err.message;
+                    setError(backendMessage || 'Error al guardar el alias. Intenta nuevamente.');
+                }
+            }
+        );
     };
 
     return (
@@ -76,7 +76,7 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isFor
                         size="icon"
                         className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:text-foreground"
                         onClick={onClose}
-                        disabled={submitting}
+                        disabled={updateProfile.isPending}
                     >
                         <X className="h-4 w-4" />
                     </Button>
@@ -113,7 +113,7 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isFor
                                     className="pl-7 bg-dark-bg border-dark-border focus:border-neon-green/50"
                                     placeholder="UsuarioGenial"
                                     maxLength={20}
-                                    disabled={submitting}
+                                    disabled={updateProfile.isPending}
                                     autoFocus
                                 />
                             </div>
@@ -129,17 +129,17 @@ export function EditAliasModal({ isOpen, onClose, currentAlias, onSuccess, isFor
                                     type="button"
                                     variant="ghost"
                                     onClick={onClose}
-                                    disabled={submitting}
+                                    disabled={updateProfile.isPending}
                                 >
                                     Cancelar
                                 </Button>
                             )}
                             <Button
                                 type="submit"
-                                disabled={!alias.trim() || submitting}
+                                disabled={!alias.trim() || updateProfile.isPending}
                                 className="bg-neon-green text-black hover:bg-neon-green/90"
                             >
-                                {submitting ? (
+                                {updateProfile.isPending ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                         Guardando...

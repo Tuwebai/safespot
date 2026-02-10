@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Home, FileBarChart, MapPin, Trophy, Plus, User, Star, MessageSquare, Users, Settings } from 'lucide-react'
+import { Home, FileBarChart, MapPin, Trophy, Plus, User, Star, MessageSquare, Users, Settings, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
@@ -203,11 +203,7 @@ export function Header() {
               className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
               aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
             >
-              <div className="hamburger-icon" aria-hidden="true">
-                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
-                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
-                <span className={cn("hamburger-line", mobileMenuOpen && "open")} />
-              </div>
+              <PanelLeft className="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -258,11 +254,7 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
           >
-            <div className="hamburger-icon">
-              <span className="hamburger-line open" />
-              <span className="hamburger-line open" />
-              <span className="hamburger-line open" />
-            </div>
+            <PanelLeft className="h-5 w-5" />
           </button>
         </div>
 
@@ -335,12 +327,12 @@ export function Header() {
             </Link>
 
             <Link
-              to="/perfil/configuracion"
+              to="/ajustes"
               onClick={() => setMobileMenuOpen(false)}
               className={cn(
                 'flex items-center px-4 py-3 rounded-lg transition-all duration-200',
                 'active:scale-95',
-                isActive('/perfil/configuracion')
+                isActive('/ajustes')
                   ? 'text-neon-green bg-neon-green/10'
                   : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
               )}

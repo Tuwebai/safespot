@@ -82,7 +82,7 @@ class LocationAuthorityEngine {
     private readonly SYNC_CHANNEL_NAME = 'safespot-location-sync'
 
     private constructor() {
-        console.debug('[Location] Engine initialized')
+        // Location engine initialized
         this.setupSyncChannel()
     }
 
@@ -113,7 +113,7 @@ class LocationAuthorityEngine {
             document.addEventListener('visibilitychange', this.handleVisibilityChange)
         }
 
-        console.debug('[Location] Engine started')
+        // Location engine started
     }
 
     /**
@@ -131,7 +131,7 @@ class LocationAuthorityEngine {
         // Abort any pending resolution
         this.abort()
 
-        console.debug('[Location] Engine stopped')
+        // Location engine stopped
     }
 
     /**
@@ -139,7 +139,7 @@ class LocationAuthorityEngine {
      */
     private handleVisibilityChange = (): void => {
         if (document.hidden) {
-            console.debug('[Location] Tab hidden, pausing active resolution')
+            // Tab visibility changed
             this.abort()
         }
     }
@@ -173,7 +173,7 @@ class LocationAuthorityEngine {
             case 'LOCATION_RESOLVED':
                 // Otro tab resolvió ubicación, usar como fallback
                 if (data.position && !this.isResolved()) {
-                    console.debug('[Location] 🛰️ Location resolved in another tab, using as fallback')
+                    // Cross-tab location resolution
                     this.setState(LocationState.RESOLVED, data.position)
                 }
                 break
@@ -257,7 +257,7 @@ class LocationAuthorityEngine {
             this.hasFallbacks()
 
         if (shouldAutoResolve) {
-            console.debug('[Location] Have fallbacks + state is RESOLVING/UNAVAILABLE → resolving immediately!')
+            // Using cached fallbacks
             this.abort() // Cancel any pending GPS request
             this.resolveFromFallbacksOnly()
         }
@@ -307,7 +307,7 @@ class LocationAuthorityEngine {
         }
 
         // No valid fallbacks found
-        console.debug('[Location] No valid fallbacks to resolve from')
+        // No fallbacks available
     }
 
     /**
@@ -317,7 +317,7 @@ class LocationAuthorityEngine {
     public async requestLocation(mode: 'auto' | 'manual' = 'auto'): Promise<void> {
         // Prevent concurrent resolutions
         if (this.isResolving) {
-            console.debug('[Location] Already resolving, ignoring request')
+            // Resolution already in progress
             return
         }
 
@@ -346,7 +346,7 @@ class LocationAuthorityEngine {
         if (this.abortController) {
             this.abortController.abort()
             this.isResolving = false
-            console.debug('[Location] Resolution aborted')
+            // Resolution aborted
         }
     }
 
@@ -502,7 +502,7 @@ class LocationAuthorityEngine {
 
             // TIMEOUT (Code 3) → RETRY with relaxed constraints
             if (error.code === 3) {
-                console.log('[Location] High accuracy timeout, retrying with relaxed constraints...')
+                // Retrying location with relaxed constraints
                 this.setState(LocationState.RESOLVING, null, 'Afinando ubicación (modo extendido)...')
 
                 try {
@@ -598,7 +598,7 @@ class LocationAuthorityEngine {
             this.syncChannel = null
         }
 
-        console.debug('[Location] 🧹 Cleared location data, listeners and stopped engine')
+        // Location engine cleanup completed
     }
 }
 

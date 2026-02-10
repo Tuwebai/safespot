@@ -29,7 +29,7 @@ export const DeliveryOrchestrator = {
         const anonymousId = target.anonymousId;
 
         if (!anonymousId) {
-            console.warn(`[Orchestrator][${traceId}]Skipped: No target anonymousId.`);
+            // No target - permanent failure, no need to log (metric instead)
             return DispatchResult.PERMANENT_ERROR;
         }
 
@@ -42,7 +42,7 @@ export const DeliveryOrchestrator = {
             // 2. Decision Logic
             // SECURITY -> ALWAYS PUSH (Safety First)
             if (isSecurity) {
-                console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
+                if (process.env.DEBUG) console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
                 this._dispatchSSE(jobData); // Try update UI if open
                 return await this._dispatchPush(jobData); // Ensure wake up
             }
@@ -55,12 +55,12 @@ export const DeliveryOrchestrator = {
             // This eliminates duplicate notifications and race conditions.
 
             if (isOnline) {
-                console.log(`[Orchestrator][${traceId}] User ONLINE. Routing to SSE only.`);
+                // Routing decision - only log in debug
                 await eventDeduplicator.markDispatched(jobData.id, 'sse');
                 const sseResult = await this._dispatchSSE(jobData);
                 return sseResult ? DispatchResult.SUCCESS : DispatchResult.RETRYABLE_ERROR;
             } else {
-                console.log(`[Orchestrator][${traceId}] User OFFLINE. Routing to Push.`);
+                // Routing decision - only log in debug
                 await eventDeduplicator.markDispatched(jobData.id, 'push');
                 return await this._dispatchPush(jobData);
             }

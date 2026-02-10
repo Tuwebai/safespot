@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { generateSEOTags } from '@/lib/seo'
-import { seoApi } from '@/lib/api' // Removed reportsApi
-import type { ZoneSEO } from '@/lib/api' // Removed Report type
+import type { ZoneSEO } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +11,7 @@ import { ReportCardSkeleton } from '@/components/ui/skeletons'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useNavigate } from 'react-router-dom'
 import { useReportsQuery } from '@/hooks/queries/useReportsQuery'
+import { useZonesQuery } from '@/hooks/queries/useZonesQuery'
 import { ReportCard } from '@/components/ReportCard'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 
@@ -26,13 +26,17 @@ export function ZoneAlertsPage() {
     };
 
     const { zoneSlug } = useParams<{ zoneSlug: string }>()
-    const [zones, setZones] = useState<ZoneSEO[]>([])
-    const [loadingZones, setLoadingZones] = useState(true)
-    const [zonesError, setZonesError] = useState<string | null>(null)
+    
+    // 🏛️ SAFE MODE: React Query hook en lugar de API directa
+    const { 
+        data: zones = [], 
+        isLoading: loadingZones, 
+        error: zonesError 
+    } = useZonesQuery()
 
     // Find the current zone display name from slug
     const currentZone = useMemo(() => {
-        return zones.find(z => z.slug === zoneSlug)
+        return zones.find((z: ZoneSEO) => z.slug === zoneSlug)
     }, [zones, zoneSlug])
 
     const zoneName = currentZone?.name || zoneSlug?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Zona Desconocida'
@@ -47,27 +51,8 @@ export function ZoneAlertsPage() {
         limit: 20
     })
 
-    useEffect(() => {
-        async function fetchZones() {
-            setLoadingZones(true)
-            try {
-                const zoneData = await seoApi.getZones()
-                setZones(zoneData)
-            } catch (err) {
-                console.error('Error fetching zone data:', err)
-                setZonesError('No pudimos cargar la información de esta zona.')
-            } finally {
-                setLoadingZones(false)
-            }
-        }
-
-        if (zoneSlug) {
-            fetchZones()
-        }
-    }, [zoneSlug])
-
     const loading = loadingZones || loadingReports
-    const error = zonesError || (reportsError ? 'Error al cargar los reportes' : null)
+    const error = zonesError ? 'No pudimos cargar la información de esta zona.' : (reportsError ? 'Error al cargar los reportes' : null)
 
     // SEO
     const seo = generateSEOTags({
@@ -138,8 +123,6 @@ export function ZoneAlertsPage() {
             </div>
         )
     }
-
-    // Helper functions removed as they are handled by ReportCard now
 
     return (
         <div className="min-h-screen bg-dark-bg">
@@ -277,7 +260,7 @@ export function ZoneAlertsPage() {
                         />
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {reportIds.map((report: any) => (
+                            {reportIds.map((report: { id: string }) => (
                                 <div key={report.id} className="h-full">
                                     <ReportCard
                                         reportId={report.id}
@@ -312,7 +295,7 @@ export function ZoneAlertsPage() {
                     <div className="space-y-4">
                         <h4 className="font-bold text-lg">Otras zonas cercanas</h4>
                         <div className="flex flex-wrap gap-2">
-                            {zones.filter(z => z.slug !== zoneSlug).slice(0, 5).map(z => (
+                            {zones.filter((z: ZoneSEO) => z.slug !== zoneSlug).slice(0, 5).map((z: ZoneSEO) => (
                                 <Link key={z.slug} to={`/alertas/${z.slug}`}>
                                     <Badge variant="secondary" className="bg-dark-border/50 hover:bg-neon-green/20 cursor-pointer">
                                         {z.name}

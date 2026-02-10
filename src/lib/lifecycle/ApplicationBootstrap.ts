@@ -64,7 +64,7 @@ class ApplicationBootstrapManager {
         if (this.state === newState) return;
 
         // 🔴 ENTERPRISE LOGGING: Structured Trace (Debug only to keep console clean)
-        console.debug(`[Lifecycle] STATE_TRANSITION from=${this.state} to=${newState} reason=${reason}`);
+        // State transition
 
         // 📡 MOTOR 8: Emit Unified Telemetry Signal
         telemetry.emit({
@@ -85,7 +85,7 @@ class ApplicationBootstrapManager {
         if (this.state !== BootstrapState.IDLE) return;
 
         this.setState(BootstrapState.BOOTING, 'app_init');
-        const startTime = performance.now();
+        const _startTime = performance.now(); // Used for boot duration metrics
 
         try {
             // 🧠 FAIL-SAFE BOOT: 8s Hard Limit
@@ -96,7 +96,7 @@ class ApplicationBootstrapManager {
             ]);
 
             const idState = sessionAuthority.getState();
-            console.debug(`[Bootstrap] Identity Phase Result: ${idState}`);
+            // Identity phase completed
 
             if (idState === SessionState.FAILED) {
                 console.error('[Bootstrap] Identity failed. Proceeding in degraded mode.');
@@ -140,8 +140,8 @@ class ApplicationBootstrapManager {
             // GUARANTEE: Always end in RUNNING state to show UI
             this.setState(BootstrapState.RUNNING, 'failsafe_trigger');
         } finally {
-            const duration = performance.now() - startTime;
-            console.debug(`[Bootstrap] Secure Boot Sequence: ${duration.toFixed(2)}ms`);
+            // Boot sequence completed
+            void _startTime;
         }
     }
 
@@ -158,14 +158,14 @@ class ApplicationBootstrapManager {
         // 2. Cooldown check (Enterprise Throttling)
         const now = Date.now();
         if (now - this.lastRecoveryAt < this.RECOVERY_COOLDOWN) {
-            console.debug(`[Lifecycle] Recovery suppressed: Cooldown active (${now - this.lastRecoveryAt}ms)`);
+            // Recovery suppressed by cooldown
             return;
         }
 
         this.setState(BootstrapState.RECOVERING, reason);
         this.lastRecoveryAt = now;
 
-        console.debug(`[Lifecycle] 🚑 RECOVERY_START attempt=${this.recoveryAttempts + 1} reason=${reason}`);
+        // Recovery started
 
         try {
             // 🧠 FAIL-SAFE RECOVERY: 10s Hard Limit
@@ -176,7 +176,7 @@ class ApplicationBootstrapManager {
 
             this.setState(BootstrapState.RUNNING, 'recovery_success');
             this.recoveryAttempts = 0;
-            console.debug('[Lifecycle] ✅ System Restored');
+            // System restored
 
             // 🧠 MOTOR 4: Notify recovery completed
             dataIntegrityEngine.processEvent({ type: 'lifecycle:recovered' });
@@ -196,17 +196,17 @@ class ApplicationBootstrapManager {
         // A. Identity Check: Only init if we are not in a terminal/ready state
         const idState = sessionAuthority.getState();
         if (idState !== SessionState.READY && idState !== SessionState.DEGRADED) {
-            console.debug('[Lifecycle] RECOVERY_STEP identity=verify');
+            // Recovery step: identity
             await sessionAuthority.init();
         } else {
-            console.debug('[Lifecycle] RECOVERY_STEP identity=skipped');
+            // Recovery step: identity skipped
         }
 
         // 👑 ORCHESTRATOR: Resume and Resync Delta
         realtimeOrchestrator.wake('app_recovery');
 
         // C. Staggered Data Rehydration (Prioritized)
-        console.debug('[Lifecycle] RECOVERY_STEP queries=staggered');
+        // Recovery step: queries
 
         // 1. Critical Profile
         await queryClient.refetchQueries({ queryKey: [['users', 'profile']], type: 'active' });
@@ -232,7 +232,7 @@ class ApplicationBootstrapManager {
         // RULE: Only suspend if we are actually RUNNING or RECOVERING
         // DO NOT suspend during BOOTING (prevents infinite bootstrap loop)
         if (this.state !== BootstrapState.RUNNING && this.state !== BootstrapState.RECOVERING) {
-            console.debug(`[Lifecycle] Suspend ignored: state=${this.state}`);
+            // Suspend ignored
             return;
         }
 
@@ -244,7 +244,7 @@ class ApplicationBootstrapManager {
         // 🧠 MOTOR 4: Pause tick during suspension
         dataIntegrityEngine.processEvent({ type: 'lifecycle:suspended' });
 
-        console.debug(`[Lifecycle] 💤 System Suspended reason=${reason}`);
+        // System suspended
     }
 
     private setupSystemListeners() {
@@ -273,7 +273,7 @@ class ApplicationBootstrapManager {
         window.addEventListener('focus', () => {
             // Only trigger if we were potentially stale
             if (this.state === BootstrapState.RUNNING) {
-                console.debug('[Lifecycle] App Focused. Checking for freshness...');
+                // App focused
                 // Optional: trigger light recovery or just log
             }
         });

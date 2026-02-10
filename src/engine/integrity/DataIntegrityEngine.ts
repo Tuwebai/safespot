@@ -139,7 +139,7 @@ class DataIntegrityEngine {
     private readonly SYNC_CHANNEL_NAME = 'safespot-integrity-sync';
 
     constructor() {
-        console.debug('[Integrity] Motor 4 initialized');
+        // Engine initialized silently
         this.setupSyncChannel();
     }
 
@@ -155,11 +155,11 @@ class DataIntegrityEngine {
             this.syncChannel.onmessage = (event) => {
                 // Solo procesar mensajes de healing de otros tabs
                 if (event.data?.type === 'HEALING_STARTED') {
-                    console.debug('[Integrity] 🛰️ Healing started in another tab, skipping local healing');
+                    // Cross-tab healing coordination
                     // Pausar nuestro tick mientras otro tab hace healing
                     this.isTickPaused = true;
                 } else if (event.data?.type === 'HEALING_COMPLETED') {
-                    console.debug('[Integrity] 🛰️ Healing completed in another tab, resuming');
+                    // Cross-tab healing coordination completed
                     this.isTickPaused = false;
                     // Resetear nuestro estado ya que otro tab ya hizo el healing
                     if (this.state === DataIntegrityState.DATA_SUSPECT) {
@@ -207,7 +207,7 @@ class DataIntegrityEngine {
             }
         });
 
-        console.debug('[Integrity] ✅ Engine started with Proactive Triggers (M11, M8)');
+        // Engine started
     }
 
     /**
@@ -237,14 +237,14 @@ class DataIntegrityEngine {
             this.syncChannel.close();
             this.syncChannel = null;
         }
-        console.log('[Integrity] Engine stopped');
+        // Engine stopped
     }
 
     /**
      * Punto de entrada principal para eventos
      */
     public processEvent(event: IntegrityEvent): void {
-        console.debug(`[Integrity] EVENT: ${event.type}`);
+        // Event processed
 
         switch (event.type) {
             case 'lifecycle:running':
@@ -308,7 +308,7 @@ class DataIntegrityEngine {
     private onLifecycleRunning(): void {
         // ⚠️ AJUSTE 3: reanudar tick
         this.isTickPaused = false;
-        console.debug('[Integrity] Tick resumed (lifecycle running)');
+        // Lifecycle resumed
     }
 
     private onLifecycleRecovered(): void {
@@ -316,18 +316,18 @@ class DataIntegrityEngine {
         this.isTickPaused = false;
 
         // Forzar verificación de todas las queries trackeadas
-        console.debug('[Integrity] 🚑 Post-recovery verification triggered');
+        // Post-recovery verification
         this.verifyAllTrackedQueries();
     }
 
     private onLifecycleSuspended(): void {
         // ⚠️ AJUSTE 3: pausar tick en SUSPENDED
         this.isTickPaused = true;
-        console.debug('[Integrity] Tick paused (lifecycle suspended)');
+        // Lifecycle paused
     }
 
     private onRealtimeStatus(status: 'HEALTHY' | 'DEGRADED' | 'DISCONNECTED'): void {
-        const prevStatus = this.realtimeStatus;
+        const _prevStatus = this.realtimeStatus; // Used for change detection
         this.realtimeStatus = status;
 
         if (status === 'HEALTHY') {
@@ -348,7 +348,7 @@ class DataIntegrityEngine {
             }
         }
 
-        console.debug(`[Integrity] Realtime status: ${prevStatus} → ${status}`);
+        void _prevStatus; // Previous status tracked for change detection
     }
 
     private onQueryError(queryKey: unknown[]): void {
@@ -436,7 +436,7 @@ class DataIntegrityEngine {
                 const toRemove = Math.ceil(this.MAX_TRACKED_QUERIES * 0.2); // Eliminar 20% más antiguas
                 const victims = this.trackedQueriesOrder.splice(0, toRemove);
                 victims.forEach(key => this.trackedQueries.delete(key));
-                console.debug(`[Integrity] 🧹 LRU eviction: removed ${toRemove} old tracked queries`);
+                // LRU eviction completed
             }
 
             this.trackedQueries.set(keyStr, {
@@ -446,7 +446,7 @@ class DataIntegrityEngine {
                 threshold,
             });
             this.trackedQueriesOrder.push(keyStr);
-            console.debug(`[Integrity] Tracking query: ${keyStr} (threshold: ${threshold / 1000}s)`);
+            // Tracking new query
         }
     }
 
@@ -485,7 +485,7 @@ class DataIntegrityEngine {
         }
 
         if (staleQueries.length > 0) {
-            console.debug(`[Integrity] Found ${staleQueries.length} stale queries`);
+            // Found stale queries
 
             if (this.state === DataIntegrityState.DATA_HEALTHY) {
                 this.setState(DataIntegrityState.DATA_STALE);
@@ -548,7 +548,7 @@ class DataIntegrityEngine {
         // Los followers reciben el estado vía BroadcastChannel
         const isLeader = leaderElection.isLeader();
         if (!isLeader) {
-            console.debug(`[Integrity] Not leader, skipping healing. Waiting for leader to heal...`);
+            // Not leader, waiting for leader healing
             return;
         }
 
@@ -646,7 +646,7 @@ class DataIntegrityEngine {
         }
 
         if (success) {
-            console.debug('[Integrity] ✅ Healing completed successfully');
+            // Healing completed successfully
             this.setState(DataIntegrityState.DATA_HEALTHY);
         } else {
             console.warn('[Integrity] ⚠️ Healing completed with issues');
@@ -662,7 +662,7 @@ class DataIntegrityEngine {
     private setState(newState: DataIntegrityState): void {
         if (this.state === newState) return;
 
-        console.debug(`[Integrity] STATE_TRANSITION from=${this.state} to=${newState}`);
+        // State transition
 
         this.state = newState;
         this.stateListeners.forEach(fn => fn(newState));
@@ -672,11 +672,7 @@ class DataIntegrityEngine {
      * ⚠️ AJUSTE 4: Emite decisiones (intenciones), no ejecuta directamente
      */
     private emitDecision(decision: IntegrityDecision): void {
-        const logDetails = decision.type === 'NOOP_LOG'
-            ? decision.message
-            : `${'queryKey' in decision ? JSON.stringify(decision.queryKey) : ''} reason=${decision.reason}`;
-
-        console.debug(`[Integrity] DECISION: ${decision.type}`, logDetails);
+        // Decision made (type: decision.type)
 
         // Notificar listeners (para testing/telemetría/override)
         this.decisionListeners.forEach(fn => fn(decision));
@@ -739,7 +735,7 @@ class DataIntegrityEngine {
             this.healingTimeoutId = null;
         }
         
-        console.debug('[Integrity] 🧹 Cleared tracked queries, listeners and reset healing state');
+        // Cleanup completed
     }
 }
 

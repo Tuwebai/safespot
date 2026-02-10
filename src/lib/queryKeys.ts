@@ -79,6 +79,21 @@ export const queryKeys = {
 
         // User's favorite reports
         favorites: ['user', 'favorites'] as const,
+
+        // Transparency log for moderation actions
+        transparencyLog: ['user', 'transparency-log'] as const,
+
+        // Public profile by alias
+        publicProfile: (alias: string) => ['user', 'public-profile', alias] as const,
+
+        // Followers list
+        followers: (alias: string) => ['user', 'followers', alias] as const,
+
+        // Following list
+        following: (alias: string) => ['user', 'following', alias] as const,
+
+        // Suggestions for current user
+        suggestions: ['user', 'suggestions'] as const,
     },
 
     // ============================================
@@ -104,6 +119,22 @@ export const queryKeys = {
 
         // Category breakdown statistics
         categories: ['stats', 'categories'] as const,
+    },
+
+    // ============================================
+    // NOTIFICATIONS
+    // ============================================
+    notifications: {
+        // User notification settings
+        settings: ['notifications', 'settings'] as const,
+    },
+
+    // ============================================
+    // ZONES (SEO)
+    // ============================================
+    zones: {
+        // All zones list
+        all: ['zones'] as const,
     },
 } as const
 

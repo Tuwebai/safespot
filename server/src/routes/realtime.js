@@ -387,7 +387,7 @@ router.get('/comments/:reportId', (req, res) => {
     // Initialize Standard SSE Response
     const stream = new SSEResponse(res);
 
-    logger.debug(`[SSE] Client connected for report ${reportId}`);
+    logger.trace(`[SSE] Client connected for report ${reportId}`);
 
     // Confirm connection
     stream.send('connected', { reportId });
@@ -474,7 +474,7 @@ router.get('/chats/:roomId', (req, res) => {
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    logger.debug(`[SSE] Client connected for chat room ${roomId} (User: ${anonymousId})`);
+    logger.trace(`[SSE] Client connected for chat room ${roomId} (User: ${anonymousId})`);
 
     stream.send('connected', { roomId });
     stream.startHeartbeat(2000);
@@ -610,7 +610,7 @@ router.get('/user/:anonymousId', (req, res) => {
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
-    logger.debug(`[SSE] Client connected for user notifications ${anonymousId} (Events ID: ${realtimeEvents.instanceId})`);
+    logger.trace(`[SSE] Client connected for user notifications ${anonymousId}`);
 
     stream.send('connected', { anonymousId });
     stream.startHeartbeat(15000, () => {
@@ -714,7 +714,7 @@ router.get('/user/:anonymousId', (req, res) => {
         // Solo si es la última pestaña, se emite 'offline' dentro de trackDisconnect.
         presenceTracker.trackDisconnect(anonymousId);
 
-        logger.debug(`[SSE] Client disconnected ${anonymousId}`);
+        logger.trace(`[SSE] Client disconnected ${anonymousId}`);
 
         stream.cleanup();
         realtimeEvents.off(`user-chat-update:${anonymousId}`, handleChatUpdate);

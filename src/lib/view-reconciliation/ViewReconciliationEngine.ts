@@ -105,7 +105,7 @@ class ViewReconciliationEngine {
     private waitTimeCount: number = 0;
 
     constructor() {
-        console.debug('[ViewReconciliationEngine] 🎨 Enterprise engine initialized');
+        // View reconciliation initialized
     }
 
     // ===========================================
@@ -115,7 +115,7 @@ class ViewReconciliationEngine {
     async start(): Promise<void> {
         if (this.isStarted) return;
         
-        console.debug('[ViewReconciliationEngine] 🚀 Starting enterprise engine...');
+        // View reconciliation starting
         
         // 1. Inicializar IndexedDB
         await this.initIndexedDB();
@@ -146,13 +146,13 @@ class ViewReconciliationEngine {
             payload: { action: 'engine_started', metrics: { ...this.metrics } }
         });
         
-        console.debug('[ViewReconciliationEngine] ✅ Enterprise engine started');
+        // View reconciliation started
     }
 
     stop(): void {
         if (!this.isStarted) return;
         
-        console.debug('[ViewReconciliationEngine] 🛑 Stopping enterprise engine...');
+        // View reconciliation stopping
         
         // Guardar pendientes en IndexedDB
         this.persistPendingToIndexedDB();
@@ -240,7 +240,7 @@ class ViewReconciliationEngine {
                     }
                 });
                 
-                console.debug(`[ViewReconciliationEngine] Loaded ${reactions.length} pending reactions`);
+                // Loaded pending reactions from storage
                 
                 // Limpiar después de cargar
                 this.clearIndexedDB();
@@ -322,7 +322,7 @@ class ViewReconciliationEngine {
     private onRouteChange(): void {
         const newRoute = window.location.pathname;
         if (newRoute !== this.currentRoute) {
-            console.debug(`[ViewReconciliationEngine] Route changed: ${this.currentRoute} → ${newRoute}`);
+            // Route changed
             this.currentRoute = newRoute;
             this.onContextChange(newRoute, this.isVisible);
         }
@@ -585,7 +585,7 @@ class ViewReconciliationEngine {
         });
 
         if (cleanedCount > 0) {
-            console.debug(`[ViewReconciliationEngine] 🧹 TTL cleanup: removed ${cleanedCount} old reactions`);
+            // TTL cleanup completed
         }
     }
 
@@ -651,7 +651,7 @@ class ViewReconciliationEngine {
         this.waitTimeAccumulator = 0;
         this.waitTimeCount = 0;
         
-        console.debug('[ViewReconciliationEngine] 🧹 Cleared all queues and metrics');
+        // Cleanup completed
     }
 }
 

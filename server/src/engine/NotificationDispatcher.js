@@ -80,6 +80,8 @@ export const NotificationDispatcher = {
         const { DB } = await import('../utils/db.js');
         const db = DB.public();
         await db.query('UPDATE push_subscriptions SET is_active = false, updated_at = NOW() WHERE id = $1', [subId]);
-        console.log(`[NotificationEngine] Subscription ${subId} marked as inactive (410/404).`);
+        if (process.env.DEBUG) {
+            console.log(`[NotificationEngine] Subscription ${subId} marked as inactive (410/404).`);
+        }
     }
 };

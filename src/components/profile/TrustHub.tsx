@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { usersApi, type TransparencyAction } from '@/lib/api'
+import { useTransparencyLogQuery } from '@/hooks/queries/useTransparencyLogQuery'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Shield, ShieldAlert, ShieldCheck, Clock, CheckCircle2, XCircle } from 'lucide-react'
@@ -7,27 +6,9 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 export function TrustHub() {
-    const [actions, setActions] = useState<TransparencyAction[]>([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-
-    useEffect(() => {
-        loadTrustLog()
-    }, [])
-
-    const loadTrustLog = async () => {
-        try {
-            setLoading(true)
-            const data = await usersApi.getTransparencyLog()
-            setActions(data)
-            setError(null)
-        } catch (err) {
-            console.error('Failed to load transparency log:', err)
-            setError('No se pudo cargar el historial de transparencia.')
-        } finally {
-            setLoading(false)
-        }
-    }
+    const { data: actions = [], isLoading: loading, error: queryError, refetch: loadTrustLog } = useTransparencyLogQuery()
+    
+    const error = queryError ? 'No se pudo cargar el historial de transparencia.' : null
 
     // Icon mapping based on action type
     const getActionIcon = (type: string) => {
@@ -64,7 +45,7 @@ export function TrustHub() {
                 <CardContent className="flex flex-col items-center justify-center p-6 text-center">
                     <XCircle className="h-10 w-10 text-destructive mb-3" />
                     <p className="text-destructive font-medium">{error}</p>
-                    <Button variant="outline" size="sm" onClick={loadTrustLog} className="mt-4">
+                    <Button variant="outline" size="sm" onClick={() => { void loadTrustLog(); }} className="mt-4">
                         Reintentar
                     </Button>
                 </CardContent>
@@ -101,7 +82,7 @@ export function TrustHub() {
                         <Shield className="h-5 w-5 text-neon-green" />
                         Centro de Transparencia
                     </CardTitle>
-                    <Button variant="ghost" size="sm" onClick={loadTrustLog} className="h-8 w-8 p-0">
+                    <Button variant="ghost" size="sm" onClick={() => { void loadTrustLog(); }} className="h-8 w-8 p-0">
                         <Clock className="h-4 w-4" />
                     </Button>
                 </div>

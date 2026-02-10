@@ -602,32 +602,9 @@ export const commentsApi = {
    */
   create: async (data: CreateCommentData): Promise<Comment> => {
     return trafficController.enqueueSerial(async () => {
-      // 🔍 DEBUG LOG: Verificar qué se envía al backend
-      const headers = getHeaders();
-      console.log('[API CreateComment] REQUEST:', {
-        url: '/comments',
-        headers: {
-          'X-Anonymous-Id': headers['X-Anonymous-Id'],
-          'Authorization': headers['Authorization'] ? 'Bearer ***' : 'none'
-        },
-        body: data,
-        timestamp: new Date().toISOString()
-      });
-
-      // 🔬 DIAGNOSTIC: Trace client-generated ID transmission
-      console.log('[API CreateComment] 🔍 DIAGNOSTIC: data.id:', data.id);
-      console.log('[API CreateComment] 🔍 DIAGNOSTIC: typeof data.id:', typeof data.id);
-
       const raw = await apiRequest<RawComment>('/comments', {
         method: 'POST',
         body: JSON.stringify(data),
-      });
-
-      // 🔍 DEBUG LOG: Verificar respuesta cruda
-      console.log('[API CreateComment] RAW RESPONSE:', {
-        commentId: raw.id,
-        anonymousId: raw.anonymous_id,
-        timestamp: new Date().toISOString()
       });
 
       return transformComment(raw);

@@ -151,7 +151,7 @@ function App() {
                                 <Route path="/gamificacion" element={<Gamificacion />} />
                                 <Route path="/perfil" element={<Perfil />} />
                                 <Route path="/reset-password" element={<ResetPassword />} />
-                                <Route path="/perfil/configuracion" element={<SettingsPage />} />
+                                <Route path="/ajustes" element={<SettingsPage />} />
                                 <Route path="/favoritos" element={<MisFavoritos />} />
                                 <Route path="/comunidad" element={<Comunidad />} />
                                 <Route path="/alertas/:zoneSlug" element={<ZoneAlertsPage />} />

@@ -87,7 +87,7 @@ export const useMapStore = create<MapState>((set, get) => ({
         const { mapBounds, searchBounds: currentSearchBounds } = get()
 
         if (!mapBounds) {
-            console.log('[MapSearch] SEARCH_SKIPPED - No mapBounds available')
+            // Search skipped - no bounds
             return { triggered: false, bounds: null }
         }
 
@@ -95,11 +95,11 @@ export const useMapStore = create<MapState>((set, get) => ({
 
         // Idempotence check: skip if bounds haven't changed
         if (normalized === currentSearchBounds) {
-            console.log('[MapSearch] SKIPPED_IDEMPOTENT - Same normalized bounds')
+            // Search skipped - duplicate request
             return { triggered: false, bounds: normalized }
         }
 
-        console.log('[MapSearch] SEARCH_TRIGGERED', normalized)
+        // Map search triggered
 
         set({
             searchBounds: normalized,

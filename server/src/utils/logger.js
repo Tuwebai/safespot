@@ -8,16 +8,23 @@ const isProduction = process.env.NODE_ENV === 'production';
  * Standard Structured Logger
  * Outputs JSON lines in production, pretty logs in dev.
  */
+/**
+ * Log Level Control
+ * LOG_LEVEL env var controls output: error | warn | info | debug | trace
+ * Default: 'info' in production, 'debug' in development
+ */
+const LOG_LEVEL = process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug');
+const LEVELS = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 };
+const currentLevel = LEVELS[LOG_LEVEL] ?? LEVELS.info;
+
+const shouldLog = (level) => (LEVELS[level] ?? 0) <= currentLevel;
+
 const logger = {
-  info: (message, context = {}) => log('info', message, context),
-  warn: (message, context = {}) => log('warn', message, context),
-  error: (message, error = null, context = {}) => log('error', message, context, error),
-  debug: (message, context = {}) => {
-    // Only log debug in non-production or if DEBUG env var is set
-    if (!isProduction || process.env.DEBUG) {
-      log('debug', message, context);
-    }
-  }
+  error: (message, context = {}) => shouldLog('error') && log('error', message, context),
+  warn: (message, context = {}) => shouldLog('warn') && log('warn', message, context),
+  info: (message, context = {}) => shouldLog('info') && log('info', message, context),
+  debug: (message, context = {}) => shouldLog('debug') && log('debug', message, context),
+  trace: (message, context = {}) => shouldLog('trace') && log('trace', message, context)
 };
 
 /**
@@ -82,6 +89,7 @@ function getColor(level) {
     case 'warn': return '\x1b[33m'; // Yellow
     case 'error': return '\x1b[31m'; // Red
     case 'debug': return '\x1b[90m'; // Gray
+    case 'trace': return '\x1b[90m'; // Gray (darker)
     default: return '\x1b[37m'; // White
   }
 }
@@ -93,12 +101,13 @@ function getColor(level) {
 export const requestLogger = (req, res, next) => {
   const start = Date.now();
 
-  // Log request start (Only in debug/development for non-noisy routes)
-  const NOISY_ROUTES = ['/health', '/api/users/profile', '/api/users/transparency-log', '/api/sync', '/api/diagnostics', '/api/presence'];
+  // Log request start at TRACE level only (very verbose, disabled by default)
+  // Use LOG_LEVEL=trace to see individual requests
+  const NOISY_ROUTES = ['/health', '/api/users/profile', '/api/users/transparency-log', '/api/sync', '/api/diagnostics', '/api/presence', '/api/realtime'];
   const isNoisy = NOISY_ROUTES.some(route => req.url.startsWith(route));
 
-  if (!isNoisy && (!isProduction || process.env.DEBUG)) {
-    logger.debug(`Incoming ${req.method} ${req.url}`);
+  if (!isNoisy && shouldLog('trace')) {
+    logger.trace(`Incoming ${req.method} ${req.url}`);
   }
 
   // Hook into response finish

@@ -165,8 +165,18 @@ router.patch('/settings', requireAnonymousId, async (req, res) => {
         if (city !== undefined) updates.last_known_city = city;
         if (province !== undefined) updates.last_known_province = province;
 
+        // 🏛️ SAFE MODE: Idempotente — si no hay cambios, devolver settings actuales (no error)
         if (Object.keys(updates).length === 0) {
-            return res.status(400).json({ error: 'No updates provided' });
+            const currentResult = await db.query(`
+                SELECT * FROM notification_settings WHERE anonymous_id = $1
+            `, [anonymousId]);
+            
+            if (currentResult.rows.length > 0) {
+                return res.json({ success: true, data: currentResult.rows[0] });
+            }
+            
+            // No settings exist yet, return empty but success
+            return res.json({ success: true, data: { anonymous_id: anonymousId } });
         }
 
         // Ensure anonymous user exists first to satisfy FK

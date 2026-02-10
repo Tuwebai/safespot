@@ -71,7 +71,7 @@ class SessionAuthority {
     private readonly LEGACY_KEY = 'safespot_session_v2';
 
     private constructor() {
-        console.debug('[SessionAuthority] [v3.0] Initializing SSOT...');
+        // SSOT initialization started
         this.migrateLegacyData();
         this.rehydrate();
     }
@@ -93,7 +93,7 @@ class SessionAuthority {
             if (legacyV2) {
                 const parsed = JSON.parse(legacyV2);
                 if (parsed.anonymousId) {
-                    console.log('[SessionAuthority] Migrating v2 session...');
+                    // Migrating v2 session
                     // ✅ SECURITY FIX: Never generate signatures locally
                     // If legacy session has no signature, it will be obtained on next bootstrap
                     this.token = {
@@ -117,7 +117,7 @@ class SessionAuthority {
             if (zustandAuth) {
                 const parsed = JSON.parse(zustandAuth);
                 if (parsed.state?.user?.anonymous_id) {
-                    console.log('[SessionAuthority] Migrating legacy auth-store...');
+                    // Migrating legacy auth-store
                     // ✅ SECURITY FIX: Never generate signatures locally
                     // Legacy sessions without signature will trigger re-bootstrap
                     this.token = {
@@ -167,7 +167,7 @@ class SessionAuthority {
                     this.state = parsed.authId && parsed.jwt
                         ? SessionState.AUTHENTICATED
                         : SessionState.READY;
-                    console.debug(`[SessionAuthority] [${this.state}] Rehydrated. Anonymous: ${parsed.anonymousId.substring(0, 8)}, Auth: ${parsed.authId?.substring(0, 8) || 'none'}`);
+                    // Session rehydrated
                 } else {
                     console.warn('[SessionAuthority] Session expired or invalid. Re-bootstrap required.');
                     localStorage.removeItem(this.STORAGE_KEY);
@@ -183,7 +183,7 @@ class SessionAuthority {
         if (this.state === SessionState.READY || this.state === SessionState.AUTHENTICATED) return;
         if (this.state === SessionState.BOOTSTRAPPING) return this.bootstrapPromise!;
 
-        console.debug('[SessionAuthority] [BOOTSTRAPPING] Negotiating identity...');
+        // Identity bootstrapping
         this.setState(SessionState.BOOTSTRAPPING);
 
         this.bootstrapPromise = (async () => {
@@ -254,7 +254,7 @@ class SessionAuthority {
         userMetadata: UserMetadata;
         signature?: string;
     }): void {
-        console.log('[SessionAuthority] Atomic login:', authData.authId.substring(0, 8));
+        // User logged in
 
         // ✅ SECURITY: Use backend-provided HMAC signature (REQUIRED)
         // Backend generates: HMAC-SHA256(anonymousId, SECRET)
@@ -285,7 +285,7 @@ class SessionAuthority {
     public logout(): void {
         if (!this.token) return;
 
-        console.log('[SessionAuthority] Logout - preserving anonymous:', this.token.anonymousId.substring(0, 8));
+        // User logged out
 
         // 🧹 MEMORY FIX: Limpiar logs de memoria para prevenir leaks
         // Solo en logout completo, no afecta la experiencia del usuario
@@ -460,7 +460,7 @@ class SessionAuthority {
 
     private setState(newState: SessionState) {
         if (this.state === newState) return;
-        console.debug(`[SessionAuthority] [${this.state}] -> [${newState}]`);
+        // State transition
         this.state = newState;
         this.notify();
     }
