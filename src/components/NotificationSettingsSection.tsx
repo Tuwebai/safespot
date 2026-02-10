@@ -179,7 +179,6 @@ export function NotificationSettingsSection() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <LocationSection
                 locationName={locationName}
-                settings={settings}
                 savingLocation={updateLocationMutation.isPending}
                 isGeocoding={updateLocationMutation.isPending}
                 permissionStatus={permissionStatus}

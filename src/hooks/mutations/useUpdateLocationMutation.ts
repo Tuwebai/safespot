@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { notificationsApi, geocodeApi, userZonesApi } from '@/lib/api';
+import { notificationsApi, geocodeApi, userZonesApi, usersApi } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { logError } from '@/lib/logger';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
@@ -66,30 +66,35 @@ export function useUpdateLocationMutation() {
                     return null;
                 }
 
-                // 2. Persistir en notification_settings (SSOT) y user_zones en paralelo
+                // 2. Persistir en SSOT (anonymous_users), notification_settings y user_zones en paralelo
                 const results = await Promise.allSettled([
+                    usersApi.updateLocation({ city: city || '', province: prov || '', lat, lng }),
                     notificationsApi.updateSettings(updates),
                     userZonesApi.updateCurrent(lat, lng, formattedName)
                 ]);
 
                 // Validar que el SSOT se guardó correctamente
-                const settingsResult = results[0];
-                if (settingsResult.status !== 'fulfilled') {
+                const ssotResult = results[0];
+                if (ssotResult.status !== 'fulfilled') {
                     telemetry.emit({
                         engine: 'LocationPersistence',
                         severity: TelemetrySeverity.ERROR,
                         payload: {
                             action: 'location_save_failed',
-                            error: settingsResult.reason instanceof Error ? settingsResult.reason.message : 'Unknown error',
+                            error: ssotResult.reason instanceof Error ? ssotResult.reason.message : 'Unknown error',
                             hasCity: Boolean(city),
                             hasProvince: Boolean(prov)
                         }
                     });
-                    throw new Error('Failed to persist location settings');
+                    throw new Error('Failed to persist location to SSOT');
                 }
 
-                // 3. Invalidar cache
-                await queryClient.invalidateQueries({ queryKey: queryKeys.notifications.settings });
+                // 3. Invalidar cache (SSOT + settings)
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: queryKeys.notifications.settings }),
+                    queryClient.invalidateQueries({ queryKey: ['users', 'nearby'] }),
+                    queryClient.invalidateQueries({ queryKey: queryKeys.user.profile })
+                ]);
 
                 // 4. Telemetría de éxito
                 telemetry.emit({
@@ -118,7 +123,7 @@ export function useUpdateLocationMutation() {
                             console.warn('[Location] GPS Error:', err.message);
                             resolve(null);
                         },
-                        { timeout: 8000, enableHighAccuracy: true, maximumAge: 0 }
+                        { timeout: 5000, enableHighAccuracy: true, maximumAge: 60000 }
                     );
                 });
             };

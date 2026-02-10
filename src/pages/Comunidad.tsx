@@ -1,26 +1,43 @@
-import { useState } from 'react';
+/**
+ * 🏛️ SAFE MODE: Comunidad - Página Rediseñada Enterprise
+ * 
+ * Integración completa con:
+ * - Header con métricas
+ * - Búsqueda local
+ * - Grid responsive
+ * - Error boundary
+ * - Empty states enterprise
+ * 
+ * @version 2.0 - Enterprise Redesign
+ */
+
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import { usersApi, UserProfile } from '@/lib/api';
+import { CommunityErrorBoundary } from '@/components/comunidad/CommunityErrorBoundary';
+import { CommunityHeader } from '@/components/comunidad/CommunityHeader';
 import { CommunityTabs } from '@/components/comunidad/CommunityTabs';
-import { UserCard } from '@/components/comunidad/UserCard';
+import { CommunitySearch } from '@/components/comunidad/CommunitySearch';
+import { UserGrid } from '@/components/comunidad/UserGrid';
 import { EmptyCommunityState } from '@/components/comunidad/EmptyCommunityState';
-import { Loader2, ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { queryClient } from '@/lib/queryClient';
 
 export function Comunidad() {
-    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'nearby' | 'global'>('nearby');
+    const [searchQuery, setSearchQuery] = useState('');
     const [userLocality, setUserLocality] = useState<string | null>(null);
     const [hasNoLocation, setHasNoLocation] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     // ✅ ENTERPRISE: Robust Data Normalization
-    // Ensures we ALWAYS work with UserProfile[] regardless of API response shape
-    const normalizeUsers = (data: any): UserProfile[] => {
+    const normalizeUsers = (data: unknown): UserProfile[] => {
         if (!data) return [];
         if (Array.isArray(data)) return data;
-        if (Array.isArray(data.data)) return data.data;
-        if (Array.isArray(data.users)) return data.users;
+        if (data && typeof data === 'object') {
+            const d = data as Record<string, unknown>;
+            if (Array.isArray(d.data)) return d.data as UserProfile[];
+            if (Array.isArray(d.users)) return d.users as UserProfile[];
+        }
         return [];
     };
 
@@ -28,31 +45,26 @@ export function Comunidad() {
     const {
         data: nearbyUsers,
         isLoading: isLoadingNearby,
-        error: errorNearby
+        error: errorNearby,
+        isFetching: isFetchingNearby
     } = useQuery({
         queryKey: ['users', 'nearby'],
         queryFn: async () => {
             const response = await usersApi.getNearbyUsers();
-
-            // Extract meta for side-effects (locality) if present
-            const meta = (response as any).meta || {};
-
-            // Side-effect: Update location state
-            // Note: In a pure architecture, this should be in useEffect or onSuccess, 
-            // but we keep it here to strictly follow "no massive refactor" rule while fixing the crash.
+            const meta = (response as { meta?: { locality?: string; has_location_configured?: boolean } }).meta || {};
+            
             if (typeof meta.has_location_configured === 'boolean') {
                 setHasNoLocation(!meta.has_location_configured);
             } else if (meta.locality !== undefined) {
                 setHasNoLocation(!meta.locality);
             }
-
             if (meta.locality) {
                 setUserLocality(meta.locality);
             }
-
+            setLastUpdated(new Date());
             return response;
         },
-        select: (data) => normalizeUsers(data), // ✅ Safe normalization
+        select: (data) => normalizeUsers(data),
         enabled: activeTab === 'nearby',
         staleTime: 1000 * 10,
         refetchInterval: 1000 * 30,
@@ -62,83 +74,142 @@ export function Comunidad() {
     const {
         data: globalUsers,
         isLoading: isLoadingGlobal,
-        error: errorGlobal
+        error: errorGlobal,
+        isFetching: isFetchingGlobal
     } = useQuery({
         queryKey: ['users', 'global'],
-        queryFn: () => usersApi.getGlobalUsers(1),
-        select: (data) => normalizeUsers(data), // ✅ Safe normalization
+        queryFn: async () => {
+            const response = await usersApi.getGlobalUsers(1);
+            setLastUpdated(new Date());
+            return response;
+        },
+        select: (data) => normalizeUsers(data),
         enabled: activeTab === 'global',
         staleTime: 1000 * 60 * 5,
     });
 
+    // Estados consolidados
     const isLoading = activeTab === 'nearby' ? isLoadingNearby : isLoadingGlobal;
+    const isRefreshing = activeTab === 'nearby' ? isFetchingNearby : isFetchingGlobal;
     const error = activeTab === 'nearby' ? errorNearby : errorGlobal;
-    const users = (activeTab === 'nearby' ? nearbyUsers : globalUsers) || [];
-    const isEmpty = !isLoading && (!users || users.length === 0);
+    const rawUsers = (activeTab === 'nearby' ? nearbyUsers : globalUsers) || [];
+
+    // ✅ Búsqueda local client-side
+    const filteredUsers = useMemo(() => {
+        if (!searchQuery.trim()) return rawUsers;
+        const query = searchQuery.toLowerCase().trim();
+        return rawUsers.filter(user => 
+            user.alias?.toLowerCase().includes(query) ||
+            user.anonymous_id?.toLowerCase().includes(query)
+        );
+    }, [rawUsers, searchQuery]);
+
+    // Handlers
+    const handleRefresh = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ['users', activeTab] });
+    }, [activeTab]);
+
+    const handleClearSearch = useCallback(() => {
+        setSearchQuery('');
+    }, []);
+
+    // Empty state determination
+    const getEmptyStateVariant = useCallback((): 'location_missing' | 'nearby_empty' | 'global_empty' | 'search_empty' => {
+        if (searchQuery.trim() && filteredUsers.length === 0) {
+            return 'search_empty';
+        }
+        if (activeTab === 'nearby' && hasNoLocation) {
+            return 'location_missing';
+        }
+        if (activeTab === 'nearby') {
+            return 'nearby_empty';
+        }
+        return 'global_empty';
+    }, [activeTab, hasNoLocation, searchQuery, filteredUsers.length]);
+
+    // Render empty state
+    const renderEmptyState = () => {
+        const variant = getEmptyStateVariant();
+        return (
+            <EmptyCommunityState
+                variant={variant}
+                locality={userLocality}
+                query={searchQuery}
+                onClearSearch={handleClearSearch}
+            />
+        );
+    };
 
     return (
-        <div className="min-h-screen pb-20 md:pb-8 pt-4 md:pt-8 bg-background">
-            <div className="container max-w-2xl mx-auto px-4">
-
-                {/* Header */}
-                <div className="flex items-center gap-4 mb-6">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => navigate(-1)}
-                        className="shrink-0 hover:bg-white/5"
-                    >
-                        <ArrowLeft className="w-6 h-6 text-foreground/80" />
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-neon-green to-emerald-400">
-                            Comunidad
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Conectate con personas que usan SafeSpot como vos
-                        </p>
-                    </div>
-                </div>
-
-                {/* Tabs */}
-                <CommunityTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-                {/* Content */}
-                {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-4">
-                        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                        <p className="text-sm text-muted-foreground animate-pulse">Buscando usuarios...</p>
-                    </div>
-                ) : error ? (
-                    <div className="text-center py-12">
-                        <p className="text-destructive mb-2">No pudimos cargar la comunidad.</p>
-                        <button onClick={() => window.location.reload()} className="text-sm underline text-muted-foreground hover:text-primary">
-                            Intentar de nuevo
-                        </button>
-                    </div>
-                ) : isEmpty ? (
-                    <EmptyCommunityState
-                        type={activeTab}
-                        locality={userLocality}
-                        isLocationMissing={activeTab === 'nearby' && hasNoLocation}
+        <CommunityErrorBoundary onReset={handleRefresh}>
+            <div className="min-h-screen pb-20 md:pb-8 pt-4 md:pt-8 bg-background">
+                <div className="container max-w-4xl mx-auto px-4">
+                    
+                    {/* Header Enterprise con métricas */}
+                    <CommunityHeader
+                        totalUsers={filteredUsers.length}
+                        userLocality={userLocality}
+                        activeTab={activeTab}
+                        onRefresh={handleRefresh}
+                        isRefreshing={isRefreshing}
+                        lastUpdated={lastUpdated}
                     />
-                ) : (
-                    <div className="grid gap-4">
-                        {users?.map((user) => (
-                            <UserCard key={user.anonymous_id} user={user} />
-                        ))}
 
-                        {/* Simple infinite scroll placeholder or "end of list" */}
-                        <div className="text-center py-8 text-xs text-muted-foreground">
-                            {activeTab === 'global' ? 'Mostrando usuarios recientes' : 'Estos son todos los usuarios cerca de tu zona'}
+                    {/* Tabs */}
+                    <CommunityTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+                    {/* Search (solo cuando hay datos o cuando no es loading/error) */}
+                    {(rawUsers.length > 0 || searchQuery) && !isLoading && !error && (
+                        <div className="mb-4">
+                            <CommunitySearch
+                                value={searchQuery}
+                                onChange={setSearchQuery}
+                                resultsCount={filteredUsers.length}
+                                totalCount={rawUsers.length}
+                                placeholder={`Buscar ${activeTab === 'nearby' ? 'cerca' : 'global'}...`}
+                            />
                         </div>
-                    </div>
-                )}
+                    )}
 
+                    {/* Error state */}
+                    {error && (
+                        <div className="text-center py-12">
+                            <p className="text-destructive mb-2">No pudimos cargar la comunidad.</p>
+                            <button 
+                                onClick={handleRefresh} 
+                                className="text-sm underline text-muted-foreground hover:text-primary"
+                            >
+                                Intentar de nuevo
+                            </button>
+                        </div>
+                    )}
+
+                    {/* User Grid */}
+                    {!error && (
+                        <UserGrid
+                            users={filteredUsers}
+                            loading={isLoading}
+                            emptyState={!isLoading && filteredUsers.length === 0 ? renderEmptyState() : undefined}
+                            showLocation={activeTab === 'nearby'}
+                        />
+                    )}
+
+                    {/* Footer info */}
+                    {!isLoading && !error && filteredUsers.length > 0 && (
+                        <div className="text-center py-8 text-xs text-muted-foreground">
+                            {activeTab === 'global' 
+                                ? 'Mostrando usuarios recientes' 
+                                : searchQuery 
+                                    ? `Resultados de búsqueda en ${userLocality || 'tu zona'}`
+                                    : 'Estos son todos los usuarios cerca de tu zona'
+                            }
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
+        </CommunityErrorBoundary>
     );
 }
 
 // Default export for lazy loading
-export default Comunidad; 
+export default Comunidad;

@@ -209,10 +209,10 @@ class ApplicationBootstrapManager {
         // Recovery step: queries
 
         // 1. Critical Profile
-        await queryClient.refetchQueries({ queryKey: [['users', 'profile']], type: 'active' });
+        await queryClient.refetchQueries({ queryKey: ['user', 'profile'], type: 'active' });
 
         // 2. Security Context
-        await queryClient.refetchQueries({ queryKey: [['notifications', 'settings']], type: 'active' });
+        await queryClient.refetchQueries({ queryKey: ['notifications', 'settings'], type: 'active' });
 
         // 3. Background Jittered Re-fetch (Non-blocking)
         setTimeout(async () => {

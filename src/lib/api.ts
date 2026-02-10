@@ -791,6 +791,10 @@ export interface UserProfile {
   role?: string;
   avatarUrl?: string | null;
   provider?: 'email' | 'google' | null;
+  // SSOT Location
+  current_city?: string | null;
+  current_province?: string | null;
+  last_geo_update?: string | null;
 }
 
 export interface GlobalStats {
@@ -971,18 +975,19 @@ export const usersApi = {
   },
 
   /**
-   * Get nearby users (Mock/Placeholder for now to fix build)
+   * Get nearby users in the same locality/city
+   * Returns users with matching current_city from SSOT
    */
-  getNearbyUsers: async (): Promise<UserProfile[]> => {
-    // Return empty array safe logic for now
-    return [];
+  getNearbyUsers: async (): Promise<{ data: UserProfile[]; meta: { locality: string | null; has_location_configured: boolean; source?: string } }> => {
+    return apiRequest('/users/nearby');
   },
 
   /**
-   * Get global users (Mock/Placeholder)
+   * Get global users discovery feed
+   * Paginated list of all users with aliases
    */
-  getGlobalUsers: async (_page?: number): Promise<UserProfile[]> => {
-    return [];
+  getGlobalUsers: async (page = 1): Promise<{ data: UserProfile[]; meta: { page: number; has_more: boolean } }> => {
+    return apiRequest(`/users/global?page=${page}`);
   },
 
   /**

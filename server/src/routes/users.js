@@ -2,10 +2,10 @@ import express from 'express';
 import multer from 'multer';
 import { queryWithRLS } from '../utils/rls.js';
 import { requireAnonymousId, validateImageBuffer } from '../utils/validation.js';
-import { logError, logSuccess, default as logger } from '../utils/logger.js';
+import { logError, default as logger } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { NotificationService } from '../utils/appNotificationService.js';
-import supabase, { supabaseAdmin } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
 
@@ -72,7 +72,8 @@ router.get('/profile', requireAnonymousId, async (req, res) => {
     // Get user stats
     const userResult = await queryWithRLS(
       anonymousId,
-      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url, alias, is_official, role
+      `SELECT anonymous_id, created_at, last_active_at, total_reports, total_comments, total_votes, points, level, avatar_url, alias, is_official, role,
+              current_city, current_province, last_geo_update
        FROM anonymous_users WHERE anonymous_id = $1`,
       [anonymousId]
     ).catch(e => {
@@ -314,7 +315,7 @@ router.post('/avatar', requireAnonymousId, upload.single('avatar'), async (req, 
     const fileName = `avatars/${anonymousId}/avatar-${Date.now()}.${fileExt}`;
 
     // Upload to Supabase
-    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+    const { error: uploadError } = await supabaseAdmin.storage
       .from(bucketName)
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
@@ -333,7 +334,7 @@ router.post('/avatar', requireAnonymousId, upload.single('avatar'), async (req, 
     const publicUrl = urlData.publicUrl;
 
     // Update DB
-    const result = await queryWithRLS(
+    await queryWithRLS(
       anonymousId,
       `UPDATE anonymous_users SET avatar_url = $1 WHERE anonymous_id = $2 RETURNING avatar_url`,
       [publicUrl, anonymousId]
@@ -683,6 +684,13 @@ router.get('/:identifier/followers', async (req, res) => {
        FROM followers f
        JOIN anonymous_users u ON f.follower_id = u.anonymous_id
        WHERE f.following_id = $2
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
        ORDER BY f.created_at DESC
        LIMIT 50`,
       [currentUserId || '00000000-0000-0000-0000-000000000000', targetUserId]
@@ -735,6 +743,13 @@ router.get('/:identifier/following', async (req, res) => {
        FROM followers f
        JOIN anonymous_users u ON f.following_id = u.anonymous_id
        WHERE f.follower_id = $2
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
        ORDER BY f.created_at DESC
        LIMIT 50`,
       [currentUserId || '00000000-0000-0000-0000-000000000000', targetUserId]
@@ -796,6 +811,13 @@ router.get('/recommendations', requireAnonymousId, async (req, res) => {
          WHERE r.locality = $2
            AND u.anonymous_id != $1
            AND u.alias IS NOT NULL AND u.alias != ''
+           AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
            AND NOT EXISTS (SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id)
          ORDER BY u.anonymous_id, u.level DESC, u.last_active_at DESC
          LIMIT 20`,
@@ -819,6 +841,13 @@ router.get('/recommendations', requireAnonymousId, async (req, res) => {
          FROM anonymous_users u
          WHERE u.anonymous_id != ALL($1)
            AND u.alias IS NOT NULL AND u.alias != ''
+           AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
            AND NOT EXISTS (SELECT 1 FROM followers f WHERE f.follower_id = $2 AND f.following_id = u.anonymous_id)
          ORDER BY u.level DESC, u.last_active_at DESC
          LIMIT $3`,
@@ -869,7 +898,8 @@ router.get('/recommendations', requireAnonymousId, async (req, res) => {
 router.patch('/profile/location', requireAnonymousId, async (req, res) => {
   try {
     const anonymousId = req.anonymousId;
-    const { city, province, lat, lng } = req.body;
+    // lat/lng disponibles para futura implementación de geo-queries
+    const { city, province } = req.body;
 
     if (!city || !province) {
       return res.status(400).json({ error: 'City and Province are required' });
@@ -980,12 +1010,22 @@ router.get('/nearby', requireAnonymousId, async (req, res) => {
          u.avatar_url, 
          u.level,
          u.points,
+         u.is_official,
+         u.last_active_at,
+         u.current_city,
          $2 as common_locality,
          EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
        FROM anonymous_users u
        WHERE 
          u.anonymous_id != $1
          AND u.alias IS NOT NULL AND u.alias != ''
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
          AND (
            u.current_city = $2
            OR
@@ -1031,10 +1071,18 @@ router.get('/global', requireAnonymousId, async (req, res) => {
          u.avatar_url, 
          u.level,
          u.points,
-         EXISTS(SELECT 1 FROM followers f WHERE f.follower_id = $1 AND f.following_id = u.anonymous_id) as is_following
+         u.is_official,
+         u.last_active_at
        FROM anonymous_users u
        WHERE u.anonymous_id != $1
          AND u.alias IS NOT NULL AND u.alias != ''
+         AND (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+         -- Excluir usuarios del sistema (por role o alias específico)
+         AND (
+           (u.role IS NULL OR u.role NOT IN ('admin', 'system', 'moderator'))
+           AND u.alias NOT ILIKE '%SafeSpot Oficial%'
+           AND u.alias NOT ILIKE '%SystemAdmin%'
+         )
        ORDER BY u.last_active_at DESC
        LIMIT $2 OFFSET $3`,
       [anonymousId, limit, offset]

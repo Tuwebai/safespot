@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { UserPlus, UserCheck, MessageCircle } from 'lucide-react';
+import { UserPlus, UserCheck, MessageCircle, MapPin, BadgeCheck, Sparkles } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,13 +7,47 @@ import { usersApi, UserProfile } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { getAvatarFallback } from '@/lib/avatar';
+import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { differenceInDays } from 'date-fns';
 
 interface UserCardProps {
     user: UserProfile;
+    showLocation?: boolean;
+    style?: React.CSSProperties;
+    onMouseEnter?: (e: React.MouseEvent) => void;
+    onMouseLeave?: () => void;
+    onMouseMove?: (e: React.MouseEvent) => void;
 }
 
-export function UserCard({ user }: UserCardProps) {
+/**
+ * Formatea tiempo de actividad relativo
+ */
+function formatActivity(lastActive?: string): string | null {
+    if (!lastActive) return null;
+    try {
+        const date = new Date(lastActive);
+        const now = new Date();
+        const diffMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+        
+        if (diffMinutes < 5) return '🟢 Ahora';
+        if (diffMinutes < 60) return `🟢 Hace ${diffMinutes} min`;
+        
+        return `🟢 ${formatDistanceToNow(date, { addSuffix: true, locale: es })}`;
+    } catch {
+        return null;
+    }
+}
+
+export function UserCard({ 
+    user, 
+    showLocation = false, 
+    style,
+    onMouseEnter,
+    onMouseLeave,
+    onMouseMove
+}: UserCardProps) {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { success, error } = useToast();
@@ -74,14 +108,20 @@ export function UserCard({ user }: UserCardProps) {
     }
 
     return (
-        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4 animate-in fade-in duration-300">
+        <div 
+            className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4 animate-in fade-in duration-300 hover:border-neon-green/20 transition-colors"
+            style={style}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+            onMouseMove={onMouseMove}
+        >
             <div
                 className="flex items-center gap-3 cursor-pointer group"
                 onClick={handleProfileClick}
             >
                 <Avatar className="h-12 w-12 border-2 border-transparent group-hover:border-neon-green transition-colors">
                     <AvatarImage
-                        src={user.avatar_url || undefined}
+                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
                         alt={user.alias || 'Usuario'}
                         referrerPolicy="no-referrer" // Important for Google Images
                     />
@@ -90,13 +130,35 @@ export function UserCard({ user }: UserCardProps) {
                     </AvatarFallback>
                 </Avatar>
 
-                <div className="flex flex-col">
-                    <span className="font-semibold text-foreground group-hover:text-neon-green transition-colors">
+                <div className="flex flex-col min-w-0">
+                    <span className="font-semibold text-foreground group-hover:text-neon-green transition-colors flex items-center gap-1.5">
                         {user.alias || 'Usuario Anónimo'}
+                        {user.is_official && (
+                            <span title="Cuenta verificada">
+                                <BadgeCheck className="w-4 h-4 text-blue-500" aria-label="Verificado" />
+                            </span>
+                        )}
+                        {/* Solo badge nuevo usuario */}
+                        {differenceInDays(new Date(), new Date(user.created_at)) <= 7 && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                Nuevo
+                            </span>
+                        )}
                     </span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        Nivel {user.level} • {user.points} pts
+                    
+                    <span className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
+                        <span>Nivel {user.level} • {user.points} pts</span>
+                        {formatActivity(user.last_active_at) && (
+                            <span className="text-neon-green/80">{formatActivity(user.last_active_at)}</span>
+                        )}
                     </span>
+                    {showLocation && user.current_city && (
+                        <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5 mt-0.5">
+                            <MapPin className="w-3 h-3" />
+                            {user.current_city}
+                        </span>
+                    )}
                 </div>
             </div>
 
