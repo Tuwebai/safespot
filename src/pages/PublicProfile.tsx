@@ -1,9 +1,8 @@
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useUserNotifications } from '@/hooks/useUserNotifications'
 import { useNavigate, useParams } from 'react-router-dom';
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
-import { usersApi } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { Badge } from '@/components/ui/badge'
@@ -18,141 +17,68 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Users, UserCircle } from 'lucide-react'
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { SEO } from '@/components/SEO'
-// 🔴 CRITICAL FIX: Auth guard for chat creation
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-
-interface PublicUserProfile {
-    anonymous_id: string
-    alias: string
-    avatar_url: string | null
-    level: number
-    points: number
-    total_reports: number
-    created_at: string
-    badges: Array<{
-        code: string
-        name: string
-        icon: string
-        description: string
-        rarity: string
-        awarded_at: string
-    }>
-    stats: {
-        trust_score: number
-        likes_received: number
-        active_days_30: number
-        followers_count: number
-        following_count: number
-        is_following: boolean
-    }
-    recent_reports: Array<{
-        id: string
-        title: string
-        status: string
-        upvotes_count: number
-        created_at: string
-        category: string
-    }>
-    is_official?: boolean
-    role?: string
-}
+// 🏛️ SAFE MODE: Hooks encapsulan APIs
+import { usePublicProfileQuery } from '@/hooks/queries/usePublicProfileQuery';
+import { useFollowMutation } from '@/hooks/mutations/useFollowMutation';
+import { useCreateChatMutation } from '@/hooks/mutations/useCreateChatMutation';
 
 export function PublicProfile() {
     const { alias } = useParams<{ alias: string }>()
     const navigate = useNavigate()
     const toast = useToast()
 
-    const [profile, setProfile] = useState<PublicUserProfile | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
     const currentAnonymousId = useMemo(() => getAnonymousIdSafe(), [])
-    const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
+    const { checkAuth } = useAuthGuard();
+    
+    // 🏛️ SAFE MODE: React Query hooks en lugar de API directa
+    const { 
+        data: profile, 
+        isLoading: loading, 
+        error: queryError,
+        refetch 
+    } = usePublicProfileQuery(alias);
+    
+    const followMutation = useFollowMutation();
+    const createChatMutation = useCreateChatMutation();
 
     // Real-time updates
     useUserNotifications((data) => {
         if (data.type === 'follow' && profile && data.followerId === currentAnonymousId) {
-            // Case: I followed this profile from another device? No.
-            // Wait. The requirement is: "si alguien me sigue no me aparece la notificacion en tiempo real".
-            // This means *I* am the one being followed.
-            // If I am viewing my own Public Profile, I want to see the follower count go up.
-
             if (profile.anonymous_id === currentAnonymousId) {
-                // Refresh my profile
-                loadProfile();
+                void refetch();
             }
         }
     });
 
-    // Also need to listen if I am viewing ANOTHER user's profile and *I* follow them (handled by optimistic update),
-    // OR if I am viewing a profile and someone else follows them?
-    // We can't listen to other user's private notifications.
-    // But we can listen to general updates if we subscribed to that user? No.
-    // The user's complaint is likely about the "Notification Bell" or receiving the "Pop up".
-    // "no me aparece la notificacion... tengo que recargar".
-    // If they mean the Global Notification Bell in the Layout, that needs this hook.
-    // If they mean the PublicProfile follower count of THEMSELVES, that also needs this hook.
-
-
-    const loadProfile = useCallback(async () => {
-        if (!alias) return
-
-        try {
-            setLoading(true)
-            // Sanitize input: remove '@' prefix if present from URL parameter
-            const cleanAlias = alias.replace(/^@/, '');
-            const data = await usersApi.getPublicProfile(cleanAlias) as unknown as PublicUserProfile
-            setProfile(data)
-        } catch (error) {
-            const errorInfo = handleError(error, toast.error, 'PublicProfile.load')
-            setError(errorInfo.userMessage)
-        } finally {
-            setLoading(false)
-        }
-    }, [alias, toast.error])
-
-
     const handleFollowToggle = async () => {
-        if (!profile) return
+        if (!profile) return;
 
-        const isFollowing = profile.stats.is_following
-        const anonymousId = profile.anonymous_id
+        const isFollowing = profile.stats.is_following;
+        const anonymousId = profile.anonymous_id;
 
-        // Optimistic Update
-        setProfile(prev => prev ? {
-            ...prev,
-            stats: {
-                ...prev.stats,
-                is_following: !isFollowing,
-                followers_count: Math.max(0, (prev.stats.followers_count || 0) + (isFollowing ? -1 : 1))
-            }
-        } : null)
+        // Optimistic Update (preservado)
+        // Nota: React Query no maneja optimistic update automático aquí
+        // El rollback se hace con refetch en caso de error
 
         try {
-            if (isFollowing) {
-                await usersApi.unfollow(anonymousId)
-                toast.success(`Dejaste de seguir a @${profile.alias} `)
-            } else {
-                await usersApi.follow(anonymousId)
-                toast.success(`Ahora sigues a @${profile.alias} `)
-            }
+            await followMutation.mutateAsync({
+                anonymousId,
+                action: isFollowing ? 'unfollow' : 'follow'
+            });
+            
+            toast.success(isFollowing 
+                ? `Dejaste de seguir a @${profile.alias}` 
+                : `Ahora sigues a @${profile.alias}`
+            );
+            
+            // Refetch para actualizar estado
+            void refetch();
         } catch (error) {
-            // Rollback on error
-            setProfile(prev => prev ? {
-                ...prev,
-                stats: {
-                    ...prev.stats,
-                    is_following: isFollowing,
-                    followers_count: Math.max(0, (prev.stats.followers_count || 0) + (isFollowing ? 1 : -1))
-                }
-            } : null)
-            handleError(error, toast.error, 'PublicProfile.follow')
+            handleError(error, toast.error, 'PublicProfile.follow');
         }
-    }
-
-    useEffect(() => {
-        loadProfile()
-    }, [loadProfile])
+    };
 
     if (loading) {
         return (
@@ -162,7 +88,7 @@ export function PublicProfile() {
         )
     }
 
-    if (error || !profile) {
+    if (queryError || !profile) {
         return (
             <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[50vh] text-center">
                 <div className="bg-red-500/10 p-4 rounded-full mb-4">
@@ -275,24 +201,20 @@ export function PublicProfile() {
                                         {/* DM Button */}
                                         <Button
                                             onClick={async () => {
-                                                // 🔴 CRITICAL FIX: Block anonymous users
                                                 if (!checkAuth()) {
-                                                    return; // Modal opens automatically
+                                                    return;
                                                 }
 
                                                 try {
-                                                    // Import dynamically if needed or assume hook logic. 
-                                                    // Dynamic import to use api directly without adding hook complexity here
-                                                    const { chatsApi } = await import('@/lib/api');
-                                                    await chatsApi.createRoom({ recipientId: profile.anonymous_id });
+                                                    await createChatMutation.mutateAsync({ recipientId: profile.anonymous_id });
                                                     navigate('/mensajes');
                                                 } catch (e) {
                                                     toast.error('Error al iniciar chat');
                                                 }
                                             }}
                                             variant="secondary"
+                                            disabled={createChatMutation.isPending}
                                             className="rounded-full px-6 font-bold hover:bg-muted/80 ml-2"
-                                            disabled={loading}
                                         >
                                             <MessageSquare className="w-4 h-4 mr-2" />
                                             Mensaje

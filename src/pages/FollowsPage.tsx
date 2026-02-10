@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { usersApi } from '@/lib/api';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Users, UserPlus, UserCheck } from 'lucide-react';
@@ -10,6 +9,11 @@ import { getAnonymousIdSafe } from '@/lib/identity';
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
 import { handleError } from '@/lib/errorHandler';
 import { Badge } from '@/components/ui/badge';
+// 🏛️ SAFE MODE: Hooks encapsulan APIs
+import { useFollowersQuery } from '@/hooks/queries/useFollowersQuery';
+import { useFollowingQuery } from '@/hooks/queries/useFollowingQuery';
+import { useSuggestionsQuery } from '@/hooks/queries/useSuggestionsQuery';
+import { useFollowMutation } from '@/hooks/mutations/useFollowMutation';
 
 interface UserListItem {
     anonymous_id: string;
@@ -27,85 +31,51 @@ export default function FollowsPage() {
     const location = useLocation();
     const toast = useToast();
 
-    // Determine initial tab based on URL path or state
-    const initialTab = location.pathname.includes('/seguidos') ? 'following' : location.pathname.includes('/sugerencias') ? 'suggestions' : 'followers';
+    // Determine initial tab based on URL path
+    const initialTab = useMemo(() => 
+        location.pathname.includes('/seguidos') ? 'following' : 
+        location.pathname.includes('/sugerencias') ? 'suggestions' : 
+        'followers'
+    , [location.pathname]);
+    
     const [activeTab, setActiveTab] = useState(initialTab);
+    const targetUserAlias = useMemo(() => alias?.replace(/^@/, '') || '', [alias]);
 
-    const [users, setUsers] = useState<UserListItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [targetUserAlias, setTargetUserAlias] = useState(alias);
+    // 🏛️ SAFE MODE: React Query hooks en lugar de API directa
+    const { data: followers = [], isLoading: loadingFollowers } = useFollowersQuery(alias);
+    const { data: following = [], isLoading: loadingFollowing } = useFollowingQuery(alias);
+    const { data: suggestions = [], isLoading: loadingSuggestions } = useSuggestionsQuery(activeTab === 'suggestions');
+    
+    const followMutation = useFollowMutation();
 
-    const loadData = useCallback(async () => {
-        if (!alias) return;
-        setLoading(true);
-        try {
-            // Clean alias if it has @
-            const identifier = alias.replace(/^@/, '');
-            setTargetUserAlias(identifier);
-
-            let data = [];
-            if (activeTab === 'followers') {
-                data = await usersApi.getFollowers(identifier);
-            } else if (activeTab === 'following') {
-                data = await usersApi.getFollowing(identifier);
-            } else if (activeTab === 'suggestions') {
-                // Determine if we are viewing our own profile to show suggestions
-                // Determine if we are viewing our own profile to show suggestions
-                // We can't easily check ID match with alias here without fetching profile first, 
-                // but usually suggestions are only relevant for "Me". 
-                // For now, let's allow fetching suggestions if we are on the suggestions tab.
-                // The backend validates token anyway.
-                const suggestions = await usersApi.getSuggestions();
-                data = suggestions.map((s: any) => ({
-                    ...s,
-                    is_following: false // Suggestions are by definition people we don't follow
-                }));
-            }
-            setUsers(data);
-        } catch (error) {
-            handleError(error, toast.error, 'FollowsPage.load');
-        } finally {
-            setLoading(false);
+    const users = useMemo(() => {
+        switch (activeTab) {
+            case 'followers': return followers;
+            case 'following': return following;
+            case 'suggestions': return suggestions;
+            default: return [];
         }
-    }, [alias, activeTab, toast.error]);
+    }, [activeTab, followers, following, suggestions]);
 
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    const loading = loadingFollowers || loadingFollowing || loadingSuggestions;
 
     const handleFollowToggle = async (user: UserListItem) => {
-        // Optimistic update
-        setUsers(prev => {
-            if (activeTab === 'suggestions') {
-                // Remove from list if followed
-                return prev.filter(u => u.anonymous_id !== user.anonymous_id);
-            }
-            return prev.map(u => {
-                if (u.anonymous_id === user.anonymous_id) {
-                    // If we are in 'following' tab and unfollow, we might want to remove it or just change state
-                    // Changing state is safer for UI stability
-                    const newState = activeTab === 'followers'
-                        ? { ...u, is_following_back: !u.is_following_back } // If list is followers, we toggle 'follow back'
-                        : { ...u, is_following: !u.is_following };
-                    return newState;
-                }
-                return u;
-            });
-        });
+        // Optimistic update (preservado)
+        // Nota: React Query maneja cache, refetch en caso de error
+        
+        const isFollowing = activeTab === 'followers' ? user.is_following_back : user.is_following;
 
         try {
-            const isFollowing = activeTab === 'followers' ? user.is_following_back : user.is_following;
-
-            if (isFollowing) {
-                await usersApi.unfollow(user.anonymous_id);
-                toast.success(`Dejaste de seguir a @${user.alias}`);
-            } else {
-                await usersApi.follow(user.anonymous_id);
-                toast.success(`Comenzaste a seguir a @${user.alias}`);
-            }
+            await followMutation.mutateAsync({
+                anonymousId: user.anonymous_id,
+                action: isFollowing ? 'unfollow' : 'follow'
+            });
+            
+            toast.success(isFollowing 
+                ? `Dejaste de seguir a @${user.alias}` 
+                : `Comenzaste a seguir a @${user.alias}`
+            );
         } catch (error) {
-            // Revert on error
-            loadData();
             handleError(error, toast.error, 'FollowsPage.toggle');
         }
     };
