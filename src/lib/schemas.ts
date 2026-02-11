@@ -134,6 +134,7 @@ export interface ChatMessage {
     reactions?: Record<string, string[]>;
     is_starred?: boolean;
     is_edited?: boolean;
+    is_forwarded?: boolean;
     sender_avatar?: string;
 }
 

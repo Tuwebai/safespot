@@ -295,7 +295,12 @@ export const chatCache = {
             const existing = JSON.parse(localStorage.getItem(key) || '[]');
             // Dedupe by ID just in case
             const filtered = existing.filter((m: ChatMessage) => m.id !== message.id);
-            filtered.push(message);
+            // 🏛️ FIX: Sanitizar blob URLs antes de persistir (no son válidos después de F5)
+            const sanitizableMessage = { ...message };
+            if (sanitizableMessage.localUrl?.startsWith('blob:')) {
+                delete (sanitizableMessage as any).localUrl;
+            }
+            filtered.push(sanitizableMessage);
             localStorage.setItem(key, JSON.stringify(filtered));
         } catch (e) {
             console.error('[Persistence] Failed to save pending message:', e);
@@ -324,8 +329,16 @@ export const chatCache = {
             const key = `pending_msg_${roomId}`;
             const pending = JSON.parse(localStorage.getItem(key) || '[]');
             if (pending.length > 0) {
-                console.log(`[Persistence] Rehydrating ${pending.length} pending messages for Room ${roomId}`);
-                chatCache.upsertMessageBatch(queryClient, pending, roomId, anonymousId);
+                // 🏛️ FIX: Sanitizar blob URLs inválidos al rehidratar
+                const sanitizablePending = pending.map((m: ChatMessage) => {
+                    if (m.localUrl?.startsWith('blob:')) {
+                        const { localUrl, ...rest } = m;
+                        return rest;
+                    }
+                    return m;
+                });
+                console.log(`[Persistence] Rehydrating ${sanitizablePending.length} pending messages for Room ${roomId}`);
+                chatCache.upsertMessageBatch(queryClient, sanitizablePending, roomId, anonymousId);
             }
         } catch (e) { }
     }

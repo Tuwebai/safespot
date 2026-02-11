@@ -47,41 +47,36 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
         <div
             {...longPressHandlers}
             onClick={onClick}
-            className={`group relative p-4 cursor-pointer transition-colors border-l-4 ${isActive
-                ? 'bg-primary/10 border-primary'
-                : 'border-transparent hover:bg-muted/50'
+            className={`group relative p-3 cursor-pointer transition-all duration-200 border-b border-border/50 hover:bg-muted/30 ${isActive
+                ? 'bg-primary/5'
+                : ''
                 } ${room.is_pinned ? 'bg-muted/10' : ''}`}
         >
-            <div className="flex gap-3">
+            {/* Indicador izquierdo tipo WhatsApp */}
+            <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 ${isActive ? 'bg-primary opacity-100' : 'bg-primary opacity-0 group-hover:opacity-100'}`} />
+            
+            <div className="flex gap-3 items-center pl-1">
                 <div className="relative shrink-0">
-                    <Avatar className="w-12 h-12 border border-border mt-1">
+                    <Avatar className={`w-12 h-12 border-2 transition-all duration-300 ${isActive ? 'border-primary' : 'border-border group-hover:border-primary/50'}`}>
                         <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
-                        <AvatarFallback className="font-bold text-xs uppercase">
+                        <AvatarFallback className="font-bold text-xs uppercase bg-muted">
                             {getAvatarFallback(room.other_participant_alias)}
                         </AvatarFallback>
                     </Avatar>
 
-                    {/* Online Indicator */}
+                    {/* Online Indicator - estilo WhatsApp */}
                     {isOnline && (
-                        <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-primary rounded-full border-2 border-card ring-1 ring-primary/20 animate-in fade-in zoom-in duration-300" />
-                    )}
-
-                    {room.unread_count > 0 && (
-                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background animate-in zoom-in duration-300">
-                            {room.unread_count}
-                        </span>
-                    )}
-                    {/* Manual Unread Indicator (if no unread count but marked manually) */}
-                    {!room.unread_count && room.is_manually_unread && (
-                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full ring-2 ring-background animate-in zoom-in duration-300" />
+                        <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-primary rounded-full border-2 border-background" />
                     )}
                 </div>
-                <div className="flex-1 min-w-0 pr-6"> {/* Added padding right for chevron/pin */}
+                <div className="flex-1 min-w-0 pr-6">
                     <div className="flex justify-between items-start">
-                        <h4 className="text-foreground font-semibold text-xs truncate">@{room.other_participant_alias}</h4>
+                        <h4 className={`font-semibold text-sm truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                            @{room.other_participant_alias}
+                        </h4>
                         <div className="flex items-center gap-1">
                             {room.is_pinned && <Pin className="w-3 h-3 text-muted-foreground rotate-45" />}
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            <span className={`text-[10px] whitespace-nowrap ${room.unread_count > 0 ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
                                 {room.last_message_at ? formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es }) : ''}
                             </span>
                         </div>
@@ -93,9 +88,9 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                         </p>
                     )}
 
-                    <p className={`text-[12px] truncate mt-1 flex items-center gap-1 ${room.is_typing ? 'text-primary font-bold animate-pulse' : (room.unread_count > 0 || room.is_manually_unread) ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                    <p className={`text-[13px] truncate mt-1 flex items-center gap-1 ${room.is_typing ? 'text-primary font-bold animate-pulse' : (room.unread_count > 0 || room.is_manually_unread) ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                         {room.is_typing ? (
-                            'Escribiendo...'
+                            'escribiendo...'
                         ) : room.last_message_type === 'image' ? (
                             <>
                                 <Camera className="w-3.5 h-3.5 shrink-0" />
@@ -107,14 +102,28 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
                     </p>
                 </div>
 
-                {/* Context Menu Trigger Area */}
-                <div className="absolute right-2 top-8" onClick={(e) => e.stopPropagation()}>
+                {/* Badge de no leído tipo WhatsApp */}
+                {room.unread_count > 0 && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-primary-foreground bg-primary">
+                            {room.unread_count > 99 ? '99+' : room.unread_count}
+                        </span>
+                    </div>
+                )}
+                {!room.unread_count && room.is_manually_unread && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-primary" />
+                    </div>
+                )}
+
+                {/* Context Menu Trigger */}
+                <div className="absolute right-2 top-8 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                     <ChatContextMenu
                         chat={room}
                         isOpen={isMenuOpen}
                         onOpenChange={setIsMenuOpen}
                         trigger={
-                            <button className="p-1.5 hover:bg-zinc-700/20 rounded-full text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 pointer-events-none md:pointer-events-auto">
+                            <button className="p-1.5 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors pointer-events-none md:pointer-events-auto">
                                 <ChevronDown className="w-4 h-4" />
                             </button>
                         }
@@ -300,7 +309,8 @@ const Mensajes: React.FC = () => {
                         exit="exit"
                         className={`flex-1 md:flex-[0.3] flex flex-col border-r border-border bg-card/30 overflow-hidden`}
                     >
-                        <div className="p-4 border-b border-border space-y-4 bg-card/50">
+                        {/* Header con gradiente sutil */}
+                        <div className="p-4 border-b border-border space-y-4 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent">
                             <div className="flex items-center gap-3">
                                 {viewMode === 'archived' ? (
                                     <button
@@ -323,6 +333,7 @@ const Mensajes: React.FC = () => {
                                 </h1>
                             </div>
 
+                            {/* Search bar flotante tipo iOS */}
                             <div className="flex items-center gap-2">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -330,7 +341,7 @@ const Mensajes: React.FC = () => {
                                         placeholder="Buscar chats..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="pl-10 pr-4 bg-muted/50 border-input text-foreground placeholder:text-muted-foreground text-xs h-9 focus-visible:ring-primary rounded-xl w-full"
+                                        className="pl-10 pr-4 bg-background/80 backdrop-blur-sm border-0 shadow-sm text-foreground placeholder:text-muted-foreground text-xs h-10 rounded-xl w-full focus-visible:ring-2 focus-visible:ring-primary/50"
                                     />
                                 </div>
                                 {viewMode === 'inbox' && (
@@ -338,7 +349,7 @@ const Mensajes: React.FC = () => {
                                         size="icon"
                                         variant="ghost"
                                         onClick={() => setIsNewChatOpen(true)}
-                                        className="rounded-xl bg-primary/10 hover:bg-primary/20 text-primary w-9 h-9 shrink-0"
+                                        className="rounded-full bg-primary/10 hover:bg-primary/20 text-primary w-10 h-10 shrink-0"
                                         title="Nuevo chat"
                                     >
                                         <Plus className="w-5 h-5" />
@@ -360,18 +371,20 @@ const Mensajes: React.FC = () => {
                                     onClick={() => setViewMode('archived')}
                                     className="px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-muted/50 border-b border-border/50 text-muted-foreground transition-colors group"
                                 >
-                                    <div className="w-10 h-10 flex items-center justify-center">
+                                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-muted/80">
                                         <Archive className="w-5 h-5 group-hover:text-primary transition-colors" />
                                     </div>
                                     <div className="flex-1 font-medium text-sm">Archivados</div>
-                                    <div className="text-xs font-bold text-primary">{archivedCount}</div>
+                                    <div className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-primary-foreground bg-primary">
+                                        {archivedCount}
+                                    </div>
                                 </div>
                             )}
 
                             {isLoading ? (
                                 <div className="p-4 space-y-3">
                                     {Array.from({ length: 5 }).map((_, i) => (
-                                        <div key={i} className="h-20 bg-muted/50 animate-pulse rounded-lg" />
+                                        <div key={i} className="h-16 bg-muted/50 animate-pulse rounded-lg" />
                                     ))}
                                 </div>
                             ) : filteredRooms.length === 0 ? (
@@ -393,7 +406,7 @@ const Mensajes: React.FC = () => {
                                     className="h-full justify-center"
                                 />
                             ) : (
-                                <div className="divide-y divide-border/50">
+                                <div>
                                     {filteredRooms.map((room) => (
                                         <ChatRoomItem
                                             key={room.id}

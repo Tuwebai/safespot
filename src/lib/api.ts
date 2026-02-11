@@ -891,14 +891,28 @@ export const usersApi = {
       const formData = new FormData();
       formData.append('avatar', file);
 
-      // ✅ SSOT: Requerir ID válido de SessionAuthority
+      // ✅ SSOT: Obtener datos de sesión para headers de seguridad
       const anonymousId = sessionAuthority.requireAnonymousId();
+      const sessionToken = sessionAuthority.getToken();
+      const sessionState = sessionAuthority.getState();
+      
+      const headers: Record<string, string> = {
+        'X-Anonymous-Id': anonymousId,
+      };
+      
+      // ✅ IDENTITY SHIELD: Incluir firma si está disponible
+      if (sessionToken?.signature) {
+        headers['X-Anonymous-Signature'] = sessionToken.signature;
+      }
+      
+      // ✅ MOTOR 2.1: Incluir JWT si la sesión está lista
+      if ((sessionState === SessionState.READY || sessionState === SessionState.AUTHENTICATED) && sessionToken?.jwt) {
+        headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
+      }
 
       const response = await fetch(`${API_BASE_URL}/users/avatar`, {
         method: 'POST',
-        headers: {
-          'X-Anonymous-Id': anonymousId, // Do NOT set Content-Type for FormData, browser does it with boundary
-        },
+        headers, // Do NOT set Content-Type for FormData, browser does it with boundary
         body: formData,
       });
 
@@ -1168,12 +1182,29 @@ export const chatsApi = {
   uploadChatImage: async (roomId: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append('image', file);
-    // ✅ SSOT: Requerir ID válido de SessionAuthority
-    const response = await fetch(`${API_BASE_URL}/chats/rooms/${roomId}/images`, {
+    
+    // ✅ SSOT: Obtener datos de sesión para headers de seguridad
+    const anonymousId = sessionAuthority.requireAnonymousId();
+    const sessionToken = sessionAuthority.getToken();
+    const sessionState = sessionAuthority.getState();
+    
+    const headers: Record<string, string> = {
+      'X-Anonymous-Id': anonymousId,
+    };
+    
+    // ✅ IDENTITY SHIELD: Incluir firma si está disponible
+    if (sessionToken?.signature) {
+      headers['X-Anonymous-Signature'] = sessionToken.signature;
+    }
+    
+    // ✅ MOTOR 2.1: Incluir JWT si la sesión está lista
+    if ((sessionState === SessionState.READY || sessionState === SessionState.AUTHENTICATED) && sessionToken?.jwt) {
+      headers['Authorization'] = `Bearer ${sessionToken.jwt}`;
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/chats/${roomId}/images`, {
       method: 'POST',
-      headers: {
-        'X-Anonymous-Id': sessionAuthority.requireAnonymousId(),
-      },
+      headers,
       body: formData
     });
     if (!response.ok) throw new Error('Upload failed');
@@ -1229,7 +1260,7 @@ export const chatsApi = {
   // Message Actions
   pinMessage: async (roomId: string, messageId: string): Promise<void> => {
     return trafficController.enqueueSerial(async () => {
-      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'POST' });
+      return apiRequest<void>(`/chats/rooms/${roomId}/messages/${messageId}/pin`, { method: 'PATCH' });
     }, 'PIN_MESSAGE');
   },
   unpinMessage: async (roomId: string, messageId: string): Promise<void> => {

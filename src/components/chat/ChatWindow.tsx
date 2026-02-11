@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -52,12 +52,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/Avatar';
 
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChatReportContext } from './ChatReportContext';
+import { useToast } from '../ui/toast/useToast';
+import { MessageSearchModal } from './MessageSearchModal';
+import { ChatHeaderMenu } from './ChatHeaderMenu';
 
 
 interface ChatImageProps {
@@ -71,18 +73,45 @@ interface ChatImageProps {
 const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, onClick }) => {
     const [currentSrc, setCurrentSrc] = useState(localUrl || src);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
         if (!src) return;
         if (src === currentSrc && isLoaded) return;
+
+        // 🏛️ FIX: Detectar blob URLs inválidos (persistidos incorrectamente)
+        const isInvalidBlob = src.startsWith('blob:') && !src.includes('http');
+        if (isInvalidBlob) {
+            setHasError(true);
+            return;
+        }
 
         const img = new Image();
         img.src = src;
         img.onload = () => {
             setCurrentSrc(src);
             setIsLoaded(true);
+            setHasError(false);
+        };
+        img.onerror = () => {
+            setHasError(true);
         };
     }, [src, localUrl, currentSrc, isLoaded]);
+
+    // 🏛️ UX: Placeholder para imagen rota/pendiente
+    if (hasError) {
+        return (
+            <div 
+                className={`flex items-center justify-center bg-muted/50 ${className}`}
+                onClick={onClick}
+            >
+                <div className="flex flex-col items-center gap-2 text-muted-foreground/60">
+                    <ImageIcon className="w-8 h-8" />
+                    <span className="text-[10px]">Imagen no disponible</span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <img
@@ -410,10 +439,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+    const { success: toastSuccess, error: toastError } = useToast();
 
     const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
     const [selectedMessageForActions, setSelectedMessageForActions] = useState<ChatMessage | null>(null);
     const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+
+    // 🏛️ FEATURE: Estado de búsqueda de mensajes (modal externo)
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
 
     // ✅ WhatsApp-Grade Quick Emoji Reactions
 
@@ -436,11 +469,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         }
     }, [room?.id]);
 
-    // Save draft on change
+    // Save draft on change + auto-resize textarea
     const updateMessage = (newValue: string) => {
         setMessage(newValue);
         if (room?.id) {
             localStorage.setItem(`chat_draft_${room.id}`, newValue);
+        }
+        // 🏛️ FIX: Auto-resize textarea
+        if (inputRef.current) {
+            const textarea = inputRef.current as HTMLTextAreaElement;
+            textarea.style.height = 'auto';
+            textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
         }
     };
 
@@ -464,6 +503,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     const otherParticipant = {
         alias: room.other_participant_alias || 'Anon',
@@ -478,7 +519,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         overscan: 5,
     });
 
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
 
     // Focus input when replying
     useEffect(() => {
@@ -495,30 +536,73 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const lastMessageCount = useRef(0);
     const lastRoomId = useRef<string | null>(null);
     const hasMarkedRead = useRef(false);
+    const isInitialLoad = useRef(true);
 
     // ✅ ENTERPRISE FIX: Use centralized isOwnMessage helper
     // Handles all edge cases: null safety, format normalization
     const isMe = (msg: ChatMessage) => isOwnMessage(msg, anonymousId);
 
-    useLayoutEffect(() => {
+    // 🏛️ FIX: Detectar si usuario está cerca del final (para auto-scroll)
+    const isNearBottom = useCallback(() => {
+        const scrollElement = parentRef.current;
+        if (!scrollElement) return true; // Default a true si no hay ref
+        
+        const { scrollHeight, scrollTop, clientHeight } = scrollElement;
+        // Considerar "cerca del final" si está a 300px del fondo
+        return scrollHeight - scrollTop - clientHeight < 300;
+    }, []);
+
+    useEffect(() => {
         if (!messages) return;
 
+        // Reset cuando cambia de sala
         if (lastRoomId.current !== room.id) {
-            lastMessageCount.current = 0;
+            lastMessageCount.current = messages.length;
             lastRoomId.current = room.id;
             hasMarkedRead.current = false;
+            isInitialLoad.current = true;
+            return;
         }
 
+        // 🏛️ FIX: Carga inicial (F5/refresh) - scrollear al final UNA VEZ
+        if (isInitialLoad.current && messages.length > 0) {
+            // Usar mayor delay para asegurar que el virtualizer está listo
+            const scrollTimer = setTimeout(() => {
+                rowVirtualizer.scrollToIndex(messages.length - 1, { 
+                    align: 'end'
+                });
+                isInitialLoad.current = false;
+            }, 300);
+            
+            lastMessageCount.current = messages.length;
+            return () => clearTimeout(scrollTimer);
+        }
+
+        // 🏛️ FIX: Mensajes nuevos después de carga inicial
         if (messages.length > lastMessageCount.current) {
-            rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
+            const lastMessage = messages[messages.length - 1];
+            const isLastMessageMine = lastMessage && isMe(lastMessage);
+            
+            // Scroll solo si:
+            // 1. Es mensaje propio (envié yo), o
+            // 2. Usuario está cerca del final (leyendo mensajes recientes)
+            if (isLastMessageMine || isNearBottom()) {
+                requestAnimationFrame(() => {
+                    rowVirtualizer.scrollToIndex(messages.length - 1, { 
+                        align: 'end'
+                    });
+                });
+            }
+            
             lastMessageCount.current = messages.length;
 
-            const lastMessage = messages[messages.length - 1];
             if (lastMessage && !isMe(lastMessage) && !lastMessage.is_read) {
                 markAsReadMutation.mutate(room.id);
             }
+        } else {
+            lastMessageCount.current = messages.length;
         }
-    }, [messages, room.id, anonymousId, rowVirtualizer]);
+    }, [messages, room.id, anonymousId, rowVirtualizer, isNearBottom]);
 
     // Highlight & Scroll to Message Logic
     const highlightId = searchParams.get('highlight_message');
@@ -528,7 +612,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         if (highlightId && messages) {
             const index = messages.findIndex(m => m.id === highlightId);
             if (index !== -1) {
-                rowVirtualizer.scrollToIndex(index, { align: 'center' });
+                // 🏛️ FIX: Scroll sin animación para compatibilidad con virtualizer
+                requestAnimationFrame(() => {
+                    rowVirtualizer.scrollToIndex(index, { 
+                        align: 'center'
+                    });
+                });
                 setHighlightedMessageId(highlightId);
 
                 // Remove params to clean URL
@@ -589,6 +678,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const handleRetry = (msg: ChatMessage) => {
         if (msg.localStatus !== 'failed') return;
         
+        // 🏛️ UX: Feedback visual de reintento
+        const isImage = msg.type === 'image';
+        toastSuccess(isImage ? 'Reintentando envío de imagen...' : 'Reintentando mensaje...', 2000);
+        
         retryMessageMutation.mutate({
             roomId: room.id,
             messageId: msg.id,
@@ -596,6 +689,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             type: msg.type,
             caption: msg.caption,
             replyToId: msg.reply_to_id
+        }, {
+            onSuccess: () => {
+                toastSuccess(isImage ? 'Imagen enviada' : 'Mensaje enviado', 2000);
+            },
+            onError: () => {
+                toastError('No se pudo enviar. Intentá de nuevo.', 3000);
+            }
         });
     };
 
@@ -671,7 +771,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         if (!messages) return;
         const index = messages.findIndex(m => m.id === messageId);
         if (index !== -1) {
-            rowVirtualizer.scrollToIndex(index, { align: 'center' });
+            // 🏛️ FIX: Scroll sin animación para compatibilidad con virtualizer
+            requestAnimationFrame(() => {
+                rowVirtualizer.scrollToIndex(index, { 
+                    align: 'center'
+                });
+            });
             setHighlightedMessageId(messageId);
             setTimeout(() => setHighlightedMessageId(null), 3000);
         }
@@ -736,19 +841,50 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 // ✅ Enterprise: Client-Side ID Generation
                 const optimisticId = window.crypto.randomUUID();
 
-                await sendMessageMutation.mutateAsync({
-                    id: optimisticId, // Pass generated ID
-                    roomId: room.id,
-                    content: contentToSend,
-                    type: fileToSend ? 'image' : 'text',
-                    file: fileToSend || undefined,
-                    caption: captionToSend,
-                    replyToId: replyData?.id,
-                    replyToContent: replyData?.content,
-                    replyToType: replyData?.type,
-                    replyToSenderAlias: replyData?.sender_alias,
-                    replyToSenderId: replyData?.sender_id
-                });
+                // 🏛️ BLOQUE 2: Loading state para uploads
+                if (fileToSend) {
+                    setIsUploading(true);
+                    setUploadProgress(0);
+                    // Simular progreso (la API no soporta tracking real)
+                    const progressInterval = setInterval(() => {
+                        setUploadProgress(prev => Math.min(prev + 10, 90));
+                    }, 200);
+                    
+                    try {
+                        await sendMessageMutation.mutateAsync({
+                            id: optimisticId,
+                            roomId: room.id,
+                            content: contentToSend,
+                            type: 'image',
+                            file: fileToSend,
+                            caption: captionToSend,
+                            replyToId: replyData?.id,
+                            replyToContent: replyData?.content,
+                            replyToType: replyData?.type,
+                            replyToSenderAlias: replyData?.sender_alias,
+                            replyToSenderId: replyData?.sender_id
+                        });
+                        setUploadProgress(100);
+                        toastSuccess('Imagen enviada', 2000);
+                    } finally {
+                        clearInterval(progressInterval);
+                        setIsUploading(false);
+                        setUploadProgress(0);
+                    }
+                } else {
+                    await sendMessageMutation.mutateAsync({
+                        id: optimisticId,
+                        roomId: room.id,
+                        content: contentToSend,
+                        type: 'text',
+                        caption: undefined,
+                        replyToId: replyData?.id,
+                        replyToContent: replyData?.content,
+                        replyToType: replyData?.type,
+                        replyToSenderAlias: replyData?.sender_alias,
+                        replyToSenderId: replyData?.sender_id
+                    });
+                }
             }
 
 
@@ -772,6 +908,209 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         setPreviewUrl(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
+
+    // 🏛️ PASO A (Conservador): Extraer solo el renderizado del tipo de mensaje
+    // Esto desacopla la lógica de presentación sin tocar el virtualizer ni handlers
+    const renderMessageType = (msg: ChatMessage, messageIsMine: boolean) => {
+        if (msg.type === 'image') {
+            return (
+                <>
+                    {/* 🏛️ Label: Reenviado */}
+                    {msg.is_forwarded && (
+                        <div className="flex items-center gap-1 mb-1.5 opacity-70">
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M7 17L17 7M17 7H7M17 7V17" />
+                            </svg>
+                            <span className="text-[10px] uppercase tracking-wider font-medium">Reenviado</span>
+                        </div>
+                    )}
+                    {msg.reply_to_id && (
+                        <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[200px] max-w-full ${messageIsMine ? 'bg-black/10' : 'bg-black/5'}`}>
+                            <div className="font-bold text-[11px]">
+                                {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                            </div>
+                            <div className="line-clamp-2 text-foreground/80 leading-normal">
+                                {msg.reply_to_type === 'image' ? (
+                                    <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                                ) : msg.reply_to_content}
+                            </div>
+                        </div>
+                    )}
+                    <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
+                        <ChatImage
+                            src={msg.content}
+                            localUrl={msg.localUrl}
+                            alt="Mensaje de imagen"
+                            className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                            onClick={() => window.open(msg.content, '_blank')}
+                        />
+                        {/* 🏛️ UX: Indicador de carga para imágenes pending */}
+                        {msg.localStatus === 'pending' && (
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                                <div className="w-8 h-8 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex justify-between items-end gap-2 pl-1">
+                        <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
+                            {msg.caption}
+                        </div>
+                        {renderMessageMeta(msg, messageIsMine)}
+                    </div>
+                </>
+            );
+        }
+        
+        // Text message
+        return (
+            <>
+                {/* 🏛️ Label: Reenviado */}
+                {msg.is_forwarded && (
+                    <div className="flex items-center gap-1 mb-1 opacity-70">
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M7 17L17 7M17 7H7M17 7V17" />
+                        </svg>
+                        <span className="text-[10px] uppercase tracking-wider font-medium">Reenviado</span>
+                    </div>
+                )}
+                {msg.reply_to_id && (
+                    <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[180px] max-w-full ${messageIsMine ? 'bg-black/10' : 'bg-black/5'}`}>
+                        <div className="font-bold text-[11px]">
+                            {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
+                        </div>
+                        <div className="line-clamp-2 text-foreground/80 leading-normal">
+                            {msg.reply_to_type === 'image' ? (
+                                <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
+                            ) : msg.reply_to_content}
+                        </div>
+                    </div>
+                )}
+                <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block pb-1 relative">
+                    {msg.content}
+                    {/* 🏛️ UX: Indicador sutil para mensaje pending */}
+                    {msg.localStatus === 'pending' && (
+                        <span className="inline-flex items-center gap-1 ml-2 text-[10px] opacity-60">
+                            <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </span>
+                    )}
+                    <span className="inline-block w-14 h-3" aria-hidden="true"></span>
+                </span>
+                <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
+                    {renderMessageMeta(msg, messageIsMine)}
+                </span>
+            </>
+        );
+    };
+
+    // Helper para metadatos del mensaje (hora, estado, estrella)
+    const renderMessageMeta = (msg: ChatMessage, messageIsMine: boolean) => {
+        return (
+            <>
+                {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
+                {msg.is_edited && (
+                    <span className="text-[10px] text-muted-foreground italic mr-1">Editado</span>
+                )}
+                <span className={`text-[10px] ${messageIsMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                    {msg.created_at ? (() => {
+                        const d = new Date(msg.created_at);
+                        return isNaN(d.getTime()) ? '...' : format(d, 'HH:mm', { locale: es });
+                    })() : '...'}
+                </span>
+                {messageIsMine && (
+                    <div className="flex items-center">
+                        {msg.localStatus === 'pending' ? (
+                            <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
+                        ) : msg.localStatus === 'failed' ? (
+                            <button 
+                                onClick={() => handleRetry(msg)}
+                                className="text-[10px] text-red-200 font-bold underline mr-1 cursor-pointer hover:text-red-100"
+                                title="Tocá para reintentar"
+                            >
+                                Error
+                            </button>
+                        ) : msg.is_read ? (
+                            <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                        ) : msg.is_delivered ? (
+                            <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                        ) : (
+                            <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
+                        )}
+                    </div>
+                )}
+            </>
+        );
+    };
+
+    // 🏛️ PASO B: MessageItem como componente interno
+    // Extrae todo el renderizado de un mensaje individual sin tocar el virtualizer
+    interface MessageItemProps {
+        msg: ChatMessage;
+        isMessageMine: boolean;
+    }
+
+    const MessageItem = React.memo(({ msg, isMessageMine }: MessageItemProps) => {
+        const isPinned = room.pinned_message_id === msg.id;
+        const isPickerActive = reactionPickerMessageId === msg.id;
+
+        return (
+            <MessageBubbleWrapper
+                msg={msg}
+                isMe={isMessageMine}
+                anonymousId={anonymousId || ''}
+                onReaction={(emoji) => handleReaction(msg.id, emoji)}
+                pickerActive={isPickerActive}
+                setPickerActive={(active) => setReactionPickerMessageId(active ? msg.id : null)}
+                onSelectionChange={(selected) => setSelectedMessageForActions(selected ? msg : null)}
+            >
+                <div className={`${msg.type === 'image' ? 'p-1.5' : 'px-4 py-2.5'} rounded-2xl relative group/bubble ${isMessageMine ? 'bg-primary text-primary-foreground rounded-tr-none shadow-md shadow-primary/10' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-md shadow-black/5'}`}>
+                    {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
+                    <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className={`hidden md:flex absolute top-0 right-0 h-8 w-10 items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
+                                ${isMessageMine
+                                        ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
+                                        : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
+                            >
+                                <ChevronDown className="w-4 h-4 mt-1" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align={isMessageMine ? 'end' : 'start'}
+                            sideOffset={5}
+                            className="w-52 p-1.5 rounded-xl shadow-2xl bg-background border border-border z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                        >
+                            <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-foreground hover:bg-muted focus:bg-muted rounded-lg">
+                                <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handlePinMessage(isPinned ? null : msg.id)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-foreground hover:bg-muted focus:bg-muted rounded-lg">
+                                <Pin className="w-4 h-4 mr-3 opacity-70" /> {isPinned ? 'Desfijar' : 'Fijar mensaje'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleStarMessage(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-foreground hover:bg-muted focus:bg-muted rounded-lg">
+                                <Star className={`w-4 h-4 mr-3 ${msg.is_starred ? 'fill-yellow-400 text-yellow-400' : 'opacity-70'}`} /> {msg.is_starred ? 'Anular destaque' : 'Destacar'}
+                            </DropdownMenuItem>
+                            {isMessageMine && (
+                                <DropdownMenuItem
+                                    className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-foreground hover:bg-muted focus:bg-muted rounded-lg group/delete"
+                                    onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
+                                >
+                                    <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
+                                </DropdownMenuItem>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Contenido del mensaje */}
+                    {renderMessageType(msg, isMessageMine)}
+                </div>
+            </MessageBubbleWrapper>
+        );
+    });
+    MessageItem.displayName = 'MessageItem';
 
     return (
         <motion.div
@@ -831,6 +1170,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             </div>
                         </div>
                     </div>
+                    
+                    {/* 🏛️ FEATURE: Menú de opciones del chat (3 puntos) */}
+                    <ChatHeaderMenu
+                        onSearchClick={() => setIsSearchOpen(true)}
+                    />
                 </div>
 
                 <ChatReportContext reportId={room.report_id} />
@@ -950,234 +1294,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                 </div>
                                             )}
                                             <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-full sm:max-w-[100%]`}>
-                                                {msg.type === 'image' ? (
-                                                    <MessageBubbleWrapper
-                                                        msg={msg}
-                                                        isMe={isMe(msg)}
-                                                        anonymousId={anonymousId || ''}
-                                                        onReaction={(emoji) => handleReaction(msg.id, emoji)}
-                                                        pickerActive={reactionPickerMessageId === msg.id}
-                                                        setPickerActive={(active) => setReactionPickerMessageId(active ? msg.id : null)}
-                                                        onSelectionChange={(selected) => setSelectedMessageForActions(selected ? msg : null)}
-                                                    >
-                                                        <div className={`p-1.5 rounded-lg overflow-hidden relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
-                                                            {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                            <DropdownMenu modal={false} onOpenChange={(isOpen) => setReactionPickerMessageId(isOpen ? msg.id : null)}>
-                                                                <DropdownMenuTrigger asChild>
-                                                                    <button
-                                                                        type="button"
-                                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                                        className={`hidden md:flex absolute top-0 right-0 h-8 w-10 items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
-                                                                        ${isMe(msg)
-                                                                                ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
-                                                                                : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
-                                                                    >
-                                                                        <ChevronDown className="w-4 h-4 mt-1" />
-                                                                    </button>
-                                                                </DropdownMenuTrigger>
-                                                                <DropdownMenuContent
-                                                                    align={isMe(msg) ? 'end' : 'start'}
-                                                                    sideOffset={5}
-                                                                    className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
-                                                                >
-                                                                    <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
-                                                                    </DropdownMenuItem>
-
-
-
-                                                                    <DropdownMenuItem onClick={() => handlePinMessage(msg.id)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Pin className="w-4 h-4 mr-3 opacity-70" /> {room.pinned_message_id === msg.id ? 'Desfijar' : 'Fijar mensaje'}
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuItem onClick={() => handleStarMessage(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Star className={`w-4 h-4 mr-3 ${msg.is_starred ? 'fill-yellow-400 text-yellow-400' : 'opacity-70'}`} /> {msg.is_starred ? 'Anular destaque' : 'Destacar'}
-                                                                    </DropdownMenuItem>
-                                                                    {isMe(msg) && (
-                                                                        <DropdownMenuItem
-                                                                            className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
-                                                                            onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
-                                                                        >
-                                                                            <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
-                                                                        </DropdownMenuItem>
-                                                                    )}
-                                                                </DropdownMenuContent>
-                                                            </DropdownMenu>
-
-                                                            {msg.reply_to_id && (
-                                                                <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[200px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
-                                                                    <div className="font-bold text-[11px]">
-                                                                        {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
-                                                                    </div>
-                                                                    <div className="line-clamp-2 text-foreground/80 leading-normal">
-                                                                        {msg.reply_to_type === 'image' ? (
-                                                                            <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
-                                                                        ) : msg.reply_to_content}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
-                                                                <ChatImage
-                                                                    src={msg.content}
-                                                                    localUrl={msg.localUrl}
-                                                                    alt="Mensaje de imagen"
-                                                                    className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
-                                                                    onClick={() => window.open(msg.content, '_blank')}
-                                                                />
-                                                            </div>
-
-                                                            <div className="flex justify-between items-end gap-2 pl-1">
-                                                                <div className="text-sm whitespace-pre-wrap leading-relaxed overflow-hidden">
-                                                                    {msg.caption}
-                                                                </div>
-
-                                                                <div className="flex items-center gap-1 shrink-0 pb-0.5">
-                                                                    {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
-                                                                    {/* ✅ WhatsApp-style: Indicador de editado */}
-                                                                    {msg.is_edited && (
-                                                                        <span className="text-[10px] text-muted-foreground italic mr-1">Editado</span>
-                                                                    )}
-                                                                    <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                        {format(new Date(msg.created_at), 'HH:mm', { locale: es })}
-                                                                    </span>
-                                                                    {isMe(msg) && (
-                                                                        <div className="flex items-center">
-                                                                            {msg.localStatus === 'pending' ? (
-                                                                                <Clock className="w-3 h-3 text-muted-foreground mr-1" />
-                                                                            ) : msg.localStatus === 'failed' ? (
-                                                                                <button 
-                                                                                    onClick={() => handleRetry(msg)}
-                                                                                    className="text-[10px] text-red-400 font-bold underline mr-1 cursor-pointer hover:text-red-300"
-                                                                                    title="Tocá para reintentar"
-                                                                                >
-                                                                                    Error
-                                                                                </button>
-                                                                            ) : msg.is_read ? (
-                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                            ) : msg.is_delivered ? (
-                                                                                <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                            ) : (
-                                                                                <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-
-                                                        </div>
-                                                    </MessageBubbleWrapper>
-                                                ) : (
-                                                    <MessageBubbleWrapper
-                                                        msg={msg}
-                                                        isMe={isMe(msg)}
-                                                        anonymousId={anonymousId || ''}
-                                                        onReaction={(emoji) => handleReaction(msg.id, emoji)}
-                                                        pickerActive={reactionPickerMessageId === msg.id}
-                                                        setPickerActive={(active) => setReactionPickerMessageId(active ? msg.id : null)}
-                                                        onSelectionChange={(selected) => setSelectedMessageForActions(selected ? msg : null)}
-                                                    >
-                                                        <div className={`px-3 py-2 rounded-lg relative group/bubble ${isMe(msg) ? 'bg-primary text-primary-foreground rounded-tr-none shadow-sm' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-sm'}`}>
-                                                            {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                                                            <DropdownMenu modal={false} onOpenChange={(isOpen) => setReactionPickerMessageId(isOpen ? msg.id : null)}>
-                                                                <DropdownMenuTrigger asChild>
-                                                                    <button
-                                                                        type="button"
-                                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                                        className={`hidden md:flex absolute top-0 right-0 h-8 w-10 items-start justify-end pr-1 opacity-0 group-hover/bubble:opacity-100 data-[state=open]:opacity-100 transition-opacity outline-none z-30 rounded-tr-lg
-                                                                            ${isMe(msg)
-                                                                                ? 'bg-gradient-to-l from-primary via-primary/80 to-transparent text-primary-foreground/70 hover:text-primary-foreground'
-                                                                                : 'bg-gradient-to-l from-card via-card/80 to-transparent text-foreground/40 hover:text-foreground'}`}
-                                                                    >
-                                                                        <ChevronDown className="w-4 h-4 mt-1" />
-                                                                    </button>
-                                                                </DropdownMenuTrigger>
-                                                                <DropdownMenuContent
-                                                                    align={isMe(msg) ? 'end' : 'start'}
-                                                                    sideOffset={5}
-                                                                    className="w-52 p-1.5 rounded-xl shadow-2xl bg-popover border-none z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
-                                                                >
-                                                                    <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
-                                                                    </DropdownMenuItem>
-
-
-
-                                                                    <DropdownMenuItem onClick={() => handlePinMessage(msg.id)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Pin className="w-4 h-4 mr-3 opacity-70" /> {room.pinned_message_id === msg.id ? 'Desfijar' : 'Fijar mensaje'}
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuItem onClick={() => handleStarMessage(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg">
-                                                                        <Star className={`w-4 h-4 mr-3 ${msg.is_starred ? 'fill-yellow-400 text-yellow-400' : 'opacity-70'}`} /> {msg.is_starred ? 'Anular destaque' : 'Destacar'}
-                                                                    </DropdownMenuItem>
-                                                                    {isMe(msg) && (
-                                                                        <DropdownMenuItem
-                                                                            className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-popover-foreground hover:bg-muted/50 focus:bg-muted/50 rounded-lg group/delete"
-                                                                            onClick={() => deleteMessageMutation.mutate({ roomId: room.id, messageId: msg.id })}
-                                                                        >
-                                                                            <Trash2 className="w-4 h-4 mr-3 opacity-70 group-hover/delete:text-destructive transition-colors" /> Eliminar
-                                                                        </DropdownMenuItem>
-                                                                    )}
-                                                                </DropdownMenuContent>
-                                                            </DropdownMenu>
-
-                                                            {msg.reply_to_id && (
-                                                                <div className={`mb-1.5 p-2 rounded-md border-l-4 border-primary/60 text-[10px] flex flex-col gap-0.5 min-w-[180px] max-w-full ${isMe(msg) ? 'bg-black/10' : 'bg-black/5'}`}>
-                                                                    <div className="font-bold text-[11px]">
-                                                                        {msg.reply_to_sender_id === (anonymousId || '') ? 'Tú' : (msg.reply_to_sender_alias || 'Mensaje')}
-                                                                    </div>
-                                                                    <div className="line-clamp-2 text-foreground/80 leading-normal">
-                                                                        {msg.reply_to_type === 'image' ? (
-                                                                            <span className="flex items-center gap-1"><ImageIcon className="w-2.5 h-2.5" /> Foto</span>
-                                                                        ) : msg.reply_to_content}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            <span className="whitespace-pre-wrap leading-relaxed break-words text-[15px] block pb-1">
-                                                                {msg.content}
-                                                                <span className="inline-block w-14 h-3" aria-hidden="true"></span>
-                                                            </span>
-
-                                                            <span className="absolute bottom-[2px] right-2 flex items-center gap-1 select-none">
-                                                                {msg.is_starred && <Star className="w-2.5 h-2.5 text-yellow-400 fill-yellow-400 mr-0.5" />}
-                                                                {/* ✅ WhatsApp-style: Indicador de editado */}
-                                                                {msg.is_edited && (
-                                                                    <span className="text-[10px] text-muted-foreground italic mr-1">Editado</span>
-                                                                )}
-                                                                <span className={`text-[10px] ${isMe(msg) ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                                                                    {msg.created_at ? (() => {
-                                                                        const d = new Date(msg.created_at);
-                                                                        return isNaN(d.getTime()) ? '...' : format(d, 'HH:mm', { locale: es });
-                                                                    })() : '...'}
-                                                                </span>
-
-                                                                {isMe(msg) && (
-                                                                    <div className="flex items-center">
-                                                                        {msg.localStatus === 'pending' ? (
-                                                                            <Clock className="w-3 h-3 text-primary-foreground/70 mr-1" />
-                                                                        ) : msg.localStatus === 'failed' ? (
-                                                                            <button 
-                                                                                onClick={() => handleRetry(msg)}
-                                                                                className="text-[10px] text-red-200 font-bold underline mr-1 cursor-pointer hover:text-red-100"
-                                                                                title="Tocá para reintentar"
-                                                                            >
-                                                                                Error
-                                                                            </button>
-                                                                        ) : msg.is_read ? (
-                                                                            <CheckCheck className="w-3.5 h-3.5 text-[#00E5FF] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
-                                                                        ) : msg.is_delivered ? (
-                                                                            <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/60 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                        ) : (
-                                                                            <Check className="w-3.5 h-3.5 text-primary-foreground/50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]" />
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </span>
-
-
-                                                        </div>
-                                                    </MessageBubbleWrapper>
-                                                )}
+                                                {/* 🏛️ PASO B: MessageItem componente interno */}
+                                                <MessageItem msg={msg} isMessageMine={isMe(msg)} />
                                             </div>
 
                                         </div>
@@ -1219,15 +1337,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             exit={{ opacity: 0, height: 0 }}
                             className="px-4 pb-2"
                         >
-                            <div className="bg-muted/50 border-l-4 border-primary rounded-r-lg p-2 relative group">
-                                <div className="text-[10px] font-bold text-primary mb-1 uppercase tracking-wider">
+                            <div className="bg-muted/50 border-l-4 border-primary rounded-r-lg p-2 relative group max-h-[100px] overflow-hidden">
+                                <div className="text-[10px] font-bold text-primary mb-1 uppercase tracking-wider pr-6">
                                     Respondiendo a {replyingTo.sender_id === anonymousId ? 'Tú' : replyingTo.sender_alias}
                                 </div>
 
-                                <div className="text-xs text-muted-foreground truncate max-w-[90%]">
+                                <div className="text-xs text-muted-foreground line-clamp-3 pr-6 break-words">
                                     {replyingTo.type === 'image' ? (
                                         <span className="flex items-center gap-1">
                                             <ImageIcon className="w-3 h-3" /> Foto
+                                            {replyingTo.caption && <span className="truncate">{replyingTo.caption}</span>}
                                         </span>
                                     ) : replyingTo.content}
                                 </div>
@@ -1249,58 +1368,107 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 <img
                                     src={previewUrl}
                                     alt="Vista previa"
-                                    className="h-20 w-20 object-cover rounded-lg border border-border shadow-lg"
+                                    className={`h-20 w-20 object-cover rounded-lg border border-border shadow-lg ${isUploading ? 'opacity-50' : ''}`}
                                 />
-                                <button
-                                    onClick={cancelImageSelection}
-                                    className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground p-1 rounded-full shadow-lg hover:bg-destructive/90 transition-colors"
-                                >
-                                    <X className="h-3 w-3" />
-                                </button>
+                                {/* 🏛️ BLOQUE 2: Loading overlay */}
+                                {isUploading && (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                    </div>
+                                )}
+                                {/* Cancel button - hidden during upload */}
+                                {!isUploading && (
+                                    <button
+                                        onClick={cancelImageSelection}
+                                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground p-1 rounded-full shadow-lg hover:bg-destructive/90 transition-colors"
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </button>
+                                )}
                             </div>
                             <div className="flex-1 text-sm text-muted-foreground">
-                                <p className="font-medium text-foreground mb-1 uppercase tracking-tighter text-xs">Imagen seleccionada</p>
-                                <p className="text-[11px]">Escribí una leyenda opcional abajo antes de enviar.</p>
+                                <p className="font-medium text-foreground mb-1 uppercase tracking-tighter text-xs">
+                                    {isUploading ? 'Enviando imagen...' : 'Imagen seleccionada'}
+                                </p>
+                                {/* 🏛️ BLOQUE 2: Progress bar */}
+                                {isUploading ? (
+                                    <div className="w-full max-w-[200px]">
+                                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-primary transition-all duration-200 rounded-full"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] mt-1 text-muted-foreground">{uploadProgress}%</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-[11px]">Escribí una leyenda opcional abajo antes de enviar.</p>
+                                )}
                             </div>
                         </div>
                     </div>
                 )}
 
                 <div className="p-4 bg-card border-t border-border">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-end gap-2">
                         <input
                             type="file"
                             ref={fileInputRef}
                             className="hidden"
                             accept="image/*"
                             onChange={handleImageSelect}
+                            disabled={isUploading}
                         />
                         <Button
                             variant="ghost"
                             size="icon"
-                            className={`text-muted-foreground hover:text-foreground shrink-0 ${previewUrl ? 'text-primary' : ''}`}
+                            className={`text-muted-foreground hover:text-foreground shrink-0 mb-1 ${previewUrl ? 'text-primary' : ''}`}
                             onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
                         >
                             <ImageIcon className="h-5 w-5" />
                         </Button>
-                        <Input
+                        
+                        {/* 🏛️ FIX: Textarea auto-expandible como WhatsApp */}
+                        <textarea
                             ref={inputRef}
                             value={message}
                             onChange={(e) => updateMessage(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey && !isUploading) {
+                                    e.preventDefault();
+                                    handleSend();
+                                }
+                            }}
                             placeholder={previewUrl ? "Añadir leyenda..." : "Escribí un mensaje..."}
-                            className="bg-muted border-input text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/50"
+                            disabled={isUploading}
+                            rows={1}
+                            className="flex-1 min-h-[40px] max-h-[120px] bg-muted border border-input rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none overflow-y-auto"
+                            style={{ height: 'auto' }}
                         />
 
                         <Button
                             onClick={handleSend}
-                            disabled={!message.trim() && !selectedFile}
-                            className="shrink-0 rounded-xl"
+                            disabled={(!message.trim() && !selectedFile) || isUploading}
+                            className="shrink-0 rounded-xl min-w-[40px] mb-1"
                         >
-                            <Send className="h-4 w-4" />
+                            {isUploading ? (
+                                <div className="w-4 h-4 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                                <Send className="h-4 w-4" />
+                            )}
                         </Button>
                     </div>
                 </div>
+
+                {/* 🏛️ FEATURE: Modal de búsqueda de mensajes */}
+                <MessageSearchModal
+                    isOpen={isSearchOpen}
+                    onClose={() => setIsSearchOpen(false)}
+                    messages={messages || []}
+                    onNavigateToMessage={handleJumpToMessage}
+                    currentUserId={anonymousId}
+                />
             </Card>
         </motion.div>
     );
