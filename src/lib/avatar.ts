@@ -70,3 +70,28 @@ export function getAvatarFallback(value: string | null | undefined): string {
     return value.substring(0, 2).toUpperCase();
 }
 
+/**
+ * 🏛️ SAFE MODE: Avatar URL Resolver
+ * 
+ * Normaliza el acceso al avatar URL independientemente de si el backend
+ * retorna snake_case (avatar_url) o camelCase (avatarUrl).
+ * 
+ * SSOT: Este helper centraliza la lógica de fallback de avatares.
+ * 
+ * @param user - Objeto usuario con posibles campos avatar_url o avatarUrl
+ * @param seed - Seed para generar avatar determinístico si no hay URL
+ * @returns URL del avatar o avatar determinístico
+ * 
+ * @example
+ * resolveAvatarUrl({ avatar_url: 'https://...' }, 'user123')     // 'https://...'
+ * resolveAvatarUrl({ avatarUrl: 'https://...' }, 'user123')      // 'https://...'
+ * resolveAvatarUrl({}, 'user123')                                // 'https://api.dicebear.com/...'
+ */
+export function resolveAvatarUrl(
+    user: { avatar_url?: string | null; avatarUrl?: string | null },
+    seed: string | null | undefined
+): string {
+    const avatarUrl = user.avatar_url || user.avatarUrl;
+    return avatarUrl || getAvatarUrl(seed);
+}
+

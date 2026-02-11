@@ -273,7 +273,7 @@
     inset: -2px;
     border-radius: inherit;
     padding: 2px;
-    background: linear-gradient(45deg, #00ff88, #00ff88, #00ff88);
+    background: linear-gradient(45deg, hsl(var(--neon-green)), hsl(var(--neon-green)), hsl(var(--neon-green)));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -296,7 +296,7 @@
 
   .card-glow:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(0, 255, 136, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 hsl(var(--neon-green) / 0.1);
   }
 
   /* Gradient Text */
@@ -516,22 +516,22 @@
   }
 }
 
-/* Scrollbar Personalizada */
+/* Scrollbar Personalizada - Theme Aware */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #020617;
+  background: hsl(var(--background));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 255, 136, 0.3);
+  background: hsl(var(--neon-green) / 0.3);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 255, 136, 0.5);
+  background: hsl(var(--neon-green) / 0.5);
 }
 
 /* 

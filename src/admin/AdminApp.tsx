@@ -46,7 +46,7 @@ export function AdminApp() {
                                     <Routes>
                                         <Route path="/admin/*" element={
                                             <AdminGuard>
-                                                <Suspense fallback={<div className="min-h-screen bg-[#020617] flex items-center justify-center text-[#00ff88]">Loading Admin Environment...</div>}>
+                                                <Suspense fallback={<div className="min-h-screen bg-dark-bg flex items-center justify-center text-neon-green">Loading Admin Environment...</div>}>
                                                     <AdminLayout />
                                                 </Suspense>
                                             </AdminGuard>

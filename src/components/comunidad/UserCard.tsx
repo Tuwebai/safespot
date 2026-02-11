@@ -8,7 +8,7 @@ import { useFollowMutation } from '@/hooks/mutations/useFollowMutation';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
+import { getAvatarFallback, resolveAvatarUrl } from '@/lib/avatar';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { differenceInDays } from 'date-fns';
@@ -113,7 +113,7 @@ export function UserCard({
             >
                 <Avatar className="h-12 w-12 border-2 border-transparent group-hover:border-neon-green transition-colors">
                     <AvatarImage
-                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                        src={resolveAvatarUrl(user, user.anonymous_id)}
                         alt={user.alias || 'Usuario'}
                         referrerPolicy="no-referrer" // Important for Google Images
                     />

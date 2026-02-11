@@ -24,7 +24,7 @@ import {
     Sparkles
 } from 'lucide-react';
 import type { UserProfile } from '@/lib/api';
-import { getAvatarUrl } from '@/lib/avatar';
+import { resolveAvatarUrl } from '@/lib/avatar';
 import { differenceInDays } from 'date-fns';
 
 interface UserPreviewProps {
@@ -97,7 +97,7 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
             <div className="flex items-center gap-4 mb-4">
                 <div className="h-16 w-16 rounded-2xl bg-muted border border-neon-green/20 flex items-center justify-center overflow-hidden shrink-0">
                     <img
-                        src={user.avatar_url || getAvatarUrl(user.anonymous_id)}
+                        src={resolveAvatarUrl(user, user.anonymous_id)}
                         alt={user.alias || 'Usuario'}
                         className="h-full w-full object-cover"
                     />

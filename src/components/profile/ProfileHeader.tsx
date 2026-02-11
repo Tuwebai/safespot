@@ -15,6 +15,7 @@ import { Lock, LogOut, PencilIcon, Settings } from 'lucide-react';
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
 import { calculateLevelProgress, getPointsToNextLevel } from '@/lib/levelCalculation';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { AvatarUploadOverlay } from './AvatarUploadOverlay';
 import type { UserProfile } from '@/lib/api';
 import type { GamificationSummary } from '@/lib/schemas';
 
@@ -63,20 +64,28 @@ export function ProfileHeader({
             <div className="flex items-center justify-between gap-2">
                 {/* Avatar + Info */}
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-neon-green/30 shadow-[0_0_15px_rgba(0,255,136,0.1)] shrink-0">
-                        <AvatarImage 
-                            src={profile?.avatarUrl || getAvatarUrl(anonymousId)} 
-                            alt="Avatar" 
-                            className="object-cover" 
+                    <div className="relative shrink-0">
+                        <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-primary/30 shadow-[0_0_15px_hsl(var(--primary)/0.1)]">
+                            <AvatarImage 
+                                src={profile?.avatarUrl || getAvatarUrl(anonymousId)} 
+                                alt="Avatar" 
+                                className="object-cover" 
+                            />
+                            <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
+                                {getAvatarFallback(anonymousId)}
+                            </AvatarFallback>
+                        </Avatar>
+                        {/* Overlay de upload - Enterprise */}
+                        <AvatarUploadOverlay
+                            currentAvatarUrl={profile?.avatarUrl}
+                            isAuthenticated={isAuthenticated}
+                            size="lg"
                         />
-                        <AvatarFallback className="bg-neon-green/10 text-neon-green text-xl font-bold">
-                            {getAvatarFallback(anonymousId)}
-                        </AvatarFallback>
-                    </Avatar>
+                    </div>
 
                     <div>
                         <div className="flex items-center gap-2">
-                            <h1 className={`text-xl font-bold ${profile?.alias ? "text-neon-green" : "text-foreground"}`}>
+                            <h1 className={`text-xl font-bold ${profile?.alias ? "text-primary" : "text-foreground"}`}>
                                 {profile?.alias ? `@${profile.alias}` : 'Usuario Anónimo'}
                             </h1>
                             {profile?.is_official && <VerifiedBadge size={16} className="text-blue-400" />}
@@ -91,14 +100,14 @@ export function ProfileHeader({
                         </div>
 
                         <div className="flex items-center gap-3 mt-1">
-                            <Badge variant="outline" className="text-xs bg-neon-green/10 border-neon-green/30 text-neon-green">
+                            <Badge variant="outline" className="text-xs bg-primary/10 border-primary/30 text-primary">
                                 Nivel {currentLevel}
                             </Badge>
                             <span className="text-xs text-muted-foreground">{currentPoints} pts</span>
                             {profile?.alias && (
                                 <Link 
                                     to={`/usuario/${profile.alias}`} 
-                                    className="text-[10px] text-neon-green hover:underline"
+                                    className="text-[10px] text-primary hover:underline"
                                 >
                                     Ver perfil público →
                                 </Link>
@@ -161,11 +170,11 @@ export function ProfileHeader({
                     <span className="text-muted-foreground">
                         {pointsToNext} pts para Nivel {currentLevel + 1}
                     </span>
-                    <span className="text-neon-green font-bold">{Math.round(progressPercent)}%</span>
+                    <span className="text-primary font-bold">{Math.round(progressPercent)}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-2">
                     <div 
-                        className="bg-gradient-to-r from-neon-green to-emerald-400 h-full rounded-full transition-all duration-1000"
+                        className="bg-gradient-to-r from-primary to-primary/70 h-full rounded-full transition-all duration-1000"
                         style={{ width: `${progressPercent}%` }} 
                     />
                 </div>

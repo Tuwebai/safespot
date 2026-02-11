@@ -76,10 +76,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         root.classList.remove('light', 'dark')
         root.classList.add(resolved)
 
-        // Update meta theme-color for mobile
+        // Update meta theme-color for mobile using CSS variables
         const metaThemeColor = document.querySelector('meta[name="theme-color"]')
         if (metaThemeColor) {
-            metaThemeColor.setAttribute('content', resolved === 'dark' ? '#020617' : '#ffffff')
+            // Get computed background color from root to ensure theme consistency
+            const rootStyles = getComputedStyle(root)
+            const bgColor = rootStyles.getPropertyValue('--background').trim()
+            // Convert HSL to CSS hsl() format for meta tag
+            metaThemeColor.setAttribute('content', `hsl(${bgColor})`)
         }
 
         // Save simple persistence check

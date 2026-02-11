@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
-import { getAvatarUrl } from '@/lib/avatar'
+import { resolveAvatarUrl } from '@/lib/avatar'
 import { useChatRooms } from '@/hooks/queries/useChatsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 
@@ -162,7 +162,7 @@ export function Header() {
               >
                 <Avatar className="h-full w-full">
                   <AvatarImage
-                    src={profile?.avatarUrl || getAvatarUrl(anonymousId)}
+                    src={resolveAvatarUrl(profile || {}, anonymousId)}
                     alt="Avatar"
                     className="object-cover"
                   />
@@ -315,7 +315,7 @@ export function Header() {
               <div className="mr-3 h-8 w-8 rounded-full border border-dark-border overflow-hidden">
                 <Avatar className="h-full w-full">
                   <AvatarImage
-                    src={profile?.avatar_url || getAvatarUrl(anonymousId)}
+                    src={resolveAvatarUrl(profile || {}, anonymousId)}
                     alt="Avatar"
                   />
                   <AvatarFallback className="bg-transparent">

@@ -78,8 +78,9 @@ export function useNearbyUsersQuery(options: UseNearbyUsersOptions = {}) {
             return result;
         },
         enabled,
-        staleTime: 1000 * 10,     // 10 seconds
-        refetchInterval: 1000 * 30, // 30 seconds
+        staleTime: 1000 * 60,       // 1 minute - evitar refetch innecesario
+        refetchInterval: 1000 * 60 * 2, // 2 minutos - conservador para evitar spam
+        retry: false,               // Fail fast, no spam de retries
     });
 }
 
@@ -93,6 +94,7 @@ export function useGlobalUsersQuery(options: UseGlobalUsersOptions = {}) {
             return normalizeUsers(response);
         },
         enabled,
-        staleTime: 1000 * 60 * 5, // 5 minutes
+        staleTime: 1000 * 60 * 5,   // 5 minutes
+        retry: false,               // Fail fast, no spam de retries
     });
 }
