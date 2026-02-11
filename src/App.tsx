@@ -126,8 +126,8 @@ function App() {
               {/* ✅ ENTERPRISE: Auth Guard Provider envuelve toda la app */}
               <StartupGuard>
                 <AuthGuardProvider>
-                  <ThemeProvider>
-                    <ToastProvider>
+                  <ToastProvider>
+                    <ThemeProvider>
                       <ConfirmationProvider>
                         <FirstTimeOnboardingTheme />
                         <SEO />
@@ -217,8 +217,8 @@ function App() {
                           </ChunkErrorBoundary >
                         </Layout >
                       </ConfirmationProvider>
-                    </ToastProvider>
-                  </ThemeProvider >
+                    </ThemeProvider>
+                  </ToastProvider>
 
                   {/* ✅ ENTERPRISE: Modal global - UNA SOLA INSTANCIA */}
                   <GlobalAuthModal />

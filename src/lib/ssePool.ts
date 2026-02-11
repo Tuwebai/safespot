@@ -103,7 +103,7 @@ class SSEPool {
     }
 
     subscribe(url: string, eventName: string, listener: SSEListener) {
-        const entry = this.connections.get(url);
+        let entry = this.connections.get(url);
 
         if (!entry) {
             entry = {
