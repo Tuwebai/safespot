@@ -38,6 +38,12 @@ module.exports = {
                 const source = node.source.value;
                 const filename = context.getFilename();
 
+                // ✅ PERMITIDO: Imports de tipo (no generan código runtime)
+                // import type { X } from '@/lib/api' → Permitido
+                if (node.importKind === 'type') {
+                    return;
+                }
+
                 // Detectar si estamos en /components o /pages
                 const isUIFile =
                     filename.includes('/components/') ||

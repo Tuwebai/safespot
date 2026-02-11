@@ -103,7 +103,7 @@ class SSEPool {
     }
 
     subscribe(url: string, eventName: string, listener: SSEListener) {
-        let entry = this.connections.get(url);
+        const entry = this.connections.get(url);
 
         if (!entry) {
             entry = {
@@ -270,7 +270,7 @@ class SSEPool {
     }
 
     onReconnect(url: string, callback: ReconnectCallback) {
-        let entry = this.connections.get(url);
+        const entry = this.connections.get(url);
         if (entry) {
             entry.reconnectCallbacks.add(callback);
         }

@@ -401,7 +401,7 @@ function UserPreview({ user, x, y }: { user: AdminUser, x: number, y: number }) 
     const isRightHalf = x > screenWidth / 2
 
     // Vertical Position
-    let style: any = {
+    const style: any = {
         position: 'fixed',
         width: boxWidth,
         zIndex: 9999,

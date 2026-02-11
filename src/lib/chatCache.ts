@@ -198,7 +198,7 @@ export const chatCache = {
         }
 
         queryClient.setQueryData(KEYS.messages(roomId, anonymousId), (oldMessages: ChatMessage[] | undefined) => {
-            let nextState = oldMessages ? [...oldMessages] : [];
+            const nextState = oldMessages ? [...oldMessages] : [];
 
             // 1. Idempotent Upsert
             const index = nextState.findIndex(m => m.id === message.id);
@@ -317,7 +317,7 @@ export const chatCache = {
             } else {
                 localStorage.setItem(key, JSON.stringify(filtered));
             }
-        } catch (e) { }
+        } catch { /* noop - localStorage may be disabled */ }
     },
 
     /**
@@ -340,6 +340,6 @@ export const chatCache = {
                 console.log(`[Persistence] Rehydrating ${sanitizablePending.length} pending messages for Room ${roomId}`);
                 chatCache.upsertMessageBatch(queryClient, sanitizablePending, roomId, anonymousId);
             }
-        } catch (e) { }
+        } catch { /* noop - corrupted pending data, will retry */ }
     }
 };

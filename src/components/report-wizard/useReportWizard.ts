@@ -302,7 +302,7 @@ export function useReportWizard() {
         const urlsToCleanup = createdUrlsRef.current
         return () => {
             urlsToCleanup.forEach(url => {
-                try { URL.revokeObjectURL(url) } catch {}
+                try { URL.revokeObjectURL(url) } catch { /* noop - cleanup best effort */ }
             })
         }
     }, [])

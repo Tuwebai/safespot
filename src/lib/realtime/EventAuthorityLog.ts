@@ -376,7 +376,7 @@ class EventAuthorityLog {
                             this.observers.forEach(cb => cb(l.eventId));
                         }
                     });
-                } catch (e) { }
+                } catch { /* noop - persistence best effort */ }
             }
         });
     }

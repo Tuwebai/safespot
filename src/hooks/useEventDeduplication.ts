@@ -51,7 +51,7 @@ export function useEventDeduplication() {
         console.debug(`[Event] ✅ PROCESSED [${context}] id=${eventId}`);
 
         // 3. Maintenance: Auto-clear expired entries
-        let needsSave = true;
+        const needsSave = true;
 
         // Periodic cleanup (10% chance)
         if (Math.random() < 0.1) {
