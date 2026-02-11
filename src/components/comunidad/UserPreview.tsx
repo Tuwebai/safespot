@@ -23,7 +23,7 @@ import {
     BadgeCheck,
     Sparkles
 } from 'lucide-react';
-import { UserProfile } from '@/lib/api';
+import type { UserProfile } from '@/lib/api';
 import { getAvatarUrl } from '@/lib/avatar';
 import { differenceInDays } from 'date-fns';
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { usersApi } from '@/lib/api'
+import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
+import { useUpdateProfileMutation } from '@/hooks/mutations/useUpdateProfileMutation'
 
 export type Theme = 'neon' | 'pastel' | 'minimal' | 'default'
 export type AccentColor = 'green' | 'violet' | 'cyan' | 'orange' | 'red' | 'yellow'
@@ -40,6 +41,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const [isLoaded, setIsLoaded] = useState(false)
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false)
+
+    // ✅ SAFE MODE: Use hooks instead of direct API imports
+    const { data: profile, isLoading: isProfileLoading } = useProfileQuery()
+    const updateProfileMutation = useUpdateProfileMutation()
 
     // Helper to resolve system preference
     const resolveSystemScheme = (): 'light' | 'dark' => {
@@ -102,43 +107,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         return () => mediaQuery.removeEventListener('change', handler)
     }, [colorScheme])
 
-    // Sync with Backend on Mount
+    // ✅ SAFE MODE: Sync with Backend when profile loads
     useEffect(() => {
-        async function syncWithBackend() {
-            try {
-                const profile = await usersApi.getProfile()
-                if (profile) {
-                    if (profile.theme && isValidTheme(profile.theme)) {
-                        setThemeState(profile.theme as Theme)
-                    }
-                    if (profile.accent_color && isValidAccent(profile.accent_color)) {
-                        setAccentColorState(profile.accent_color as AccentColor)
-                    }
+        if (!isProfileLoading) {
+            if (profile) {
+                if (profile.theme && isValidTheme(profile.theme)) {
+                    setThemeState(profile.theme as Theme)
                 }
-            } catch (error) {
-                console.error("Failed to sync theme preferences", error)
-            } finally {
-                setIsLoaded(true)
+                if (profile.accent_color && isValidAccent(profile.accent_color)) {
+                    setAccentColorState(profile.accent_color as AccentColor)
+                }
             }
+            setIsLoaded(true)
         }
-
-        syncWithBackend()
-    }, [])
+    }, [profile, isProfileLoading])
 
     const setTheme = (t: Theme) => setThemeState(t)
     const setAccentColor = (c: AccentColor) => setAccentColorState(c)
     const setColorScheme = (s: ColorScheme) => setColorSchemeState(s)
 
     const savePreferences = async () => {
-        // Persist to backend
-        try {
-            await usersApi.updateProfile({
-                theme,
-                accent_color: accentColor
-            })
-        } catch (error) {
-            console.error("Failed to save theme preferences", error)
-        }
+        // Persist to backend via mutation hook
+        updateProfileMutation.mutate({
+            theme,
+            accent_color: accentColor
+        })
     }
 
     const value = {

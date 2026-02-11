@@ -10,7 +10,7 @@ import { MessageCircle } from 'lucide-react'
 import { SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
-import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
+import type { MentionParticipant } from '@/lib/tiptap/mention-suggestion'
 import { useConfirm } from '@/components/ui/useConfirm'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'

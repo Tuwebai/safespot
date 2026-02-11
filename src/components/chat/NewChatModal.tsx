@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User, MessageSquare, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar';
-import { useDebounce } from '@/hooks/useDebounce';
-import { usersApi, UserProfile } from '@/lib/api';
+import { useUserSearch } from '@/hooks/queries/useUserSearch';
+
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';
 
 interface NewChatModalProps {
@@ -19,44 +19,20 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
     onCreateChat
 }) => {
     const [userSearchTerm, setUserSearchTerm] = useState('');
-    const debouncedUserSearch = useDebounce(userSearchTerm, 300);
-    const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
-    const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+    const { data: searchResults = [], isLoading: isSearchingUsers } = useUserSearch(userSearchTerm, {
+        enabled: isOpen
+    });
 
-    // Reset state when modal closes
-    useEffect(() => {
-        if (!isOpen) {
-            setUserSearchTerm('');
-            setSearchResults([]);
-        }
-    }, [isOpen]);
-
-    // User Search logic
-    useEffect(() => {
-        if (!debouncedUserSearch.trim() || debouncedUserSearch.length < 2) {
-            setSearchResults([]);
-            return;
-        }
-
-        const runSearch = async () => {
-            setIsSearchingUsers(true);
-            try {
-                const results = await usersApi.search(debouncedUserSearch);
-                setSearchResults(results);
-            } catch (error) {
-                console.error('Error searching users:', error);
-            } finally {
-                setIsSearchingUsers(false);
-            }
-        };
-
-        runSearch();
-    }, [debouncedUserSearch]);
+    // Reset search when modal closes
+    const handleClose = () => {
+        setUserSearchTerm('');
+        onClose();
+    };
 
     const handleSelectUser = (userId: string) => {
         onCreateChat(userId);
         setUserSearchTerm('');
-        setSearchResults([]);
+
     };
 
     return (
@@ -71,7 +47,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
                     <div className="p-4 border-b border-border flex items-center justify-between bg-card/50">
                         <h2 className="font-bold text-sm">Nuevo Mensaje</h2>
                         <button
-                            onClick={onClose}
+                            onClick={handleClose}
                             className="p-1 hover:bg-muted rounded-full text-muted-foreground"
                         >
                             <X className="w-4 h-4" />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Report } from '@/lib/api';
+import type { Report } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { AlertCircle, CheckCircle, Bike, Smartphone, Car, ShieldAlert } from 'lucide-react';

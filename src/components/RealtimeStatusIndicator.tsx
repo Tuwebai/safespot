@@ -1,32 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Activity, Server, Database, Users } from 'lucide-react';
-
-
-interface RealtimeStatus {
-    success: boolean;
-    status: 'healthy' | 'degraded' | 'unhealthy';
-    timestamp: string;
-    infrastructure: {
-        redis: string;
-        redis_subscriber: string;
-        database: string;
-        db_latency_ms: number;
-        instance_id: string;
-    };
-    metrics: {
-        total_online: number;
-    };
-}
+import { useRealtimeStatusQuery } from '@/hooks/queries/useRealtimeStatusQuery';
 
 export function RealtimeStatusIndicator() {
-    const { data: status, isLoading, error } = useQuery<RealtimeStatus>({
-        queryKey: ['realtime-status'],
-        queryFn: () => apiRequest('/realtime/status'),
-        refetchInterval: 10000,
-        retry: 3
-    });
+    const { data: status, isLoading, error } = useRealtimeStatusQuery();
 
     if (isLoading) return (
         <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">

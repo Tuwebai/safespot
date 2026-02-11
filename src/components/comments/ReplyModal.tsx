@@ -9,7 +9,7 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { getAvatarUrl } from '@/lib/avatar'
 import type { Comment } from '@/lib/api'
 
-import { MentionParticipant } from '@/components/ui/tiptap-extensions/mention/suggestion'
+import type { MentionParticipant } from '@/lib/tiptap/mention-suggestion'
 
 interface ReplyModalProps {
     isOpen: boolean

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Report } from '@/lib/api';
+import type { Report } from '@/lib/api';
 import { SafeSpotMapClient } from '@/components/map/SafeSpotMapClient';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar';
 import { getAvatarUrl, getAvatarFallback } from '@/lib/avatar';

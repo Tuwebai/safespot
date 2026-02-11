@@ -8,7 +8,7 @@ const Editor = lazyRetry(() =>
     'RichTextEditor'
 )
 
-import { MentionParticipant } from './tiptap-extensions/mention/suggestion'
+import type { MentionParticipant } from '@/lib/tiptap/mention-suggestion'
 
 interface RichTextEditorProps {
     value: string

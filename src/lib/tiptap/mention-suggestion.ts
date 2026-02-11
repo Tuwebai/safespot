@@ -1,7 +1,7 @@
 
 import { ReactRenderer } from '@tiptap/react'
 import tippy from 'tippy.js'
-import { MentionList } from './MentionList'
+import { MentionList } from '@/components/ui/tiptap-extensions/mention/MentionList'
 import { usersApi } from '@/lib/api'
 
 export interface MentionParticipant {

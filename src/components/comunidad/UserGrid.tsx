@@ -9,7 +9,7 @@
  * @version 2.0 - With Hover Preview
  */
 
-import { UserProfile } from '@/lib/api';
+import type { UserProfile } from '@/lib/api';
 import { UserCard } from './UserCard';
 import { CommunitySkeleton } from './CommunitySkeleton';
 import { UserPreview } from './UserPreview';

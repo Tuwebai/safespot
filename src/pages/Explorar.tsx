@@ -1,14 +1,13 @@
 import { lazy, Suspense, useEffect, useCallback, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
-// import { PullToRefresh } from '@/components/ui/PullToRefresh' // Removed for map compatibility
-import { reportsApi } from '@/lib/api'
 import type { Report } from '@/lib/schemas'
 import { MapLayout } from '@/layouts/MapLayout'
 import { useMapStore } from '@/lib/store/useMapStore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { List } from 'lucide-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useMapReportsQuery } from '@/hooks/queries/useMapReportsQuery'
 import { EmptyState } from '@/components/ui/empty-state'
 import { reportsCache } from '@/lib/cache-helpers'
 import { initializeLeafletIcons } from '@/lib/leaflet-setup'
@@ -61,23 +60,9 @@ export function Explorar() {
 
   // MAIN REPORTS QUERY - Returns IDs (Enterprise Normalization)
   // ✅ FIX: queryKey uses normalized searchBounds (stable) instead of raw mapBounds
-  const { data: reportIds = [], isFetching } = useQuery<string[]>({
-    queryKey: ['reports', 'list', searchBounds || 'all'],
-    queryFn: async () => {
-      let data: Report[]
-      if (parsedBounds) {
-        const { north, south, east, west } = parsedBounds
-        // Map search request
-        data = await reportsApi.getReportsInBounds(north, south, east, west)
-      } else {
-        data = await reportsApi.getAll()
-      }
-      // ENTERPRISE: Normalize into cache, return IDs
-      return reportsCache.store(queryClient, data)
-    },
-    staleTime: 60000, // 60 seconds fresh (increased for scoped queries)
-    gcTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+  const { data: reportIds = [], isFetching } = useMapReportsQuery({
+    bounds: parsedBounds,
+    searchBoundsKey: searchBounds,
   })
 
   // MERGE STATE REPORT: Ensure the focused report exists in the list even if not fetched yet

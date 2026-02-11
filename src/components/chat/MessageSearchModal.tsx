@@ -16,7 +16,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, ArrowUp, ArrowDown, MessageSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ChatMessage } from '@/lib/api';
+import type { ChatMessage } from '@/lib/api';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 

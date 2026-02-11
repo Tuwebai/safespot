@@ -2,8 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { UserPlus, UserCheck, MessageCircle, MapPin, BadgeCheck, Sparkles, MoreHorizontal, Tag } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/button';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, UserProfile } from '@/lib/api';
+
+import type { UserProfile } from '@/lib/api';
+import { useFollowMutation } from '@/hooks/mutations/useFollowMutation';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -57,7 +58,7 @@ export function UserCard({
     onMouseMove
 }: UserCardProps) {
     const navigate = useNavigate();
-    const queryClient = useQueryClient();
+
     const { success, error } = useToast();
     const [isFollowing, setIsFollowing] = useState(user.is_following);
     const [isAliasDialogOpen, setIsAliasDialogOpen] = useState(false);
@@ -69,48 +70,23 @@ export function UserCard({
     const displayName = user.display_alias || user.alias || 'Usuario Anónimo';
     const hasPersonalAlias = !!user.personal_alias;
 
-    const followMutation = useMutation({
-        mutationFn: () => usersApi.follow(user.anonymous_id),
-        onMutate: async () => {
-            // Optimistic Update
-            const previousState = isFollowing;
-            setIsFollowing(true);
-            return { previousState };
-        },
-        onError: (_, __, context) => {
-            setIsFollowing(context?.previousState ?? false);
-            error('No se pudo seguir al usuario');
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users', 'global'] });
-            queryClient.invalidateQueries({ queryKey: ['users', 'nearby'] });
-            success(`Ahora sigues a ${displayName}`);
-        },
-    });
-
-    const unfollowMutation = useMutation({
-        mutationFn: () => usersApi.unfollow(user.anonymous_id),
-        onMutate: async () => {
-            const previousState = isFollowing;
-            setIsFollowing(false);
-            return { previousState };
-        },
-        onError: (_, __, context) => {
-            setIsFollowing(context?.previousState ?? true);
-            error('No se pudo dejar de seguir');
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users', 'global'] });
-            queryClient.invalidateQueries({ queryKey: ['users', 'nearby'] });
-        },
-    });
+    const followMutation = useFollowMutation();
 
     const handleFollowToggle = () => {
-        if (isFollowing) {
-            unfollowMutation.mutate();
-        } else {
-            followMutation.mutate();
-        }
+        followMutation.mutate(
+            { anonymousId: user.anonymous_id, action: isFollowing ? 'unfollow' : 'follow' },
+            {
+                onSuccess: () => {
+                    setIsFollowing(!isFollowing);
+                    if (!isFollowing) {
+                        success(`Ahora sigues a ${displayName}`);
+                    }
+                },
+                onError: () => {
+                    error(isFollowing ? 'No se pudo dejar de seguir' : 'No se pudo seguir al usuario');
+                }
+            }
+        );
     };
 
     const handleMessage = () => {
@@ -233,7 +209,7 @@ export function UserCard({
                             : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
                     )}
                     onClick={handleFollowToggle}
-                    disabled={followMutation.isPending || unfollowMutation.isPending}
+                    disabled={followMutation.isPending || followMutation.isPending}
                 >
                     {isFollowing ? (
                         <span className="flex items-center gap-2 group">

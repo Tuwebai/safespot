@@ -11,9 +11,9 @@
  * @version 2.0 - Enterprise Redesign
  */
 
-import { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { usersApi, UserProfile } from '@/lib/api';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNearbyUsersQuery, useGlobalUsersQuery } from '@/hooks/queries/useCommunityQueries';
+
 import { CommunityErrorBoundary } from '@/components/comunidad/CommunityErrorBoundary';
 import { CommunityHeader } from '@/components/comunidad/CommunityHeader';
 import { CommunityTabs } from '@/components/comunidad/CommunityTabs';
@@ -29,30 +29,31 @@ export function Comunidad() {
     const [hasNoLocation, setHasNoLocation] = useState(false);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-    // ✅ ENTERPRISE: Robust Data Normalization
-    const normalizeUsers = (data: unknown): UserProfile[] => {
-        if (!data) return [];
-        if (Array.isArray(data)) return data;
-        if (data && typeof data === 'object') {
-            const d = data as Record<string, unknown>;
-            if (Array.isArray(d.data)) return d.data as UserProfile[];
-            if (Array.isArray(d.users)) return d.users as UserProfile[];
-        }
-        return [];
-    };
-
     // Fetch Nearby Users
     const {
-        data: nearbyUsers,
+        data: nearbyData,
         isLoading: isLoadingNearby,
         error: errorNearby,
         isFetching: isFetchingNearby
-    } = useQuery({
-        queryKey: ['users', 'nearby'],
-        queryFn: async () => {
-            const response = await usersApi.getNearbyUsers();
-            const meta = (response as { meta?: { locality?: string; has_location_configured?: boolean } }).meta || {};
-            
+    } = useNearbyUsersQuery({
+        enabled: activeTab === 'nearby',
+    });
+
+    // Fetch Global Users
+    const {
+        data: globalUsers,
+        isLoading: isLoadingGlobal,
+        error: errorGlobal,
+        isFetching: isFetchingGlobal
+    } = useGlobalUsersQuery({
+        enabled: activeTab === 'global',
+        limit: 200,
+    });
+
+    // ✅ ENTERPRISE: Side effects isolation - update metadata from nearby response
+    useEffect(() => {
+        if (nearbyData) {
+            const { meta } = nearbyData;
             if (typeof meta.has_location_configured === 'boolean') {
                 setHasNoLocation(!meta.has_location_configured);
             } else if (meta.locality !== undefined) {
@@ -62,33 +63,17 @@ export function Comunidad() {
                 setUserLocality(meta.locality);
             }
             setLastUpdated(new Date());
-            return response;
-        },
-        select: (data) => normalizeUsers(data),
-        enabled: activeTab === 'nearby',
-        staleTime: 1000 * 10,
-        refetchInterval: 1000 * 30,
-    });
+        }
+    }, [nearbyData]);
 
-    // Fetch Global Users - Cargar suficientes para búsqueda client-side fluida
-    const {
-        data: globalUsers,
-        isLoading: isLoadingGlobal,
-        error: errorGlobal,
-        isFetching: isFetchingGlobal
-    } = useQuery({
-        queryKey: ['users', 'global'],
-        queryFn: async () => {
+    // Update lastUpdated when global users load
+    useEffect(() => {
+        if (globalUsers !== undefined) {
             setLastUpdated(new Date());
-            // 🎯 Cargar más usuarios (hasta 200) para búsqueda client-side fluida
-            // Esto permite búsqueda inmediata sin perder focus del input
-            const response = await usersApi.getGlobalUsers(1, 200);
-            return response;
-        },
-        select: (data) => normalizeUsers(data),
-        enabled: activeTab === 'global',
-        staleTime: 1000 * 60 * 5,
-    });
+        }
+    }, [globalUsers]);
+
+    const nearbyUsers = nearbyData?.users || [];
 
     // Estados consolidados
     const isLoading = activeTab === 'nearby' ? isLoadingNearby : isLoadingGlobal;
