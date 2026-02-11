@@ -86,7 +86,7 @@ export function Header() {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary to-primary/70 flex items-center justify-center">
               <MapPin className="w-5 h-5 text-dark-bg" />
             </div>
             <div className="text-xl font-bold gradient-text">SafeSpot</div>
@@ -144,7 +144,7 @@ export function Header() {
             >
               <MessageSquare className="h-5 w-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-card animate-in zoom-in duration-300">
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card animate-in zoom-in duration-300">
                   {unreadMessagesCount}
                 </span>
               )}
@@ -192,7 +192,7 @@ export function Header() {
             >
               <MessageSquare className="h-5 w-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-card">
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
                   {unreadMessagesCount}
                 </span>
               )}
@@ -243,9 +243,9 @@ export function Header() {
         }}
       >
         {/* Drawer Header */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-border">
+        <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary to-primary/70 flex items-center justify-center">
               <MapPin className="w-5 h-5 text-dark-bg" />
             </div>
             <div className="text-lg font-bold gradient-text">SafeSpot</div>

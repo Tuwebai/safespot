@@ -88,18 +88,18 @@ export function ReportWizard() {
     }
 
     return (
-        <div className="min-h-screen bg-[#020617]">
+        <div className="min-h-screen bg-background">
             {/* Header */}
-            <header className="sticky top-0 z-50 bg-[#020617]/90 backdrop-blur-md border-b border-[#1e293b]">
+            <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b border-border">
                 <div className="max-w-2xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between mb-4">
                         <button
                             onClick={handleCancel}
-                            className="p-2 hover:bg-[#1e293b] rounded-lg transition-colors"
+                            className="p-2 hover:bg-muted rounded-lg transition-colors"
                         >
-                            <X className="h-5 w-5 text-slate-400" />
+                            <X className="h-5 w-5 text-muted-foreground" />
                         </button>
-                        <h1 className="text-lg font-bold text-white">Nuevo Reporte</h1>
+                        <h1 className="text-lg font-bold text-foreground">Nuevo Reporte</h1>
                         <div className="w-9" /> {/* Spacer for centering */}
                     </div>
                     
@@ -122,7 +122,7 @@ export function ReportWizard() {
                         exit={{ opacity: 0, x: -20 }}
                         transition={{ duration: 0.2 }}
                     >
-                        <Card className="bg-[#0f172a] border-[#1e293b]">
+                        <Card className="bg-card border-border">
                             <CardContent className="p-6">
                                 {renderStep()}
                             </CardContent>
@@ -175,7 +175,7 @@ export function ReportWizard() {
 
                 {/* Draft indicator */}
                 <div className="text-center mt-4">
-                    <span className="text-xs text-slate-600">
+                    <span className="text-xs text-muted-foreground">
                         💾 Borrador guardado automáticamente
                     </span>
                 </div>
