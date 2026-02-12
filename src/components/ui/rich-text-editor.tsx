@@ -49,6 +49,7 @@ interface RichTextEditorProps {
   onCancel?: () => void // Callback para cancelar
   hideSubmitButton?: boolean
   prioritizedUsers?: MentionParticipant[]
+  autoFocus?: boolean // Si es true, enfoca el editor al montarse
 }
 
 export function RichTextEditor({
@@ -62,7 +63,8 @@ export function RichTextEditor({
   showCancel = false,
   onCancel,
   hideSubmitButton = false,
-  prioritizedUsers = []
+  prioritizedUsers = [],
+  autoFocus = false
 }: RichTextEditorProps) {
   // Memoizar las extensiones para evitar recrearlas en cada render
   const extensions = useMemo(() => [
@@ -142,6 +144,17 @@ export function RichTextEditor({
       }
     }
   }, [value, editor])
+
+  // 🏛️ AUTO-FOCUS: Enfocar editor cuando autoFocus es true
+  useEffect(() => {
+    if (editor && autoFocus) {
+      // Pequeño delay para asegurar que el editor esté listo y visible
+      const timer = setTimeout(() => {
+        editor.commands.focus('end')
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [editor, autoFocus])
 
   // Estado para el modal de entrada de texto
   const [showPreview, setShowPreview] = useState(false)

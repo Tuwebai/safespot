@@ -33,40 +33,40 @@ export function Footer() {
       )}
 
       {/* Enterprise Gradient Border Top */}
-      <footer className="relative bg-dark-card pt-16 pb-8 border-t border-dark-border z-10">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-neon-green/50 to-transparent" />
+      <footer className="relative bg-card pt-12 pb-8 border-t border-border z-10">
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
 
-        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto max-w-7xl px-4 lg:px-8">
 
           {/* Top Section: Brand & Install */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 pb-8 border-b border-white/5 gap-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-green to-emerald-600 flex items-center justify-center shadow-lg shadow-neon-green/20">
-                <MapPin className="w-6 h-6 text-white" />
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 pb-8 border-b border-border/50 gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20">
+                <MapPin className="w-6 h-6 text-primary-foreground" />
               </div>
               <div>
-                <div className="text-2xl font-bold tracking-tight text-white">SafeSpot</div>
-                <div className="text-xs text-white/50 uppercase tracking-widest font-medium">Enterprise Security</div>
+                <div className="text-2xl font-bold tracking-tight text-foreground">SafeSpot</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest font-medium">Enterprise Security</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 lg:gap-4">
               <StatusIndicator />
               <InstallAppButton />
             </div>
           </div>
 
           {/* Main Grid Content */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 lg:gap-12 mb-16">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 lg:gap-10 mb-12">
 
             {/* Column 1: Mission */}
-            <div className="col-span-2 lg:col-span-2 space-y-6 pr-4">
+            <div className="col-span-2 lg:col-span-2 space-y-4 pr-4">
               <p className="text-foreground/60 leading-relaxed max-w-sm">
                 Plataforma colaborativa de nueva generación para la seguridad comunitaria.
                 Reportá incidentes en tiempo real y recuperá lo que te pertenece con la ayuda de tu red local.
               </p>
 
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center gap-3">
                 <SocialLink href="https://github.com" icon={Github} label="GitHub" />
                 <SocialLink href="https://twitter.com" icon={Twitter} label="Twitter" />
                 <button
@@ -80,8 +80,8 @@ export function Footer() {
             </div>
 
             {/* Links Columns */}
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Producto</h4>
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Producto</h4>
               <ul className="space-y-2">
                 <FooterLink to="/reportes">Explorar Reportes</FooterLink>
                 <FooterLink to="/explorar">Mapa en Vivo</FooterLink>
@@ -90,8 +90,8 @@ export function Footer() {
               </ul>
             </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Soporte</h4>
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Soporte</h4>
               <ul className="space-y-2">
                 <FooterLink to="/como-funciona">Cómo Funciona</FooterLink>
                 <FooterLink to="/guia-seguridad">Guía de Seguridad</FooterLink>
@@ -100,8 +100,8 @@ export function Footer() {
               </ul>
             </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Compañía</h4>
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Compañía</h4>
               <ul className="space-y-2">
                 <FooterLink to="/blog">Blog & Novedades</FooterLink>
                 <FooterLink to="/terminos">Términos de Servicio</FooterLink>
@@ -122,18 +122,21 @@ export function Footer() {
           </div>
 
           {/* Bottom Bar: Copyright & Compliance */}
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 py-8 border-t border-white/5 text-sm text-foreground/40">
-            <div className="flex items-center gap-2">
-              <span>&copy; {currentYear} SafeSpot Platform</span>
-              <span className="hidden md:inline mx-2">&middot;</span>
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-xs font-mono" title={`Deploy ID: ${AppVersion.deployId}`}>
-                <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                <span>{APP_VERSION_DISPLAY}</span>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-6 border-t border-border/50 text-xs text-muted-foreground">
+            {/* Izquierda: Copyright y versión */}
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span>&copy; {currentYear} SafeSpot</span>
+              <span className="hidden sm:inline text-border">|</span>
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-mono" title={`Deploy ID: ${AppVersion.deployId}`}>
+                <ShieldCheck className="w-3 h-3 text-primary" />
+                <span className="hidden sm:inline">{APP_VERSION_DISPLAY}</span>
+                <span className="sm:hidden">v{AppVersion.appVersion}</span>
               </span>
             </div>
 
-            <div className="flex items-center gap-6">
-              <Link to="/status" className="hover:text-foreground transition-colors">Estado del Sistema</Link>
+            {/* Derecha: Links legales */}
+            <div className="flex items-center gap-4">
+              <Link to="/status" className="hover:text-foreground transition-colors">Sistema</Link>
               <Link to="/cookies" className="hover:text-foreground transition-colors">Cookies</Link>
             </div>
           </div>
@@ -150,7 +153,7 @@ function FooterLink({ to, children }: { to: string, children: React.ReactNode })
     <li>
       <Link
         to={to}
-        className="text-sm text-foreground/60 hover:text-neon-green transition-colors duration-200 block"
+        className="text-sm text-muted-foreground hover:text-primary transition-colors duration-200 block"
       >
         {children}
       </Link>
@@ -163,7 +166,7 @@ function FooterButton({ onClick, children }: { onClick: () => void, children: Re
     <li>
       <button
         onClick={onClick}
-        className="text-sm text-foreground/60 hover:text-neon-green transition-colors duration-200 block text-left w-full"
+        className="text-sm text-muted-foreground hover:text-primary transition-colors duration-200 block text-left w-full"
       >
         {children}
       </button>
@@ -177,7 +180,7 @@ function SocialLink({ href, icon: Icon, label }: { href: string, icon: any, labe
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/60 hover:text-neon-green transition-all duration-300"
+      className="p-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-primary transition-all duration-300"
       aria-label={label}
     >
       <Icon className="w-5 h-5" />

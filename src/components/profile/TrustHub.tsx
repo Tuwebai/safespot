@@ -26,13 +26,13 @@ export function TrustHub() {
     if (loading) {
         return (
             <Card className="bg-card border-border animate-pulse">
-                <CardHeader>
-                    <div className="h-6 w-32 bg-white/10 rounded mb-2" />
-                    <div className="h-4 w-48 bg-white/10 rounded" />
+                <CardHeader className="p-4 sm:p-6">
+                    <div className="h-6 w-32 bg-muted rounded mb-2" />
+                    <div className="h-4 w-48 bg-muted rounded" />
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} className="h-16 bg-white/5 rounded-lg" />
+                        <div key={i} className="h-16 bg-muted/50 rounded-lg" />
                     ))}
                 </CardContent>
             </Card>

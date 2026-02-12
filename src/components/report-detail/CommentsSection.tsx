@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, lazy, Suspense, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/LazyRichTextEditor'
@@ -6,7 +6,7 @@ import { CommentThread } from '@/components/comments/comment-thread'
 import { ThreadList } from '@/components/comments/thread-list'
 import { useCommentsManager } from '@/hooks/useCommentsManager'
 
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, ChevronDown } from 'lucide-react'
 import { SightingType } from './SightingActions'
 import { SightingFormDialog } from './SightingFormDialog'
 import { SightingCard, SightingData } from './SightingCard'
@@ -45,6 +45,16 @@ export function CommentsSection({
     const [viewMode, setViewMode] = useState<'comments' | 'threads'>('comments')
     const [sightingModalType, setSightingModalType] = useState<SightingType | null>(null)
     const [isSubmittingSighting, setIsSubmittingSighting] = useState(false)
+    
+    // 🏛️ EXPANDIBLE COMMENT FORM: Colapsado por defecto en mobile, expandido en desktop
+    const [isCommentFormExpanded, setIsCommentFormExpanded] = useState(() => {
+        // Default: collapsed on mobile (< 640px), expanded on desktop
+        if (typeof window !== 'undefined') {
+            return window.innerWidth >= 640
+        }
+        return true
+    })
+    const editorRef = useRef<HTMLDivElement>(null)
 
     // 🔴 CRITICAL FIX: Use protected mutation instead of direct API call
     const { mutateAsync: createComment } = useCreateCommentMutation()
@@ -98,6 +108,34 @@ export function CommentsSection({
     useEffect(() => {
         loadComments()
     }, [loadComments])
+    
+    // 🏛️ EXPANDIBLE: Auto-focus editor when expanded and handle resize
+    useEffect(() => {
+        const handleResize = () => {
+            // Only auto-update on resize if user hasn't manually interacted
+            if (typeof window !== 'undefined') {
+                const shouldBeExpanded = window.innerWidth >= 640
+                setIsCommentFormExpanded(prev => {
+                    // Don't change if there's text (user is typing)
+                    if (commentText && commentText.length > 0) return prev
+                    return shouldBeExpanded
+                })
+            }
+        }
+        
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [commentText])
+    
+    // 🏛️ EXPANDIBLE: Scroll into view and focus when expanded
+    useEffect(() => {
+        if (isCommentFormExpanded && editorRef.current) {
+            // Small delay to allow animation to start
+            setTimeout(() => {
+                editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+            }, 100)
+        }
+    }, [isCommentFormExpanded])
 
     // Handle like change locally
     const handleLikeChange = useCallback((commentId: string, liked: boolean, _newCount: number) => {
@@ -266,24 +304,64 @@ export function CommentsSection({
                 </div>
             </div>
 
-            {/* Add Comment Card - ONLY in comments view */}
+            {/* Add Comment Card - Collapsible (ONLY in comments view) */}
             {viewMode === 'comments' && (
-                <Card className="mb-6 bg-card border-border">
-                    <CardHeader>
-                        <CardTitle className="font-semibold">Agregar Comentario</CardTitle>
-                        <CardDescription className="text-sm text-foreground/70">
-                            Comparte información útil sobre este reporte con formato enriquecido
-                        </CardDescription>
+                <Card 
+                    className={`mb-6 bg-card border-border transition-all duration-300 ease-in-out overflow-hidden ${
+                        isCommentFormExpanded ? 'shadow-md' : 'shadow-sm hover:shadow-md'
+                    }`}
+                >
+                    {/* 🏛️ COLLAPSIBLE HEADER: Clickable to toggle */}
+                    <CardHeader 
+                        className={`cursor-pointer select-none transition-colors duration-200 ${
+                            isCommentFormExpanded ? 'pb-4' : 'pb-0'
+                        }`}
+                        onClick={() => {
+                            // 🏛️ ALWAYS allow manual toggle - user can collapse/expand anytime
+                            // Content is preserved in state, never lost
+                            setIsCommentFormExpanded(!isCommentFormExpanded)
+                        }}
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                                <CardTitle className="font-semibold text-base sm:text-lg flex items-center gap-2">
+                                    <MessageCircle className="h-5 w-5 text-primary" />
+                                    {isCommentFormExpanded || (commentText && commentText.length > 0) 
+                                        ? 'Agregar Comentario' 
+                                        : 'Escribe un comentario...'}
+                                </CardTitle>
+                                <CardDescription className={`text-xs sm:text-sm text-muted-foreground transition-all duration-300 ${
+                                    isCommentFormExpanded ? 'mt-1 opacity-100 max-h-10' : 'mt-0 opacity-0 max-h-0 overflow-hidden'
+                                }`}>
+                                    Comparte información útil sobre este reporte con formato enriquecido
+                                </CardDescription>
+                            </div>
+                            {/* Chevron indicator with rotation animation */}
+                            <div className={`ml-4 p-2 rounded-full transition-all duration-300 hover:bg-muted ${
+                                isCommentFormExpanded ? 'rotate-180' : 'rotate-0'
+                            }`}>
+                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                        </div>
                     </CardHeader>
-                    <CardContent>
-                        <RichTextEditor
-                            value={commentText}
-                            onChange={setCommentText}
-                            onSubmit={submitComment}
-                            disabled={submitting === 'comment'}
-                            prioritizedUsers={participants}
-                        />
-                    </CardContent>
+                    
+                    {/* 🏛️ EXPANDABLE CONTENT: Rich Text Editor */}
+                    <div className={`transition-all duration-300 ease-in-out ${
+                        isCommentFormExpanded 
+                            ? 'max-h-[600px] opacity-100' 
+                            : 'max-h-0 opacity-0 overflow-hidden'
+                    }`}>
+                        <CardContent className="pt-0" ref={editorRef}>
+                            <RichTextEditor
+                                value={commentText}
+                                onChange={setCommentText}
+                                onSubmit={submitComment}
+                                disabled={submitting === 'comment'}
+                                prioritizedUsers={participants}
+                                autoFocus={isCommentFormExpanded}
+                            />
+                        </CardContent>
+                    </div>
                 </Card>
             )}
 

@@ -80,19 +80,19 @@ export function Layout({ children }: LayoutProps) {
         Saltar al contenido principal
       </a>
       <div className={cn(
-        "flex min-h-screen flex-col bg-dark-bg text-white selection:bg-neon-green/30",
+        "flex min-h-screen flex-col bg-background text-foreground selection:bg-primary/30",
         isAdminPage && "min-h-0 h-full"
       )}>
         {!isMensajesPage && !isAdminPage && <Header />}
         <main
           id="main-content"
           className={cn(
-            "flex-1 flex flex-col bg-dark-bg",
+            "flex-1 flex flex-col bg-background",
             isMensajesPage
               ? "fixed inset-0 z-[60] h-screen w-screen overflow-hidden p-0 m-0 max-w-none"
               : isAdminPage
                 ? "w-full min-h-screen p-0 m-0"
-                : "min-h-[60vh] pb-16 md:pb-0"
+                : "min-h-[60vh] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
           )}
         >
           <ErrorBoundary fallbackTitle="Ocurrió un error inesperado">

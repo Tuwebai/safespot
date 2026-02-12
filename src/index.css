@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * SAFE MODE: SPACING SYSTEM
+ * 
+ * Tokens estandarizados para mantener consistencia visual:
+ * - xs:  4px  (0.25rem)  - Micro spacing
+ * - sm:  8px  (0.5rem)   - Tight spacing
+ * - md:  12px (0.75rem)  - Default element spacing
+ * - lg:  16px (1rem)     - Component spacing
+ * - xl:  20px (1.25rem)  - Section spacing
+ * - 2xl: 24px (1.5rem)   - Large component spacing
+ * - 3xl: 32px (2rem)     - Section separation
+ * - 4xl: 40px (2.5rem)   - Major section spacing
+ * - 5xl: 48px (3rem)     - Page-level spacing
+ * 
+ * USO: Siempre preferir estos valores sobre valores arbitrarios
+ * ❌ gap-[10px] → ✅ gap-2.5 (10px aprox) o gap-3 (12px)
+ * ❌ p-[14px]  → ✅ p-3.5 (14px) o p-4 (16px)
+ */
+
 /* TipTap Editor Styles */
 .tiptap-editor {
   outline: none;
@@ -617,6 +636,20 @@
 /* Safe Area for iOS notch/home indicator */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Full safe area support for landscape/portrait */
+.safe-area-insets {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Safe area horizontal (for landscape mode with side notch) */
+.safe-area-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* Hamburger Icon Animation */

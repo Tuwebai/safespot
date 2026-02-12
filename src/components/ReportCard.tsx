@@ -106,9 +106,9 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                     </div>
 
                     {/* CONTENT */}
-                    <CardContent className="p-6 flex-1 flex flex-col">
+                    <CardContent className="p-4 sm:p-6 flex-1 flex flex-col">
                         <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                            <h3 className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 flex-1">
                                 {report.title}
                             </h3>
                             {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (

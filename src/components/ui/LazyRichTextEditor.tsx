@@ -22,6 +22,7 @@ interface RichTextEditorProps {
     onCancel?: () => void
     hideSubmitButton?: boolean
     prioritizedUsers?: MentionParticipant[]
+    autoFocus?: boolean
 }
 
 /**

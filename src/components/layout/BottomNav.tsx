@@ -16,6 +16,9 @@ const navItems: NavItem[] = [
     { icon: User, label: 'Perfil', path: '/perfil' },
 ]
 
+/** MINIMUM TOUCH TARGET: 44x44px (WCAG 2.1 AA) */
+const MIN_TOUCH_SIZE = 'min-h-[44px] min-w-[44px]'
+
 export function BottomNav() {
     const location = useLocation()
 
@@ -39,15 +42,20 @@ export function BottomNav() {
                                     : 'text-foreground/60 hover:text-foreground active:text-neon-green/80'
                             )}
                         >
-                            <Icon
-                                className={cn(
-                                    'h-5 w-5 transition-transform',
-                                    isActive && 'scale-110'
-                                )}
-                                aria-hidden="true"
-                            />
+                            <div className={cn(
+                                'flex items-center justify-center',
+                                MIN_TOUCH_SIZE
+                            )}>
+                                <Icon
+                                    className={cn(
+                                        'h-5 w-5 transition-transform',
+                                        isActive && 'scale-110'
+                                    )}
+                                    aria-hidden="true"
+                                />
+                            </div>
                             <span className={cn(
-                                'text-[10px] mt-0.5 font-medium transition-all truncate max-w-full px-1',
+                                'text-[10px] font-medium transition-all truncate max-w-full px-1 leading-none -mt-0.5',
                                 isActive && 'text-neon-green'
                             )}>
                                 {item.label}

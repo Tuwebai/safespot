@@ -82,13 +82,13 @@ export function LocationSection({
     // Loading state
     if (isLoadingProfile) {
         return (
-            <Card className="bg-dark-card border-dark-border">
-                <CardContent className="p-6">
-                    <div className="flex items-center space-x-4 animate-pulse">
-                        <div className="h-10 w-10 rounded-full bg-dark-border/50"></div>
+            <Card className="bg-card border-border">
+                <CardContent className="p-4 sm:p-6">
+                    <div className="flex items-center gap-4 animate-pulse">
+                        <div className="h-10 w-10 rounded-full bg-muted"></div>
                         <div className="flex-1 space-y-2">
-                            <div className="h-4 bg-dark-border/50 rounded w-3/4"></div>
-                            <div className="h-3 bg-dark-border/50 rounded w-1/2"></div>
+                            <div className="h-4 bg-muted rounded w-3/4"></div>
+                            <div className="h-3 bg-muted rounded w-1/2"></div>
                         </div>
                     </div>
                 </CardContent>

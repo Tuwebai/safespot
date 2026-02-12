@@ -58,7 +58,7 @@ export function UserZoneCard() {
 
     return (
         <Card className="mb-6 bg-gradient-to-r from-card/50 to-card border-border/50 hover:border-neon-green/30 transition-all duration-300">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 rounded-lg bg-neon-green/10">
@@ -84,7 +84,7 @@ export function UserZoneCard() {
 
                 <div className="h-px bg-border/50 my-4" />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {/* Safe Score Indicator */}
                     <div className="flex items-center gap-3">
                         <div className={`flex items-center justify-center w-10 h-10 rounded-full ${scoreColorClass}`}>
@@ -150,7 +150,7 @@ function EmptyUserZone({ onSetup, isUpdating }: { onSetup: () => void, isUpdatin
 function UserZoneSkeleton() {
     return (
         <Card className="mb-6">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center gap-4 mb-4">
                     <Skeleton className="h-10 w-10 rounded-lg" />
                     <div className="space-y-2">

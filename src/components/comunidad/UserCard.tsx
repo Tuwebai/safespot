@@ -127,7 +127,7 @@ export function UserCard({
                         {hasPersonalAlias ? (
                             <span className="flex flex-col">
                                 {/* Alias personal - destacado */}
-                                <span className="flex items-center gap-1 text-base">
+                                <span className="flex items-center gap-1 text-sm sm:text-base">
                                     <span className="text-neon-green font-bold">#</span>
                                     <span className="font-bold">{user.personal_alias}</span>
                                 </span>
@@ -162,8 +162,8 @@ export function UserCard({
                         )}
                     </span>
                     {showLocation && user.current_city && (
-                        <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5 mt-0.5">
-                            <MapPin className="w-3 h-3" />
+                        <span className="text-xs text-muted-foreground/60 flex items-center gap-0.5 mt-0.5 hidden sm:flex">
+                            <MapPin className="w-3 h-3 flex-shrink-0" />
                             {user.current_city}
                         </span>
                     )}
@@ -203,24 +203,25 @@ export function UserCard({
                     variant={isFollowing ? "outline" : "default"}
                     size="sm"
                     className={cn(
-                        "h-9 px-4 min-w-[100px] transition-all duration-300",
+                        "h-8 sm:h-9 px-2 sm:px-4 min-w-[80px] sm:min-w-[100px] transition-all duration-300 text-xs sm:text-sm",
                         isFollowing
                             ? "border-primary/20 bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
                             : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
                     )}
                     onClick={handleFollowToggle}
-                    disabled={followMutation.isPending || followMutation.isPending}
+                    disabled={followMutation.isPending}
                 >
                     {isFollowing ? (
-                        <span className="flex items-center gap-2 group">
-                            <UserCheck className="h-4 w-4 block group-hover:hidden" />
+                        <span className="flex items-center gap-1 sm:gap-2 group">
+                            <UserCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 block group-hover:hidden" />
                             <span className="block group-hover:hidden">Siguiendo</span>
                             <span className="hidden group-hover:block text-destructive">Dejar</span>
                         </span>
                     ) : (
-                        <span className="flex items-center gap-2">
-                            <UserPlus className="h-4 w-4" />
-                            Seguir
+                        <span className="flex items-center gap-1 sm:gap-2">
+                            <UserPlus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            <span className="hidden sm:inline">Seguir</span>
+                            <span className="sm:hidden">Seguir</span>
                         </span>
                     )}
                 </Button>

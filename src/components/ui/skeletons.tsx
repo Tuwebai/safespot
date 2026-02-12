@@ -1,22 +1,27 @@
-import { Card, CardContent } from '@/components/ui/card'
+﻿import { Card, CardContent } from '@/components/ui/card'
 import { useMemo } from 'react'
 
 /**
  * Enhanced Skeleton Screens with realistic structure and smooth shimmer
+ * Theme-aware: Uses CSS variables for consistent theming
  */
 
 // Base shimmer class for all skeletons
 const shimmerClass = "shimmer rounded"
 
+// Container classes for theme consistency
+const cardBase = "bg-card border-border overflow-hidden h-full flex flex-col animate-in fade-in duration-300"
+const cardContentBase = "p-4 sm:p-6 flex-1 flex flex-col"
+
 export function ReportCardSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border overflow-hidden h-full flex flex-col animate-in fade-in duration-300">
+        <Card className={cardBase}>
             {/* Image placeholder - matches aspect-video */}
-            <div className="relative aspect-video w-full overflow-hidden bg-dark-bg/50">
+            <div className="relative aspect-video w-full overflow-hidden bg-muted/30">
                 <div className={`w-full h-full ${shimmerClass}`} />
             </div>
 
-            <CardContent className="p-6 flex-1 flex flex-col">
+            <CardContent className={cardContentBase}>
                 {/* Title */}
                 <div className={`h-6 ${shimmerClass} w-3/4 mb-3`} />
 
@@ -40,7 +45,7 @@ export function ReportCardSkeleton() {
                 </div>
 
                 {/* Footer - Date and stats */}
-                <div className="flex items-center justify-between pt-4 border-t border-dark-border">
+                <div className="flex items-center justify-between pt-4 border-t border-border">
                     <div className="flex items-center gap-2">
                         <div className={`h-6 w-6 rounded-full ${shimmerClass}`} />
                         <div className={`h-3 ${shimmerClass} w-20`} />
@@ -57,9 +62,9 @@ export function ReportCardSkeleton() {
 
 export function ReportDetailSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border max-w-4xl mx-auto overflow-hidden animate-in fade-in duration-300">
+        <Card className="bg-card border-border max-w-4xl mx-auto overflow-hidden animate-in fade-in duration-300">
             {/* Hero Image */}
-            <div className="relative w-full h-96 bg-dark-bg/50">
+            <div className="relative w-full h-64 sm:h-96 bg-muted/30">
                 <div className={`w-full h-full ${shimmerClass}`} />
             </div>
 
@@ -89,7 +94,7 @@ export function ReportDetailSkeleton() {
                 </div>
 
                 {/* Stats */}
-                <div className="flex justify-between pt-6 border-t border-dark-border">
+                <div className="flex justify-between pt-6 border-t border-border">
                     <div className={`h-5 ${shimmerClass} w-32`} />
                     <div className={`h-5 ${shimmerClass} w-40`} />
                 </div>
@@ -100,7 +105,7 @@ export function ReportDetailSkeleton() {
 
 export function CommentSkeleton() {
     return (
-        <div className="bg-dark-card border border-dark-border rounded-lg p-4 animate-in fade-in duration-200">
+        <div className="bg-card border border-border rounded-lg p-4 animate-in fade-in duration-200">
             <div className="flex items-start gap-3">
                 {/* Avatar */}
                 <div className={`h-10 w-10 rounded-full ${shimmerClass} flex-shrink-0`} />
@@ -130,9 +135,54 @@ export function CommentSkeleton() {
     )
 }
 
+// Chat room item skeleton for Messages page
+export function ChatRoomSkeleton() {
+    return (
+        <div className="flex items-center gap-3 p-3 border-b border-border/50 animate-in fade-in duration-200">
+            <div className={`h-12 w-12 rounded-full ${shimmerClass} flex-shrink-0`} />
+            <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-1">
+                    <div className={`h-4 ${shimmerClass} w-24`} />
+                    <div className={`h-3 ${shimmerClass} w-12`} />
+                </div>
+                <div className={`h-3 ${shimmerClass} w-full`} />
+            </div>
+        </div>
+    )
+}
+
+// Notification item skeleton
+export function NotificationSkeleton() {
+    return (
+        <div className="flex items-start gap-3 p-4 border-b border-border/50 animate-in fade-in duration-200">
+            <div className={`h-10 w-10 rounded-full ${shimmerClass} flex-shrink-0`} />
+            <div className="flex-1 min-w-0">
+                <div className={`h-4 ${shimmerClass} w-full mb-2`} />
+                <div className={`h-3 ${shimmerClass} w-20`} />
+            </div>
+        </div>
+    )
+}
+
+// User card skeleton for Community page
+export function UserCardSkeleton() {
+    return (
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4 animate-in fade-in duration-300">
+            <div className="flex items-center gap-3 flex-1">
+                <div className={`h-12 w-12 rounded-full ${shimmerClass} flex-shrink-0`} />
+                <div className="flex-1 min-w-0">
+                    <div className={`h-5 ${shimmerClass} w-32 mb-2`} />
+                    <div className={`h-3 ${shimmerClass} w-24`} />
+                </div>
+            </div>
+            <div className={`h-9 w-24 rounded-md ${shimmerClass}`} />
+        </div>
+    )
+}
+
 export function StatCardSkeleton() {
     return (
-        <Card className="bg-dark-card border-dark-border animate-in fade-in duration-300">
+        <Card className="bg-card border-border animate-in fade-in duration-300">
             <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -148,7 +198,7 @@ export function StatCardSkeleton() {
 
 export function ListItemSkeleton() {
     return (
-        <div className="flex items-center gap-4 p-4 bg-dark-card border border-dark-border rounded-lg animate-in fade-in duration-200">
+        <div className="flex items-center gap-4 p-4 bg-card border border-border rounded-lg animate-in fade-in duration-200">
             <div className={`h-16 w-16 rounded ${shimmerClass} flex-shrink-0`} />
             <div className="flex-1">
                 <div className={`h-5 ${shimmerClass} w-3/4 mb-2`} />
@@ -161,7 +211,7 @@ export function ListItemSkeleton() {
 
 // Grid of report cards (for Reportes page)
 export function ReportGridSkeleton({ count = 6 }: { count?: number }) {
-    // ✅ ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
+    // âœ… ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
     const skeletonKeys = useMemo(
         () => Array.from({ length: count }, (_, i) => `report-skeleton-${i}`),
         [count]
@@ -178,7 +228,7 @@ export function ReportGridSkeleton({ count = 6 }: { count?: number }) {
 
 // List of comments (for DetalleReporte page)
 export function CommentsListSkeleton({ count = 3 }: { count?: number }) {
-    // ✅ ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
+    // âœ… ENTERPRISE FIX: Stable keys using useMemo to prevent re-generation
     const skeletonKeys = useMemo(
         () => Array.from({ length: count }, (_, i) => `comment-skeleton-${i}`),
         [count]
@@ -193,20 +243,20 @@ export function CommentsListSkeleton({ count = 3 }: { count?: number }) {
     )
 }
 export function RichTextEditorSkeleton() {
-    // ✅ ENTERPRISE FIX: Stable keys for fixed-size arrays
+    // âœ… ENTERPRISE FIX: Stable keys for fixed-size arrays
     const toolbarKeys = ['toolbar-1', 'toolbar-2', 'toolbar-3', 'toolbar-4', 'toolbar-5', 'toolbar-6'];
     const actionsKeys = ['action-1', 'action-2', 'action-3'];
 
     return (
         <div className="space-y-3 animate-in fade-in duration-200">
             {/* Toolbar skeleton */}
-            <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-dark-bg/50 rounded-lg border border-dark-border/50">
+            <div className="flex items-center justify-between flex-wrap gap-2 p-2 bg-muted/30 rounded-lg border border-border/50">
                 <div className="flex items-center gap-1">
                     {toolbarKeys.map(key => (
                         <div key={key} className={`h-8 w-8 ${shimmerClass}`} />
                     ))}
                 </div>
-                <div className="flex items-center gap-1 border-l border-dark-border/30 pl-2">
+                <div className="flex items-center gap-1 border-l border-border/30 pl-2">
                     {actionsKeys.map(key => (
                         <div key={key} className={`h-8 w-8 ${shimmerClass}`} />
                     ))}
@@ -214,7 +264,7 @@ export function RichTextEditorSkeleton() {
             </div>
 
             {/* Editor area skeleton */}
-            <div className={`min-h-[200px] w-full bg-dark-bg/50 border border-dark-border/50 rounded-lg ${shimmerClass}`} />
+            <div className={`min-h-[200px] w-full bg-muted/30 border border-border/50 rounded-lg ${shimmerClass}`} />
 
             {/* Footer skeleton */}
             <div className="flex items-center justify-end gap-3">

@@ -81,9 +81,9 @@ export function Header() {
   }, [mobileMenuOpen])
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-card pt-[env(safe-area-inset-top)]">
+      <div className="container mx-auto max-w-7xl px-4 lg:px-8">
+        <div className="flex h-14 sm:h-16 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary to-primary/70 flex items-center justify-center">
@@ -93,7 +93,7 @@ export function Header() {
           </Link>
 
           {/* Navegación Desktop */}
-          <nav className="hidden md:flex items-center space-x-8">
+          <nav className="hidden md:flex items-center gap-6 lg:gap-8">
             {navItems.map((item) => {
               const Icon = item.icon
               const active = isActive(item.path)
@@ -133,18 +133,19 @@ export function Header() {
           </nav>
 
           {/* Notification Bell and Create Report Button */}
-          <div className="hidden md:flex items-center space-x-4">
+          <div className="hidden md:flex items-center gap-3 lg:gap-4">
             <Link
               to="/mensajes"
               className={cn(
-                "relative p-2 rounded-full transition-colors hover:bg-neon-green/10",
-                isActive('/mensajes') ? "text-neon-green bg-neon-green/10" : "text-foreground/70"
+                "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
+                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-foreground/70"
               )}
               title="Mensajes"
+              aria-label="Mensajes"
             >
               <MessageSquare className="h-5 w-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card animate-in zoom-in duration-300">
+                <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card animate-in zoom-in duration-300">
                   {unreadMessagesCount}
                 </span>
               )}
@@ -152,15 +153,15 @@ export function Header() {
             <NotificationBell />
             <Link to="/perfil">
               <div className={cn(
-                "flex items-center justify-center h-9 w-9 rounded-full border transition-all hover:bg-neon-green/10 cursor-pointer overflow-hidden",
+                "flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full border transition-all hover:bg-primary/10 cursor-pointer overflow-hidden",
                 isActive('/perfil')
-                  ? "border-neon-green bg-neon-green/10"
-                  : "border-transparent hover:border-neon-green/50"
+                  ? "border-primary bg-primary/10"
+                  : "border-transparent hover:border-primary/50"
               )}
                 aria-label="Ver mi perfil y logros"
                 title="Mi Perfil"
               >
-                <Avatar className="h-full w-full">
+                <Avatar className="h-9 w-9">
                   <AvatarImage
                     src={resolveAvatarUrl(profile || {}, anonymousId)}
                     alt="Avatar"
@@ -182,25 +183,28 @@ export function Header() {
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex md:hidden items-center space-x-4">
+          <div className="flex md:hidden items-center space-x-1">
             <Link
               to="/mensajes"
               className={cn(
-                "relative p-2 rounded-full transition-colors hover:bg-neon-green/10",
-                isActive('/mensajes') ? "text-neon-green bg-neon-green/10" : "text-foreground/70"
+                "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
+                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-foreground/70"
               )}
+              aria-label="Mensajes"
             >
               <MessageSquare className="h-5 w-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
+                <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
                   {unreadMessagesCount}
                 </span>
               )}
             </Link>
-            <NotificationBell />
+            <div className="flex items-center justify-center min-h-[44px] min-w-[44px]">
+              <NotificationBell />
+            </div>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] text-foreground/70 hover:text-primary transition-colors"
               aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
             >
               <PanelLeft className="h-5 w-5" />
@@ -220,8 +224,8 @@ export function Header() {
       {/* Mobile Drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] bg-card border-l border-border z-[100] md:hidden shadow-2xl safe-area-bottom",
-          "transform transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] bg-card border-l border-border z-[100] md:hidden shadow-2xl",
+          "transform transition-transform duration-300 ease-in-out safe-area-insets",
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         )}
         onTouchStart={(e) => {
