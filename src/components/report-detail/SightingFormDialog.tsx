@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -41,6 +41,25 @@ const UI_CONFIG = {
 export function SightingFormDialog({ isOpen, onClose, onSubmit, type, submitting }: SightingFormDialogProps) {
     const [zone, setZone] = useState('');
     const [content, setContent] = useState('');
+    const cardRef = useRef<HTMLDivElement>(null);
+
+    // Scroll into view on mobile when dialog opens
+    useEffect(() => {
+        if (!isOpen) return;
+        
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+        if (!isMobile) return;
+
+        const timer = setTimeout(() => {
+            cardRef.current?.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center',
+                inline: 'nearest'
+            });
+        }, 100);
+
+        return () => clearTimeout(timer);
+    }, [isOpen]);
 
     if (!isOpen || !type) return null;
 
@@ -62,7 +81,7 @@ export function SightingFormDialog({ isOpen, onClose, onSubmit, type, submitting
             aria-modal="true"
             aria-labelledby="sighting-dialog-title"
         >
-            <Card className="w-full max-w-md bg-dark-card border-dark-border shadow-xl relative">
+            <Card ref={cardRef} className="w-full max-w-md bg-dark-card border-dark-border shadow-xl relative">
                 <Button
                     variant="ghost"
                     size="icon"

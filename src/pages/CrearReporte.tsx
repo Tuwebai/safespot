@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,43 @@ export function CrearReporte() {
   const location = watch('location')
   const incidentDate = watch('incidentDate')
 
+  // Refs for scrolling to errors on mobile
+  const titleRef = useRef<HTMLDivElement>(null)
+  const categoryRef = useRef<HTMLDivElement>(null)
+  const descriptionRef = useRef<HTMLDivElement>(null)
+  const locationRef = useRef<HTMLDivElement>(null)
+  const dateRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to first error on mobile when validation fails
+  useEffect(() => {
+    const errorKeys = Object.keys(errors) as Array<keyof typeof errors>
+    if (errorKeys.length === 0) return
+
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
+    if (!isMobile) return
+
+    const firstErrorKey = errorKeys[0]
+    
+    const getRef = (key: keyof typeof errors) => {
+      switch (key) {
+        case 'title': return titleRef
+        case 'category': return categoryRef
+        case 'description': return descriptionRef
+        case 'location': return locationRef
+        case 'incidentDate': return dateRef
+        default: return null
+      }
+    }
+    
+    const ref = getRef(firstErrorKey)
+    
+    if (ref?.current) {
+      setTimeout(() => {
+        ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+    }
+  }, [errors])
+
   return (
     <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
@@ -55,7 +93,7 @@ export function CrearReporte() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Title */}
-            <div>
+            <div ref={titleRef}>
               <label htmlFor="title" className="block text-sm font-medium mb-2">
                 Título del Reporte *
               </label>
@@ -76,7 +114,7 @@ export function CrearReporte() {
             </div>
 
             {/* Category */}
-            <div>
+            <div ref={categoryRef}>
               <label htmlFor="category" className="block text-sm font-medium mb-2">
                 Categoría *
               </label>
@@ -100,7 +138,7 @@ export function CrearReporte() {
             </div>
 
             {/* Description */}
-            <div>
+            <div ref={descriptionRef}>
               <label htmlFor="description" className="block text-sm font-medium mb-2">
                 Descripción Detallada *
               </label>
@@ -186,7 +224,7 @@ export function CrearReporte() {
         </Card>
 
         {/* Section 3: Location - REFACTORED FOR ZONE DETECTION */}
-        <Card className="bg-dark-card border-dark-border card-glow">
+        <Card ref={locationRef} className="bg-dark-card border-dark-border card-glow">
           <CardHeader>
             <CardTitle>Ubicación</CardTitle>
           </CardHeader>
@@ -202,7 +240,7 @@ export function CrearReporte() {
         </Card>
 
         {/* Section 4: Incident Date */}
-        <Card className="bg-dark-card border-dark-border card-glow">
+        <Card ref={dateRef} className="bg-dark-card border-dark-border card-glow">
           <CardHeader>
             <CardTitle>Fecha del Incidente</CardTitle>
           </CardHeader>

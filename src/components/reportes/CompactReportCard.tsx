@@ -94,14 +94,22 @@ export function CompactReportCard({
                                 <span className="text-xs text-muted-foreground">{report.category}</span>
                             </div>
 
-                            <h4 className="text-sm font-semibold text-foreground line-clamp-2 mb-2 group-hover:text-neon-green transition-colors">
+                            <h4 
+                                className="text-sm font-semibold text-foreground line-clamp-2 mb-2 group-hover:text-neon-green transition-colors"
+                                title={report.title}
+                            >
                                 {report.title}
                             </h4>
 
                             {/* Ubicación */}
                             <div className="flex items-center text-xs text-muted-foreground mb-2">
                                 <MapPin className="h-3 w-3 mr-1 text-neon-green flex-shrink-0" />
-                                <span className="truncate">{report.address || report.zone || 'Sin ubicación'}</span>
+                                <span 
+                                    className="truncate"
+                                    title={report.address || report.zone || 'Sin ubicación'}
+                                >
+                                    {report.address || report.zone || 'Sin ubicación'}
+                                </span>
                             </div>
 
                             {/* Tiempo */}

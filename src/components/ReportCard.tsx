@@ -108,7 +108,10 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                     {/* CONTENT */}
                     <CardContent className="p-4 sm:p-6 flex-1 flex flex-col">
                         <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 flex-1">
+                            <h3 
+                                className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 flex-1" 
+                                title={report.title}
+                            >
                                 {report.title}
                             </h3>
                             {(!Array.isArray(report.image_urls) || report.image_urls.length === 0) && (
@@ -121,14 +124,17 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                             <span>{report.category}</span>
                         </div>
 
-                        <p className="text-foreground/70 text-sm mb-4 line-clamp-3">
+                        <p 
+                            className="text-foreground/70 text-sm mb-4 line-clamp-3"
+                            title={report.description}
+                        >
                             {report.description}
                         </p>
 
                         <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
                             <MapPin className="h-4 w-4 mr-1 text-neon-green" />
                             {/* ✅ Enterpise Fix: Use normalized address */}
-                            <span className="truncate">{report.fullAddress}</span>
+                            <span className="truncate" title={report.fullAddress}>{report.fullAddress}</span>
                         </div>
 
                         {/*  FOOTER META */}

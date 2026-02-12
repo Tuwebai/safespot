@@ -129,11 +129,16 @@ export function UserCard({
                                 {/* Alias personal - destacado */}
                                 <span className="flex items-center gap-1 text-sm sm:text-base">
                                     <span className="text-neon-green font-bold">#</span>
-                                    <span className="font-bold">{user.personal_alias}</span>
+                                    <span className="font-bold truncate max-w-[150px] sm:max-w-[200px]" title={user.personal_alias || undefined}>
+                                        {user.personal_alias}
+                                    </span>
                                 </span>
                                 {/* Alias global - secundario */}
                                 {user.global_alias && (
-                                    <span className="text-[11px] text-muted-foreground/70 font-normal">
+                                    <span 
+                                        className="text-[11px] text-muted-foreground/70 font-normal truncate max-w-[150px] sm:max-w-[200px]"
+                                        title={`@${user.global_alias}`}
+                                    >
                                         @{user.global_alias}
                                     </span>
                                 )}
@@ -162,7 +167,10 @@ export function UserCard({
                         )}
                     </span>
                     {showLocation && user.current_city && (
-                        <span className="text-xs text-muted-foreground/60 flex items-center gap-0.5 mt-0.5 hidden sm:flex">
+                        <span 
+                            className="text-xs text-muted-foreground/60 flex items-center gap-0.5 mt-0.5 hidden sm:flex truncate max-w-[200px]"
+                            title={user.current_city}
+                        >
                             <MapPin className="w-3 h-3 flex-shrink-0" />
                             {user.current_city}
                         </span>

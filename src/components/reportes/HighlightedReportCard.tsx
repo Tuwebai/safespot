@@ -80,7 +80,10 @@ export function HighlightedReportCard({
                             </div>
 
                             {/* Título */}
-                            <h3 className="text-2xl font-bold text-foreground mb-2 line-clamp-2 group-hover:text-neon-green transition-colors">
+                            <h3 
+                                className="text-2xl font-bold text-foreground mb-2 line-clamp-2 group-hover:text-neon-green transition-colors"
+                                title={report.title}
+                            >
                                 {report.title}
                             </h3>
 
@@ -89,7 +92,7 @@ export function HighlightedReportCard({
                                 <div className="flex items-center gap-1">
                                     <MapPin className="h-4 w-4 text-neon-green" />
                                     {/* ✅ Enterprise Fix: Use normalized address */}
-                                    <span className="truncate">{report.fullAddress}</span>
+                                    <span className="truncate" title={report.fullAddress}>{report.fullAddress}</span>
                                 </div>
                                 <span>•</span>
                                 <span>{report.formattedDate}</span>
@@ -98,7 +101,10 @@ export function HighlightedReportCard({
                             <div className="h-px bg-border/50 my-3" />
 
                             {/* Descripción */}
-                            <p className="text-foreground/80 text-sm mb-4 line-clamp-3">
+                            <p 
+                                className="text-foreground/80 text-sm mb-4 line-clamp-3"
+                                title={report.description}
+                            >
                                 {report.description}
                             </p>
 
