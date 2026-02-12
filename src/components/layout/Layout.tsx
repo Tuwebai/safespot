@@ -89,7 +89,7 @@ export function Layout({ children }: LayoutProps) {
           className={cn(
             "flex-1 flex flex-col bg-background",
             isMensajesPage
-              ? "fixed inset-0 z-[60] h-screen w-screen overflow-hidden p-0 m-0 max-w-none"
+              ? "fixed inset-0 z-[60] h-full w-full overflow-hidden p-0 m-0 max-w-full"
               : isAdminPage
                 ? "w-full min-h-screen p-0 m-0"
                 : "min-h-[60vh] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"

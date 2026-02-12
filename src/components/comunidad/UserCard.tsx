@@ -129,14 +129,14 @@ export function UserCard({
                                 {/* Alias personal - destacado */}
                                 <span className="flex items-center gap-1 text-sm sm:text-base">
                                     <span className="text-neon-green font-bold">#</span>
-                                    <span className="font-bold truncate max-w-[150px] sm:max-w-[200px]" title={user.personal_alias || undefined}>
+                                    <span className="font-bold truncate max-w-[100px] sm:max-w-[150px] md:max-w-[200px]" title={user.personal_alias || undefined}>
                                         {user.personal_alias}
                                     </span>
                                 </span>
                                 {/* Alias global - secundario */}
                                 {user.global_alias && (
                                     <span 
-                                        className="text-[11px] text-muted-foreground/70 font-normal truncate max-w-[150px] sm:max-w-[200px]"
+                                        className="text-[11px] text-muted-foreground/70 font-normal truncate max-w-[100px] sm:max-w-[150px] md:max-w-[200px]"
                                         title={`@${user.global_alias}`}
                                     >
                                         @{user.global_alias}

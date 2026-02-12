@@ -1,9 +1,9 @@
 
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Smartphone, ShieldCheck, Key } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useToggle2FA } from '@/admin/hooks/useAdminProfile'
 import { ChangePasswordModal } from './ChangePasswordModal'
 
 interface SecuritySectionProps {
@@ -12,7 +12,7 @@ interface SecuritySectionProps {
 
 export function SecuritySection({ twoFactorEnabled }: SecuritySectionProps) {
     const [showPasswordModal, setShowPasswordModal] = useState(false)
-    const toggle2FA = useToggle2FA()
+    const navigate = useNavigate()
 
     return (
         <div className="space-y-6">
@@ -59,11 +59,10 @@ export function SecuritySection({ twoFactorEnabled }: SecuritySectionProps) {
                     <Button
                         variant={twoFactorEnabled ? "destructive" : "secondary"}
                         size="sm"
-                        onClick={() => toggle2FA.mutate()}
-                        disabled={toggle2FA.isPending}
+                        onClick={() => navigate('/admin/security')}
                         className="w-full sm:w-auto"
                     >
-                        {twoFactorEnabled ? 'Desactivar' : 'Configurar'}
+                        {twoFactorEnabled ? 'Gestionar' : 'Configurar'}
                     </Button>
                 </div>
             </div>

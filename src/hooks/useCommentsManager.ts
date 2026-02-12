@@ -18,6 +18,7 @@ import {
     useUnpinCommentMutation
 } from '@/hooks/queries/useCommentsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
+import { useAnalytics } from '@/hooks/useAnalytics'
 
 // ============================================
 // STATE TYPES
@@ -133,6 +134,7 @@ interface UseCommentsManagerProps {
 export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
     const toast = useToast()
     const { checkAuth } = useAuthGuard()
+    const { trackEvent } = useAnalytics()
     const [state, dispatch] = useReducer(commentsReducer, initialState)
     const queryClient = useQueryClient()
 
@@ -262,6 +264,17 @@ export function useCommentsManager({ reportId }: UseCommentsManagerProps) {
                 report_id: reportId,
                 content: rich || plain,
             })
+            
+            // TRACK: Comment creation success
+            trackEvent({
+                event_type: 'comment_create',
+                metadata: {
+                    comment_id: commentId,
+                    report_id: reportId,
+                    is_reply: false
+                }
+            }).catch(() => {})
+            
             // toast.success removed as per user request
         } catch (error) {
             handleErrorWithMessage(error, 'Error al comentar', toast.error, 'useCommentsManager.submitComment')

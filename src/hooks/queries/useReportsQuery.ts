@@ -6,6 +6,7 @@ import { type Report, type ReportFilters } from '@/lib/schemas'
 import { useAnonymousId } from '@/hooks/useAnonymousId'
 // ✅ PHASE 2: Auth Guard for Mutations
 import { useAuthGuard } from '@/hooks/useAuthGuard'
+import { useAnalytics } from '@/hooks/useAnalytics'
 // 🔵 ROBUSTNESS FIX: Resolve creator correctly in optimistic updates
 
 // Enterprise Data Freshness SLA:
@@ -303,6 +304,7 @@ export function useToggleFavoriteMutation() {
 
 export function useToggleReportLikeMutation() {
     const queryClient = useQueryClient()
+    const { trackEvent } = useAnalytics()
 
     return useMutation({
         mutationFn: async ({ reportId, liked }: { reportId: string; liked: boolean }) => {
@@ -322,13 +324,24 @@ export function useToggleReportLikeMutation() {
 
             return { previousDetail, reportId }
         },
-        onSuccess: (result, { reportId }) => {
+        onSuccess: (result, { reportId, liked }) => {
             // SERVER RECONCILIATION: Authoritative state from backend
             if (result && typeof result.is_liked === 'boolean') {
                 reportsCache.patch(queryClient, reportId, {
                     is_liked: result.is_liked,
                     upvotes_count: result.upvotes_count
                 })
+            }
+            
+            // TRACK: Vote cast (only when liking, not unliking)
+            if (liked) {
+                trackEvent({
+                    event_type: 'vote_cast',
+                    metadata: {
+                        report_id: reportId,
+                        vote_type: 'upvote'
+                    }
+                }).catch(() => {})
             }
         },
         onError: (_err, _variables, context) => {

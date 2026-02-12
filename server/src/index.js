@@ -398,6 +398,11 @@ app.use('/api/admin/auth', adminAuthRouter);
 // 2. Audit routes (protected by verifyAdminToken internally)
 app.use('/api/admin/audit', adminAuditRouter);
 
+// 2.5 Analytics tracking routes (public endpoint for anonymous tracking)
+// Mounted before gateway to allow anonymous access with rate limiting
+import analyticsRouter from './routes/analytics.js';
+app.use('/api/analytics', analyticsRouter);
+
 // 3. Protected admin routes with INTERNAL middleware
 //    These use verifyAdminToken internally, no need for gateway
 app.use('/api/admin/profile', adminProfileRouter);
@@ -413,6 +418,10 @@ app.use('/api/admin/users', adminUsersRouter);
 app.use('/api/admin/moderation', adminModerationRouter);
 app.use('/api/admin/tasks', adminTasksRouter);
 app.use('/api/admin/reports', adminReportsRouter);
+
+// Analytics routes (protected)
+import adminAnalyticsRouter from './routes/adminAnalytics.js';
+app.use('/api/admin/analytics', adminAnalyticsRouter);
 
 app.use('/api/user-zones', userZonesRouter);
 

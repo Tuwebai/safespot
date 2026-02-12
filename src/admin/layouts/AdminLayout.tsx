@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ShieldAlert, Bell, Settings, LogOut, History, User, FileText, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Users, ShieldAlert, Bell, Settings, LogOut, History, User, FileText, Menu, X, Activity, Shield, BarChart3 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { useEffect, useState, useRef } from 'react'
@@ -95,6 +95,8 @@ export function AdminLayout() {
         { path: '/admin/reports', icon: FileText, label: 'Reportes' },
         { path: '/admin/moderation', icon: ShieldAlert, label: 'Moderación' },
         { path: '/admin/history', icon: History, label: 'Historial' },
+        { path: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/admin/audit', icon: Activity, label: 'Auditoría' },
     ]
 
     const handleLogout = () => {
@@ -111,6 +113,10 @@ export function AdminLayout() {
 
     const handleSettings = () => {
         navigate('/admin/settings')
+    }
+    
+    const handleSecurity = () => {
+        navigate('/admin/security')
     }
     
     // Close mobile menu when route changes
@@ -277,6 +283,13 @@ export function AdminLayout() {
                                     >
                                         <User className="mr-2 h-4 w-4" />
                                         <span>Mi Perfil</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={handleSecurity}
+                                        className="cursor-pointer focus:bg-[#1e293b] focus:text-[#00ff88]"
+                                    >
+                                        <Shield className="mr-2 h-4 w-4" />
+                                        <span>Seguridad</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                         onClick={handleSettings}

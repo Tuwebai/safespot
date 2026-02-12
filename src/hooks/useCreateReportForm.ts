@@ -6,6 +6,7 @@ import { ALL_CATEGORIES } from '@/lib/constants'
 import { LocationData } from '@/components/LocationSelector'
 import { useToast } from '@/components/ui/toast'
 import { useCreateReportMutation } from '@/hooks/mutations/useCreateReportMutation'
+import { useAnalytics } from '@/hooks/useAnalytics'
 import { reportsApi } from '@/lib/api'
 import { handleErrorSilently } from '@/lib/errorHandler'
 import { useNavigate } from 'react-router-dom'
@@ -48,6 +49,7 @@ export type CreateReportFormData = z.infer<typeof createReportSchema>
 export function useCreateReportForm() {
     const createdUrlsRef = useRef<string[]>([])
     const navigate = useNavigate()
+    const { trackEvent } = useAnalytics()
     const toast = useToast()
     const { mutateAsync: createReport, isPending: isSubmittingReport, error: submitError } = useCreateReportMutation()
 
@@ -233,6 +235,16 @@ export function useCreateReportForm() {
         // Fire mutation
         createReport(payload)
             .then((newReport) => {
+                // TRACK: Report creation success
+                trackEvent({
+                    event_type: 'report_create_success',
+                    metadata: {
+                        report_id: newReport?.id,
+                        category: data.category,
+                        zone: data.location.zone
+                    }
+                }).catch(() => {})
+
                 // CLEANUP only on SUCCESS
                 localStorage.removeItem(DRAFT_KEY)
                 reset({

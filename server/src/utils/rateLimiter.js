@@ -170,3 +170,12 @@ export const authLimiter = dbRateLimiter({
   limitHour: 50,
   message: 'Demasiados intentos de autenticación. Por favor, espera un momento.'
 });
+
+// Analytics tracking: 30 events per minute, 500 per hour per user
+// Permite trackeo continuo sin afectar UX, pero previene abuso
+export const analyticsLimiter = dbRateLimiter({
+  action: 'analytics_track',
+  limitMinute: 30,
+  limitHour: 500,
+  message: 'Rate limit exceeded for analytics'
+});

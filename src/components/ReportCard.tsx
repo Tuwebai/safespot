@@ -70,14 +70,14 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
 
                     {/* PRIORITY BADGE */}
                     {report.priority_zone && (
-                        <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider shadow-lg ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
+                        <div className={`absolute top-0 right-0 px-2 sm:px-3 py-1 rounded-bl-xl z-10 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider shadow-lg max-w-[120px] truncate ${report.priority_zone === 'home' ? 'bg-emerald-500 text-white' :
                             report.priority_zone === 'work' ? 'bg-blue-500 text-white' :
                                 'bg-amber-500 text-white'
                             }`}>
-                            {report.priority_zone === 'home' && <Home className="w-3 h-3" />}
-                            {report.priority_zone === 'work' && <Briefcase className="w-3 h-3" />}
-                            {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3" />}
-                            {report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}
+                            {report.priority_zone === 'home' && <Home className="w-3 h-3 flex-shrink-0" />}
+                            {report.priority_zone === 'work' && <Briefcase className="w-3 h-3 flex-shrink-0" />}
+                            {report.priority_zone === 'frequent' && <MapPin className="w-3 h-3 flex-shrink-0" />}
+                            <span className="truncate">{report.priority_zone === 'home' ? 'Tu Casa' : report.priority_zone === 'work' ? 'Tu Trabajo' : 'Tu Zona'}</span>
                         </div>
                     )}
 

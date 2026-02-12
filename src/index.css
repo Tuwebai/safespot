@@ -169,6 +169,27 @@
     @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-neon-green focus:text-dark-bg focus:rounded-md focus:font-bold focus:shadow-lg;
   }
 
+  /* 
+   * 🏛️ SAFE MODE: CONTENCIÓN GLOBAL CONTRA SCROLL HORIZONTAL
+   * 
+   * Estas reglas previenen que cualquier elemento exceda el viewport
+   * y cause scroll horizontal en mobile. Son la primera línea de defensa.
+   * 
+   * NO usar como parche - siempre corregir la causa raíz en el componente.
+   * Esto es una red de seguridad para producción.
+   */
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  #root {
+    overflow-x: hidden;
+    width: 100%;
+    min-height: 100vh;
+  }
+
   /* --- THEMING SYSTEM --- */
 
   /* Pastel Theme */

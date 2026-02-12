@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HelmetProvider } from 'react-helmet-async'
 import { AuthGuardProvider as AuthProvider } from '@/contexts/AuthGuardContext'
-import { ThemeProvider } from '@/contexts/ThemeContext'
+import { AdminThemeProvider } from './contexts/AdminThemeContext'
 import { ToastProvider } from '@/components/ui/toast'
 import { ConfirmationProvider } from '@/components/ui/confirmation-manager'
 import { AdminGuard } from './components/AdminGuard'
@@ -19,6 +19,9 @@ const AdminModerationHistoryPage = lazy(() => import('./pages/HistoryPage').then
 const AdminModerationDetailPage = lazy(() => import('./pages/ModerationActionDetailPage').then(m => ({ default: m.ModerationActionDetailPage })))
 const AdminTasksPage = lazy(() => import('./pages/TasksPage').then(m => ({ default: m.TasksPage })))
 const AdminProfilePage = lazy(() => import('./pages/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })))
+const AuditPage = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.default })))
+const SecurityPage = lazy(() => import('./pages/SecurityPage').then(m => ({ default: m.default })))
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.default })))
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -34,7 +37,7 @@ export function AdminApp() {
         <QueryClientProvider client={queryClient}>
             <HelmetProvider>
                 <AuthProvider>
-                    <ThemeProvider>
+                    <AdminThemeProvider>
                         <ToastProvider>
                             <ConfirmationProvider>
                                 <BrowserRouter
@@ -59,6 +62,9 @@ export function AdminApp() {
                                             <Route path="history" element={<AdminModerationHistoryPage />} />
                                             <Route path="history/:id" element={<AdminModerationDetailPage />} />
                                             <Route path="tasks" element={<AdminTasksPage />} />
+                                            <Route path="audit" element={<AuditPage />} />
+                                            <Route path="security" element={<SecurityPage />} />
+                                            <Route path="analytics" element={<AnalyticsPage />} />
                                             <Route path="profile" element={<AdminProfilePage />} />
                                         </Route>
                                         {/* Fallback to root or 404 */}
@@ -67,7 +73,7 @@ export function AdminApp() {
                                 </BrowserRouter>
                             </ConfirmationProvider>
                         </ToastProvider>
-                    </ThemeProvider>
+                    </AdminThemeProvider>
                 </AuthProvider>
             </HelmetProvider>
         </QueryClientProvider>

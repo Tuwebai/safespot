@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Bell, Volume2, Layout, Monitor, Moon, Sun, Laptop } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { useTheme, type ColorScheme } from '@/contexts/ThemeContext'
+import { useAdminTheme, type AdminColorScheme } from '@/admin/contexts/AdminThemeContext'
 
 // Local storage keys - Centralized configuration
 const STORAGE_KEYS = {
@@ -69,8 +69,8 @@ function savePreference<K extends keyof AdminPreferences>(
 }
 
 export function PreferencesSection() {
-    // Theme from global context (real-time)
-    const { colorScheme, resolvedColorScheme, setColorScheme } = useTheme()
+    // Theme from admin context (real-time)
+    const { colorScheme, resolvedColorScheme, setColorScheme } = useAdminTheme()
     
     // Other preferences (local state)
     const [prefs, setPrefs] = useState<AdminPreferences>(DEFAULT_PREFERENCES)
@@ -92,7 +92,7 @@ export function PreferencesSection() {
     }, [])
 
     // Handle theme change
-    const handleThemeChange = useCallback((newTheme: ColorScheme) => {
+    const handleThemeChange = useCallback((newTheme: AdminColorScheme) => {
         setColorScheme(newTheme)
     }, [setColorScheme])
 
@@ -119,7 +119,7 @@ export function PreferencesSection() {
     ] as const
 
     // Theme options
-    const themeOptions: { value: ColorScheme; label: string; icon: typeof Sun }[] = [
+    const themeOptions: { value: AdminColorScheme; label: string; icon: typeof Sun }[] = [
         { value: 'light', label: 'Claro', icon: Sun },
         { value: 'dark', label: 'Oscuro', icon: Moon },
         { value: 'system', label: 'Sistema', icon: Laptop },
