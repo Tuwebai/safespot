@@ -2,6 +2,7 @@ import express from 'express';
 import { supabaseAdmin } from '../utils/db.js';
 import { verifyAdminToken } from '../utils/adminMiddleware.js';
 import { executeModeration } from '../utils/governance.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -363,7 +364,7 @@ router.patch('/:id/restore', verifyAdminToken, async (req, res) => {
             return res.status(400).json({ error: 'Reason is required for restoration' });
         }
 
-        await executeModeration({
+        const result = await executeModeration({
             actorId: req.adminUser.id,
             targetType: 'report',
             targetId: id,
@@ -372,6 +373,20 @@ router.patch('/:id/restore', verifyAdminToken, async (req, res) => {
             updateParams: [id],
             reason: reason.trim()
         });
+
+        // AUDIT LOG
+        auditLog({
+            action: AuditAction.REPORT_UNHIDE,
+            description: `Admin restored deleted report: ${reason}`,
+            actorType: ActorType.ADMIN,
+            actorId: req.adminUser.id,
+            actorRole: req.adminUser.role,
+            req,
+            targetType: 'report',
+            targetId: id,
+            metadata: { reason, auditId: result.auditId },
+            success: true
+        }).catch(() => { });
 
         res.json({ success: true, message: 'Report restored successfully' });
     } catch (error) {

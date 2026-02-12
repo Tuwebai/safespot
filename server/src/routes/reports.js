@@ -23,6 +23,7 @@ import { ErrorCodes } from '../utils/errorCodes.js';
 import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
 import { executeUserAction } from '../utils/governance.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -929,7 +930,25 @@ router.post('/',
       // Set and forget (background execution)
       fireAndForget();
 
-      // 5. CLEAN SSOT RESPONSE
+      // 5. AUDIT LOG (Non-blocking)
+      auditLog({
+        action: AuditAction.REPORT_CREATE,
+        actorType: ActorType.ANONYMOUS,
+        actorId: anonymousId,
+        req,
+        targetType: 'report',
+        targetId: data.id,
+        newValues: {
+          title: data.title,
+          category: data.category,
+          zone: data.zone,
+          status: data.status
+        },
+        metadata: { imageCount: imageUrls?.length || 0 },
+        success: true
+      }).catch(() => { });
+
+      // 6. CLEAN SSOT RESPONSE
       return res.status(201).json({
         success: true,
         data,
@@ -1503,6 +1522,19 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       console.log(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
     }
 
+    // AUDIT LOG
+    auditLog({
+      action: AuditAction.REPORT_FLAG,
+      actorType: ActorType.ANONYMOUS,
+      actorId: anonymousId,
+      req,
+      targetType: 'report',
+      targetId: id,
+      targetOwnerId: report.anonymous_id,
+      metadata: { reason, flagId: newFlag.id },
+      success: true
+    }).catch(() => { });
+
     res.status(201).json({
       success: true,
       data: {
@@ -1558,6 +1590,22 @@ router.delete('/:id', requireAnonymousId, async (req, res) => {
       currentItem.status,
       req.headers['x-client-id']
     );
+
+    // AUDIT LOG
+    auditLog({
+      action: AuditAction.REPORT_DELETE,
+      actorType: ActorType.ANONYMOUS,
+      actorId: anonymousId,
+      req,
+      targetType: 'report',
+      targetId: id,
+      oldValues: {
+        title: currentItem.title,
+        category: currentItem.category,
+        status: currentItem.status
+      },
+      success: true
+    }).catch(() => { });
 
     res.json({
       success: true,

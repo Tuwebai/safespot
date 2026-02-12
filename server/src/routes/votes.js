@@ -12,6 +12,7 @@ import { voteLimiter } from '../utils/rateLimiter.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { executeUserAction } from '../utils/governance.js';
 import { NotificationService } from '../utils/appNotificationService.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -231,6 +232,18 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       } else {
         realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);
       }
+
+      // AUDIT LOG
+      auditLog({
+        action: AuditAction.VOTE_CREATE,
+        actorType: ActorType.ANONYMOUS,
+        actorId: anonymousId,
+        req,
+        targetType,
+        targetId,
+        metadata: { targetType, reportId: report_id, commentId: comment_id },
+        success: true
+      }).catch(() => { });
     } catch (err) {
       logError(err, { context: 'postVote.response' });
       res.status(201).json({ success: true, message: 'Vote created' });
@@ -336,6 +349,18 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
       } else {
         realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);
       }
+
+      // AUDIT LOG
+      auditLog({
+        action: AuditAction.VOTE_DELETE,
+        actorType: ActorType.ANONYMOUS,
+        actorId: anonymousId,
+        req,
+        targetType,
+        targetId,
+        metadata: { targetType, reportId: report_id, commentId: comment_id },
+        success: true
+      }).catch(() => { });
     } catch (err) {
       logError(err, { context: 'deleteVote.response' });
       res.status(200).json({ success: true, message: 'Vote removed' });

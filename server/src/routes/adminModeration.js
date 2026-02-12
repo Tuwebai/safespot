@@ -5,6 +5,7 @@ import { verifyAdminToken } from '../utils/adminMiddleware.js';
 import { logError } from '../utils/logger.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { executeModeration } from '../utils/governance.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -186,6 +187,23 @@ router.post('/:type/:id/resolve', verifyAdminToken, async (req, res) => {
                 logError(banErr, { context: 'chain_ban_failed', userId: currentItem.anonymous_id });
             }
         }
+
+        // AUDIT LOG
+        auditLog({
+            action: AuditAction.MODERATION_RESOLVE,
+            description: `Moderation: ${action} on ${targetType} ${id}`,
+            actorType: ActorType.ADMIN,
+            actorId: req.adminUser.id,
+            actorRole: req.adminUser.role,
+            req,
+            targetType,
+            targetId: id,
+            targetOwnerId: currentItem.anonymous_id,
+            oldValues: { isHidden: currentItem.is_hidden, flagsCount: currentItem.flags_count },
+            newValues: { action, banUser, flagsDismissed: action === 'approve' || action === 'dismiss' },
+            metadata: { reason, internalNote, auditId: result.auditId },
+            success: true
+        }).catch(() => { });
 
         res.json({ success: true, message: 'Case resolved with M12 Governance Grade accountability.', auditId: result.auditId });
 

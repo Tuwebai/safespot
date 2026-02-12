@@ -76,6 +76,7 @@ import adminModerationRouter from './routes/adminModeration.js';
 import adminTasksRouter from './routes/adminTasks.js';
 import adminProfileRouter from './routes/adminProfile.js';
 import adminReportsRouter from './routes/adminReports.js';
+import adminAuditRouter from './routes/adminAudit.js';
 // Router implements internal verifyAdminToken middleware
 import contactRouter from './routes/contact.js';
 
@@ -394,12 +395,12 @@ app.use('/api/presence', presenceRouter);
 // 1. Public admin routes (bypass strict gateway)
 app.use('/api/admin/auth', adminAuthRouter);
 
-// 2. Protected admin routes with INTERNAL middleware
+// 2. Audit routes (protected by verifyAdminToken internally)
+app.use('/api/admin/audit', adminAuditRouter);
+
+// 3. Protected admin routes with INTERNAL middleware
 //    These use verifyAdminToken internally, no need for gateway
-app.use('/api/admin/profile', (req, res, next) => {
-  // Debug log silenced: console.debug('[Mount] /api/admin/profile hit');
-  next();
-}, adminProfileRouter);
+app.use('/api/admin/profile', adminProfileRouter);
 
 // 3. Apply strict gateway to remaining admin routes
 //    Everything after this line requires gateway validation

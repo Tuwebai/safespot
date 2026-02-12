@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
 import { signAnonymousId } from '../utils/crypto.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -133,6 +134,17 @@ router.post('/register', authLimiter, async (req, res) => {
 
         logSuccess('User Registered', { auth_id: newUser.id, anonymous_id: current_anonymous_id });
 
+        // AUDIT LOG
+        auditLog({
+            action: AuditAction.USER_REGISTER,
+            actorType: ActorType.ANONYMOUS,
+            actorId: current_anonymous_id,
+            actorRole: 'citizen',
+            req,
+            metadata: { method: 'email', authId: newUser.id },
+            success: true
+        }).catch(() => { });
+
         res.status(201).json({
             success: true,
             token,
@@ -190,6 +202,17 @@ router.post('/login', authLimiter, async (req, res) => {
         });
 
         logSuccess('User Logged In', { auth_id: user.id });
+
+        // AUDIT LOG
+        auditLog({
+            action: AuditAction.AUTH_LOGIN,
+            actorType: ActorType.ANONYMOUS,
+            actorId: user.anonymous_id,
+            actorRole: 'citizen',
+            req,
+            metadata: { method: 'password', authId: user.id },
+            success: true
+        }).catch(() => { });
 
         res.json({
             success: true,

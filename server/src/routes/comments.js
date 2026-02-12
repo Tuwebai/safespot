@@ -19,6 +19,7 @@ import { isValidUuid } from '../utils/validation.js';
 import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
 import { executeUserAction } from '../utils/governance.js';
+import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
@@ -507,6 +508,24 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       // Ignore notification errors
     }
 
+    // AUDIT LOG
+    auditLog({
+      action: isThread ? AuditAction.COMMENT_CREATE : AuditAction.COMMENT_CREATE,
+      actorType: ActorType.ANONYMOUS,
+      actorId: anonymousId,
+      req,
+      targetType: 'comment',
+      targetId: data.id,
+      newValues: {
+        content: data.content?.substring(0, 100),
+        reportId: req.body.report_id,
+        parentId: parentId || null,
+        isThread
+      },
+      metadata: { isHidden, hasMentions: mentionedIds?.length > 0 },
+      success: true
+    }).catch(() => { });
+
     res.status(201).json({
       success: true,
       data,
@@ -647,6 +666,21 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
       }
     }
     */
+
+    // AUDIT LOG
+    auditLog({
+      action: AuditAction.COMMENT_DELETE,
+      actorType: ActorType.ANONYMOUS,
+      actorId: anonymousId,
+      req,
+      targetType: 'comment',
+      targetId: id,
+      oldValues: {
+        content: currentItem.content?.substring(0, 100),
+        reportId: currentItem.report_id
+      },
+      success: true
+    }).catch(() => { });
 
     res.json({
       success: true,
@@ -990,6 +1024,19 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
     const newFlag = insertResult.rows[0];
 
     logSuccess(`Comment ${id} flagged by ${anonymousId}`, req);
+
+    // AUDIT LOG
+    auditLog({
+      action: AuditAction.COMMENT_FLAG,
+      actorType: ActorType.ANONYMOUS,
+      actorId: anonymousId,
+      req,
+      targetType: 'comment',
+      targetId: id,
+      targetOwnerId: comment.anonymous_id,
+      metadata: { reason, flagId: newFlag.id },
+      success: true
+    }).catch(() => { });
 
     res.status(201).json({
       success: true,

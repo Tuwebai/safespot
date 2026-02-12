@@ -41,7 +41,7 @@ router.get('/', verifyAdminToken, async (req, res) => {
 
         const { data: user, error: userError } = await supabaseAdmin
             .from('admin_users')
-            .select('id, email, alias, role, created_at, avatar_url')
+            .select('id, email, alias, role, created_at, avatar_url, totp_enabled, last_login_at')
             .eq('id', userId)
             .single();
 
@@ -64,7 +64,7 @@ router.get('/', verifyAdminToken, async (req, res) => {
         const response = {
             user: {
                 ...user,
-                two_factor_enabled: false
+                two_factor_enabled: user.totp_enabled === true
             },
             sessions: logs || []
         };
@@ -112,7 +112,7 @@ router.put('/', verifyAdminToken, async (req, res) => {
             .from('admin_users')
             .update(updates)
             .eq('id', userId)
-            .select('id, email, alias, role, created_at, avatar_url')
+            .select('id, email, alias, role, created_at, avatar_url, totp_enabled, last_login_at')
             .single();
 
         if (error) {
@@ -123,7 +123,7 @@ router.put('/', verifyAdminToken, async (req, res) => {
         return res.json({
             user: {
                 ...user,
-                two_factor_enabled: false
+                two_factor_enabled: user.totp_enabled === true
             }
         });
 
