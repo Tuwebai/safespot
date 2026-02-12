@@ -139,7 +139,7 @@ export function CompactReportCard({
 
                                     {!isOwner && (
                                         isFlagged ? (
-                                            <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                            <span className="text-xs text-muted-foreground" title="Ya has denunciado este reporte">
                                                 Denunciado
                                             </span>
                                         ) : (

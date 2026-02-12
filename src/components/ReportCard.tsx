@@ -131,14 +131,14 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                             {report.description}
                         </p>
 
-                        <div className="flex items-center text-sm text-foreground/60 mb-4 mt-auto">
+                        <div className="flex items-center text-sm text-muted-foreground mb-4 mt-auto">
                             <MapPin className="h-4 w-4 mr-1 text-neon-green" />
                             {/* ✅ Enterpise Fix: Use normalized address */}
                             <span className="truncate" title={report.fullAddress}>{report.fullAddress}</span>
                         </div>
 
                         {/*  FOOTER META */}
-                        <div className="flex items-center justify-between text-sm text-foreground/60 mb-4">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
                             <div className="flex items-center gap-2">
                                 <Avatar className="h-6 w-6 border border-white/10 shrink-0">
                                     <AvatarImage
@@ -154,7 +154,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
                                         {report.displayAuthor || 'Sin Alias'}
                                         {report.isOfficial && <VerifiedBadge size={14} />}
                                     </span>
-                                    <span className="text-xs text-foreground/60">{report.formattedDate}</span>
+                                    <span className="text-xs text-muted-foreground">{report.formattedDate}</span>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">
@@ -186,7 +186,7 @@ export function ReportCard({ reportId, onToggleFavorite, onFlag, isFlagging = fa
 
                                 {!isReportOwner && (
                                     isFlagged ? (
-                                        <span className="text-xs text-foreground/60" title="Ya has denunciado este reporte">
+                                        <span className="text-xs text-muted-foreground" title="Ya has denunciado este reporte">
                                             Denunciado
                                         </span>
                                     ) : (

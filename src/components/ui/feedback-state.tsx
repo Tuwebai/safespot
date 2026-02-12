@@ -44,7 +44,7 @@ export function FeedbackState({
                     icon: FileSearch,
                     defaultTitle: 'No hay datos',
                     defaultDesc: 'No encontramos lo que buscabas.',
-                    iconClass: 'text-foreground/40'
+                    iconClass: 'text-muted-foreground'
                 }
             case 'success':
                 return {
@@ -69,7 +69,7 @@ export function FeedbackState({
                 </h3>
 
                 {(description || config.defaultDesc) && (
-                    <p className="text-foreground/70 max-w-sm mb-6">
+                    <p className="text-muted-foreground max-w-sm mb-6">
                         {description || config.defaultDesc}
                     </p>
                 )}

@@ -5,6 +5,7 @@
  * Shows 911 and provincial resources.
  */
 
+import { createPortal } from 'react-dom';
 import { X, Phone, ExternalLink, AlertTriangle, Shield } from 'lucide-react';
 
 interface EmergencyModalProps {
@@ -34,15 +35,16 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
 
     const provincialLink = province ? PROVINCIAL_LINKS[province] : null;
 
-    return (
+    return createPortal(
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
             role="dialog"
             aria-modal="true"
             aria-labelledby="emergency-modal-title"
+            onClick={onClose}
         >
             <div
-                className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full shadow-2xl"
+                className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -51,11 +53,11 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                         <div className="p-2 bg-red-500/20 rounded-lg">
                             <Phone className="h-5 w-5 text-red-400" aria-hidden="true" />
                         </div>
-                        <h2 id="emergency-modal-title" className="text-lg font-semibold">Denunciar a la Policía</h2>
+                        <h2 id="emergency-modal-title" className="text-lg font-semibold text-foreground">Denunciar a la Policía</h2>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-dark-bg rounded-lg transition-colors"
+                        className="p-2 hover:bg-dark-bg rounded-lg transition-colors text-foreground/80 hover:text-foreground"
                         aria-label="Cerrar diálogo de emergencia"
                     >
                         <X className="h-5 w-5" aria-hidden="true" />
@@ -66,17 +68,17 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                 <div className="p-6 space-y-6">
 
                     {/* 911 Emergency */}
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
-                        <p className="text-sm text-red-400 uppercase tracking-wide mb-2">
+                    <div className="bg-red-950/50 border border-red-500/40 rounded-xl p-6 text-center">
+                        <p className="text-sm text-red-300 uppercase tracking-wide mb-2 font-medium">
                             Emergencias
                         </p>
                         <a
                             href="tel:911"
-                            className="text-5xl font-bold text-red-400 hover:text-red-300 transition-colors"
+                            className="text-5xl font-bold text-red-400 hover:text-red-300 transition-colors block"
                         >
                             911
                         </a>
-                        <p className="text-sm text-foreground/70 mt-3">
+                        <p className="text-sm text-foreground/80 mt-3">
                             Llamá al 911 para emergencias en todo el país
                         </p>
                     </div>
@@ -85,12 +87,12 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                     <div className="space-y-3">
                         <a
                             href="tel:101"
-                            className="flex items-center justify-between p-4 bg-dark-bg rounded-lg hover:bg-dark-border/50 transition-colors"
+                            className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg hover:bg-secondary transition-colors"
                         >
                             <div className="flex items-center gap-3">
                                 <Phone className="h-5 w-5 text-blue-400" />
                                 <div>
-                                    <p className="font-medium">101</p>
+                                    <p className="font-medium text-foreground">101</p>
                                     <p className="text-sm text-muted-foreground">Policía Federal</p>
                                 </div>
                             </div>
@@ -99,12 +101,12 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
 
                         <a
                             href="tel:107"
-                            className="flex items-center justify-between p-4 bg-dark-bg rounded-lg hover:bg-dark-border/50 transition-colors"
+                            className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg hover:bg-secondary transition-colors"
                         >
                             <div className="flex items-center gap-3">
                                 <Phone className="h-5 w-5 text-green-400" />
                                 <div>
-                                    <p className="font-medium">107</p>
+                                    <p className="font-medium text-foreground">107</p>
                                     <p className="text-sm text-muted-foreground">SAME (Emergencias Médicas)</p>
                                 </div>
                             </div>
@@ -118,24 +120,24 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                             href={provincialLink.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center justify-between p-4 bg-neon-green/10 border border-neon-green/30 rounded-lg hover:bg-neon-green/20 transition-colors"
+                            className="flex items-center justify-between p-4 bg-primary/10 border border-primary/30 rounded-lg hover:bg-primary/20 transition-colors"
                         >
                             <div className="flex items-center gap-3">
-                                <Shield className="h-5 w-5 text-neon-green" />
+                                <Shield className="h-5 w-5 text-primary" />
                                 <div>
-                                    <p className="font-medium text-neon-green">{provincialLink.name}</p>
+                                    <p className="font-medium text-primary">{provincialLink.name}</p>
                                     <p className="text-sm text-muted-foreground">Denuncia online para {province}</p>
                                 </div>
                             </div>
-                            <ExternalLink className="h-4 w-4 text-neon-green" />
+                            <ExternalLink className="h-4 w-4 text-primary" />
                         </a>
                     )}
 
                     {/* Disclaimer */}
-                    <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <div className="flex items-start gap-3 p-4 bg-yellow-950/50 border border-yellow-500/40 rounded-lg">
                         <AlertTriangle className="h-5 w-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-foreground/80">
-                            <strong className="text-yellow-400">Importante:</strong> SafeSpot no realiza
+                        <p className="text-sm text-foreground/90">
+                            <strong className="text-yellow-300">Importante:</strong> SafeSpot no realiza
                             la denuncia por vos ni envía datos a la policía. Debés contactar directamente
                             a las autoridades.
                         </p>
@@ -147,14 +149,15 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                 <div className="p-4 border-t border-dark-border">
                     <button
                         onClick={onClose}
-                        className="w-full py-3 bg-dark-bg hover:bg-dark-border rounded-lg transition-colors font-medium"
+                        className="w-full py-3 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors font-medium text-foreground"
                         aria-label="Cerrar y volver"
                     >
                         Cerrar
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 

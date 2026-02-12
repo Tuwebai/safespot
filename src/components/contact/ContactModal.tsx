@@ -113,11 +113,11 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
                             <div className="p-6 border-b border-dark-border flex justify-between items-center bg-dark-bg/50">
                                 <div>
                                     <h2 className="text-xl font-bold text-foreground">Contáctanos</h2>
-                                    <p className="text-sm text-foreground/60">Envíanos tus dudas o sugerencias</p>
+                                    <p className="text-sm text-muted-foreground">Envíanos tus dudas o sugerencias</p>
                                 </div>
                                 <button
                                     onClick={onClose}
-                                    className="p-2 hover:bg-dark-border/50 rounded-full transition-colors text-foreground/70 hover:text-foreground"
+                                    className="p-2 hover:bg-dark-border/50 rounded-full transition-colors text-muted-foreground hover:text-foreground"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
@@ -128,7 +128,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
 
                                 {/* Name */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-foreground/80">Nombre</label>
+                                    <label className="text-sm font-medium text-foreground">Nombre</label>
                                     <Input
                                         {...register('name')}
                                         placeholder="Tu nombre"
@@ -141,7 +141,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
 
                                 {/* Email */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-foreground/80">Email</label>
+                                    <label className="text-sm font-medium text-foreground">Email</label>
                                     <Input
                                         {...register('email')}
                                         type="email"
@@ -155,7 +155,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
 
                                 {/* Subject */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-foreground/80">Asunto</label>
+                                    <label className="text-sm font-medium text-foreground">Asunto</label>
                                     <Input
                                         {...register('subject')}
                                         placeholder="¿Sobre qué quieres hablar?"
@@ -168,7 +168,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
 
                                 {/* Message */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-foreground/80">Mensaje</label>
+                                    <label className="text-sm font-medium text-foreground">Mensaje</label>
                                     <Textarea
                                         {...register('message')}
                                         placeholder="Escribe tu mensaje aquí..."

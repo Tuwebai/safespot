@@ -372,7 +372,7 @@ export const EnhancedComment = memo(function EnhancedComment({
               </div>
 
               {/* Meta Row */}
-              <div className="flex items-center gap-2 text-sm text-foreground/60">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>{formatDate(comment.created_at)}</span>
                 {replies.length > 0 && (
                   <>
@@ -515,7 +515,7 @@ export const EnhancedComment = memo(function EnhancedComment({
         </div>
 
         {/* Content Body */}
-        <div className="text-foreground/80 leading-relaxed mb-3">
+        <div className="text-muted-foreground leading-relaxed mb-3">
           <TipTapRenderer content={comment.content} />
         </div>
 
@@ -531,7 +531,7 @@ export const EnhancedComment = memo(function EnhancedComment({
                 "transition-all duration-200",
                 isExpanded
                   ? "text-neon-green bg-neon-green/10"
-                  : "text-foreground/60 hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
               aria-label="Responder a este comentario"
             >
@@ -542,7 +542,7 @@ export const EnhancedComment = memo(function EnhancedComment({
               variant="ghost"
               size="sm"
               onClick={handleLike}
-              className={comment.liked_by_me ? "text-yellow-400 font-medium" : "text-foreground/60 hover:text-foreground"}
+              className={comment.liked_by_me ? "text-yellow-400 font-medium" : "text-muted-foreground hover:text-foreground"}
               aria-label={comment.liked_by_me ? `Quitar me gusta. Total: ${comment.upvotes_count}` : `Dar me gusta. Total: ${comment.upvotes_count}`}
             >
               <>

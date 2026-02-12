@@ -61,11 +61,11 @@ export function SightingCard({ sighting }: { sighting: SightingData }) {
             {/* Content */}
             <div className="space-y-1">
                 <div className="flex items-start gap-2">
-                    <MapPin className="h-4 w-4 text-foreground/70 mt-0.5 shrink-0" />
+                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <span className="font-medium text-foreground">{sighting.data.zone}</span>
                 </div>
                 {sighting.data.text && (
-                    <p className="text-sm text-foreground/80 pl-6 border-l-2 border-foreground/10 py-1">
+                    <p className="text-sm text-muted-foreground pl-6 border-l-2 border-border py-1">
                         "{sighting.data.text}"
                     </p>
                 )}

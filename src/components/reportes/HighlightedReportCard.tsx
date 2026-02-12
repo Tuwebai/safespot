@@ -134,7 +134,7 @@ export function HighlightedReportCard({
                                             {report.avatarFallback}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <span className="text-sm font-medium text-neon-green">
+                                    <span className="text-sm font-medium text-primary">
                                         {report.displayAuthor}
                                     </span>
                                 </div>
@@ -164,7 +164,7 @@ export function HighlightedReportCard({
                                                         onFlag(e);
                                                     }}
                                                     disabled={isFlagging}
-                                                    className="hover:bg-white/10 hover:text-yellow-400 text-foreground/70 h-9 w-9"
+                                                    className="hover:bg-white/10 hover:text-yellow-400 text-muted-foreground h-9 w-9"
                                                     title="Reportar contenido"
                                                 >
                                                     {isFlagging ? (

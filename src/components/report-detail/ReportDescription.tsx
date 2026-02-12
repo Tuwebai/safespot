@@ -53,7 +53,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                 <div className="space-y-4 mb-6">
                     <div className="grid grid-cols-1 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-foreground/80 mb-2">
+                            <label className="block text-sm font-medium text-foreground mb-2">
                                 Título
                             </label>
                             <Input
@@ -77,7 +77,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                     {isEditing ? (
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-foreground/80 mb-2">
+                                <label className="block text-sm font-medium text-foreground mb-2">
                                     Detalles del incidente
                                 </label>
                                 <Textarea
@@ -144,8 +144,8 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                                             onChange={handleFileChange}
                                             disabled={updating}
                                         />
-                                        <ImagePlus className="h-6 w-6 text-foreground/40 group-hover:text-neon-green transition-colors mb-2" />
-                                        <span className="text-[10px] text-foreground/60 group-hover:text-foreground transition-colors font-medium">
+                                        <ImagePlus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
+                                        <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors font-medium">
                                             Subir fotos
                                         </span>
                                     </label>
@@ -157,7 +157,7 @@ export const ReportDescription = memo(function ReportDescription({ report, edito
                             </div>
                         </div>
                     ) : (
-                        <p className="text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">
+                        <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
                             {report.description}
                         </p>
                     )}

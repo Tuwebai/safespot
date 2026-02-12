@@ -121,7 +121,7 @@ export function Header() {
                       'text-sm font-medium px-3 py-2 rounded-md transition-colors',
                       active
                         ? 'text-neon-green bg-neon-green/10'
-                        : 'text-foreground/70 hover:text-neon-green hover:bg-neon-green/5'
+                        : 'text-muted-foreground hover:text-primary hover:bg-primary/5'
                     )}
                   >
                     <Icon className="inline-block mr-2 h-4 w-4" />
@@ -138,7 +138,7 @@ export function Header() {
               to="/mensajes"
               className={cn(
                 "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
-                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-foreground/70"
+                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
               )}
               title="Mensajes"
               aria-label="Mensajes"
@@ -167,7 +167,7 @@ export function Header() {
                     alt="Avatar"
                     className="object-cover"
                   />
-                  <AvatarFallback className="bg-transparent text-foreground/70">
+                  <AvatarFallback className="bg-transparent text-muted-foreground">
                     <User className="h-5 w-5" />
                   </AvatarFallback>
                 </Avatar>
@@ -188,7 +188,7 @@ export function Header() {
               to="/mensajes"
               className={cn(
                 "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
-                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-foreground/70"
+                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
               )}
               aria-label="Mensajes"
             >
@@ -204,7 +204,7 @@ export function Header() {
             </div>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] text-foreground/70 hover:text-primary transition-colors"
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] text-muted-foreground hover:text-primary transition-colors"
               aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
             >
               <PanelLeft className="h-5 w-5" />
@@ -256,7 +256,7 @@ export function Header() {
           </div>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="p-2 text-foreground/70 hover:text-neon-green transition-colors"
+            className="p-2 text-muted-foreground hover:text-primary transition-colors"
           >
             <PanelLeft className="h-5 w-5" />
           </button>
