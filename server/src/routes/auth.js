@@ -7,6 +7,7 @@ import { logError, logSuccess } from '../utils/logger.js';
 import { validateAnonymousId } from '../utils/validation.js';
 import { authLimiter } from '../utils/rateLimiter.js';
 import { verifyGoogleToken } from '../services/googleAuth.js';
+import { migrateGoogleAvatar } from '../services/avatarMigration.js';
 import jwt from 'jsonwebtoken';
 import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -509,10 +510,24 @@ router.post('/google', authLimiter, async (req, res) => {
             }
         }
 
-        // 3. Update Last Login
+        // 3. Migrate Google Avatar to Supabase Storage (Enterprise Fix)
+        // This prevents Tracking Prevention and CORB issues in browser
+        if (googleUser.picture && anonymousIdToUse) {
+            migrateGoogleAvatar(anonymousIdToUse, googleUser.picture)
+                .then(migratedUrl => {
+                    if (migratedUrl) {
+                        console.log('[AUTH] Avatar migrated to Supabase:', migratedUrl);
+                    }
+                })
+                .catch(err => {
+                    console.error('[AUTH] Avatar migration failed:', err.message);
+                });
+        }
+
+        // 4. Update Last Login
         await pool.query('UPDATE user_auth SET last_login_at = NOW() WHERE id = $1', [user.id]);
 
-        // 4. Fetch Public Profile (SSOT: anonymous_users)
+        // 5. Fetch Public Profile (SSOT: anonymous_users)
         // ✅ ENTERPRISE FIX: alias público vive SOLO en anonymous_users
         // Ya fue sincronizado en pasos anteriores (líneas 398, 422, 447, 451)
         const publicProfileResult = await pool.query(

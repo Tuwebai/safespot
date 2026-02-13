@@ -88,25 +88,11 @@ export function getAvatarFallback(value: string | null | undefined): string {
  * resolveAvatarUrl({}, 'user123')                                // 'https://api.dicebear.com/...'
  */
 /**
- * 🏛️ DEFENSIVE: Check if URL is from Google (needs migration)
- * Google avatars are blocked by Tracking Prevention
+ * 🏛️ DEFENSIVE: Check if URL is from Google (blocked by Tracking Prevention)
  */
 export function isGoogleAvatar(url: string): boolean {
     return url.includes('lh3.googleusercontent.com') || 
            url.includes('googleusercontent.com');
-}
-
-/**
- * 🏛️ DEFENSIVE: Check if URL is from broken Supabase storage
- * Detects URLs pointing to non-existent 'avatars' bucket
- */
-function isBrokenSupabaseUrl(url: string): boolean {
-    // If URL contains supabase storage but bucket was deleted
-    if (url.includes('supabase.co/storage/v1/object') && url.includes('/avatars/')) {
-        // These URLs will 404 - bucket doesn't exist
-        return true
-    }
-    return false
 }
 
 /**
@@ -172,12 +158,8 @@ export function resolveAvatarUrl(
 ): string {
     const avatarUrl = user.avatar_url || user.avatarUrl;
     
-    // 🏛️ DEFENSIVE: Skip broken Supabase URLs (missing bucket)
-    if (avatarUrl && isBrokenSupabaseUrl(avatarUrl)) {
-        console.warn('[Avatar] Skipping broken Supabase URL, using fallback:', avatarUrl.substring(0, 50))
-        return getAvatarUrl(seed)
-    }
-    
+    // ✅ ENTERPRISE: All avatars come from Supabase Storage
+    // (Google avatars migrated server-side on login)
     return avatarUrl || getAvatarUrl(seed);
 }
 
