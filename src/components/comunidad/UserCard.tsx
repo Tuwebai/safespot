@@ -57,6 +57,12 @@ export function UserCard({
     onMouseLeave,
     onMouseMove
 }: UserCardProps) {
+    // 🏛️ DEFENSIVE: Validate user data
+    if (!user?.anonymous_id) {
+        console.warn('[UserCard] Missing anonymous_id for user:', user);
+        return null;
+    }
+    
     const navigate = useNavigate();
 
     const { success, error } = useToast();

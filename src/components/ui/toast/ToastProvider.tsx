@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, ReactNode } from 'react'
 import { ToastContainer } from './ToastContainer'
 import { ToastContext } from './ToastContext'
-import type { Toast, ToastContextValue, ToastType } from './types'
+import type { Toast, ToastContextValue, ToastType, ToastAction } from './types'
 
 interface ToastProviderProps {
   children: ReactNode
@@ -15,7 +15,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   }, [])
 
   const addToast = useCallback(
-    (message: string, type: ToastType, duration?: number) => {
+    (message: string, type: ToastType, duration?: number, action?: ToastAction) => {
       const now = Date.now()
       const id = `${type}-${now}-${Math.random().toString(36).substring(2, 9)}`
 
@@ -38,6 +38,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
           type,
           duration,
           createdAt: now,
+          action,
         }
 
         return [...prev, newToast]
@@ -46,6 +47,19 @@ export function ToastProvider({ children }: ToastProviderProps) {
       return id;
     },
     []
+  )
+
+  // 🏛️ ENTERPRISE: Toast with action for navigation
+  const notify = useCallback(
+    (options: { 
+      message: string; 
+      type?: ToastType; 
+      duration?: number; 
+      action?: ToastAction 
+    }) => {
+      return addToast(options.message, options.type || 'info', options.duration, options.action)
+    },
+    [addToast]
   )
 
   const success = useCallback(
@@ -86,8 +100,9 @@ export function ToastProvider({ children }: ToastProviderProps) {
       error,
       info,
       warning,
+      notify,
     }),
-    [toasts, addToast, removeToast, success, error, info, warning]
+    [toasts, addToast, removeToast, success, error, info, warning, notify]
   )
 
   return (

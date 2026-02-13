@@ -7,7 +7,7 @@
  * @version 1.0 - Enterprise Hover Preview
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
@@ -38,6 +38,23 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
     const boxWidth = 300;
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [mounted, setMounted] = useState(false);
+    
+    // 🏛️ DEFENSIVE: Safe date parsing
+    const safeCreatedAt = useMemo(() => {
+        try {
+            return user.created_at ? new Date(user.created_at) : new Date();
+        } catch {
+            return new Date();
+        }
+    }, [user.created_at]);
+    
+    const safeLastActive = useMemo(() => {
+        try {
+            return user.last_active_at ? new Date(user.last_active_at) : new Date();
+        } catch {
+            return new Date();
+        }
+    }, [user.last_active_at]);
 
     useEffect(() => {
         setMounted(true);
@@ -115,7 +132,7 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
                         <Award className="h-3 w-3" />
                         Nivel {user.level}
                         {/* Solo badge nuevo usuario */}
-                        {differenceInDays(new Date(), new Date(user.created_at)) <= 7 && (
+                        {differenceInDays(new Date(), safeCreatedAt) <= 7 && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/30">
                                 <Sparkles className="w-2.5 h-2.5" />
                                 Nuevo
@@ -167,7 +184,7 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
                         <Calendar className="h-3.5 w-3.5 text-orange-400" />
                         <span className="text-muted-foreground">Miembro:</span>
                         <span className="ml-auto whitespace-nowrap text-muted-foreground text-[10px]">
-                            {new Date(user.created_at).toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })}
+                            {safeCreatedAt.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })}
                         </span>
                     </div>
                     {user.current_city && (
@@ -185,7 +202,7 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
             {/* Last Active */}
             <div className="mt-3 text-center">
                 <span className="text-[10px] text-muted-foreground">
-                    Activo {formatDistanceToNow(new Date(user.last_active_at), { addSuffix: true, locale: es })}
+                    Activo {formatDistanceToNow(safeLastActive, { addSuffix: true, locale: es })}
                 </span>
             </div>
 
@@ -200,24 +217,28 @@ export function UserPreview({ user, x, y, visible }: UserPreviewProps) {
 export function useUserPreview() {
     const [hoveredUser, setHoveredUser] = useState<{ user: UserProfile; x: number; y: number } | null>(null);
     const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastMoveRef = useRef<number>(0);
 
-    const handleMouseEnter = (user: UserProfile) => (e: React.MouseEvent) => {
+    const handleMouseEnter = useCallback((user: UserProfile) => (e: React.MouseEvent) => {
         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
         hoverTimeoutRef.current = setTimeout(() => {
             setHoveredUser({ user, x: e.clientX, y: e.clientY });
         }, 50);
-    };
+    }, []);
 
-    const handleMouseLeave = () => {
+    const handleMouseLeave = useCallback(() => {
         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
         setHoveredUser(null);
-    };
+    }, []);
 
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (hoveredUser) {
-            setHoveredUser(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
-        }
-    };
+    // 🏛️ OPTIMIZED: Throttle mouse move to 60fps (16ms)
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!hoveredUser) return;
+        const now = Date.now();
+        if (now - lastMoveRef.current < 50) return; // 50ms throttle
+        lastMoveRef.current = now;
+        setHoveredUser(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
+    }, [hoveredUser]);
 
     useEffect(() => {
         return () => {
@@ -229,14 +250,6 @@ export function useUserPreview() {
         hoveredUser,
         handleMouseEnter,
         handleMouseLeave,
-        handleMouseMove,
-        UserPreviewComponent: hoveredUser ? (
-            <UserPreview 
-                user={hoveredUser.user} 
-                x={hoveredUser.x} 
-                y={hoveredUser.y} 
-                visible={!!hoveredUser}
-            />
-        ) : null
+        handleMouseMove
     };
 }

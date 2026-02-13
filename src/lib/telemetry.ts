@@ -17,8 +17,8 @@ export const reportFrontendError = async ({
     metadata = {}
 }: ReportErrorParams) => {
     try {
-        // We use a public endpoint if available, or the general admin task endpoint
-        // NOTE: The backend handles authorization for WRITE access if needed.
+        // 🏛️ ENTERPRISE: Report to admin tasks endpoint
+        // 401 is expected for non-admin users and is handled silently
         const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/tasks`, {
             method: 'POST',
             headers: {
@@ -38,11 +38,12 @@ export const reportFrontendError = async ({
             })
         });
 
-        if (!response.ok) {
-            // Failure is handled silently to avoid breaking the UX during an error
-            console.warn('[Telemetry] Report rejected by gateway');
+        // Silently handle 401 (non-admin users) and other errors
+        if (!response.ok && response.status !== 401) {
+            console.warn('[Telemetry] Report rejected:', response.status);
         }
     } catch (err) {
-        console.warn('[Telemetry] Uplink failure:', err);
+        // Silently fail - don't break UX during error reporting
+        console.debug('[Telemetry] Uplink failed:', err);
     }
 };

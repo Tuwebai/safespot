@@ -11,11 +11,12 @@
  * - Theme-aware styling (sin hardcoded colors)
  */
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUploadAvatarMutation, validateAvatarFile } from '@/hooks/mutations/useUploadAvatarMutation';
 import { useDeleteAvatarMutation } from '@/hooks/mutations/useDeleteAvatarMutation';
+import { useAuthStore } from '@/store/authStore';
 
 interface AvatarUploadOverlayProps {
     /** URL actual del avatar (si existe) */
@@ -62,12 +63,20 @@ export function AvatarUploadOverlay({
     const [dragActive, setDragActive] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // 🏛️ DEFENSIVE: Verify actual auth state from store
+    const { isAuthenticated: storeAuthenticated } = useAuthStore();
+    const actuallyAuthenticated = isAuthenticated && storeAuthenticated;
 
     const uploadMutation = useUploadAvatarMutation({
         onSuccess: () => {
             setIsHovered(false);
             onSuccess?.();
         },
+        onError: () => {
+            // Silently fail during auth transitions
+            setIsHovered(false);
+        }
     });
 
     const deleteMutation = useDeleteAvatarMutation({
@@ -75,14 +84,24 @@ export function AvatarUploadOverlay({
             setIsHovered(false);
             onSuccess?.();
         },
+        onError: () => {
+            // Silently fail during auth transitions
+            setIsHovered(false);
+        }
     });
 
-    // Solo mostrar overlay si está autenticado
-    if (!isAuthenticated) {
+    // Solo mostrar overlay si está autenticado (double check)
+    if (!actuallyAuthenticated) {
         return null;
     }
 
     const handleFileSelect = useCallback((file: File) => {
+        // 🏛️ DEFENSIVE: Don't upload during auth transition
+        if (!actuallyAuthenticated) {
+            console.warn('[AvatarUploadOverlay] Upload blocked: not authenticated');
+            return;
+        }
+        
         setValidationError(null);
         
         const validation = validateAvatarFile(file);
@@ -92,7 +111,7 @@ export function AvatarUploadOverlay({
         }
 
         uploadMutation.mutate(file);
-    }, [uploadMutation]);
+    }, [uploadMutation, actuallyAuthenticated]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -125,12 +144,27 @@ export function AvatarUploadOverlay({
     const handleDelete = () => {
         if (!currentAvatarUrl) return;
         
+        // 🏛️ DEFENSIVE: Don't delete during auth transition
+        if (!actuallyAuthenticated) {
+            console.warn('[AvatarUploadOverlay] Delete blocked: not authenticated');
+            return;
+        }
+        
         if (confirm('¿Estás seguro de eliminar tu foto de perfil?')) {
             deleteMutation.mutate();
         }
     };
 
     const isLoading = uploadMutation.isPending || deleteMutation.isPending;
+    
+    // 🏛️ DEFENSIVE: Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            setIsHovered(false);
+            setDragActive(false);
+            setValidationError(null);
+        };
+    }, []);
 
     return (
         <div

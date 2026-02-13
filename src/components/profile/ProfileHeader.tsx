@@ -77,6 +77,7 @@ export function ProfileHeader({
                         </Avatar>
                         {/* Overlay de upload - Enterprise */}
                         <AvatarUploadOverlay
+                            key={`avatar-overlay-${isAuthenticated ? 'auth' : 'anon'}-${anonymousId}`}
                             currentAvatarUrl={profile?.avatarUrl}
                             isAuthenticated={isAuthenticated}
                             size="lg"

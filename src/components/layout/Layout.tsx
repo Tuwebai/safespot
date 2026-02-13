@@ -20,6 +20,7 @@ import { ServiceWorkerController } from '@/components/ServiceWorkerController'
 import { cn } from '@/lib/utils'
 
 import { NotificationFeedbackListener } from '@/components/notifications/NotificationFeedbackListener'
+import { SmartToastManager } from '@/components/realtime/SmartToastManager'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -55,6 +56,7 @@ export function Layout({ children }: LayoutProps) {
     <>
       <ServiceWorkerController />
       <NotificationFeedbackListener />
+      <SmartToastManager />
       {/* <AdModal /> */}
       <BadgeNotificationManager />
       <NetworkStatusIndicator />

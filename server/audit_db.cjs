@@ -1,116 +1,116 @@
 const { Pool } = require('pg');
+require('dotenv').config();
 
 const pool = new Pool({
-  connectionString: 'postgresql://postgres.womkvonfiwjzzatsowkl:Safespot2024Dev@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-async function audit() {
+async function auditDatabase() {
+  const client = await pool.connect();
+  
   try {
-    console.log('🔍 AUDITORÍA DB SAFE-SPOT (SSOT)');
-    console.log('=====================================\n');
+    console.log('SAFESPOT DATABASE AUDIT - SSOT Verification');
+    console.log('============================================================\n');
     
     // 1. Listar todas las tablas
-    const tables = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-      ORDER BY table_name
+    const tablesResult = await client.query(`
+      SELECT 
+        t.table_name,
+        (SELECT COUNT(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = 'public') as column_count
+      FROM information_schema.tables t
+      WHERE t.table_schema = 'public' 
+        AND t.table_type = 'BASE TABLE'
+      ORDER BY t.table_name;
     `);
     
-    console.log('📋 TABLAS EN DB:');
-    tables.rows.forEach(r => console.log('   • ' + r.table_name));
+    console.log('TABLAS ENCONTRADAS: ' + tablesResult.rows.length + '\n');
+    tablesResult.rows.forEach(row => {
+      console.log('  - ' + row.table_name + ' (' + row.column_count + ' cols)');
+    });
     
-    // 2. Verificar si user_personal_aliases existe
-    const check = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'user_personal_aliases'
-      ) as exists
-    `);
+    // 2. Verificar tablas de analytics
+    console.log('\nTABLAS DE ANALYTICS:');
+    const analyticsTables = tablesResult.rows.filter(r => 
+      r.table_name.includes('analytics') || 
+      r.table_name.includes('metric') ||
+      r.table_name.includes('event') ||
+      r.table_name.includes('session')
+    );
     
-    console.log('\n🔎 user_personal_aliases existe?:', check.rows[0].exists);
-    
-    // 3. Si existe, mostrar estructura completa
-    if (check.rows[0].exists) {
-      const cols = await pool.query(`
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_name = 'user_personal_aliases'
-        ORDER BY ordinal_position
-      `);
-      console.log('\n📊 ESTRUCTURA user_personal_aliases:');
-      cols.rows.forEach(c => console.log(`   ${c.column_name}: ${c.data_type} (${c.is_nullable})`));
-      
-      // Índices
-      const idx = await pool.query(`
-        SELECT indexname, indexdef 
-        FROM pg_indexes 
-        WHERE tablename = 'user_personal_aliases'
-      `);
-      console.log('\n📑 ÍNDICES:');
-      idx.rows.forEach(i => console.log('   • ' + i.indexname));
-      
-      // RLS
-      const rls = await pool.query(`
-        SELECT relrowsecurity 
-        FROM pg_class 
-        WHERE relname = 'user_personal_aliases'
-      `);
-      console.log('\n🔐 RLS Habilitado?:', rls.rows[0]?.relrowsecurity || false);
-      
+    if (analyticsTables.length === 0) {
+      console.log('  X NO HAY tablas de analytics o metricas\n');
     } else {
-      console.log('   ⚠️  Tabla NO existe - Requiere creación');
+      analyticsTables.forEach(row => console.log('  OK ' + row.table_name));
     }
     
-    // 4. Verificar anonymous_users
-    const auCols = await pool.query(`
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_name = 'anonymous_users'
-      ORDER BY ordinal_position
-    `);
-    console.log('\n📊 anonymous_users (columnas relevantes):');
-    auCols.rows.slice(0, 15).forEach(c => console.log(`   ${c.column_name}: ${c.data_type}`));
+    // 3. Verificacion especifica de tablas requeridas
+    console.log('\nVERIFICACION TABLAS ANALYTICS REQUERIDAS:');
+    const requiredTables = ['analytics_events', 'analytics_sessions', 'analytics_daily'];
+    const tableNames = tablesResult.rows.map(r => r.table_name);
     
-    // 5. Verificar followers
-    const folCheck = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'followers'
-      ) as exists
-    `);
-    console.log('\n👥 Tabla followers existe?:', folCheck.rows[0].exists);
+    requiredTables.forEach(table => {
+      const exists = tableNames.includes(table);
+      console.log('  ' + (exists ? 'OK' : 'X') + ' ' + table);
+    });
     
-    // 6. Verificar RLS en tablas principales
-    const rlsCheck = await pool.query(`
-      SELECT relname, relrowsecurity 
-      FROM pg_class 
-      WHERE relname IN ('anonymous_users', 'followers', 'reports', 'comments')
-      AND relkind = 'r'
-    `);
-    console.log('\n🔐 RLS Status en tablas principales:');
-    rlsCheck.rows.forEach(r => console.log(`   ${r.relname}: ${r.relrowsecurity ? '✅ ON' : '❌ OFF'}`));
-    
-    // 7. Contar registros en tablas clave
-    const counts = await pool.query(`
+    // 4. Funciones SQL existentes
+    console.log('\nFUNCIONES SQL:');
+    const functionsResult = await client.query(`
       SELECT 
-        (SELECT COUNT(*) FROM anonymous_users) as total_users,
-        (SELECT COUNT(*) FROM followers) as total_follows,
-        (SELECT COUNT(*) FROM reports WHERE deleted_at IS NULL) as total_reports
+        p.proname as function_name,
+        pg_get_function_identity_arguments(p.oid) as arguments
+      FROM pg_proc p
+      JOIN pg_namespace n ON p.pronamespace = n.oid
+      WHERE n.nspname = 'public'
+        AND (p.proname LIKE '%analytics%' 
+         OR p.proname LIKE '%metric%'
+         OR p.proname LIKE '%mau%'
+         OR p.proname LIKE '%daily%')
+      ORDER BY p.proname;
     `);
-    console.log('\n📈 ESTADÍSTICAS:');
-    console.log(`   Usuarios: ${counts.rows[0].total_users}`);
-    console.log(`   Follows: ${counts.rows[0].total_follows}`);
-    console.log(`   Reportes: ${counts.rows[0].total_reports}`);
     
-  } catch(e) {
-    console.error('❌ Error:', e.message);
+    if (functionsResult.rows.length === 0) {
+      console.log('  X NO HAY funciones de analytics/metricas\n');
+    } else {
+      functionsResult.rows.forEach(row => {
+        console.log('  OK ' + row.function_name + '(' + (row.arguments || '') + ')');
+      });
+    }
+    
+    // 5. Conteo de registros
+    console.log('\nCONTEO DE REGISTROS:');
+    const tablesToCheck = ['reports', 'anonymous_users', 'comments', 'votes', 'analytics_events', 'analytics_sessions', 'analytics_daily'];
+    
+    for (const table of tablesToCheck) {
+      try {
+        const countResult = await client.query('SELECT COUNT(*) as count FROM "' + table + '"');
+        console.log('  ' + table + ': ' + countResult.rows[0].count + ' registros');
+      } catch (e) {
+        console.log('  X ' + table + ': NO EXISTE');
+      }
+    }
+    
+    // 6. Check admin_users
+    console.log('\nTABLAS ADMIN:');
+    try {
+      const adminResult = await client.query('SELECT COUNT(*) as count FROM admin_users');
+      console.log('  admin_users: ' + adminResult.rows[0].count + ' registros');
+    } catch (e) {
+      console.log('  X admin_users: NO EXISTE');
+    }
+    
+    console.log('\n============================================================');
+    console.log('AUDITORIA COMPLETADA');
+    console.log('============================================================');
+    
+  } catch (err) {
+    console.error('Error durante auditoria:', err.message);
     process.exit(1);
   } finally {
-    pool.end();
+    client.release();
+    await pool.end();
   }
 }
 
-audit();
+auditDatabase();

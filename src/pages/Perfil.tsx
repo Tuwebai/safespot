@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, Suspense } from 'react'
+import { lazyRetry } from '@/lib/lazyRetry'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
@@ -13,7 +14,7 @@ import { ProfileHeader, ReportList, StatsCards, BadgesGrid, NextBadgeCard, Activ
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { useAuthStore } from '@/store/authStore'
 
-const LoginModal = lazy(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })))
+const LoginModal = lazyRetry(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })), 'LoginModal')
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useNavigate } from 'react-router-dom'

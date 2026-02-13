@@ -12,7 +12,7 @@ const Avatar = React.forwardRef<
     HTMLDivElement,
     React.HTMLAttributes<HTMLDivElement>
 >(({ className, children, ...props }, ref) => {
-    const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('error')
+    const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('loading')
 
     return (
         <AvatarContext.Provider value={{ imageLoadingStatus: status, onImageLoadingStatusChange: setStatus }}>

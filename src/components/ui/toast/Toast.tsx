@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
+import { X, CheckCircle2, AlertCircle, Info, AlertTriangle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Toast as ToastType } from './types'
 
@@ -67,6 +67,22 @@ export function Toast({ toast, onRemove }: ToastProps) {
         <p className="text-sm font-medium leading-relaxed break-words">
           {toast.message}
         </p>
+        {/* 🏛️ ENTERPRISE: Action button for navigation */}
+        {toast.action && (
+          <button
+            onClick={() => {
+              toast.action?.onClick()
+              handleRemove()
+            }}
+            className={cn(
+              'mt-2 inline-flex items-center gap-1 text-xs font-semibold',
+              'hover:underline transition-colors'
+            )}
+          >
+            {toast.action.label}
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        )}
       </div>
       <button
         onClick={handleRemove}

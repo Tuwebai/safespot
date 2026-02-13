@@ -12,9 +12,8 @@
 import type { UserProfile } from '@/lib/api';
 import { UserCard } from './UserCard';
 import { CommunitySkeleton } from './CommunitySkeleton';
-import { UserPreview } from './UserPreview';
-import { useUserPreview } from './UserPreview';
-import { ReactNode } from 'react';
+import { UserPreview, useUserPreview } from './UserPreview';
+import { ReactNode, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
 interface UserGridProps {
@@ -38,6 +37,19 @@ export function UserGrid({
         handleMouseLeave, 
         handleMouseMove 
     } = useUserPreview();
+    
+    // Memoize preview to prevent unnecessary re-renders
+    const previewComponent = useMemo(() => {
+        if (!hoveredUser) return null;
+        return (
+            <UserPreview
+                user={hoveredUser.user}
+                x={hoveredUser.x}
+                y={hoveredUser.y}
+                visible={true}
+            />
+        );
+    }, [hoveredUser]);
 
     if (loading) {
         return <CommunitySkeleton />;
@@ -72,14 +84,7 @@ export function UserGrid({
             </div>
 
             {/* Floating Preview */}
-            {hoveredUser && (
-                <UserPreview
-                    user={hoveredUser.user}
-                    x={hoveredUser.x}
-                    y={hoveredUser.y}
-                    visible={!!hoveredUser}
-                />
-            )}
+            {previewComponent}
         </>
     );
 }

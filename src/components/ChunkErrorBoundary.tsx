@@ -69,16 +69,15 @@ export class ChunkErrorBoundary extends Component<Props, State> {
         }
     };
 
-    public componentDidUpdate(_prevProps: Props, prevState: State) {
-        if (this.state.hasError && this.state.errorType === 'chunk' && !prevState.hasError) {
-            // Auto-retry logic directly on error detection (optional, but effectively handled by the button or render logic)
-            // We'll leave the auto-reload to the user interaction or specific lifecycle if needed.
-            // For now, let's auto-trigger the retry if it's the first time
-            const lastReload = sessionStorage.getItem('chunk_reload_ts');
-            if (!lastReload) {
-                this.handleRetry();
-            }
-        }
+    public componentDidUpdate(_prevProps: Props, _prevState: State) {
+        // 🏛️ DEFENSIVE: Disable auto-reload to prevent infinite loops
+        // User must click the retry button manually
+        // if (this.state.hasError && this.state.errorType === 'chunk' && !prevState.hasError) {
+        //     const lastReload = sessionStorage.getItem('chunk_reload_ts');
+        //     if (!lastReload) {
+        //         this.handleRetry();
+        //     }
+        // }
     }
 
     public render() {
