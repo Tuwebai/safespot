@@ -88,6 +88,15 @@ export function getAvatarFallback(value: string | null | undefined): string {
  * resolveAvatarUrl({}, 'user123')                                // 'https://api.dicebear.com/...'
  */
 /**
+ * 🏛️ DEFENSIVE: Check if URL is from Google (needs migration)
+ * Google avatars are blocked by Tracking Prevention
+ */
+export function isGoogleAvatar(url: string): boolean {
+    return url.includes('lh3.googleusercontent.com') || 
+           url.includes('googleusercontent.com');
+}
+
+/**
  * 🏛️ DEFENSIVE: Check if URL is from broken Supabase storage
  * Detects URLs pointing to non-existent 'avatars' bucket
  */
@@ -98,6 +107,63 @@ function isBrokenSupabaseUrl(url: string): boolean {
         return true
     }
     return false
+}
+
+/**
+ * 🏛️ MIGRATE: Download Google avatar and upload via API
+ * This prevents Tracking Prevention blocking
+ */
+export async function migrateGoogleAvatar(
+    googleAvatarUrl: string,
+    userId: string,
+    authToken: string
+): Promise<string | null> {
+    try {
+        // 1. Download image from Google
+        const response = await fetch(googleAvatarUrl, {
+            mode: 'cors',
+            credentials: 'omit'
+        });
+        
+        if (!response.ok) {
+            console.warn('[Avatar] Failed to download Google avatar:', response.status);
+            return null;
+        }
+        
+        // 2. Convert to blob
+        const blob = await response.blob();
+        
+        // 3. Create file from blob
+        const fileExt = blob.type.includes('png') ? 'png' : 'jpg';
+        const fileName = `google-${userId}-${Date.now()}.${fileExt}`;
+        const file = new File([blob], fileName, { type: blob.type });
+        
+        // 4. Upload via API (backend handles Supabase)
+        const { API_BASE_URL } = await import('./api');
+        const formData = new FormData();
+        formData.append('avatar', file);
+        
+        const uploadRes = await fetch(`${API_BASE_URL}/users/avatar`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: formData
+        });
+        
+        if (!uploadRes.ok) {
+            console.warn('[Avatar] Failed to upload via API:', uploadRes.status);
+            return null;
+        }
+        
+        const uploadData = await uploadRes.json();
+        console.log('[Avatar] Successfully migrated Google avatar:', uploadData.avatar_url);
+        return uploadData.avatar_url;
+        
+    } catch (err) {
+        console.warn('[Avatar] Migration failed:', err);
+        return null;
+    }
 }
 
 export function resolveAvatarUrl(

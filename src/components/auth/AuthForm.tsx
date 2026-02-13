@@ -6,6 +6,7 @@ import { API_BASE_URL } from '../../lib/api';
 import { getAnonymousId } from '../../lib/identity';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
+import { isGoogleAvatar, migrateGoogleAvatar } from '../../lib/avatar';
 
 export type AuthMode = 'login' | 'register' | 'forgot-password';
 
@@ -140,13 +141,25 @@ export function AuthForm({
             throw new Error('Invalid server response: missing user ID. Please try again.');
         }
 
+        let avatarUrl = data.user?.avatar_url ?? null;
+        
+        // 🏛️ MIGRATE: If Google avatar, download and upload to Supabase bucket
+        // This prevents Tracking Prevention blocking the image
+        if (avatarUrl && isGoogleAvatar(avatarUrl)) {
+            console.log('[Auth] Detected Google avatar, migrating to Supabase...');
+            const migratedUrl = await migrateGoogleAvatar(avatarUrl, data.anonymous_id, data.token);
+            if (migratedUrl) {
+                avatarUrl = migratedUrl;
+            }
+        }
+
         const user = {
             email: data.user?.email || email,
             auth_id: data.user.id,  // ✅ Sin fallback - falla explícitamente arriba
             anonymous_id: data.anonymous_id,
             provider: data.user?.provider || (mode === 'register' || mode === 'login' ? 'email' : undefined),
             alias: data.user?.alias ?? null,           // ✅ FIX: Propagar alias del backend
-            avatar_url: data.user?.avatar_url ?? null  // ✅ FIX: Propagar avatar del backend
+            avatar_url: avatarUrl  // ✅ FIX: Usar avatar migrado si aplica
         };
         // ✅ FIX: Pass backend signature for Identity Shield (HMAC-SHA256)
         await loginSuccess(data.token, data.anonymous_id, user, data.signature);
