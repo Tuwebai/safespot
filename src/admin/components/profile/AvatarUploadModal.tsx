@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { X, Upload, Trash2, Camera } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUpdateAdminAvatar, useDeleteAdminAvatar } from '@/admin/hooks/useAdminProfile'
+import { getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
+import { useKeyPress } from '@/hooks/useKeyPress'
 
 interface AvatarUploadModalProps {
     isOpen: boolean
@@ -18,11 +21,16 @@ export function AvatarUploadModal({ isOpen, onClose, currentAvatarUrl, onSuccess
 
     const updateMutation = useUpdateAdminAvatar()
     const deleteMutation = useDeleteAdminAvatar()
+    
+    useScrollLock(isOpen)
+    useKeyPress('Escape', onClose, isOpen)
 
     if (!isOpen) return null
+    
+    const zIndexes = getOverlayZIndex('modal')
 
     const validateFile = (file: File): string | null => {
-        // Validar tamaño (2MB)
+        // Validar tamano (2MB)
         if (file.size > 2 * 1024 * 1024) {
             return 'La imagen debe ser menor a 2MB'
         }
@@ -95,7 +103,7 @@ export function AvatarUploadModal({ isOpen, onClose, currentAvatarUrl, onSuccess
     const handleDelete = async () => {
         if (!currentAvatarUrl) return
 
-        if (!confirm('¿Estás seguro de eliminar tu foto de perfil?')) return
+        if (!confirm('Estas seguro de eliminar tu foto de perfil?')) return
 
         try {
             await deleteMutation.mutateAsync()
@@ -115,8 +123,13 @@ export function AvatarUploadModal({ isOpen, onClose, currentAvatarUrl, onSuccess
     }
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: zIndexes.content }}>
+            <div 
+                className="fixed inset-0 bg-black/50" 
+                style={{ zIndex: zIndexes.backdrop }}
+                onClick={handleClose}
+            />
+            <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl p-6 w-full max-w-md relative" style={{ zIndex: zIndexes.content }}>
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-white">Cambiar foto de perfil</h3>
@@ -159,7 +172,7 @@ export function AvatarUploadModal({ isOpen, onClose, currentAvatarUrl, onSuccess
                                 }`}
                         >
                             <Camera className="h-12 w-12 text-slate-500 mx-auto mb-3" />
-                            <p className="text-slate-400 mb-2">Arrastra una imagen aquí</p>
+                            <p className="text-slate-400 mb-2">Arrastra una imagen aqui</p>
                             <p className="text-xs text-slate-500 mb-4">o</p>
                             <label className="cursor-pointer">
                                 <span className="text-[#00ff88] hover:underline text-sm">
@@ -173,7 +186,7 @@ export function AvatarUploadModal({ isOpen, onClose, currentAvatarUrl, onSuccess
                                 />
                             </label>
                             <p className="text-xs text-slate-500 mt-3">
-                                JPG, PNG o WebP (máx. 2MB)
+                                JPG, PNG o WebP (max. 2MB)
                             </p>
                         </div>
                     )}

@@ -539,7 +539,7 @@ export function Reportes() {
 
                   {/* Suggestions Dropdown */}
                   {addressSuggestions.length > 0 && !selectedLocation && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-dark-card border border-dark-border rounded-md shadow-xl z-50 max-h-60 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-dark-card border border-dark-border rounded-md shadow-xl z-50 max-h-60 overflow-y-auto" style={{ zIndex: 50 }}>
                       {addressSuggestions.map((suggestion, idx) => (
                         <button
                           key={`${suggestion.normalized}-${idx}`}
@@ -635,7 +635,8 @@ export function Reportes() {
       {/* Mobile Filter Button - Floating */}
       <Button
         onClick={() => setIsFilterSheetOpen(true)}
-        className="md:hidden fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-2xl bg-neon-green hover:bg-neon-green/90 text-dark-bg"
+        className="md:hidden fixed bottom-20 right-4 h-14 w-14 rounded-full shadow-2xl bg-neon-green hover:bg-neon-green/90 text-dark-bg"
+        style={{ zIndex: 50 }}
         size="icon"
       >
         <Filter className="h-6 w-6" />
@@ -858,7 +859,7 @@ export function Reportes() {
       {/* Flag Dialog */}
       {
         isFlagDialogOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center" style={{ zIndex: 50 }} onClick={() => {
             setIsFlagDialogOpen(false)
             setFlaggingReportId(null)
           }}>

@@ -12,6 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { RippleButton } from '@/components/ui/RippleButton';
 import { useToast } from '@/components/ui/toast';
+import { createPortal } from 'react-dom';
+import { getOverlayZIndex } from '@/config/z-index';
+import { useScrollLock } from '@/hooks/useScrollLock';
+import { useKeyPress } from '@/hooks/useKeyPress';
 
 // Validation Schema
 const contactSchema = z.object({
@@ -81,10 +85,16 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
         }
     };
 
+    // 🏛️ ENTERPRISE: Bloquear scroll y Escape
+    useScrollLock(isOpen);
+    useKeyPress('Escape', onClose, isOpen);
+    
     // Prevent closing when clicking content
     const handleContentClick = (e: React.MouseEvent) => e.stopPropagation();
+    
+    const zIndexes = getOverlayZIndex('modal');
 
-    return (
+    return createPortal(
         <AnimatePresence>
             {isOpen && (
                 <>
@@ -94,7 +104,14 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
-                        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                        style={{ zIndex: zIndexes.backdrop }}
+                    />
+                    
+                    {/* Content Container */}
+                    <div 
+                        className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+                        style={{ zIndex: zIndexes.content }}
                     >
                         {/* Modal Content */}
                         <motion.div
@@ -102,7 +119,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
                             onClick={handleContentClick}
-                            className="w-full max-w-md bg-dark-card border border-dark-border rounded-2xl shadow-2xl overflow-hidden"
+                            className="w-full max-w-md bg-dark-card border border-dark-border rounded-2xl shadow-2xl overflow-hidden pointer-events-auto"
                             style={{
                                 // CRITICAL FIX: 'dark' is not a valid theme value. 'default' is the standard dark theme.
                                 // We show green shadow for non-default themes or just always show a subtle shadow.
@@ -203,9 +220,10 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
 
                             </form>
                         </motion.div>
-                    </motion.div>
+                    </div>
                 </>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }

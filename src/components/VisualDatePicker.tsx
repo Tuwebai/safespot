@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
 
 interface VisualDatePickerProps {
   value: string // ISO string
@@ -18,6 +20,11 @@ export function VisualDatePicker({ value, onChange, error }: VisualDatePickerPro
     minutes: selectedDate.getMinutes().toString().padStart(2, '0')
   })
   const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate.getFullYear(), selectedDate.getMonth()))
+  
+  // 🏛️ ENTERPRISE: Bloquear scroll cuando está abierto
+  useScrollLock(isOpen);
+  
+  const zIndexes = getOverlayZIndex('modal');
 
   const formatDisplayValue = (isoString: string) => {
     if (!isoString) return ''
@@ -89,12 +96,16 @@ export function VisualDatePicker({ value, onChange, error }: VisualDatePickerPro
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-[9990]"
+            className="fixed inset-0 bg-black/50"
+            style={{ zIndex: zIndexes.backdrop }}
             onClick={() => setIsOpen(false)}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+          <div 
+            className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+            style={{ zIndex: zIndexes.content }}
+          >
             {/* 
                 pointer-events-auto added to the modal content so clicks inside work,
                 while the container lets clicks pass through (though backdrop catches them usually).

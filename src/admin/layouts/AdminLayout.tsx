@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { useEffect, useState, useRef } from 'react'
 import { useAdminProfile } from '@/admin/hooks/useAdminProfile'
+import { Z_INDEX } from '@/config/z-index'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -151,7 +152,8 @@ export function AdminLayout() {
             {/* Mobile Menu Overlay */}
             {isMobileMenuOpen && (
                 <div 
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm lg:hidden"
+                    style={{ zIndex: Z_INDEX.DRAWER_BACKDROP }}
                     aria-hidden="true"
                 />
             )}
@@ -160,10 +162,11 @@ export function AdminLayout() {
             <aside 
                 ref={sidebarRef}
                 className={cn(
-                    "border-r border-[#1e293b] flex flex-col fixed h-full bg-[#020617] z-40 transition-transform duration-300 ease-in-out",
+                    "border-r border-[#1e293b] flex flex-col fixed h-full bg-[#020617] transition-transform duration-300 ease-in-out",
                     "w-64 lg:translate-x-0",
                     isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
                 )}
+                style={{ zIndex: Z_INDEX.DRAWER_CONTENT }}
             >
                 <div className="h-16 flex items-center justify-between px-6 border-b border-[#1e293b]">
                     <Link to="/" className="text-[#00ff88] font-bold text-xl tracking-wider flex items-center gap-2 hover:opacity-80 transition-opacity">

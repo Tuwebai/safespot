@@ -2,6 +2,8 @@ import { motion, PanInfo, useAnimation } from 'framer-motion'
 import { ReactNode, useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './button'
+import { getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
 
 interface BottomSheetProps {
     isOpen: boolean
@@ -20,6 +22,9 @@ export function BottomSheet({
 }: BottomSheetProps) {
     const controls = useAnimation()
     const [currentSnap, setCurrentSnap] = useState(0)
+    
+    // 🏛️ ENTERPRISE: Bloquear scroll cuando está abierto
+    useScrollLock(isOpen);
 
     useEffect(() => {
         if (isOpen) {
@@ -59,6 +64,8 @@ export function BottomSheet({
     }
 
     if (!isOpen) return null
+    
+    const zIndexes = getOverlayZIndex('sheet');
 
     return (
         <>
@@ -68,7 +75,8 @@ export function BottomSheet({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={onClose}
-                className="fixed inset-0 bg-black/50 z-[100] md:hidden"
+                className="fixed inset-0 bg-black/50 md:hidden"
+                style={{ zIndex: zIndexes.backdrop }}
             />
 
             {/* Bottom Sheet */}
@@ -80,7 +88,8 @@ export function BottomSheet({
                 animate={controls}
                 initial={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                className="fixed bottom-0 left-0 right-0 bg-dark-card rounded-t-3xl shadow-2xl z-[101] md:hidden max-h-[90vh] flex flex-col"
+                className="fixed bottom-0 left-0 right-0 bg-dark-card rounded-t-3xl shadow-2xl md:hidden max-h-[90vh] flex flex-col"
+                style={{ zIndex: zIndexes.content }}
             >
                 {/* Drag Handle */}
                 <div className="w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">

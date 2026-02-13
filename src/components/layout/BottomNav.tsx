@@ -1,6 +1,7 @@
 import { Home, MapPin, Plus, Map, User } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { Z_INDEX } from '@/config/z-index'
 
 interface NavItem {
     icon: typeof Home
@@ -23,7 +24,10 @@ export function BottomNav() {
     const location = useLocation()
 
     return (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-50 safe-area-bottom">
+        <nav 
+            className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border safe-area-bottom"
+            style={{ zIndex: Z_INDEX.BOTTOM_NAV }}
+        >
             <div className="flex items-center h-14">
                 {navItems.map((item) => {
                     const isActive = location.pathname === item.path

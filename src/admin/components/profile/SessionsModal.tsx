@@ -1,9 +1,9 @@
 /**
  * SessionsModal - Enterprise Grade
  * 
- * Gestión de sesiones activas del administrador con:
- * - Visualización detallada de dispositivos
- * - Geolocalización de IPs
+ * Gestion de sesiones activas del administrador con:
+ * - Visualizacion detallada de dispositivos
+ * - Geolocalizacion de IPs
  * - Cierre granular de sesiones
  * - Indicadores de estado en tiempo real
  * - Accesibilidad completa
@@ -26,6 +26,9 @@ import { Modal } from '@/admin/components/ui/Modal'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
+import { useKeyPress } from '@/hooks/useKeyPress'
 
 // Import types and hooks from profile module
 import { 
@@ -202,7 +205,6 @@ export function SessionsModal({ sessions, currentSessionId }: SessionsModalProps
                     Ver Sesiones ({sessions.length})
                 </Button>
             }
-
         >
             <div className="space-y-4">
                 {/* Security notice */}
@@ -210,7 +212,7 @@ export function SessionsModal({ sessions, currentSessionId }: SessionsModalProps
                     <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
                     <p className="text-xs text-amber-800 dark:text-amber-200">
                         Revisa regularmente tus sesiones activas. Si detectas actividad sospechosa, 
-                        cierra todas las sesiones y cambia tu contraseña inmediatamente.
+                        cierra todas las sesiones y cambia tu contrasena inmediatamente.
                     </p>
                 </div>
 
@@ -253,7 +255,7 @@ export function SessionsModal({ sessions, currentSessionId }: SessionsModalProps
                                 onClick={handleCloseSelected}
                             >
                                 {closeSpecificMutation.isPending ? (
-                                    <span className="animate-spin">⏳</span>
+                                    <span className="animate-spin">...</span>
                                 ) : (
                                     <>
                                         <X className="h-4 w-4 mr-1" />
@@ -268,33 +270,49 @@ export function SessionsModal({ sessions, currentSessionId }: SessionsModalProps
 
             {/* Confirmation dialog for close all */}
             {showConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div className="bg-background p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
-                        <h4 className="text-lg font-semibold mb-2">
-                            ¿Cerrar todas las sesiones?
-                        </h4>
-                        <p className="text-sm text-muted-foreground mb-4">
-                            Esto cerrará todas tus sesiones activas incluyendo la actual. 
-                            Necesitarás volver a iniciar sesión.
-                        </p>
-                        <div className="flex justify-end gap-2">
-                            <Button 
-                                variant="outline" 
-                                onClick={() => setShowConfirm(false)}
-                            >
-                                Cancelar
-                            </Button>
-                            <Button 
-                                variant="destructive"
-                                onClick={handleCloseAll}
-                                disabled={closeSessionsMutation.isPending}
-                            >
-                                {closeSessionsMutation.isPending ? 'Cerrando...' : 'Sí, Cerrar Todas'}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <ConfirmationDialog 
+                    onClose={() => setShowConfirm(false)} 
+                    onConfirm={handleCloseAll} 
+                    isPending={closeSessionsMutation.isPending} 
+                />
             )}
         </Modal>
+    )
+}
+
+function ConfirmationDialog({ onClose, onConfirm, isPending }: { onClose: () => void, onConfirm: () => void, isPending: boolean }) {
+    useScrollLock(true)
+    useKeyPress('Escape', onClose, true)
+    const zIndexes = getOverlayZIndex('confirmation')
+    
+    return (
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: zIndexes.content }}>
+            <div 
+                className="fixed inset-0 bg-black/50" 
+                style={{ zIndex: zIndexes.backdrop }} 
+                onClick={onClose} 
+            />
+            <div className="bg-background p-6 rounded-lg shadow-lg max-w-md w-full mx-4 relative" style={{ zIndex: zIndexes.content }}>
+                <h4 className="text-lg font-semibold mb-2">
+                    Cerrar todas las sesiones?
+                </h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                    Esto cerrara todas tus sesiones activas incluyendo la actual. 
+                    Necesitaras volver a iniciar sesion.
+                </p>
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={onClose}>
+                        Cancelar
+                    </Button>
+                    <Button 
+                        variant="destructive"
+                        onClick={onConfirm}
+                        disabled={isPending}
+                    >
+                        {isPending ? 'Cerrando...' : 'Si, Cerrar Todas'}
+                    </Button>
+                </div>
+            </div>
+        </div>
     )
 }

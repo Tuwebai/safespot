@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { getOverlayZIndex } from '@/config/z-index'
 
 interface ModalProps {
     open: boolean
@@ -41,6 +42,8 @@ export function Modal({
         }
     }, [open, onOpenChange])
 
+    const zIndexes = getOverlayZIndex('modal')
+
     return (
         <>
             {/* Trigger element */}
@@ -52,11 +55,12 @@ export function Modal({
 
             {/* Modal content */}
             {open && createPortal(
-                <div className="fixed inset-0 z-[50] flex items-center justify-center">
+                <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: zIndexes.content }}>
                     {/* Backdrop */}
                     <div
                         ref={overlayRef}
-                        className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+                        className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+                        style={{ zIndex: zIndexes.backdrop }}
                         onClick={(e) => {
                             if (e.target === overlayRef.current) onOpenChange(false)
                         }}

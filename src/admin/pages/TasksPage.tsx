@@ -22,6 +22,9 @@ import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { useAdminTasks, AdminTask } from '../hooks/useAdminTasks'
 import { v4 as uuidv4 } from 'uuid'
+import { getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
+import { useKeyPress } from '@/hooks/useKeyPress'
 
 export interface TaskMetadata {
     report_id?: string;
@@ -39,6 +42,11 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
         severity: 'low',
         type: 'manual'
     })
+    
+    useScrollLock(isOpen)
+    useKeyPress('Escape', onClose, isOpen)
+    
+    const zIndexes = getOverlayZIndex('modal')
 
     if (!isOpen) return null
 
@@ -70,9 +78,14 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => 
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[#0f172a] border border-[#1e293b] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-                <div className="p-4 sm:p-6 border-b border-[#1e293b] flex items-center justify-between sticky top-0 bg-[#0f172a] z-10">
+        <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4" style={{ zIndex: zIndexes.content }}>
+            <div 
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" 
+                style={{ zIndex: zIndexes.backdrop }}
+                onClick={onClose}
+            />
+            <div className="bg-[#0f172a] border border-[#1e293b] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto relative" style={{ zIndex: zIndexes.content }}>
+                <div className="p-4 sm:p-6 border-b border-[#1e293b] flex items-center justify-between sticky top-0 bg-[#0f172a]">
                     <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                         <Plus className="h-5 w-5 text-[#00ff88]" />
                         Nueva Tarea
@@ -591,7 +604,8 @@ export function TasksPage() {
                                                 {activeDropdownId === task.id && (
                                                     <div
                                                         ref={dropdownRef}
-                                                        className="absolute right-0 top-full mt-2 w-48 bg-[#0f172a] border border-[#1e293b] rounded-xl shadow-2xl z-[100] py-1"
+                                                        className="absolute right-0 top-full mt-2 w-48 bg-[#0f172a] border border-[#1e293b] rounded-xl shadow-2xl py-1"
+                                                        style={{ zIndex: 50 }}
                                                     >
                                                         {task.status === 'pending' && (
                                                             <button

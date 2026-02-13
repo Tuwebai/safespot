@@ -4,6 +4,9 @@ import { createPortal } from 'react-dom'
 import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfetti } from '@/hooks/useConfetti'
+import { getOverlayZIndex } from '@/config/z-index';
+import { useScrollLock } from '@/hooks/useScrollLock';
+import { useKeyPress } from '@/hooks/useKeyPress';
 
 interface LegendaryBadgeRevealProps {
     badge: {
@@ -34,18 +37,27 @@ export function LegendaryBadgeReveal({ badge, onClose }: LegendaryBadgeRevealPro
         }
     }, [fireLegendaryConfetti])
 
+    // 🏛️ ENTERPRISE: Bloquear scroll y Escape
+    useScrollLock(true);
+    useKeyPress('Escape', onClose, true);
+    
     if (badge.rarity !== 'legendary') return null
+    
+    const zIndexes = getOverlayZIndex('emergency');
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            {/* Backdrop with blur and fade in */}
+        <div 
+            className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+            style={{ zIndex: zIndexes.content }}
+        >
+            {/* Backdrop */}
             <div
-                className={`absolute inset-0 bg-black/90 backdrop-blur-sm transition-opacity duration-1000 ${visible ? 'opacity-100' : 'opacity-0'}`}
+                className="fixed inset-0 bg-black/90 backdrop-blur-sm pointer-events-auto"
+                style={{ zIndex: zIndexes.backdrop }}
                 onClick={onClose}
             />
-
-            {/* Main Container */}
-            <div className="relative w-full max-w-md text-center">
+            {/* Content */}
+            <div className="relative w-full max-w-md text-center pointer-events-auto">
 
                 {/* God Rays / Radiant Background */}
                 <div className={`absolute inset-0 -z-10 transition-all duration-1000 delay-500 scale-[2] ${visible ? 'opacity-100' : 'opacity-0'}`}>

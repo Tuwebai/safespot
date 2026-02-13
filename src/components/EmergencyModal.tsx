@@ -7,6 +7,9 @@
 
 import { createPortal } from 'react-dom';
 import { X, Phone, ExternalLink, AlertTriangle, Shield } from 'lucide-react';
+import { getOverlayZIndex } from '@/config/z-index';
+import { useScrollLock } from '@/hooks/useScrollLock';
+import { useKeyPress } from '@/hooks/useKeyPress';
 
 interface EmergencyModalProps {
     isOpen: boolean;
@@ -31,22 +34,37 @@ const PROVINCIAL_LINKS: Record<string, { name: string; url: string }> = {
 };
 
 export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProps) {
+    // 🏛️ ENTERPRISE: Bloquear scroll y Escape
+    useScrollLock(isOpen);
+    useKeyPress('Escape', onClose, isOpen);
+    
     if (!isOpen) return null;
 
     const provincialLink = province ? PROVINCIAL_LINKS[province] : null;
+    const zIndexes = getOverlayZIndex('emergency');
 
     return createPortal(
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="emergency-modal-title"
-            onClick={onClose}
-        >
+        <>
+            {/* Backdrop */}
             <div
-                className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200"
-                onClick={e => e.stopPropagation()}
+                className="fixed inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+                style={{ zIndex: zIndexes.backdrop }}
+                onClick={onClose}
+                aria-hidden="true"
+            />
+            
+            {/* Content Container */}
+            <div
+                className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+                style={{ zIndex: zIndexes.content }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="emergency-modal-title"
             >
+                <div
+                    className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200 pointer-events-auto"
+                    onClick={e => e.stopPropagation()}
+                >
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-dark-border">
                     <div className="flex items-center gap-3">
@@ -156,7 +174,8 @@ export function EmergencyModal({ isOpen, onClose, province }: EmergencyModalProp
                     </button>
                 </div>
             </div>
-        </div>,
+        </div>
+        </>,
         document.body
     );
 }

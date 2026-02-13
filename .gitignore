@@ -47,3 +47,7 @@ PAGE_AUDIT_REPORT.md
 server/.env.feature_flag_example
 full_changes.txt
 AGENTS.md
+docs/AUDITORIA_ESTRUCTURAL_VISUAL.md
+.gitignore
+docs/IMPLEMENTACION_ZINDEX_FASE1.md
+docs/EJEMPLOS_CORRECCION_ZINDEX.md

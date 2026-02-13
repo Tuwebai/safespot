@@ -5,13 +5,16 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NotificationBell } from '@/components/NotificationBell'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { resolveAvatarUrl } from '@/lib/avatar'
 import { useChatRooms } from '@/hooks/queries/useChatsQuery'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
-
+import { Z_INDEX, getOverlayZIndex } from '@/config/z-index'
+import { useScrollLock } from '@/hooks/useScrollLock'
+import { useKeyPress } from '@/hooks/useKeyPress'
 
 export function Header() {
   const location = useLocation()
@@ -57,195 +60,184 @@ export function Header() {
     }
   }, [mobileMenuOpen, queryClient])
 
-  // Close menu on escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && mobileMenuOpen) {
-        setMobileMenuOpen(false)
-      }
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [mobileMenuOpen])
+  // 🏛️ ENTERPRISE: Bloquear scroll cuando drawer está abierto
+  useScrollLock(mobileMenuOpen);
+  
+  // 🏛️ ENTERPRISE: Cerrar drawer con Escape
+  useKeyPress('Escape', () => setMobileMenuOpen(false), mobileMenuOpen);
 
-  // Prevent body scroll when menu is open
-  useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = 'unset'
-    }
-    return () => {
-      document.body.style.overflow = 'unset'
-    }
-  }, [mobileMenuOpen])
+  const drawerZIndexes = getOverlayZIndex('drawer');
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border bg-card pt-[env(safe-area-inset-top)]">
-      <div className="container mx-auto max-w-7xl px-4 lg:px-8">
-        <div className="flex h-14 sm:h-16 items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary to-primary/70 flex items-center justify-center">
-              <MapPin className="w-5 h-5 text-dark-bg" />
-            </div>
-            <div className="text-xl font-bold gradient-text">SafeSpot</div>
-          </Link>
-
-          {/* Navegación Desktop */}
-          <nav className="hidden md:flex items-center gap-6 lg:gap-8">
-            {navItems.map((item) => {
-              const Icon = item.icon
-              const active = isActive(item.path)
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onMouseEnter={() => {
-                    // Prefetch data for "instant" feel
-                    if (item.path === '/reportes' || item.path === '/explorar') {
-                      queryClient.prefetchQuery({
-                        queryKey: ['reports', 'list'],
-                        queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
-                      })
-                    } else if (item.path === '/gamificacion') {
-                      queryClient.prefetchQuery({
-                        queryKey: ['gamification', 'summary'],
-                        queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
-                      })
-                    }
-                  }}
-                >
-                  <button
-                    className={cn(
-                      'text-sm font-medium px-3 py-2 rounded-md transition-colors',
-                      active
-                        ? 'text-neon-green bg-neon-green/10'
-                        : 'text-muted-foreground hover:text-primary hover:bg-primary/5'
-                    )}
-                  >
-                    <Icon className="inline-block mr-2 h-4 w-4" />
-                    {item.label}
-                  </button>
-                </Link>
-              )
-            })}
-          </nav>
-
-          {/* Notification Bell and Create Report Button */}
-          <div className="hidden md:flex items-center gap-3 lg:gap-4">
-            <Link
-              to="/mensajes"
-              className={cn(
-                "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
-                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
-              )}
-              title="Mensajes"
-              aria-label="Mensajes"
-            >
-              <MessageSquare className="h-5 w-5" />
-              {unreadMessagesCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card animate-in zoom-in duration-300">
-                  {unreadMessagesCount}
-                </span>
-              )}
-            </Link>
-            <NotificationBell />
-            <Link to="/perfil">
-              <div className={cn(
-                "flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full border transition-all hover:bg-primary/10 cursor-pointer overflow-hidden",
-                isActive('/perfil')
-                  ? "border-primary bg-primary/10"
-                  : "border-transparent hover:border-primary/50"
-              )}
-                aria-label="Ver mi perfil y logros"
-                title="Mi Perfil"
-              >
-                <Avatar className="h-9 w-9">
-                  <AvatarImage
-                    src={resolveAvatarUrl(profile || {}, anonymousId)}
-                    alt="Avatar"
-                    className="object-cover"
-                  />
-                  <AvatarFallback className="bg-transparent text-muted-foreground">
-                    <User className="h-5 w-5" />
-                  </AvatarFallback>
-                </Avatar>
+    <header 
+      className="sticky top-0 w-full border-b border-border bg-card"
+      style={{ zIndex: Z_INDEX.HEADER }}
+    >
+      <div className="pt-[env(safe-area-inset-top)]">
+        <div className="container mx-auto max-w-7xl px-4 lg:px-8">
+          <div className="flex h-14 sm:h-16 items-center justify-between">
+            {/* Logo */}
+            <Link to="/" className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary to-primary/70 flex items-center justify-center">
+                <MapPin className="w-5 h-5 text-dark-bg" />
               </div>
+              <div className="text-xl font-bold gradient-text">SafeSpot</div>
             </Link>
-            <Button
-              onClick={handleCreateReport}
-              className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg transition-all active:scale-95"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Crear Reporte
-            </Button>
-          </div>
 
-          {/* Mobile Menu Button */}
-          <div className="flex md:hidden items-center space-x-1">
-            <Link
-              to="/mensajes"
-              className={cn(
-                "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
-                isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
-              )}
-              aria-label="Mensajes"
-            >
-              <MessageSquare className="h-5 w-5" />
-              {unreadMessagesCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
-                  {unreadMessagesCount}
-                </span>
-              )}
-            </Link>
-            <div className="flex items-center justify-center min-h-[44px] min-w-[44px]">
+            {/* Navegación Desktop */}
+            <nav className="hidden md:flex items-center gap-6 lg:gap-8">
+              {navItems.map((item) => {
+                const Icon = item.icon
+                const active = isActive(item.path)
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onMouseEnter={() => {
+                      // Prefetch data for "instant" feel
+                      if (item.path === '/reportes' || item.path === '/explorar') {
+                        queryClient.prefetchQuery({
+                          queryKey: ['reports', 'list'],
+                          queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
+                        })
+                      } else if (item.path === '/gamificacion') {
+                        queryClient.prefetchQuery({
+                          queryKey: ['gamification', 'summary'],
+                          queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
+                        })
+                      }
+                    }}
+                  >
+                    <button
+                      className={cn(
+                        'text-sm font-medium px-3 py-2 rounded-md transition-colors',
+                        active
+                          ? 'text-neon-green bg-neon-green/10'
+                          : 'text-muted-foreground hover:text-primary hover:bg-primary/5'
+                      )}
+                    >
+                      <Icon className="inline-block mr-2 h-4 w-4" />
+                      {item.label}
+                    </button>
+                  </Link>
+                )
+              })}
+            </nav>
+
+            {/* Notification Bell and Create Report Button */}
+            <div className="hidden md:flex items-center gap-3 lg:gap-4">
+              <Link
+                to="/mensajes"
+                className={cn(
+                  "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
+                  isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
+                )}
+                title="Mensajes"
+                aria-label="Mensajes"
+              >
+                <MessageSquare className="h-5 w-5" />
+                {unreadMessagesCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card animate-in zoom-in duration-300">
+                    {unreadMessagesCount}
+                  </span>
+                )}
+              </Link>
               <NotificationBell />
+              <Link to="/perfil">
+                <div className={cn(
+                  "flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full border transition-all hover:bg-primary/10 cursor-pointer overflow-hidden",
+                  isActive('/perfil')
+                    ? "border-primary bg-primary/10"
+                    : "border-transparent hover:border-primary/50"
+                )}
+                  aria-label="Ver mi perfil y logros"
+                  title="Mi Perfil"
+                >
+                  <Avatar className="h-9 w-9">
+                    <AvatarImage
+                      src={resolveAvatarUrl(profile || {}, anonymousId)}
+                      alt="Avatar"
+                      className="object-cover"
+                    />
+                    <AvatarFallback className="bg-transparent text-muted-foreground">
+                      <User className="h-5 w-5" />
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              </Link>
+              <Button
+                onClick={handleCreateReport}
+                className="neon-glow bg-neon-green hover:bg-neon-green/90 text-dark-bg transition-all active:scale-95"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Crear Reporte
+              </Button>
             </div>
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] text-muted-foreground hover:text-primary transition-colors"
-              aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
-            >
-              <PanelLeft className="h-5 w-5" />
-            </button>
+
+            {/* Mobile Menu Button */}
+            <div className="flex md:hidden items-center space-x-1">
+              <Link
+                to="/mensajes"
+                className={cn(
+                  "relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-full transition-colors hover:bg-primary/10",
+                  isActive('/mensajes') ? "text-primary bg-primary/10" : "text-muted-foreground"
+                )}
+                aria-label="Mensajes"
+              >
+                <MessageSquare className="h-5 w-5" />
+                {unreadMessagesCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
+                    {unreadMessagesCount}
+                  </span>
+                )}
+              </Link>
+              <div className="flex items-center justify-center min-h-[44px] min-w-[44px]">
+                <NotificationBell />
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="flex items-center justify-center min-h-[44px] min-w-[44px] text-muted-foreground hover:text-primary transition-colors"
+                aria-label={mobileMenuOpen ? "Cerrar menú principal" : "Abrir menú principal"}
+                aria-expanded={mobileMenuOpen}
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile Drawer Overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-300"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Mobile Drawer */}
-      <div
-        className={cn(
-          "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] min-w-[250px] bg-card border-l border-border z-[100] md:hidden shadow-2xl",
-          "transform transition-transform duration-300 ease-in-out safe-area-insets",
-          mobileMenuOpen ? "translate-x-0" : "translate-x-full"
-        )}
-        onTouchStart={(e) => {
-          const touch = e.touches[0]
-          // @ts-ignore
-          e.currentTarget.dataset.startX = touch.clientX.toString()
-        }}
-        onTouchMove={(e) => {
-          const touch = e.touches[0]
-          // @ts-ignore
-          const startX = parseFloat(e.currentTarget.dataset.startX || '0')
-          const currentX = touch.clientX
-          const diff = currentX - startX
-
-          // If swiping right (diff > 0) significantly, we could animate/close
-          if (diff > 50) {
-            setMobileMenuOpen(false)
-          }
-        }}
-      >
+      {/* 🏛️ ENTERPRISE: Mobile Drawer (Portal) */}
+      {createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className={cn(
+              "fixed inset-0 bg-black/50 backdrop-blur-sm md:hidden transition-opacity duration-300",
+              mobileMenuOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}
+            style={{ zIndex: drawerZIndexes.backdrop }}
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+          
+          {/* Drawer */}
+          <div
+            className={cn(
+              "fixed inset-y-0 right-0 w-[85vw] max-w-[320px] min-w-[250px] bg-card border-l border-border md:hidden shadow-2xl",
+              "transform transition-transform duration-300 ease-in-out",
+              "flex flex-col",
+              mobileMenuOpen ? "translate-x-0" : "translate-x-full"
+            )}
+            style={{ 
+              zIndex: drawerZIndexes.content,
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingBottom: 'env(safe-area-inset-bottom)'
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú de navegación"
+          >
         {/* Drawer Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center space-x-2">
@@ -257,13 +249,14 @@ export function Header() {
           <button
             onClick={() => setMobileMenuOpen(false)}
             className="p-2 text-muted-foreground hover:text-primary transition-colors"
+            aria-label="Cerrar menú"
           >
             <PanelLeft className="h-5 w-5" />
           </button>
         </div>
 
         {/* Drawer Content */}
-        <nav className="flex flex-col p-4 space-y-1">
+        <nav className="flex flex-col p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.path)
@@ -358,6 +351,9 @@ export function Header() {
           </Button>
         </nav>
       </div>
+        </>,
+        document.body
+      )}
     </header>
   )
 }

@@ -1,7 +1,11 @@
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { X, LogIn, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getOverlayZIndex } from '@/config/z-index';
+import { useScrollLock } from '@/hooks/useScrollLock';
+import { useKeyPress } from '@/hooks/useKeyPress';
 
 interface AuthRequiredModalProps {
     isOpen: boolean;
@@ -21,6 +25,12 @@ interface AuthRequiredModalProps {
  */
 export function AuthRequiredModal({ isOpen, onClose }: AuthRequiredModalProps) {
     const navigate = useNavigate();
+    
+    // 🏛️ ENTERPRISE: Bloquear scroll y Escape
+    useScrollLock(isOpen);
+    useKeyPress('Escape', onClose, isOpen);
+    
+    const zIndexes = getOverlayZIndex('confirmation');
 
     const handleRegister = () => {
         onClose();
@@ -32,22 +42,28 @@ export function AuthRequiredModal({ isOpen, onClose }: AuthRequiredModalProps) {
         navigate('/login');
     };
 
-    return (
+    return createPortal(
         <AnimatePresence>
             {isOpen && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={onClose}
-                    className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-                >
+                <>
                     <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={onClose}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                        style={{ zIndex: zIndexes.backdrop }}
+                    />
+                    <div 
+                        className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+                        style={{ zIndex: zIndexes.content }}
+                    >
+                        <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+                        className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden pointer-events-auto"
                     >
                         {/* Header */}
                         <div className="p-6 border-b border-border flex justify-between items-center">
@@ -96,9 +112,11 @@ export function AuthRequiredModal({ isOpen, onClose }: AuthRequiredModalProps) {
                                 </Button>
                             </div>
                         </div>
-                    </motion.div>
-                </motion.div>
+                        </motion.div>
+                    </div>
+                </>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }

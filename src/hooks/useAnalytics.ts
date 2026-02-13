@@ -34,7 +34,11 @@ interface AnalyticsContext {
   deviceType: string;
   os: string;
   browser: string;
+  sessionReady: boolean;
 }
+
+// Buffer de eventos pendientes (hasta que la sesión se confirme)
+const pendingEvents: Array<{ eventId: string; payload: object }> = [];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -84,7 +88,26 @@ export function useAnalytics() {
 
   // Inicializar contexto una sola vez
   useEffect(() => {
-    const anonymousId = localStorage.getItem('safespot_anonymous_id');
+    const rawAnonymousId = localStorage.getItem('safespot_anonymous_id');
+    
+    // El anonymous_id puede ser un objeto JSON complejo (v2) o un UUID simple
+    // Si es v2, extraer el campo .data que contiene el UUID real
+    let anonymousId: string | null = null;
+    if (rawAnonymousId) {
+      try {
+        const parsed = JSON.parse(rawAnonymousId);
+        // Si tiene versión v2, usar el campo data
+        if (parsed && parsed.version === 'v2' && parsed.data) {
+          anonymousId = parsed.data;
+        } else {
+          anonymousId = rawAnonymousId;
+        }
+      } catch {
+        // Si no es JSON válido, usar el valor directo
+        anonymousId = rawAnonymousId;
+      }
+    }
+    
     const sessionId = uuidv4(); // Nueva sesión por cada visita
 
     contextRef.current = {
@@ -92,20 +115,20 @@ export function useAnalytics() {
       sessionId,
       deviceType: detectDeviceType(),
       os: detectOS(),
-      browser: detectBrowser()
+      browser: detectBrowser(),
+      sessionReady: false
     };
 
-    // Iniciar sesión en backend (fire and forget)
-    startSession(contextRef.current).catch(() => {});
-
-    // Trackear page view inicial
-    trackEvent({
-      event_type: 'page_view',
-      metadata: {
-        path: window.location.pathname,
-        title: document.title
-      }
-    }).catch(() => {});
+    // Iniciar sesión en backend, luego enviar eventos pendientes
+    startSession(contextRef.current)
+      .then(() => {
+        if (contextRef.current) {
+          contextRef.current.sessionReady = true;
+        }
+        // Enviar eventos pendientes
+        flushPendingEvents();
+      })
+      .catch(() => {});
 
     // Cerrar sesión al salir
     const handleBeforeUnload = () => {
@@ -121,6 +144,7 @@ export function useAnalytics() {
 
   /**
    * Trackea un evento
+   * Si la sesión no está lista, guarda en buffer para enviar después
    */
   const trackEvent = useCallback(async (options: TrackEventOptions) => {
     const context = contextRef.current;
@@ -137,23 +161,45 @@ export function useAnalytics() {
       metadata: options.metadata || {}
     };
 
+    // Si la sesión no está lista, guardar en buffer
+    if (!context.sessionReady) {
+      pendingEvents.push({ eventId, payload });
+      return;
+    }
+
+    // Enviar inmediatamente
+    await sendEvent(payload);
+  }, []);
+
+  /**
+   * Envía un evento al backend
+   */
+  async function sendEvent(payload: object) {
     try {
       const response = await fetch(`${API_URL}/api/analytics/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        // No esperamos respuesta crítica
         signal: AbortSignal.timeout(5000)
       });
 
-      if (!response.ok) {
-        // Silenciar errores - analytics no debe afectar UX
+      if (!response.ok && response.status !== 200) {
         console.warn('[Analytics] Track failed:', response.status);
       }
     } catch {
       // Silenciar errores de red
     }
-  }, []);
+  }
+
+  /**
+   * Envía eventos pendientes del buffer
+   */
+  function flushPendingEvents() {
+    while (pendingEvents.length > 0) {
+      const { payload } = pendingEvents.shift()!;
+      sendEvent(payload).catch(() => {});
+    }
+  }
 
   return { trackEvent };
 }
