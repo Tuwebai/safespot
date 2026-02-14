@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getAnonymousId } from '@/lib/identity';
+import { ssePool } from '@/lib/ssePool';
 
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
@@ -30,6 +31,16 @@ export const usePresenceHeartbeat = () => {
             const anonymousId = getAnonymousId();
             if (!anonymousId) {
                 console.warn('[Presence] Heartbeat skipped: identity not ready');
+                return;
+            }
+
+            // 🏛️ PHASE 3: SSE-aware Heartbeat Optimization
+            // Skip redundant HTTP heartbeat if SSE connection is healthy
+            // SSE server heartbeat already renews TTL every 15s
+            if (ssePool.isConnectionHealthy()) {
+                if (import.meta.env.DEV && localStorage.getItem('debug_presence') === 'true') {
+                    console.debug('[Presence] HTTP heartbeat skipped (SSE connected)');
+                }
                 return;
             }
 
