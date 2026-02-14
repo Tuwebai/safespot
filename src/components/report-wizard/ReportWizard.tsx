@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { Z_INDEX } from '@/config/z-index'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
@@ -90,7 +91,7 @@ export function ReportWizard() {
     return (
         <div className="min-h-screen bg-background">
             {/* Header */}
-            <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b border-border">
+            <header className="sticky top-0 bg-background/90 border-b border-border" style={{ zIndex: Z_INDEX.HEADER, backdropFilter: 'blur(12px)' }}>
                 <div className="max-w-2xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between mb-4">
                         <button

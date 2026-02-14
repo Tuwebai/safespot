@@ -71,7 +71,11 @@ export function validateCoordinates(lat, lng) {
  */
 export function requireAnonymousId(req, res, next) {
   try {
-    const anonymousId = req.headers['x-anonymous-id'];
+    // 🔧 FIX: Support SSE/EventSource which cannot send custom headers
+    // Try header first, then query param for GET requests (SSE)
+    const anonymousId = req.headers['x-anonymous-id'] || 
+                        (req.method === 'GET' && req.query?.anonymousId) || 
+                        req.body?.anonymousId;
     const signature = req.headers['x-anonymous-signature'];
 
     validateAnonymousId(anonymousId);

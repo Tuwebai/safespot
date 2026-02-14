@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, MessageSquare } from 'lucide-react';
+import { getOverlayZIndex } from '@/config/z-index';
 
 interface PromptModalProps {
     isOpen: boolean;
@@ -82,9 +83,23 @@ export function PromptModal({
         }
     };
 
+    const zIndexes = getOverlayZIndex('modal');
+
     return createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="bg-card border border-border w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+        <>
+            <div 
+                className="fixed inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-200" 
+                style={{ zIndex: zIndexes.backdrop }}
+                onClick={handleClose}
+            />
+            <div 
+                className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+                style={{ zIndex: zIndexes.content }}
+            >
+                <div 
+                    className="bg-card border border-border w-full max-w-md rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
+                    onClick={(e) => e.stopPropagation()}
+                >
                 {/* Header */}
                 <div className={`p-4 border-b border-border flex items-center gap-3 ${getHeaderStyles()}`}>
                     <div className={`p-2 rounded-lg ${getIconStyles()}`}>
@@ -140,7 +155,8 @@ export function PromptModal({
                     </Button>
                 </div>
             </div>
-        </div>,
+        </div>
+        </>,
         document.body
     );
 }

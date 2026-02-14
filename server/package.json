@@ -11,7 +11,13 @@
     "sync:counters": "node src/scripts/syncCounters.js",
     "test-connection": "node test-connection.js",
     "test-db": "node test-direct-connection.js",
-    "test:contracts": "node src/scripts/verify-contract.js"
+    "test:contracts": "node src/scripts/verify-contract.js",
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix",
+    "security:audit": "node scripts/security-audit.js",
+    "security:test": "node tests/security/chat-membership.test.js",
+    "test": "vitest run",
+    "prepare": "cd .. && husky install server/.husky || true"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.4.0",
@@ -50,6 +56,8 @@
     "@types/node": "^20.10.0",
     "@types/pg": "^8.16.0",
     "@types/uuid": "^9.0.7",
+    "eslint": "^8.57.0",
+    "husky": "^8.0.3",
     "supertest": "^7.2.2",
     "vitest": "^4.0.17"
   }

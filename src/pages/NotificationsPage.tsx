@@ -204,7 +204,7 @@ export default function NotificationsPage() {
                 />
             )}
             {undoState && (
-                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
+                <div className={`fixed bottom-20 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-50`}>
                     <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 text-white p-4 rounded-lg shadow-xl animate-in slide-in-from-bottom-5">
                         <span className="flex items-center gap-2 text-sm">
                             <Trash2 className="w-4 h-4 text-red-500" />

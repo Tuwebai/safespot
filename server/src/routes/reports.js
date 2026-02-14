@@ -62,8 +62,8 @@ import logger from '../utils/logger.js';
  */
 router.get('/', async (req, res, next) => {
   try {
-    const authHeader = req.headers['x-anonymous-id'];
-    const anonymousId = (authHeader && authHeader.trim() !== '') ? authHeader.trim() : null;
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available
+    const anonymousId = req.user?.anonymous_id || null;
     const userRole = req.user?.role || 'citizen';
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
@@ -703,8 +703,8 @@ router.get('/:id/pdf', exportReportPDF);
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const authHeader = req.headers['x-anonymous-id'];
-    const anonymousId = (authHeader && authHeader.trim() !== '') ? authHeader.trim() : null;
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available
+    const anonymousId = req.user?.anonymous_id || null;
     const sanitizedId = sanitizeUuidParam(anonymousId);
 
     // Graceful handling for temp IDs
@@ -983,7 +983,8 @@ router.post('/',
 router.get('/:id/related', async (req, res) => {
   try {
     const { id } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'] || '';
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available
+    const anonymousId = req.user?.anonymous_id || null;
     const userRole = req.user?.role || 'citizen';
 
     // Graceful handling for temp IDs

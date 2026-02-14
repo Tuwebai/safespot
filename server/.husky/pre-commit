@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔒 Running SafeSpot Security Checks..."
+
+# Check for ESLint errors
+cd server || exit 1
+
+echo "📋 Checking ESLint rules..."
+npm run lint || {
+    echo "❌ ESLint failed. Fix errors before committing."
+    echo "🔧 Run: npm run lint:fix"
+    exit 1
+}
+
+echo "🔍 Running security audit..."
+npm run security:audit || {
+    echo "❌ Security audit failed. Fix violations before committing."
+    exit 1
+}
+
+echo "📦 Running npm audit..."
+npm audit --audit-level=moderate || {
+    echo "⚠️ Security vulnerabilities found. Review before committing."
+    exit 1
+}
+
+echo "✅ All security checks passed!"

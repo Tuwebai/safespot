@@ -28,13 +28,13 @@ const router = express.Router();
  * Get a single comment by ID (Canonical Detail Fetch)
  * Used by useComment queryFn to restore CMT-001 Invariant
  */
-router.get('/id/:id', async (req, res, next) => {
+router.get('/id/:id', requireAnonymousId, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
 
     const result = await queryWithRLS(
-      anonymousId || '',
+      anonymousId,
       `SELECT 
          c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
          u.avatar_url, u.alias,
@@ -94,7 +94,8 @@ router.get('/id/:id', async (req, res, next) => {
 router.get('/:reportId', async (req, res, next) => {
   try {
     const { reportId } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'];
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available, null otherwise
+    const anonymousId = req.user?.anonymous_id || null;
     const { page, limit } = req.query;
 
     // Graceful handling for temp IDs (Optimistic UI)

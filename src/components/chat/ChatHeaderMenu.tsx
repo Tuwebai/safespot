@@ -13,7 +13,7 @@
  * - Exportar chat
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -43,8 +43,10 @@ export const ChatHeaderMenu: React.FC<ChatHeaderMenuProps> = ({
     onReportUser,
     onBlockUser
 }) => {
+    const [open, setOpen] = useState(false);
+    
     return (
-        <DropdownMenu>
+        <DropdownMenu open={open} onOpenChange={setOpen}>
             <DropdownMenuTrigger asChild>
                 <Button
                     variant="ghost"
@@ -58,6 +60,7 @@ export const ChatHeaderMenu: React.FC<ChatHeaderMenuProps> = ({
             <DropdownMenuContent 
                 align="end" 
                 sideOffset={8}
+                style={{ zIndex: 9999 }}
                 className="w-56 bg-background border border-border shadow-lg"
             >
                 {/* 🏛️ FEATURE: Búsqueda de mensajes */}

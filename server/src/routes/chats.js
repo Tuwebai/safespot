@@ -8,10 +8,14 @@ import multer from 'multer';
 
 import { supabaseAdmin } from '../config/supabase.js';
 import { validateImageBuffer, requireAnonymousId } from '../utils/validation.js';
+import { requireRoomMembership, verifyMembership } from '../middleware/requireRoomMembership.js';
 import { imageUploadLimiter } from '../utils/rateLimiter.js';
 import { NotificationQueue } from '../engine/NotificationQueue.js';
 
 const router = express.Router();
+
+// 🔒 SECURITY FIX: Require authentication on ALL chat endpoints
+router.use(requireAnonymousId);
 
 // Configuración de Multer para Chat
 const upload = multer({
@@ -34,7 +38,7 @@ const upload = multer({
  * Obtiene todas las salas de chat del usuario actual
  */
 router.get('/rooms', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
     if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
 
     try {
@@ -99,7 +103,7 @@ router.get('/rooms', async (req, res) => {
  * Crea una nueva sala de chat vinculada a un reporte
  */
 router.post('/rooms', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
     const { report_id, reportId, recipient_id, recipientId } = req.body;
 
     // Normalize properties
@@ -199,12 +203,17 @@ router.post('/rooms', async (req, res) => {
  * 
  * ✅ WhatsApp-Grade Gap Recovery Support
  */
-router.get('/rooms/:roomId/messages', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const { since } = req.query; // Gap recovery: last known message ID
 
     try {
+        // 🔒 SECURITY FIX: Verify user is member of this conversation
+        if (!await verifyMembership(anonymousId, roomId)) {
+            return res.status(403).json({ error: 'Access denied: Not a member of this conversation' });
+        }
+
         let messagesQuery;
         let params;
 
@@ -341,8 +350,8 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
  * ✅ PERFORMANCE OPTIMIZED: Response sent after INSERT only
  * All other operations (JOINs, updates, SSE, push) are deferred
  */
-router.post('/rooms/:roomId/messages', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const clientId = req.headers['x-client-id'];
     const { content, type = 'text', caption, reply_to_id, id: providedId } = req.body;
@@ -500,8 +509,8 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
  * DELETE /api/chats/:roomId/messages/:messageId
  * Elimina un mensaje para todos (Solo el remitente)
  */
-router.delete('/rooms/:roomId/messages/:messageId', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
 
     try {
@@ -551,8 +560,8 @@ router.delete('/rooms/:roomId/messages/:messageId', async (req, res) => {
  * PATCH /api/chats/:roomId/read
  * Marca todos los mensajes de una sala como leídos
  */
-router.post('/rooms/:roomId/read', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
@@ -604,11 +613,15 @@ router.post('/rooms/:roomId/read', async (req, res) => {
  * PATCH /api/chats/:roomId/delivered
  * Marca todos los mensajes de una sala como entregados (vv gris)
  */
-router.post('/rooms/:roomId/delivered', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
+        // 🔒 SECURITY FIX: Verify user is member of this conversation
+        if (!await verifyMembership(anonymousId, roomId)) {
+            return res.status(403).json({ error: 'Access denied: Not a member of this conversation' });
+        }
         // ✅ WhatsApp-Grade: Get senders BEFORE marking as delivered
         const sendersResult = await queryWithRLS(anonymousId,
             `SELECT DISTINCT sender_id FROM chat_messages 
@@ -659,7 +672,7 @@ router.post('/rooms/:roomId/delivered', async (req, res) => {
  */
 router.post('/messages/:messageId/ack-delivered', async (req, res) => {
     const { messageId } = req.params;
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
 
     if (!messageId || !anonymousId) {
         return res.status(400).json({ error: 'MessageId and X-Anonymous-Id are required' });
@@ -729,8 +742,8 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
  * - SSE room broadcast is immediate
  * - Member lookup for inbox is deferred (non-blocking)
  */
-router.post('/rooms/:roomId/typing', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/typing', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const { isTyping } = req.body;
 
@@ -780,7 +793,7 @@ router.post('/rooms/:roomId/typing', async (req, res) => {
  * POST /api/chats/:roomId/images
  * Sube una imagen para un chat y retorna la URL
  */
-router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.single('image'), async (req, res) => {
+router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, requireRoomMembership, upload.single('image'), async (req, res) => {
     const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const file = req.file;
@@ -853,8 +866,8 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, upload.si
  * POST /api/chats/:roomId/pin
  * Toggle pinned status
  */
-router.post('/rooms/:roomId/pin', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const { isPinned } = req.body;
 
@@ -879,8 +892,8 @@ router.post('/rooms/:roomId/pin', async (req, res) => {
     }
 });
 
-router.delete('/rooms/:roomId/pin', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
@@ -907,8 +920,8 @@ router.delete('/rooms/:roomId/pin', async (req, res) => {
  * POST /api/chats/:roomId/archive
  * Toggle archived status
  */
-router.post('/rooms/:roomId/archive', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/archive', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const { isArchived } = req.body;
 
@@ -932,8 +945,8 @@ router.post('/rooms/:roomId/archive', async (req, res) => {
     }
 });
 
-router.delete('/rooms/:roomId/archive', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId/archive', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
@@ -960,8 +973,8 @@ router.delete('/rooms/:roomId/archive', async (req, res) => {
  * POST /api/chats/:roomId/unread
  * Toggle manually unread status
  */
-router.patch('/rooms/:roomId/unread', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.patch('/rooms/:roomId/unread', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
     const { isUnread } = req.body;
 
@@ -991,8 +1004,8 @@ router.patch('/rooms/:roomId/unread', async (req, res) => {
  * Implemented as removing the member from the conversation.
  * If they chat again, they re-join.
  */
-router.delete('/rooms/:roomId', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
@@ -1031,8 +1044,8 @@ router.delete('/rooms/:roomId', async (req, res) => {
  * - JSONB merge to prevent race conditions
  * - SSE broadcast to all room participants
  */
-router.post('/rooms/:roomId/messages/:messageId/react', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/messages/:messageId/react', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
     const { emoji } = req.body;
 
@@ -1114,8 +1127,8 @@ router.post('/rooms/:roomId/messages/:messageId/react', async (req, res) => {
  * - New pin replaces old
  * - SSE broadcast to all participants
  */
-router.patch('/rooms/:roomId/messages/:messageId/pin', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.patch('/rooms/:roomId/messages/:messageId/pin', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
 
     try {
@@ -1148,8 +1161,8 @@ router.patch('/rooms/:roomId/messages/:messageId/pin', async (req, res) => {
     }
 });
 
-router.delete('/rooms/:roomId/messages/:messageId/pin', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId/messages/:messageId/pin', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId } = req.params;
 
     try {
@@ -1180,8 +1193,8 @@ router.delete('/rooms/:roomId/messages/:messageId/pin', async (req, res) => {
  * - Idempotent (starring twice = no-op)
  * - NO SSE (private feature)
  */
-router.post('/rooms/:roomId/messages/:messageId/star', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.post('/rooms/:roomId/messages/:messageId/star', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
 
     try {
@@ -1216,8 +1229,8 @@ router.post('/rooms/:roomId/messages/:messageId/star', async (req, res) => {
  * DELETE /api/chats/messages/:messageId/star
  * Unstar a message
  */
-router.delete('/rooms/:roomId/messages/:messageId/star', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.delete('/rooms/:roomId/messages/:messageId/star', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
 
     try {
@@ -1238,7 +1251,7 @@ router.delete('/rooms/:roomId/messages/:messageId/star', async (req, res) => {
  * Get all starred messages for the current user
  */
 router.get('/starred', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
 
     try {
         const result = await queryWithRLS(anonymousId,
@@ -1266,8 +1279,8 @@ router.get('/starred', async (req, res) => {
  * PATCH /api/chats/:roomId/messages/:messageId
  * Edit a message (WhatsApp-style: only own messages, within time limit)
  */
-router.patch('/rooms/:roomId/messages/:messageId', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, async (req, res) => {
+    const anonymousId = req.anonymousId;
     const { roomId, messageId } = req.params;
     const { content } = req.body;
 
@@ -1351,7 +1364,7 @@ router.patch('/rooms/:roomId/messages/:messageId', async (req, res) => {
  * - Batch (múltiples mensajes en una llamada)
  */
 router.post('/messages/reconcile-status', async (req, res) => {
-    const anonymousId = req.headers['x-anonymous-id'];
+    const anonymousId = req.anonymousId;
     const { delivered = [], read = [] } = req.body;
 
     if (!anonymousId) {

@@ -371,12 +371,12 @@ router.get('/me', validateAuth, (req, res) => {
         res.json({
             authenticated: true,
             user: req.user,
-            anonymous_id: req.headers['x-anonymous-id']
+            anonymous_id: req.anonymousId || req.user.anonymous_id || null
         });
     } else {
         res.json({
             authenticated: false,
-            anonymous_id: req.headers['x-anonymous-id'] || null,
+            anonymous_id: req.anonymousId || null,
             message: 'Anonymous session'
         });
     }

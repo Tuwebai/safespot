@@ -51,17 +51,36 @@ class UpdateManager {
         // 2. Core SW Registration (Needed for Push/PWA in both Dev & Prod)
         if ('serviceWorker' in navigator) {
             try {
-                // Determine the correct SW path (Vite PWA handles this)
-                // In dev, it's usually /sw.js or similar
-                const swPath = AppVersion.environment === 'development' ? '/sw.js?dev-sw' : '/sw.js';
+                // 🔧 DEV FIX: Vite PWA doesn't compile sw.ts automatically in dev
+                // Use a simplified dev SW in dev mode
+                const isDev = AppVersion.environment === 'development';
+                const swPath = isDev ? '/sw-dev.js' : '/sw.js';
 
-                await navigator.serviceWorker.register(swPath, {
-                    type: AppVersion.environment === 'development' ? 'module' : 'classic',
+                const registration = await navigator.serviceWorker.register(swPath, {
+                    type: isDev ? 'module' : 'classic',
                     scope: '/'
                 });
-                // console.log('[UpdateManager] ✅ Service Worker registered');
+                
+                console.log(`[UpdateManager] ✅ Service Worker registered (${isDev ? 'dev' : 'prod'})`);
+                
+                // Wait for activation before resolving
+                if (registration.installing) {
+                    await new Promise<void>((resolve) => {
+                        registration.installing?.addEventListener('statechange', (e) => {
+                            if ((e.target as ServiceWorker).state === 'activated') {
+                                resolve();
+                            }
+                        });
+                    });
+                }
+                
             } catch (error) {
                 console.error('[UpdateManager] ❌ SW Registration failed:', error);
+                // 🔧 DEV FALLBACK: If registration fails, log detailed error but don't crash
+                if (AppVersion.environment === 'development') {
+                    console.warn('[UpdateManager] ⚠️ Push notifications will not work without Service Worker');
+                    console.warn('[UpdateManager] ⚠️ Try running: npm run build && npm run preview');
+                }
             }
         }
     }

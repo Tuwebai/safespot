@@ -40,8 +40,8 @@ router.get('/catchup', async (req, res) => {
     try {
         const sinceTs = parseInt(since);
 
-        // 2. Get user ID first
-        const anonymousId = req.headers['x-anonymous-id'] || '00000000-0000-0000-0000-000000000000';
+        // 2. Get user ID from verified JWT (set by validateAuth middleware)
+        const anonymousId = req.user?.anonymous_id || '00000000-0000-0000-0000-000000000000';
         
         // 1. Fetch missed Chat Messages (ONLY from user's conversations)
         // 🏛️ SECURITY FIX: Filter by conversation membership

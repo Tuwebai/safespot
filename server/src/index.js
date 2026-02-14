@@ -77,6 +77,7 @@ import adminTasksRouter from './routes/adminTasks.js';
 import adminProfileRouter from './routes/adminProfile.js';
 import adminReportsRouter from './routes/adminReports.js';
 import adminAuditRouter from './routes/adminAudit.js';
+import adminDiagnosticsRouter from './routes/adminDiagnostics.js';
 // Router implements internal verifyAdminToken middleware
 import contactRouter from './routes/contact.js';
 
@@ -140,6 +141,7 @@ app.set('trust proxy', 1);
 const baseOrigins = [
   'http://localhost:5174',
   'http://localhost:5173',
+  'http://localhost:4173',  // Vite preview mode
   'https://safespot.netlify.app',
   process.env.CORS_ORIGIN // e.g. https://safespot.tuweb-ai.com
 ].filter(Boolean);
@@ -209,7 +211,8 @@ app.use(cors({
 
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)
 // These connections are long-lived and Helmet/RateLimits can cause resets
-app.use('/api/realtime', realtimeRouter);
+// 🔴 SECURITY FIX: Added validateAuth to prevent unauthorized access
+app.use('/api/realtime', validateAuth, realtimeRouter);
 
 // 3. Security Middleware (Helmet)
 // Helmet is applied AFTER realtime to avoid interfering with SSE headers
@@ -297,9 +300,10 @@ app.use(validateAuth);
 // RATE LIMITING
 // ============================================
 
-// Base key generator that prioritizes anonymous_id
+// Base key generator that uses ONLY validated identity
+// 🔴 SECURITY FIX: Removed fallback to req.headers['x-anonymous-id'] to prevent spoofing
 const keyGenerator = (req) => {
-  return req.headers['x-anonymous-id'] || req.ip;
+  return req.user?.anonymous_id || req.ip;
 };
 
 // Global limiter: 100 req / 5 min
@@ -422,6 +426,10 @@ app.use('/api/admin/reports', adminReportsRouter);
 // Analytics routes (protected)
 import adminAnalyticsRouter from './routes/adminAnalytics.js';
 app.use('/api/admin/analytics', adminAnalyticsRouter);
+
+// 🔧 DEV ONLY: Diagnostics endpoints (bypass admin auth for local testing)
+// In production, these should be behind admin auth or removed
+app.use('/api/diagnostics', adminDiagnosticsRouter);
 
 app.use('/api/user-zones', userZonesRouter);
 

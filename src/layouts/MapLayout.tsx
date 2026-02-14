@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { Z_INDEX } from '@/config/z-index';
 
 interface MapLayoutProps {
     children: ReactNode
@@ -8,7 +9,7 @@ interface MapLayoutProps {
 
 export function MapLayout({ children, className }: MapLayoutProps) {
     return (
-        <div className={cn("fixed inset-0 z-[100] bg-background overflow-hidden", className)}>
+        <div className={cn("fixed inset-0 bg-background overflow-hidden", className)} style={{ zIndex: Z_INDEX.MODAL_CONTENT }}>
             {children}
         </div>
     )

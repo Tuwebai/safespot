@@ -10,6 +10,7 @@ import { queryClient } from '@/lib/queryClient'
 import { HelmetProvider } from 'react-helmet-async'
 import { ToastProvider } from '@/components/ui/toast'
 import { PushNotificationListener } from '@/components/PushNotificationListener'
+import { PushNotificationInitializer } from '@/components/PushNotificationInitializer'
 
 // ✅ ENTERPRISE: Anti-Infinite Loading Guards
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary'
@@ -127,6 +128,7 @@ function App() {
               <StartupGuard>
                 <AuthGuardProvider>
                   <ToastProvider>
+                    <PushNotificationInitializer />
                     <ThemeProvider>
                       <ConfirmationProvider>
                         <FirstTimeOnboardingTheme />

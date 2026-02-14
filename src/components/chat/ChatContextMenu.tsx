@@ -44,9 +44,13 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
     return (
         <DropdownMenu open={currentOpen} onOpenChange={handleOpenChange}>
             <DropdownMenuTrigger asChild>
-                <div className={cn("outline-none inline-flex", triggerClassName)}>
-                    {trigger || <span className="w-0 h-0 opacity-0 absolute top-0 left-0" />}
-                </div>
+                {trigger ? (
+                    <div className={cn("outline-none inline-flex cursor-pointer", triggerClassName)}>
+                        {trigger}
+                    </div>
+                ) : (
+                    <span className="w-0 h-0 opacity-0 absolute top-0 left-0" />
+                )}
             </DropdownMenuTrigger>
             {/* Render children if passed, but usually we just want the menu content. Use children as trigger? No, explicit trigger prop is better. Keeping children render for legacy pattern check? 
                Wait, user might want to wrap something. The new pattern removes wrapping. 
@@ -57,17 +61,11 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
 
             <DropdownMenuContent
                 align="end"
-                className="w-56 bg-zinc-900 border-zinc-800 text-zinc-200"
-                onClick={(e) => e.stopPropagation()}
-                onMouseUp={(e) => e.stopPropagation()}
-                onTouchEnd={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
+                className="w-56 bg-popover border-border text-popover-foreground"
             >
                 <DropdownMenuItem
                     onClick={(e) => { e.stopPropagation(); handleAction(() => pinChat({ roomId: chat.id, isPinned: !chat.is_pinned })) }}
-                    className="focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
+                    className="cursor-pointer"
                 >
                     {chat.is_pinned ? (
                         <>
@@ -84,7 +82,7 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
 
                 <DropdownMenuItem
                     onClick={(e) => { e.stopPropagation(); handleAction(() => markUnread({ roomId: chat.id, isUnread: !chat.is_manually_unread })) }}
-                    className="focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
+                    className="cursor-pointer"
                 >
                     {chat.is_manually_unread ? (
                         <>
@@ -101,13 +99,13 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
 
                 <DropdownMenuItem
                     onClick={(e) => { e.stopPropagation(); handleAction(() => archiveChat({ roomId: chat.id, isArchived: !chat.is_archived })) }}
-                    className="focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
+                    className="cursor-pointer"
                 >
                     <Archive className="w-4 h-4 mr-2" />
                     <span>{chat.is_archived ? 'Desarchivar' : 'Archivar chat'}</span>
                 </DropdownMenuItem>
 
-                <DropdownMenuSeparator className="bg-zinc-800" />
+                <DropdownMenuSeparator />
 
                 <DropdownMenuItem
                     onClick={async (e) => {
@@ -125,7 +123,7 @@ export function ChatContextMenu({ chat, trigger, isOpen, onOpenChange, triggerCl
                             onAction?.();
                         }
                     }}
-                    className="focus:bg-red-900/50 focus:text-red-300 text-red-400 cursor-pointer"
+                    className="text-destructive focus:text-destructive cursor-pointer"
                 >
                     <Trash2 className="w-4 h-4 mr-2" />
                     <span>Eliminar chat</span>

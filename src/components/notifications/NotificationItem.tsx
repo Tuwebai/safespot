@@ -221,7 +221,7 @@ export function NotificationItem({
                         .
                     </DropdownMenuTrigger>
                     {/* BUG 7 FIX: Fondo opaco */}
-                    <DropdownMenuContent align="start" className="bg-popover border border-border shadow-xl z-[100]">
+                    <DropdownMenuContent align="start" className={`bg-popover border border-border shadow-xl z-[75]`}>
                         <DropdownMenuItem onClick={() => onOpenContext(notification)}>
                             <ExternalLink className="w-4 h-4 mr-2" />
                             Abrir

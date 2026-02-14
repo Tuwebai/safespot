@@ -29,7 +29,7 @@ export function PointsAddedFeedback({
           initial={{ opacity: 0, y: 20, x: '-50%', scale: 0.8 }}
           animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
           exit={{ opacity: 0, y: -40, x: '-50%', scale: 1.1 }}
-          className="absolute -top-16 left-1/2 flex items-center gap-2 bg-neon-green text-dark-bg font-bold text-sm px-4 py-2 rounded-full shadow-[0_0_20px_rgba(0,255,136,0.4)] z-50 whitespace-nowrap"
+          className={`absolute -top-16 left-1/2 flex items-center gap-2 bg-neon-green text-dark-bg font-bold text-sm px-4 py-2 rounded-full shadow-[0_0_20px_rgba(0,255,136,0.4)] whitespace-nowrap z-50`}
         >
           <Zap className="h-4 w-4 fill-current" />
           <span>+{points} XP</span>
@@ -60,7 +60,7 @@ export function LevelUpFeedback({ newLevel, visible }: LevelUpFeedbackProps) {
           initial={{ opacity: 0, scale: 0.5, y: 40, x: '-50%' }}
           animate={{ opacity: 1, scale: 1, y: 0, x: '-50%' }}
           exit={{ opacity: 0, scale: 1.2, y: -40, x: '-50%' }}
-          className="absolute -top-32 left-1/2 bg-gradient-to-r from-neon-green to-blue-500 rounded-2xl p-6 shadow-[0_0_50px_rgba(0,255,136,0.5)] z-50 text-center border-2 border-white/20 min-w-[280px]"
+          className={`absolute -top-32 left-1/2 bg-gradient-to-r from-neon-green to-blue-500 rounded-2xl p-6 shadow-[0_0_50px_rgba(0,255,136,0.5)] text-center border-2 border-white/20 min-w-[280px] z-50`}
         >
           <motion.div
             animate={{ rotate: [0, -10, 10, -10, 10, 0] }}

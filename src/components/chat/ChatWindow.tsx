@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Z_INDEX } from '@/config/z-index';
 
 import {
     useChatMessages,
@@ -76,8 +76,15 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
     const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
-        if (!src) return;
-        if (src === currentSrc && isLoaded) return;
+        // Reset states when src changes to prevent infinite loading
+        setIsLoaded(false);
+        setHasError(false);
+        setCurrentSrc(localUrl || src);
+        
+        if (!src) {
+            setHasError(true);
+            return;
+        }
 
         // 🏛️ FIX: Detectar blob URLs inválidos (persistidos incorrectamente)
         const isInvalidBlob = src.startsWith('blob:') && !src.includes('http');
@@ -89,14 +96,13 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
         const img = new Image();
         img.src = src;
         img.onload = () => {
-            setCurrentSrc(src);
             setIsLoaded(true);
             setHasError(false);
         };
         img.onerror = () => {
             setHasError(true);
         };
-    }, [src, localUrl, currentSrc, isLoaded]);
+    }, [src, localUrl]);
 
     // 🏛️ UX: Placeholder para imagen rota/pendiente
     if (hasError) {
@@ -113,13 +119,26 @@ const ChatImage: React.FC<ChatImageProps> = ({ src, localUrl, alt, className, on
         );
     }
 
+    // 🔥 CRITICAL FIX: Skeleton placeholder prevents layout shift
+    if (!isLoaded) {
+        return (
+            <div 
+                className={`flex items-center justify-center bg-muted/30 animate-pulse ${className}`}
+                onClick={onClick}
+            >
+                <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
+            </div>
+        );
+    }
+
     return (
         <img
             src={currentSrc}
             alt={alt}
             className={className}
             onClick={onClick}
-            style={{ opacity: currentSrc ? 1 : 0, transition: 'opacity 0.2s' }}
+            loading="lazy"
+            decoding="async"
         />
     );
 };
@@ -163,8 +182,9 @@ const ReactionPicker: React.FC<ReactionPickerProps & { isMe: boolean }> = ({ onS
             initial={{ opacity: 0, scale: 0.8, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 10 }}
-            className={`absolute -top-14 z-[150] flex gap-1 bg-white border border-border/10 shadow-2xl rounded-full p-1.5 backdrop-blur-md whitespace-nowrap
+            className={`absolute -top-14 flex gap-1 bg-white border border-border/10 shadow-2xl rounded-full p-1.5 backdrop-blur-md whitespace-nowrap
             ${isMe ? 'right-0' : 'left-0'}`}
+            style={{ zIndex: Z_INDEX.POPOVER }}
         >
             {emojis.map((emoji) => {
                 const isSelected = currentReactions?.[emoji]?.includes(anonymousId);
@@ -217,7 +237,8 @@ const MobileMessageActionBar: React.FC<MobileMessageActionBarProps> = ({
                 initial={{ y: -50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -50, opacity: 0 }}
-                className="fixed top-0 left-0 right-0 h-14 bg-background/95 backdrop-blur-md border-b border-border/10 z-[9999] flex items-center justify-between px-3 shadow-md"
+                className="fixed top-0 left-0 right-0 h-14 bg-background/95 backdrop-blur-md border-b border-border/10 flex items-center justify-between px-3 shadow-md"
+                style={{ zIndex: Z_INDEX.TOAST }}
             >
                 <div className="flex items-center gap-3">
                     <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
@@ -499,6 +520,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
     // Virtualization Refs
     const parentRef = useRef<HTMLDivElement>(null);
+    const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -511,12 +533,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         avatar: room.other_participant_avatar
     };
 
-    // Initialize Virtualizer
+    // 🔥 WHATSAPP-GRADE: Only virtualize large conversations (>200 messages)
+    // Small conversations render normally - zero measurement issues, zero scroll bugs
+    const VIRTUALIZATION_THRESHOLD = 200;
+    const shouldVirtualize = (messages?.length ?? 0) > VIRTUALIZATION_THRESHOLD;
+    
+    // Initialize Virtualizer ONLY when needed
     const rowVirtualizer = useVirtualizer({
-        count: messages?.length ?? 0,
+        count: shouldVirtualize ? (messages?.length ?? 0) : 0,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 80,
+        estimateSize: () => 100, // Simple average for large lists
         overscan: 5,
+        measureElement: (el) => el.getBoundingClientRect().height,
     });
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -532,77 +560,121 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         }
     }, [replyingTo]);
 
-    // Auto-scroll logic
+    // ✅ WHATSAPP-GRADE SCROLL SYSTEM v3 (Virtualizer-Native)
     const lastMessageCount = useRef(0);
     const lastRoomId = useRef<string | null>(null);
     const hasMarkedRead = useRef(false);
     const isInitialLoad = useRef(true);
+    const [showNewMessagesIndicator, setShowNewMessagesIndicator] = useState(false);
+    const isNearBottomRef = useRef(true);
 
     // ✅ ENTERPRISE FIX: Use centralized isOwnMessage helper
-    // Handles all edge cases: null safety, format normalization
     const isMe = (msg: ChatMessage) => isOwnMessage(msg, anonymousId);
 
-    // 🏛️ FIX: Detectar si usuario está cerca del final (para auto-scroll)
-    const isNearBottom = useCallback(() => {
-        const scrollElement = parentRef.current;
-        if (!scrollElement) return true; // Default a true si no hay ref
-        
-        const { scrollHeight, scrollTop, clientHeight } = scrollElement;
-        // Considerar "cerca del final" si está a 300px del fondo
-        return scrollHeight - scrollTop - clientHeight < 300;
+    // 🏛️ ENTERPRISE: Scroll to bottom using VIRTUALIZER API (not scrollIntoView)
+    // scrollToBottom is now handled inline in effects to avoid stale closures
+
+    // 🏛️ ENTERPRISE: Check if near bottom (100px threshold)
+    const checkIsNearBottom = useCallback(() => {
+        const container = parentRef.current;
+        if (!container) return true;
+        const threshold = 100;
+        return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     }, []);
 
-    useEffect(() => {
-        if (!messages) return;
+    // 🏛️ ENTERPRISE: Handle scroll - track position
+    const handleScroll = useCallback(() => {
+        isNearBottomRef.current = checkIsNearBottom();
+        if (isNearBottomRef.current && showNewMessagesIndicator) {
+            setShowNewMessagesIndicator(false);
+        }
+    }, [checkIsNearBottom, showNewMessagesIndicator]);
 
-        // Reset cuando cambia de sala
+    // 🔥 WHATSAPP-GRADE: Simple deterministic scroll
+    useLayoutEffect(() => {
+        if (!messages?.length) return;
+        
+        // Reset on room change
         if (lastRoomId.current !== room.id) {
-            lastMessageCount.current = messages.length;
             lastRoomId.current = room.id;
-            hasMarkedRead.current = false;
             isInitialLoad.current = true;
-            return;
-        }
-
-        // 🏛️ FIX: Carga inicial (F5/refresh) - scrollear al final UNA VEZ
-        if (isInitialLoad.current && messages.length > 0) {
-            // Usar mayor delay para asegurar que el virtualizer está listo
-            const scrollTimer = setTimeout(() => {
-                rowVirtualizer.scrollToIndex(messages.length - 1, { 
-                    align: 'end'
-                });
-                isInitialLoad.current = false;
-            }, 300);
-            
+            setShowNewMessagesIndicator(false);
+            isNearBottomRef.current = true;
             lastMessageCount.current = messages.length;
-            return () => clearTimeout(scrollTimer);
         }
+    }, [room.id, messages]);
 
-        // 🏛️ FIX: Mensajes nuevos después de carga inicial
-        if (messages.length > lastMessageCount.current) {
-            const lastMessage = messages[messages.length - 1];
+    // 🔥 WHATSAPP-GRADE: Scroll to bottom - simple and deterministic
+    useEffect(() => {
+        if (!isInitialLoad.current) return;
+        if (!messages?.length) return;
+        if (lastRoomId.current !== room.id) return;
+
+        const container = parentRef.current;
+        if (!container) return;
+
+        if (shouldVirtualize) {
+            // Large conversations: use virtualizer scroll
+            const lastIndex = messages.length - 1;
+            rowVirtualizer.scrollToIndex(lastIndex, { align: 'end', behavior: 'auto' });
+        } else {
+            // Small conversations: simple scroll to bottom
+            // Images load naturally, DOM grows, scroll stays at bottom
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        isInitialLoad.current = false;
+        lastMessageCount.current = messages.length;
+    }, [messages, room.id, shouldVirtualize, rowVirtualizer]);
+
+    // 🏛️ ENTERPRISE: Handle new messages AFTER initial load
+    useEffect(() => {
+        if (!messages?.length) return;
+        if (isInitialLoad.current) return; // Handled by useLayoutEffect
+        if (lastRoomId.current !== room.id) return;
+
+        const prevCount = lastMessageCount.current;
+        const newCount = messages.length;
+        
+        if (newCount > prevCount) {
+            const lastMessage = messages[newCount - 1];
             const isLastMessageMine = lastMessage && isMe(lastMessage);
             
-            // Scroll solo si:
-            // 1. Es mensaje propio (envié yo), o
-            // 2. Usuario está cerca del final (leyendo mensajes recientes)
-            if (isLastMessageMine || isNearBottom()) {
-                requestAnimationFrame(() => {
-                    rowVirtualizer.scrollToIndex(messages.length - 1, { 
-                        align: 'end'
-                    });
-                });
+            if (isLastMessageMine || isNearBottomRef.current) {
+                // Scroll to new message
+                if (shouldVirtualize) {
+                    const behavior: 'auto' | 'smooth' = isLastMessageMine ? 'auto' : 'smooth';
+                    rowVirtualizer.scrollToIndex(newCount - 1, { align: 'end', behavior });
+                } else {
+                    const container = parentRef.current;
+                    if (container) container.scrollTop = container.scrollHeight;
+                }
+                setShowNewMessagesIndicator(false);
+            } else {
+                // User scrolled up - show indicator
+                setShowNewMessagesIndicator(true);
             }
-            
-            lastMessageCount.current = messages.length;
 
-            if (lastMessage && !isMe(lastMessage) && !lastMessage.is_read) {
+            // Mark as read if at bottom
+            if (!isLastMessageMine && isNearBottomRef.current && !lastMessage.is_read) {
                 markAsReadMutation.mutate(room.id);
             }
-        } else {
-            lastMessageCount.current = messages.length;
         }
-    }, [messages, room.id, anonymousId, rowVirtualizer, isNearBottom]);
+        
+        lastMessageCount.current = newCount;
+    }, [messages, room.id, rowVirtualizer, markAsReadMutation]);
+
+    // 🏛️ ENTERPRISE: Scroll to bottom when clicking indicator
+    const handleScrollToBottom = useCallback(() => {
+        if (!messages?.length) return;
+        if (shouldVirtualize) {
+            rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
+        } else {
+            const container = parentRef.current;
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+        setShowNewMessagesIndicator(false);
+    }, [messages, shouldVirtualize, rowVirtualizer]);
 
     // Highlight & Scroll to Message Logic
     const highlightId = searchParams.get('highlight_message');
@@ -936,12 +1008,19 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                             </div>
                         </div>
                     )}
-                    <div className="relative aspect-video rounded-md overflow-hidden bg-black/5 mb-1.5">
+                    <div 
+                        className="relative rounded-md overflow-hidden bg-black/5 mb-1.5"
+                        style={{ 
+                            aspectRatio: '16/9',
+                            minHeight: '200px',
+                            contain: 'layout paint'
+                        }}
+                    >
                         <ChatImage
                             src={msg.content}
                             localUrl={msg.localUrl}
                             alt="Mensaje de imagen"
-                            className="w-full h-auto object-cover hover:scale-105 transition-transform cursor-pointer"
+                            className="absolute inset-0 w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
                             onClick={() => window.open(msg.content, '_blank')}
                         />
                         {/* 🏛️ UX: Indicador de carga para imágenes pending */}
@@ -1066,7 +1145,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
             >
                 <div className={`${msg.type === 'image' ? 'p-1.5' : 'px-4 py-2.5'} rounded-2xl relative group/bubble ${isMessageMine ? 'bg-primary text-primary-foreground rounded-tr-none shadow-md shadow-primary/10' : 'bg-card text-card-foreground rounded-tl-none border border-border/40 shadow-md shadow-black/5'}`}>
                     {/* WhatsApp-Style Action Chevron (Fixed Corner) */}
-                    <DropdownMenu modal={false}>
+                    <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button
                                 type="button"
@@ -1082,7 +1161,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                         <DropdownMenuContent
                             align={isMessageMine ? 'end' : 'start'}
                             sideOffset={5}
-                            className="w-52 p-1.5 rounded-xl shadow-2xl bg-background border border-border z-[100] animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+                            className="w-52 p-1.5 rounded-xl shadow-2xl bg-background border border-border animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
                         >
                             <DropdownMenuItem onClick={() => setReplyingTo(msg)} className="cursor-pointer py-2 px-3 text-[14.5px] font-normal text-foreground hover:bg-muted focus:bg-muted rounded-lg">
                                 <Reply className="w-4 h-4 mr-3 opacity-70" /> Responder
@@ -1235,9 +1314,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 )}
 
                 <div
-                    className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50 flex flex-col"
+                    className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-background/50 flex flex-col relative"
                     ref={parentRef}
+                    onScroll={handleScroll}
+                    style={{ 
+                        overflowAnchor: 'none', // Prevent browser auto-scroll on content change
+                        contain: 'layout', // Improve rendering performance
+                    }}
                 >
+                    {/* 🏛️ ENTERPRISE: New Messages Indicator */}
+                    {showNewMessagesIndicator && (
+                        <button
+                            onClick={handleScrollToBottom}
+                            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200 hover:bg-primary/90 transition-colors flex items-center gap-2"
+                        >
+                            <span className="text-sm font-medium">Nuevos mensajes</span>
+                            <ChevronDown className="w-4 h-4" />
+                        </button>
+                    )}
                     {messagesLoading ? (
                         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
                             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -1256,7 +1350,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                 Saludá a <span className="text-primary font-bold">@{otherParticipant.alias}</span>. Las mejores colaboraciones empiezan con un simple "Hola".
                             </p>
                         </div>
-                    ) : (
+                    ) : shouldVirtualize ? (
+                        // 🔥 VIRTUALIZED MODE: Large conversations (>200 messages)
                         <div
                             style={{
                                 height: `${rowVirtualizer.getTotalSize()}px`,
@@ -1278,7 +1373,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                             width: '100%',
                                             transform: `translateY(${virtualRow.start}px)`,
                                         }}
-                                        className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4 ${msg.id === highlightedMessageId ? 'context-highlight' : ''}`}
+                                        className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4 min-h-[60px] ${msg.id === highlightedMessageId ? 'context-highlight' : ''}`}
                                     >
                                         <div className={`flex gap-2 max-w-[85%] ${isMe(msg) ? 'flex-row-reverse' : 'flex-row'}`}>
                                             {!isMe(msg) && (
@@ -1294,14 +1389,42 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                                                 </div>
                                             )}
                                             <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-full sm:max-w-[100%]`}>
-                                                {/* 🏛️ PASO B: MessageItem componente interno */}
                                                 <MessageItem msg={msg} isMessageMine={isMe(msg)} />
                                             </div>
-
                                         </div>
                                     </div>
                                 );
                             })}
+                            <div ref={bottomRef} style={{ position: 'absolute', bottom: 0, height: 1, width: 1 }} />
+                        </div>
+                    ) : (
+                        // 🔥 NON-VIRTUALIZED MODE: Small conversations - simple, stable, zero bugs
+                        <div className="flex flex-col">
+                            {messages.map((msg) => (
+                                <div
+                                    key={msg.id}
+                                    className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'} pb-4 min-h-[60px] ${msg.id === highlightedMessageId ? 'context-highlight' : ''}`}
+                                >
+                                    <div className={`flex gap-2 max-w-[85%] ${isMe(msg) ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        {!isMe(msg) && (
+                                            <div
+                                                className="relative group cursor-pointer shrink-0"
+                                                onClick={() => navigate(`/usuario/${msg.sender_alias}`)}
+                                            >
+                                                <img
+                                                    src={msg.sender_avatar || getAvatarUrl(msg.sender_alias || 'Anon')}
+                                                    alt="Avatar"
+                                                    className="w-8 h-8 rounded-full border border-border mt-1 object-cover"
+                                                />
+                                            </div>
+                                        )}
+                                        <div className={`flex flex-col ${isMe(msg) ? 'items-end' : 'items-start'} max-w-full sm:max-w-[100%]`}>
+                                            <MessageItem msg={msg} isMessageMine={isMe(msg)} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            <div ref={bottomRef} />
                         </div>
                     )}
                 </div>

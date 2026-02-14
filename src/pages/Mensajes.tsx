@@ -45,9 +45,7 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
 
     return (
         <div
-            {...longPressHandlers}
-            onClick={onClick}
-            className={`group relative p-3 cursor-pointer transition-all duration-200 border-b border-border/50 hover:bg-muted/30 ${isActive
+            className={`group relative transition-all duration-200 border-b border-border/50 hover:bg-muted/30 ${isActive
                 ? 'bg-primary/5'
                 : ''
                 } ${room.is_pinned ? 'bg-muted/10' : ''}`}
@@ -55,80 +53,90 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
             {/* Indicador izquierdo tipo WhatsApp */}
             <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 ${isActive ? 'bg-primary opacity-100' : 'bg-primary opacity-0 group-hover:opacity-100'}`} />
             
-            <div className="flex gap-3 items-center pl-1">
-                <div className="relative shrink-0">
-                    <Avatar className={`w-12 h-12 border-2 transition-all duration-300 ${isActive ? 'border-primary' : 'border-border group-hover:border-primary/50'}`}>
-                        <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
-                        <AvatarFallback className="font-bold text-xs uppercase bg-muted">
-                            {getAvatarFallback(room.other_participant_alias)}
-                        </AvatarFallback>
-                    </Avatar>
+            {/* Main clickable area for navigation */}
+            <div
+                {...longPressHandlers}
+                onClick={onClick}
+                className="p-3 pr-12 cursor-pointer"
+            >
+                <div className="flex gap-3 items-center pl-1">
+                    <div className="relative shrink-0">
+                        <Avatar className={`w-12 h-12 border-2 transition-all duration-300 ${isActive ? 'border-primary' : 'border-border group-hover:border-primary/50'}`}>
+                            <AvatarImage src={room.other_participant_avatar || getAvatarUrl(room.other_participant_alias || 'Anon')} />
+                            <AvatarFallback className="font-bold text-xs uppercase bg-muted">
+                                {getAvatarFallback(room.other_participant_alias)}
+                            </AvatarFallback>
+                        </Avatar>
 
-                    {/* Online Indicator - estilo WhatsApp */}
-                    {isOnline && (
-                        <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-primary rounded-full border-2 border-background" />
-                    )}
-                </div>
-                <div className="flex-1 min-w-0 pr-6">
-                    <div className="flex justify-between items-start">
-                        <h4 className={`font-semibold text-sm truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
-                            @{room.other_participant_alias}
-                        </h4>
-                        <div className="flex items-center gap-1">
-                            {room.is_pinned && <Pin className="w-3 h-3 text-muted-foreground rotate-45" />}
-                            <span className={`text-[10px] whitespace-nowrap ${room.unread_count > 0 ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                                {room.last_message_at ? formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es }) : ''}
-                            </span>
-                        </div>
-                    </div>
-                    {room.report_id && (
-                        <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
-                            <span>{room.report_title || 'Reporte Contextual'}</span>
-                            <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
-                        </p>
-                    )}
-
-                    <p className={`text-[13px] truncate mt-1 flex items-center gap-1 ${room.is_typing ? 'text-primary font-bold animate-pulse' : (room.unread_count > 0 || room.is_manually_unread) ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
-                        {room.is_typing ? (
-                            'escribiendo...'
-                        ) : room.last_message_type === 'image' ? (
-                            <>
-                                <Camera className="w-3.5 h-3.5 shrink-0" />
-                                <span>Imagen</span>
-                            </>
-                        ) : (
-                            room.last_message_content || 'Iniciá la conversación...'
+                        {/* Online Indicator - estilo WhatsApp */}
+                        {isOnline && (
+                            <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-primary rounded-full border-2 border-background" />
                         )}
-                    </p>
-                </div>
-
-                {/* Badge de no leído tipo WhatsApp */}
-                {room.unread_count > 0 && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-primary-foreground bg-primary">
-                            {room.unread_count > 99 ? '99+' : room.unread_count}
-                        </span>
                     </div>
-                )}
-                {!room.unread_count && room.is_manually_unread && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-primary" />
-                    </div>
-                )}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                            <h4 className={`font-semibold text-sm truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                                @{room.other_participant_alias}
+                            </h4>
+                            <div className="flex items-center gap-1">
+                                {room.is_pinned && <Pin className="w-3 h-3 text-muted-foreground rotate-45" />}
+                                <span className={`text-[10px] whitespace-nowrap ${room.unread_count > 0 ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                                    {room.last_message_at ? formatDistanceToNow(new Date(room.last_message_at), { addSuffix: true, locale: es }) : ''}
+                                </span>
+                            </div>
+                        </div>
+                        {room.report_id && (
+                            <p className="text-primary/90 text-[10px] uppercase font-bold tracking-wider truncate mt-0.5 flex items-center gap-1">
+                                <span>{room.report_title || 'Reporte Contextual'}</span>
+                                <span className="opacity-50 text-muted-foreground">• {room.report_category}</span>
+                            </p>
+                        )}
 
-                {/* Context Menu Trigger */}
-                <div className="absolute right-2 top-8 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                    <ChatContextMenu
-                        chat={room}
-                        isOpen={isMenuOpen}
-                        onOpenChange={setIsMenuOpen}
-                        trigger={
-                            <button className="p-1.5 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors pointer-events-none md:pointer-events-auto">
-                                <ChevronDown className="w-4 h-4" />
-                            </button>
-                        }
-                    />
+                        <p className={`text-[13px] truncate mt-1 flex items-center gap-1 ${room.is_typing ? 'text-primary font-bold animate-pulse' : (room.unread_count > 0 || room.is_manually_unread) ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                            {room.is_typing ? (
+                                'escribiendo...'
+                            ) : room.last_message_type === 'image' ? (
+                                <>
+                                    <Camera className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Imagen</span>
+                                </>
+                            ) : (
+                                room.last_message_content || 'Iniciá la conversación...'
+                            )}
+                        </p>
+                    </div>
                 </div>
+            </div>
+
+            {/* Badge de no leído tipo WhatsApp */}
+            {room.unread_count > 0 && (
+                <div className="absolute right-10 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-primary-foreground bg-primary">
+                        {room.unread_count > 99 ? '99+' : room.unread_count}
+                    </span>
+                </div>
+            )}
+            {!room.unread_count && room.is_manually_unread && (
+                <div className="absolute right-10 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <span className="w-2.5 h-2.5 rounded-full bg-primary" />
+                </div>
+            )}
+            
+            {/* Context Menu Trigger - Fuera del área de longPress */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                <ChatContextMenu
+                    chat={room}
+                    isOpen={isMenuOpen}
+                    onOpenChange={setIsMenuOpen}
+                    trigger={
+                        <button 
+                            type="button"
+                            className="p-1.5 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            <ChevronDown className="w-4 h-4" />
+                        </button>
+                    }
+                />
             </div>
         </div>
     );
@@ -423,7 +431,7 @@ const Mensajes: React.FC = () => {
             </AnimatePresence >
 
             {/* Chat Content Pane */}
-            <div className={`flex-1 flex flex-col bg-background/50 ${urlRoomId ? 'fixed inset-0 z-50 md:relative md:inset-auto md:z-0' : 'hidden md:flex'}`}>
+            <div className={`flex-1 flex flex-col bg-background/50 ${urlRoomId ? `fixed inset-0 md:relative md:inset-auto md:z-0 z-[35]` : 'hidden md:flex'}`}>
                 <AnimatePresence mode="wait">
                     {urlRoomId ? (
                         <motion.div

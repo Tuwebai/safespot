@@ -46,7 +46,8 @@ router.get('/vapid-key', (req, res) => {
 // ============================================
 router.post('/subscribe', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
+        // 🔒 SECURITY FIX: Use req.anonymousId set by middleware, not direct header
+        const anonymousId = req.anonymousId;
         const { subscription, location, radius = 500 } = req.body;
 
         // Validate subscription data
@@ -129,7 +130,8 @@ router.post('/subscribe', requireAnonymousId, async (req, res) => {
 // ============================================
 router.delete('/subscribe', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
+        // 🔒 SECURITY FIX: Use req.anonymousId set by middleware
+        const anonymousId = req.anonymousId;
 
         const { error } = await queryWithRLS(anonymousId, `
       UPDATE push_subscriptions
@@ -166,7 +168,8 @@ router.delete('/subscribe', requireAnonymousId, async (req, res) => {
 // ============================================
 router.patch('/location', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
+        // 🔒 SECURITY FIX: Use req.anonymousId set by middleware
+        const anonymousId = req.anonymousId;
         const { lat, lng } = req.body;
 
         if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -206,7 +209,8 @@ router.patch('/location', requireAnonymousId, async (req, res) => {
 // ============================================
 router.get('/status', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
+        // 🔒 SECURITY FIX: Use req.anonymousId set by middleware
+        const anonymousId = req.anonymousId;
 
         const result = await queryWithRLS(anonymousId, `
       SELECT id, is_active, radius_meters, last_known_lat, last_known_lng
@@ -342,7 +346,8 @@ export async function notifyNearbyUsers(report) {
 // ============================================
 router.post('/test', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
+        // 🔒 SECURITY FIX: Use req.anonymousId set by middleware
+        const anonymousId = req.anonymousId;
 
         // 1. Get user subscription (ALLOW MULTIPLE, take newest)
         const { data: subs, error: dbError } = await supabaseAdmin

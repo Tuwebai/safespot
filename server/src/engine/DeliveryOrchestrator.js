@@ -1,6 +1,7 @@
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { presenceTracker } from '../utils/presenceTracker.js';
-import webpush from 'web-push';
+// webpush is imported by webPush.js utilities
+// import webpush from 'web-push';
 import { sendPushNotification, createChatNotificationPayload, createActivityNotificationPayload } from '../utils/webPush.js';
 import { eventDeduplicator } from './DeliveryLedger.js';
 import { DispatchResult } from './NotificationDispatcher.js';
@@ -29,20 +30,21 @@ export const DeliveryOrchestrator = {
         const anonymousId = target.anonymousId;
 
         if (!anonymousId) {
-            // No target - permanent failure, no need to log (metric instead)
             return DispatchResult.PERMANENT_ERROR;
         }
 
         try {
             // 1. Check Presence (Single Source of Truth: Redis)
             const isOnline = await presenceTracker.isOnline(anonymousId);
-            const isPriorityHigh = delivery?.priority === 'high';
+            const _isPriorityHigh = delivery?.priority === 'high'; // Reserved for future use
             const isSecurity = type === 'SECURITY_ALERT';
 
             // 2. Decision Logic
             // SECURITY -> ALWAYS PUSH (Safety First)
             if (isSecurity) {
-                if (process.env.DEBUG) console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
+                if (process.env.DEBUG) {
+                    console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
+                }
                 this._dispatchSSE(jobData); // Try update UI if open
                 return await this._dispatchPush(jobData); // Ensure wake up
             }
@@ -60,6 +62,40 @@ export const DeliveryOrchestrator = {
                 const sseResult = await this._dispatchSSE(jobData);
                 return sseResult ? DispatchResult.SUCCESS : DispatchResult.RETRYABLE_ERROR;
             } else {
+                // 🏛️ FASE 3: Deduplication - Verify push not already sent
+                // Only for activity notifications (not chat messages)
+                if (type !== 'CHAT_MESSAGE' && payload.reportId) {
+                    try {
+                        const { DB } = await import('../utils/db.js');
+                        const db = DB.public();
+                        
+                        // Specific query: anonymous_id + report_id + most recent
+                        const existingPush = await db.query(`
+                            SELECT push_sent_at 
+                            FROM notifications 
+                            WHERE anonymous_id = $1 
+                              AND report_id = $2 
+                              AND push_sent_at IS NOT NULL
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        `, [anonymousId, payload.reportId]);
+                        
+                        if (existingPush.rows.length > 0) {
+                            // Push already sent, skip to prevent duplicate
+                            if (process.env.DEBUG) {
+                                console.log(`[Orchestrator][${traceId}] Skip push: already sent at ${existingPush.rows[0].push_sent_at}`);
+                            }
+                            await eventDeduplicator.markDispatched(jobData.id, 'skipped-duplicate');
+                            return DispatchResult.SUCCESS;
+                        }
+                    } catch (err) {
+                        // Fail-safe: if verification fails, send push anyway
+                        if (process.env.DEBUG) {
+                            console.warn(`[Orchestrator][${traceId}] push_sent_at check failed, proceeding with push:`, err.message);
+                        }
+                    }
+                }
+
                 // Routing decision - only log in debug
                 await eventDeduplicator.markDispatched(jobData.id, 'push');
                 return await this._dispatchPush(jobData);
@@ -142,26 +178,9 @@ export const DeliveryOrchestrator = {
      * Delegates to the existing WebPush logic but wraps it cleanly
      */
     async _dispatchPush(jobData) {
-        // Reuse the logic we had in NotificationDispatcher, but moved here or called from here.
-        // For minimal refactor valid for this task, we can import the logic or 
-        // assume NotificationDispatcher calls US, but we need to call Push functions directly 
-        // to avoid circular dependency if we kept logic in Dispatcher.
-        // Solution: We move the push specific logic from Dispatcher to here or a helper.
-        // Actually, let's keep it simple: Orchestrator calls the utils directly.
-
-        const { traceId, type, target, payload } = jobData;
+        const { type, target, payload } = jobData;
 
         // Resolve Subscriptions
-        const { NotificationDispatcher } = await import('./NotificationDispatcher.js');
-        // Warning: Circular dependency risk if Dispatcher imports Orchestrator. 
-        // BETTER: Dispatcher calls Orchestrator. Orchestrator calls Utils. 
-        // Dispatcher should just be a shell now.
-
-        // We need the subscription resolution logic. To avoid duplicating code from Dispatcher,
-        // we should expose `_resolveTargetSubscriptions` from dispatcher or move it to a service.
-        // For now, let's assume we can access it or duplicate the simple query.
-
-        // Let's implement the DB query here to decouple.
         const { DB } = await import('../utils/db.js');
         const db = DB.public();
 
@@ -172,7 +191,6 @@ export const DeliveryOrchestrator = {
         const subscriptions = result.rows;
 
         if (!subscriptions || subscriptions.length === 0) {
-            // No push sub -> Delivery 'succeeded' (nothing to do)
             return DispatchResult.SUCCESS;
         }
 

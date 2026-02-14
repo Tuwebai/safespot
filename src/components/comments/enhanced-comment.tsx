@@ -407,7 +407,7 @@ export const EnhancedComment = memo(function EnhancedComment({
             {isContextMenuOpen && (
               <>
                 {/* Menu */}
-                <div className="absolute right-0 top-8 z-50 w-48 bg-card border border-border rounded-lg shadow-xl py-1 transform transition-all duration-200 ease-out origin-top-right animate-in fade-in zoom-in-95">
+                <div className={`absolute right-0 top-8 w-48 bg-card border border-border rounded-lg shadow-xl py-1 transform transition-all duration-200 ease-out origin-top-right animate-in fade-in zoom-in-95 z-[75]`}>
                   {/* General User Actions */}
                   <button
                     onClick={handleCopyText}

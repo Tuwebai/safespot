@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { getOverlayZIndex } from '@/config/z-index';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -333,10 +335,24 @@ export function ModerationPage() {
             </div>
 
             {/* Resolution Modal */}
-            {resolvingItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={closeModal}>
+            {resolvingItem && createPortal(
+                <>
+                    {/* Backdrop */}
+                    <div 
+                        className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+                        style={{ zIndex: getOverlayZIndex('confirmation').backdrop }}
+                        onClick={closeModal}
+                        aria-hidden="true"
+                    />
+                    {/* Content Container */}
+                    <div 
+                        className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+                        style={{ zIndex: getOverlayZIndex('confirmation').content }}
+                        role="dialog"
+                        aria-modal="true"
+                    >
                     <div
-                        className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl overflow-hidden p-6 space-y-4"
+                        className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl overflow-hidden p-6 space-y-4 pointer-events-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-start">
@@ -413,7 +429,9 @@ export function ModerationPage() {
                             </button>
                         </div>
                     </div>
-                </div>
+                    </div>
+                </>,
+                document.body
             )}
         </div>
     );

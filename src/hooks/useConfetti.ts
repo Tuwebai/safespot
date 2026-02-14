@@ -1,4 +1,5 @@
 import confetti from 'canvas-confetti'
+import { Z_INDEX } from '@/config/z-index'
 
 export type ConfettiType = 'badge' | 'legendary' | 'success' | 'celebration'
 
@@ -17,7 +18,7 @@ export function useConfetti() {
                 const count = 200
                 const defaults = {
                     origin,
-                    zIndex: 10000,
+                    zIndex: Z_INDEX.MAX,
                 }
 
                 function fire(particleRatio: number, opts: confetti.Options) {
@@ -65,7 +66,7 @@ export function useConfetti() {
                     spread: 70,
                     origin,
                     colors: ['#39FF14', '#00FF88', '#FFFFFF'],
-                    zIndex: 10000,
+                    zIndex: Z_INDEX.MAX,
                 })
                 break
 
@@ -76,7 +77,7 @@ export function useConfetti() {
                     spread: 50,
                     origin,
                     colors: ['#39FF14', '#00FF88'],
-                    zIndex: 10000,
+                    zIndex: Z_INDEX.MAX,
                     startVelocity: 30,
                     decay: 0.9,
                 })
@@ -93,7 +94,7 @@ export function useConfetti() {
                         spread: 55,
                         origin: { x: 0, y: 0.6 },
                         colors: ['#39FF14', '#FFD700', '#FFFFFF'],
-                        zIndex: 10000,
+                        zIndex: Z_INDEX.MAX,
                     })
                     confetti({
                         particleCount: 2,
@@ -101,7 +102,7 @@ export function useConfetti() {
                         spread: 55,
                         origin: { x: 1, y: 0.6 },
                         colors: ['#39FF14', '#FFD700', '#FFFFFF'],
-                        zIndex: 10000,
+                        zIndex: Z_INDEX.MAX,
                     })
 
                     if (Date.now() < end) {

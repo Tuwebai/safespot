@@ -1,6 +1,6 @@
 import express from 'express';
 import { presenceTracker } from '../utils/presenceTracker.js';
-// import { authenticateUser } from '../routes/adminAuth.js'; // Authentication not strictly required for heartbeat if using X-Anonymous-Id
+import { requireAnonymousId } from '../utils/validation.js';
 
 const router = express.Router();
 
@@ -13,13 +13,9 @@ const router = express.Router();
  * Headers:
  *  X-Anonymous-Id: <uuid>
  */
-router.post('/heartbeat', async (req, res) => {
+router.post('/heartbeat', requireAnonymousId, async (req, res) => {
     try {
-        const anonymousId = req.headers['x-anonymous-id'];
-
-        if (!anonymousId) {
-            return res.status(401).json({ error: 'Unauthorized', message: 'Missing X-Anonymous-Id header' });
-        }
+        const anonymousId = req.anonymousId;
 
         // Renew TTL in Redis
         await presenceTracker.markOnline(anonymousId);

@@ -14,9 +14,11 @@ const router = express.Router();
 // User Prompt: "resolveReport(reportId, actor, reason)" implies actor context.
 
 const getActorFromReq = (req) => {
-    // Unificar estructura de actor
+    // 🔒 SECURITY: Use only validated identity sources
+    // req.anonymousId is set by requireAnonymousId middleware (validated)
+    // req.user is set by validateAuth middleware (JWT validated)
     return {
-        id: req.user?.id || req.headers['x-anonymous-id'], // Fallback a anonymous owner
+        id: req.user?.id || req.anonymousId || null,
         role: req.user?.role || 'citizen',
         sub: req.user?.sub
     };

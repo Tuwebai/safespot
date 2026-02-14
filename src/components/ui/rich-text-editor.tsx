@@ -1,5 +1,7 @@
 // Force rebuild
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { getOverlayZIndex } from '@/config/z-index'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -493,13 +495,24 @@ export function RichTextEditor({
 
 
       {/* Modal de Entrada de Texto para SafeSpot Tags */}
-      {isInputModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onClick={handleInputModalCancel}
-        >
+      {isInputModalOpen && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 animate-in fade-in duration-200"
+            style={{ zIndex: getOverlayZIndex('modal').backdrop }}
+            onClick={handleInputModalCancel}
+            aria-hidden="true"
+          />
+          {/* Content Container */}
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none"
+            style={{ zIndex: getOverlayZIndex('modal').content }}
+            role="dialog"
+            aria-modal="true"
+          >
           <Card
-            className="w-full max-w-md bg-card border-border"
+            className="w-full max-w-md bg-card border-border pointer-events-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <CardHeader>
@@ -540,7 +553,9 @@ export function RichTextEditor({
               </div>
             </CardContent>
           </Card>
-        </div>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   )

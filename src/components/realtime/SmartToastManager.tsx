@@ -31,6 +31,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { playNotificationSound } from '@/lib/sound';
 import { isAudioEnabled } from '@/hooks/useAudioUnlock';
 import { getAnonymousIdSafe } from '@/lib/identity';
+import { useUserZone } from '@/hooks/useUserZone';
 
 // ============================================================================
 // CONSTANTS
@@ -89,10 +90,14 @@ export function SmartToastManager() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const { zones: userZones } = useUserZone();
+  // Get current zone (first zone with type 'current' or first zone)
+  const userZone = userZones?.find((z: { type?: string; lat?: number; lng?: number }) => z.type === 'current') || userZones?.[0];
   
   // Refs for stable callback references
   const isSubscribed = useRef(false);
   const isInChatPage = location.pathname.startsWith('/mensajes');
+  const isInReportPage = location.pathname.startsWith('/reporte/');
   // 🏛️ CRITICAL FIX: Ignore events during first 3s after mount (catchup period)
   const isWarmupPeriod = useRef(true);
   
@@ -105,6 +110,16 @@ export function SmartToastManager() {
     }
     navigate(`/mensajes/${conversationId}`);
     console.debug('[SmartToastManager] 🧭 Navigated to chat:', conversationId);
+  }, [navigate]);
+
+  // Navigate to notification page
+  const navigateToNotifications = useCallback(() => {
+    navigate('/notificaciones');
+  }, [navigate]);
+
+  // Navigate to report
+  const navigateToReport = useCallback((reportId: string) => {
+    navigate(`/reporte/${reportId}`);
   }, [navigate]);
 
   useEffect(() => {
@@ -161,6 +176,28 @@ export function SmartToastManager() {
           queryClient
         });
       }
+
+      // 🎯 Handle notifications (follow, comment, like, etc.)
+      if (type === 'notification') {
+        handleNotification({
+          event,
+          toast,
+          navigateToNotifications,
+          queryClient
+        });
+      }
+
+      // 🎯 Handle new reports (only if near user zone)
+      if (type === 'report-create') {
+        handleReportCreate({
+          event,
+          userZone,
+          isInReportPage,
+          toast,
+          navigateToReport,
+          queryClient
+        });
+      }
     });
 
     return () => {
@@ -171,7 +208,7 @@ export function SmartToastManager() {
       seenEvents.clear(); // 🏛️ Clear dedup cache on unmount
       console.debug('[SmartToastManager] 👋 Unsubscribed');
     };
-  }, [isInChatPage, toast, navigateToChat, queryClient]);
+  }, [isInChatPage, isInReportPage, toast, navigateToChat, navigateToNotifications, navigateToReport, queryClient, userZone]);
 
   // Headless component
   return null;
@@ -256,4 +293,245 @@ function handleNewMessage(params: HandleNewMessageParams): void {
   queryClient.invalidateQueries({ queryKey: ['unread-messages'] });
 
   console.debug('[SmartToastManager] 🔔 Toast shown with navigation for:', senderAlias);
+}
+
+// ============================================================================
+// NOTIFICATION HANDLER
+// ============================================================================
+
+interface HandleNotificationParams {
+  event: { 
+    type: string; 
+    payload: unknown; 
+    eventId?: string; 
+    originClientId?: string 
+  };
+  toast: {
+    notify: (options: {
+      message: string;
+      type?: 'success' | 'error' | 'info' | 'warning';
+      duration?: number;
+      action?: { label: string; onClick: () => void };
+    }) => string;
+  };
+  navigateToNotifications: () => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+}
+
+function handleNotification(params: HandleNotificationParams): void {
+  const { event, toast, navigateToNotifications, queryClient } = params;
+  
+  const payload = event.payload as Record<string, unknown>;
+  const actualPayload = (payload.partial as Record<string, unknown>) || payload;
+  const notifData = (actualPayload.notification as Record<string, unknown>) || actualPayload;
+  
+  if (!notifData) {
+    console.debug('[SmartToastManager] ⚠️ No notification data in payload');
+    return;
+  }
+
+  const notifType = (notifData.type as string) || 'generic';
+  const title = (notifData.title as string) || 'Nueva notificación';
+  const message = (notifData.message as string) || '';
+  // const notifId = (notifData.id as string) || event.eventId; // Reserved for future use
+
+  // Skip badge notifications (handled by BadgeNotificationManager)
+  if (notifType === 'badge') {
+    return;
+  }
+
+  // Build toast message based on type
+  let toastMessage = '';
+  let toastType: 'success' | 'error' | 'info' | 'warning' = 'info';
+  
+  switch (notifType) {
+    case 'follow':
+      toastMessage = `👤 ${title}`;
+      toastType = 'success';
+      break;
+    case 'comment':
+      toastMessage = `💬 ${title}${message ? `: ${truncateMessage(message, 40)}` : ''}`;
+      toastType = 'info';
+      break;
+    case 'like':
+      toastMessage = `❤️ ${title}`;
+      toastType = 'success';
+      break;
+    case 'mention':
+      toastMessage = `📢 ${title}${message ? `: ${truncateMessage(message, 40)}` : ''}`;
+      toastType = 'warning';
+      break;
+    default:
+      toastMessage = `🔔 ${title}${message ? `: ${truncateMessage(message, 40)}` : ''}`;
+      toastType = 'info';
+  }
+
+  // 🔊 Sound (best-effort, non-blocking)
+  if (isAudioEnabled() && canPlaySound()) {
+    try {
+      playNotificationSound();
+    } catch (err) {
+      console.debug('[SmartToastManager] 🔇 Audio failed (non-critical)');
+    }
+  }
+
+  // 🔔 Interactive Toast
+  toast.notify({
+    message: toastMessage,
+    type: toastType,
+    duration: TOAST_DURATION_MS,
+    action: {
+      label: 'Ver',
+      onClick: () => navigateToNotifications()
+    }
+  });
+
+  // Update notification badge
+  queryClient.invalidateQueries({ queryKey: ['notifications', 'list'] });
+
+  console.debug('[SmartToastManager] 🔔 Notification toast shown:', notifType);
+}
+
+// ============================================================================
+// REPORT CREATE HANDLER
+// ============================================================================
+
+interface HandleReportCreateParams {
+  event: { 
+    type: string; 
+    payload: unknown; 
+    eventId?: string; 
+    originClientId?: string 
+  };
+  userZone: { lat: number; lng: number } | null | undefined;
+  isInReportPage: boolean;
+  toast: {
+    notify: (options: {
+      message: string;
+      type?: 'success' | 'error' | 'info' | 'warning';
+      duration?: number;
+      action?: { label: string; onClick: () => void };
+    }) => string;
+  };
+  navigateToReport: (reportId: string) => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+}
+
+// Calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function handleReportCreate(params: HandleReportCreateParams): void {
+  const { event, userZone, isInReportPage, toast, navigateToReport, queryClient } = params;
+  
+  const payload = event.payload as Record<string, unknown>;
+  const actualPayload = (payload.partial as Record<string, unknown>) || payload;
+  
+  // Support both structures: { report: {...} } or direct report data
+  const reportData = (actualPayload.report as Record<string, unknown>) || actualPayload;
+  
+  if (!reportData) {
+    console.debug('[SmartToastManager] ⚠️ No report data in payload');
+    return;
+  }
+
+  const reportId = (reportData.id as string) || '';
+  const title = (reportData.title as string) || 'Nuevo reporte';
+  const category = (reportData.category as string) || '';
+  const reportLat = reportData.latitude as number;
+  const reportLng = reportData.longitude as number;
+
+  // 🏛️ CRITICAL: Only show if report has location
+  if (reportLat === undefined || reportLng === undefined) {
+    console.debug('[SmartToastManager] 📍 Report has no location, skipping proximity check');
+    return;
+  }
+
+  // 🏛️ CRITICAL: Only show if user has a zone set
+  if (!userZone || userZone.lat === undefined || userZone.lng === undefined) {
+    console.debug('[SmartToastManager] 📍 User has no zone, skipping toast');
+    return;
+  }
+
+  // Calculate distance
+  const distanceKm = calculateDistance(
+    userZone.lat,
+    userZone.lng,
+    reportLat,
+    reportLng
+  );
+
+  // 🎯 Contextual rule: Only show if within 5km of user zone
+  const MAX_DISTANCE_KM = 5;
+  if (distanceKm > MAX_DISTANCE_KM) {
+    console.debug(`[SmartToastManager] 📍 Report too far (${distanceKm.toFixed(1)}km), skipping toast`);
+    return;
+  }
+
+  // 🎯 Contextual rule: Don't show if user is already viewing a report
+  if (isInReportPage) {
+    console.debug('[SmartToastManager] 📋 User in report page, skipping toast');
+    queryClient.invalidateQueries({ queryKey: ['reports', 'list'] });
+    return;
+  }
+
+  // 🔊 Sound (best-effort, non-blocking)
+  if (isAudioEnabled() && canPlaySound()) {
+    try {
+      playNotificationSound();
+    } catch (err) {
+      console.debug('[SmartToastManager] 🔇 Audio failed (non-critical)');
+    }
+  }
+
+  // 🔔 Contextual Toast
+  const distanceText = distanceKm < 1 ? `${(distanceKm * 1000).toFixed(0)}m` : `${distanceKm.toFixed(1)}km`;
+  const categoryEmoji = getCategoryEmoji(category);
+  
+  toast.notify({
+    message: `${categoryEmoji} Reporte a ${distanceText}: ${truncateMessage(title, 35)}`,
+    type: 'info',
+    duration: TOAST_DURATION_MS,
+    action: reportId ? {
+      label: 'Ver',
+      onClick: () => navigateToReport(reportId)
+    } : undefined
+  });
+
+  // Update reports list
+  queryClient.invalidateQueries({ queryKey: ['reports', 'list'] });
+
+  console.debug('[SmartToastManager] 🔔 Report toast shown:', reportId, 'at', distanceText);
+}
+
+// Helper to get emoji for report category
+function getCategoryEmoji(category: string): string {
+  const emojiMap: Record<string, string> = {
+    'robo': '🦹',
+    'asalto': '🔫',
+    'vandalismo': '🪟',
+    'accidente': '🚗',
+    'incendio': '🔥',
+    'emergencia': '🚑',
+    'sospechoso': '👁️',
+    'ruido': '🔊',
+    'corte': '⚡',
+    'agua': '💧',
+    'calles': '🕳️',
+    'basura': '🗑️',
+    'mascota': '🐕',
+    'vehiculo': '🚙',
+    'otro': '📍'
+  };
+  
+  const normalizedCategory = category?.toLowerCase().replace(/[^a-z]/g, '');
+  return emojiMap[normalizedCategory || ''] || '📍';
 }

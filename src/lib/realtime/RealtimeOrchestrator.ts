@@ -1,6 +1,7 @@
 import { ssePool } from '../ssePool';
 import { localProcessedLog } from './LocalProcessedLog';
 import { API_BASE_URL } from '../api';
+import { sessionAuthority } from '@/engine/session/SessionAuthority';
 import { queryClient } from '../queryClient';
 import { getClientId } from '../clientId';
 import { dataIntegrityEngine } from '@/engine/integrity';
@@ -200,8 +201,10 @@ class RealtimeOrchestrator {
      */
     async connect(userId: string): Promise<void> {
         this.userId = userId;
-        const userUrl = `${API_BASE_URL}/realtime/user/${userId}`;
-        const feedUrl = `${API_BASE_URL}/realtime/feed`;
+        // 🔧 FIX: Include anonymousId in query param for SSE auth (EventSource can't send headers)
+        const anonymousId = sessionAuthority.getAnonymousId() || userId;
+        const userUrl = `${API_BASE_URL}/realtime/user/${userId}?anonymousId=${anonymousId}`;
+        const feedUrl = `${API_BASE_URL}/realtime/feed?anonymousId=${anonymousId}`;
 
         // 1. User Stream (Domain Events: Chats, Notifications, Presence)
         if (!this.activeSubscriptions.includes(userUrl)) {

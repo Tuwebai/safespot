@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Share2, X as XIcon, MessageCircle, Facebook, Link2, Check } from 'lucide-react';
 import { useRegisterShareMutation } from '@/hooks/mutations/useRegisterShareMutation';
+import { Z_INDEX } from '@/config/z-index';
 
 interface ShareButtonProps {
     category: string;
@@ -115,12 +116,16 @@ export function ShareButton({ category, zone, reportId, variant = 'default' }: S
                     <>
                         {/* Backdrop */}
                         <div
-                            className="fixed inset-0 z-40"
+                            className="fixed inset-0"
+                            style={{ zIndex: Z_INDEX.DRAWER_BACKDROP }}
                             onClick={() => setShowMenu(false)}
                         />
 
                         {/* Menu */}
-                        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden min-w-[200px]">
+                        <div 
+                            className="absolute right-0 top-full mt-2 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden min-w-[200px]"
+                            style={{ zIndex: Z_INDEX.DROPDOWN }}
+                        >
                             {/* WhatsApp */}
                             <a
                                 href={shareLinks.whatsapp}

@@ -70,7 +70,7 @@ export function AdminDashboard() {
                 {/* Central Map (Live Implementation) */}
                 <div className="lg:col-span-2 bg-[#0f172a] rounded-xl border border-[#1e293b] p-1 flex flex-col relative overflow-hidden group min-h-[300px] lg:min-h-[400px]">
                     {/* Header Overlay */}
-                    <div className="absolute top-4 left-4 z-[401] bg-[#0f172a]/90 backdrop-blur px-4 py-2 rounded-lg border border-[#334155] shadow-xl">
+                    <div className={`absolute top-4 left-4 z-10 bg-[#0f172a]/90 backdrop-blur px-4 py-2 rounded-lg border border-[#334155] shadow-xl`}>
                         <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                             <MapPin className="h-4 w-4 text-[#00ff88]" />
                             Live Heatmap

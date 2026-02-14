@@ -538,8 +538,11 @@ router.get('/public/:alias', async (req, res) => {
     );
 
     // 3. Get follow counts and trust score from stats (now using denormalized columns)
+    // 🔒 SECURITY: Use only validated identity from middleware
+    const viewerId = req.anonymousId || req.user?.anonymous_id || null;
+    
     const followStatsResult = await queryWithRLS(
-      req.headers['x-anonymous-id'],
+      viewerId,
       `SELECT
            followers_count,
            following_count
@@ -549,9 +552,9 @@ router.get('/public/:alias', async (req, res) => {
     );
 
     const isFollowingResult = await queryWithRLS(
-      req.headers['x-anonymous-id'],
+      viewerId,
       `SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = $1 AND following_id = $2) as is_following`,
-      [req.headers['x-anonymous-id'], publicProfile.anonymous_id]
+      [viewerId, publicProfile.anonymous_id]
     );
 
     const followStats = followStatsResult.rows[0] || { followers_count: 0, following_count: 0 };
@@ -652,7 +655,8 @@ router.delete('/follow/:followingId', requireAnonymousId, async (req, res) => {
 router.get('/:identifier/followers', async (req, res) => {
   try {
     const { identifier } = req.params;
-    const currentUserId = req.headers['x-anonymous-id'];
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available
+    const currentUserId = req.user?.anonymous_id || null;
 
     if (!identifier) return res.status(400).json({ error: 'Identifier required' });
 
@@ -713,7 +717,8 @@ router.get('/:identifier/followers', async (req, res) => {
 router.get('/:identifier/following', async (req, res) => {
   try {
     const { identifier } = req.params;
-    const currentUserId = req.headers['x-anonymous-id'];
+    // 🔒 SECURITY FIX: Use verified identity from JWT if available
+    const currentUserId = req.user?.anonymous_id || null;
 
     if (!identifier) return res.status(400).json({ error: 'Identifier required' });
 

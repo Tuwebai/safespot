@@ -28,24 +28,20 @@ export const Z_INDEX = {
   HEADER: 10,
   BOTTOM_NAV: 10,
   SIDEBAR: 15,
-  DRAWER_BACKDROP: 18,
-  DRAWER_CONTENT: 19,
   
-  // Component Layer - Dropdowns, tooltips, popovers (20-30)
-  DROPDOWN: 20,
-  TOOLTIP: 25,
-  POPOVER: 25,
-  REACTION_PICKER: 25,
+  // Drawer Layer - Mobile drawers (20-30)
+  DRAWER_BACKDROP: 20,
+  DRAWER_CONTENT: 25,
   
-  // Modal Layer - Ventanas modales estándar (30-40)
-  MODAL_BACKDROP: 30,
-  MODAL_CONTENT: 35,
+  // Sheet Layer - Bottom sheets (30-40)
+  SHEET_BACKDROP: 30,
+  SHEET_CONTENT: 35,
   
-  // Sheet Layer - Bottom sheets, drawers mobile (40-50)
-  SHEET_BACKDROP: 40,
-  SHEET_CONTENT: 45,
+  // Modal Layer - Ventanas modales estándar (40-50)
+  MODAL_BACKDROP: 40,
+  MODAL_CONTENT: 45,
   
-  // System Layer - Toasts, notificaciones, estado (50-60)
+  // System Layer - Toasts, notificaciones (50-60)
   TOAST: 50,
   NOTIFICATION: 55,
   NETWORK_STATUS: 58,
@@ -56,14 +52,24 @@ export const Z_INDEX = {
   AUTH_REQUIRED_BACKDROP: 60,
   AUTH_REQUIRED_CONTENT: 65,
   
-  // Emergency Layer - Errores críticos, loading (70-80)
-  EMERGENCY_BACKDROP: 70,
-  EMERGENCY_CONTENT: 75,
-  LOADING_OVERLAY: 78,
+  // Floating Components Layer - DROPDOWNS, tooltips, popovers (70-80)
+  // 💡 CRÍTICO: Estos elementos siempre se portalean a document.body
+  // y deben estar sobre TODOS los modales, drawers y sheets
+  // Ver: https://github.com/radix-ui/primitives/issues/1159
+  DROPDOWN: 75,
+  POPOVER: 76,
+  REACTION_PICKER: 77,
+  TOOLTIP: 80,
   
-  // Max Layer - Tour, dev tools (80-90)
-  TOUR_OVERLAY: 80,
-  DEV_TOOLS: 90,
+  // Emergency Layer - Errores críticos, loading (80-90)
+  EMERGENCY_BACKDROP: 80,
+  EMERGENCY_CONTENT: 85,
+  LOADING_OVERLAY: 88,
+  
+  // Max Layer - Tour, dev tools, canvas effects (90-100)
+  TOUR_OVERLAY: 90,
+  DEV_TOOLS: 100,
+  MAX: 100,
 } as const;
 
 /**

@@ -139,8 +139,18 @@ export function usePushNotifications() {
                         console.debug('[Push Authority] Permission is GRANTED but NO subscription found. Auto-subscribing...');
                         await subscribe();
                     }
+                } else if (currentPermission === 'default') {
+                    // 🔧 DEV MODE: Auto-request on first visit for testing
+                    // In production, this should be triggered by a user action (button click)
+                    const isDevMode = import.meta.env.DEV || window.location.port === '4173';
+                    if (isDevMode) {
+                        console.log('[Push Authority] DEV MODE: Auto-requesting permission on first visit...');
+                        await subscribe();
+                    } else {
+                        setIsSubscribed(false);
+                    }
                 } else {
-                    // If not granted, we can't do much silently, just update state.
+                    // denied or anything else
                     if (existingSubscription) {
                         setIsSubscribed(true);
                     } else {
