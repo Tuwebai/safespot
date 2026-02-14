@@ -1,7 +1,6 @@
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { presenceTracker } from '../utils/presenceTracker.js';
 // webpush is imported by webPush.js utilities
-// import webpush from 'web-push';
 import { sendPushNotification, createChatNotificationPayload, createActivityNotificationPayload } from '../utils/webPush.js';
 import { eventDeduplicator } from './DeliveryLedger.js';
 import { DispatchResult } from './NotificationDispatcher.js';
@@ -26,7 +25,7 @@ export const DeliveryOrchestrator = {
      * @returns {Promise<string>} DispatchResult
      */
     async routeAndDispatch(jobData) {
-        const { traceId, type, target, payload, delivery } = jobData;
+        const { traceId, type, target, payload, delivery: _delivery } = jobData;
         const anonymousId = target.anonymousId;
 
         if (!anonymousId) {
@@ -36,13 +35,14 @@ export const DeliveryOrchestrator = {
         try {
             // 1. Check Presence (Single Source of Truth: Redis)
             const isOnline = await presenceTracker.isOnline(anonymousId);
-            const _isPriorityHigh = delivery?.priority === 'high'; // Reserved for future use
+            // const _isPriorityHigh = _delivery?.priority === 'high'; // Reserved
             const isSecurity = type === 'SECURITY_ALERT';
 
             // 2. Decision Logic
             // SECURITY -> ALWAYS PUSH (Safety First)
             if (isSecurity) {
                 if (process.env.DEBUG) {
+                    // eslint-disable-next-line no-console
                     console.log(`[Orchestrator][${traceId}] SECURITY ALERT: Forcing Push + SSE.`);
                 }
                 this._dispatchSSE(jobData); // Try update UI if open
@@ -62,43 +62,75 @@ export const DeliveryOrchestrator = {
                 const sseResult = await this._dispatchSSE(jobData);
                 return sseResult ? DispatchResult.SUCCESS : DispatchResult.RETRYABLE_ERROR;
             } else {
-                // 🏛️ FASE 3: Deduplication - Verify push not already sent
+                // 🏛️ FASE 3: ATOMIC PUSH DEDUPLICATION
+                // Pattern: Reserve -> Send -> Confirm
+                // Eliminates race conditions by using DB as coordinator
+                
                 // Only for activity notifications (not chat messages)
                 if (type !== 'CHAT_MESSAGE' && payload.reportId) {
                     try {
                         const { DB } = await import('../utils/db.js');
                         const db = DB.public();
                         
-                        // Specific query: anonymous_id + report_id + most recent
-                        const existingPush = await db.query(`
-                            SELECT push_sent_at 
-                            FROM notifications 
+                        // 1. ATOMIC REQUEST: Try to reserve this notification for pushing
+                        // Returns ID only if we won the race
+                        const reservation = await db.query(`
+                            UPDATE notifications
+                            SET push_attempt_at = NOW(),
+                                push_attempt_count = push_attempt_count + 1
                             WHERE anonymous_id = $1 
-                              AND report_id = $2 
-                              AND push_sent_at IS NOT NULL
-                            ORDER BY created_at DESC 
-                            LIMIT 1
+                              AND report_id = $2
+                              AND push_sent_at IS NULL
+                              AND (push_attempt_at IS NULL OR push_attempt_at < NOW() - INTERVAL '5 minutes')
+                            RETURNING id
                         `, [anonymousId, payload.reportId]);
                         
-                        if (existingPush.rows.length > 0) {
-                            // Push already sent, skip to prevent duplicate
+                        // 2. CHECK RESULT
+                        if (reservation.rows.length === 0) {
+                            // We lost the race (already sent or reserved by another worker)
                             if (process.env.DEBUG) {
-                                console.log(`[Orchestrator][${traceId}] Skip push: already sent at ${existingPush.rows[0].push_sent_at}`);
+                                // eslint-disable-next-line no-console
+                                console.log(`[Orchestrator][${traceId}] Skip push: atomic reservation failed (duplicate/locked)`);
                             }
-                            await eventDeduplicator.markDispatched(jobData.id, 'skipped-duplicate');
+                            await eventDeduplicator.markDispatched(jobData.id, 'skipped-duplicate-atomic');
                             return DispatchResult.SUCCESS;
                         }
+
+                        // We won the lock! Proceed to send.
                     } catch (err) {
-                        // Fail-safe: if verification fails, send push anyway
-                        if (process.env.DEBUG) {
-                            console.warn(`[Orchestrator][${traceId}] push_sent_at check failed, proceeding with push:`, err.message);
-                        }
+                        // Fail-safe: if DB fails, log and MAYBE proceed depending on policy
+                        // For safety, we skip push on DB error to avoid massive blast
+                        logError(err, { context: 'AtomicPushReservation', traceId });
+                        return DispatchResult.RETRYABLE_ERROR;
                     }
                 }
 
                 // Routing decision - only log in debug
                 await eventDeduplicator.markDispatched(jobData.id, 'push');
-                return await this._dispatchPush(jobData);
+                
+                // 3. SEND PUSH
+                const pushResult = await this._dispatchPush(jobData);
+                
+                // 4. CONFIRM SUCCESS (Mark as permanently sent)
+                if (pushResult === DispatchResult.SUCCESS && type !== 'CHAT_MESSAGE' && payload.reportId) {
+                     try {
+                        const { DB } = await import('../utils/db.js');
+                        const db = DB.public();
+                        
+                        await db.query(`
+                            UPDATE notifications 
+                            SET push_sent_at = NOW() 
+                            WHERE anonymous_id = $1 AND report_id = $2
+                        `, [target.anonymousId, payload.reportId]);
+                     } catch(err) {
+                         // Silent fail - tracking is best effort
+                         if (process.env.DEBUG) {
+                            console.warn(`[Orchestrator] Failed to mark push_sent_at: ${err.message}`);
+                         }
+                     }
+                }
+
+                return pushResult;
             }
 
         } catch (err) {
@@ -155,7 +187,7 @@ export const DeliveryOrchestrator = {
             return true;
         }
 
-        // 🧠 ENTERPRISE FINAL CATCH-ALL
+        // 🔗 ENTERPRISE FINAL CATCH-ALL
         if (payload?.title && payload?.message) {
             await eventDeduplicator.markDispatched(jobData.id, 'sse');
             realtimeEvents.emitUserNotification(target.anonymousId, {
@@ -181,6 +213,7 @@ export const DeliveryOrchestrator = {
         const { type, target, payload } = jobData;
 
         // Resolve Subscriptions
+        // We implement the DB query here to decouple.
         const { DB } = await import('../utils/db.js');
         const db = DB.public();
 
@@ -191,6 +224,7 @@ export const DeliveryOrchestrator = {
         const subscriptions = result.rows;
 
         if (!subscriptions || subscriptions.length === 0) {
+            // No push sub -> Delivery 'succeeded' (nothing to do)
             return DispatchResult.SUCCESS;
         }
 
@@ -206,13 +240,13 @@ export const DeliveryOrchestrator = {
             }, { report_title: payload.data?.reportTitle });
         } else {
             pushPayload = createActivityNotificationPayload({
-                type: (payload.data?.type || type).toLowerCase(), // 🚀 Standardize to lowercase (e.g. 'follow')
+                type: (payload.data?.type || type).toLowerCase(),
                 title: payload.title,
                 message: payload.message,
                 reportId: payload.reportId,
                 entityId: payload.entityId,
                 eventId: jobData.id,
-                deepLink: payload.data?.deepLink // 🚀 Pass deepLink if present
+                deepLink: payload.data?.deepLink
             });
         }
 
@@ -221,32 +255,14 @@ export const DeliveryOrchestrator = {
             sendPushNotification({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, pushPayload)
         ));
 
-        // 🏛️ FASE 2: Track push_sent_at for notifications (not chat messages)
-        const anySuccess = results.some(r => r.status === 'fulfilled' && r.value.success);
-        if (anySuccess && type !== 'CHAT_MESSAGE' && payload.reportId) {
-            // Fire-and-forget: Update push_sent_at for activity notifications
-            // Uses report_id + anonymous_id as composite key for matching
-            db.query(
-                `UPDATE notifications 
-                 SET push_sent_at = NOW() 
-                 WHERE anonymous_id = $1 
-                   AND report_id = $2 
-                   AND push_sent_at IS NULL
-                 ORDER BY created_at DESC 
-                 LIMIT 1`,
-                [target.anonymousId, payload.reportId]
-            ).catch(err => {
-                // Silent fail - tracking is best effort
-                console.warn(`[Orchestrator] Failed to update push_sent_at: ${err.message}`);
-            });
-        }
+        // Note: We track push_sent_at in routeAndDispatch now (Atomic Flow), 
+        // so we don't strictly need to do it here, but keeping it for other flows might be safe.
+        // However, to avoid double-update logic, we let routeAndDispatch handle the atomic confirmation.
+        // Or if this method handles non-atomic flows?
+        // Let's stick to routeAndDispatch handling the DB update for Atomic flows.
 
         // Basic classification
         const allRetryable = results.every(r => r.status === 'rejected');
         return allRetryable ? DispatchResult.RETRYABLE_ERROR : DispatchResult.SUCCESS;
     }
-
-    // 🏛️ ARCHITECTURAL FIX: _markAsDeliveredProactively ELIMINADO
-    // El backend NO puede marcar delivered sin confirmación del cliente
-    // ACK es responsabilidad EXCLUSIVA de RealtimeOrchestrator (frontend)
 };
