@@ -6,7 +6,6 @@ import { SEO } from '@/components/SEO'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useQueryClient } from '@tanstack/react-query'
-import { ALL_CATEGORIES as categories, STATUS_OPTIONS as statusOptions } from '@/lib/constants'
 // reportsApi removed
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { useToast } from '@/components/ui/toast'
@@ -16,9 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 
 
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Search, MapPin, Filter, ChevronDown, ChevronUp, RotateCcw, Calendar, X, Users } from 'lucide-react'
+import { Filter } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/schemas'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
@@ -37,12 +34,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { reportsCache } from '@/lib/cache-helpers'
 
 // Nuevos componentes del rediseño
-import { UserZoneCard } from '@/components/reportes/UserZoneCard'
-import { QuickFilters, type QuickFilterType } from '@/components/reportes/QuickFilters'
+import { QuickFilterType } from '@/components/reportes/QuickFilters'
 import { HighlightedReportCard } from '@/components/reportes/HighlightedReportCard'
 import { CompactReportCard } from '@/components/reportes/CompactReportCard'
+import { ReportsSidebar } from '@/components/reportes/ReportsSidebar'
 import { useUserZone } from '@/hooks/useUserZone'
 import { useLocationAuthority } from '@/hooks/useLocationAuthority'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -75,7 +73,6 @@ export function Reportes() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
 
   // Advanced Filter State
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'oldest'>('recent')
@@ -89,6 +86,22 @@ export function Reportes() {
 
   // Quick Filters State (nuevo)
   const [quickFilter, setQuickFilter] = useState<QuickFilterType>('all')
+
+  // Sidebar Layout State
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reports_sidebar_collapsed')
+      return saved === 'true'
+    }
+    return false
+  })
+
+  const toggleSidebar = (val: boolean) => {
+    setIsSidebarCollapsed(val)
+    localStorage.setItem('reports_sidebar_collapsed', String(val))
+  }
+
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   const debouncedAddressQuery = useDebounce(addressQuery, 500)
 
@@ -365,7 +378,7 @@ export function Reportes() {
       })
       setProcessingReason(null)
     }
-  }, [flaggingReportId, toast, queryClient, flagReport])
+  }, [flaggingReportId, toast, queryClient, flagReport, flagComment])
 
 
 
@@ -383,373 +396,114 @@ export function Reportes() {
 
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+    <div className="min-h-screen bg-dark-bg flex">
       <SEO
         title="Reportes Recientes"
         description="Explora los últimos reportes de seguridad en tu zona. Mantente informado sobre incidentes y alertas ciudadanas en tiempo real."
       />
-      {/* Header */}
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-foreground">
-          Lista de Reportes
-        </h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
-          Explora y filtra todos los reportes de la comunidad
-        </p>
-      </div>
 
-      {/* Tu Zona */}
-      {/* Tu Zona (Backend Driven) */}
-      <UserZoneCard />
+      {/* Desktop Sidebar */}
+      {isDesktop && (
+        <ReportsSidebar
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          selectedStatus={selectedStatus}
+          setSelectedStatus={setSelectedStatus}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          followedOnly={followedOnly}
+          setFollowedOnly={setFollowedOnly}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+          quickFilter={quickFilter}
+          setQuickFilter={setQuickFilter}
+          addressQuery={addressQuery}
+          setAddressQuery={setAddressQuery}
+          selectedLocation={selectedLocation}
+          setSelectedLocation={setSelectedLocation}
+          addressSuggestions={addressSuggestions}
+          setAddressSuggestions={setAddressSuggestions}
+          cityName={cityName}
+          searchInputRef={searchInputRef}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={toggleSidebar}
+        />
+      )}
 
-      {/* Filtros Rápidos */}
-      <QuickFilters
-        activeFilter={quickFilter}
-        onFilterChange={setQuickFilter}
-      />
-
-      {/* Filtros - Hidden on mobile, shown in bottom sheet */}
-      <Card className="mb-8 bg-card border-border hidden md:block">
-        <CardHeader className="pb-3 border-b border-border/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="h-5 w-5 text-neon-green" aria-hidden="true" />
-              <h2 className="text-xl font-semibold">Filtros</h2>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className="mt-1 flex items-center gap-2 hover:bg-neon-green/10 hover:text-neon-green"
-              aria-expanded={showAdvancedFilters}
-              aria-label={showAdvancedFilters ? "Ocultar filtros avanzados" : "Mostrar filtros avanzados"}
-            >
-              {showAdvancedFilters ? (
-                <>Ocultar Filtros <ChevronUp className="h-4 w-4" aria-hidden="true" /></>
-              ) : (
-                <>Filtros Avanzados <ChevronDown className="h-4 w-4" aria-hidden="true" /></>
-              )}
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-6">
-          {/* Filtros Básicos (Siempre visibles) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            {/* Búsqueda Global */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <Input
-                ref={searchInputRef}
-                placeholder="Buscar por título, desc... (Presiona /)"
-                aria-label="Buscar reportes por título o descripción"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-                inputMode="search"
-                autoComplete="off"
-              />
-            </div>
-
-            {/* Categoría */}
-            <Select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="all">Todas las categorías</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </Select>
-
-            {/* Estado */}
-            <Select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-            >
-              <option value="all">Todos los estados</option>
-              {statusOptions.map((status) => (
-                <option key={status.value} value={status.value}>{status.label}</option>
-              ))}
-            </Select>
-
-            <Select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'recent' | 'popular' | 'oldest')}
-            >
-              <option value="recent">Más Recientes</option>
-              <option value="popular">Más Populares</option>
-              <option value="oldest">Más Antiguos</option>
-            </Select>
-
-            {/* Círculo de Confianza (Followed Only) */}
-            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-border bg-card/50 hover:bg-card transition-colors cursor-pointer group"
-              onClick={() => setFollowedOnly(!followedOnly)}
-            >
-              <div className="flex items-center gap-2">
-                <Users className={`h-4 w-4 transition-colors ${followedOnly ? 'text-neon-green' : 'text-muted-foreground group-hover:text-foreground'}`} />
-                <span className={`text-sm font-medium transition-colors ${followedOnly ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>
-                  Mi Círculo
-                </span>
-              </div>
-              <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-muted'}`}>
-                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${followedOnly ? 'right-0.5 bg-neon-green shadow-[0_0_8px_rgba(33,255,140,0.5)]' : 'left-0.5 bg-muted-foreground'}`} />
-              </div>
-            </div>
-          </div>
-
-          {/* Filtros Avanzados (Colapsables) */}
-          {showAdvancedFilters && (
-            <div className="pt-4 border-t border-dark-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Buscador de Dirección / Lugar */}
-                <div className="relative z-20">
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                    Ubicación
-                  </label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <Input
-                      placeholder="Buscar dirección..."
-                      aria-label="Buscar por dirección o lugar"
-                      value={addressQuery}
-                      onChange={(e) => {
-                        setAddressQuery(e.target.value)
-                        if (selectedLocation && e.target.value !== selectedLocation.label) {
-                          setSelectedLocation(null) // Reset location filter if user types
-                        }
-                      }}
-                      className={`pl-10 ${selectedLocation ? 'ring-1 ring-neon-green/50 border-neon-green/50' : ''}`}
-                      inputMode="search"
-                      autoComplete="address-line1"
-                    />
-                    {selectedLocation && (
-                      <button
-                        onClick={() => {
-                          setSelectedLocation(null)
-                          setAddressQuery('')
-                        }}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-white/10 rounded-full"
-                        aria-label="Limpiar selección de ubicación"
-                      >
-                        <X className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Suggestions Dropdown */}
-                  {addressSuggestions.length > 0 && !selectedLocation && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-dark-card border border-dark-border rounded-md shadow-xl z-50 max-h-60 overflow-y-auto" style={{ zIndex: 50 }}>
-                      {addressSuggestions.map((suggestion, idx) => (
-                        <button
-                          key={`${suggestion.normalized}-${idx}`}
-                          className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm flex flex-col transition-colors border-b border-white/5 last:border-0"
-                          onClick={() => {
-                            setSelectedLocation({
-                              lat: suggestion.location.lat,
-                              lng: suggestion.location.lng,
-                              label: suggestion.original
-                            })
-                            setAddressQuery(suggestion.original)
-                            setAddressSuggestions([])
-                          }}
-                        >
-                          <span className="font-medium text-foreground">{suggestion.original}</span>
-                          <span className="text-xs text-muted-foreground">{suggestion.locality}, {suggestion.province}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {selectedLocation && !cityName && (
-                    <p className="text-xs text-neon-green mt-1 flex items-center">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      Filtrando por radio (15km)
-                    </p>
-                  )}
-                  {cityName && quickFilter === 'mi_zona' && (
-                    <p className="text-xs text-neon-green mt-1 flex items-center">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      Filtrando por Ciudad: {cityName}
-                    </p>
-                  )}
-                </div>
-
-                {/* Fechas */}
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                    Fecha Desde
-                  </label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="pl-10 [color-scheme:dark]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                    Fecha Hasta
-                  </label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="pl-10 [color-scheme:dark]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Acciones de filtro */}
-              <div className="flex justify-end mt-4 pt-4 border-t border-dark-border/30">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setSearchTerm('')
-                    setSelectedCategory('all')
-                    setSelectedStatus('all')
-                    setSortBy('recent')
-                    setStartDate('')
-                    setEndDate('')
-                    setAddressQuery('')
-                    setSelectedLocation(null)
-                  }}
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Limpiar Filtros
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Mobile Filter Button - Floating */}
-      <Button
-        onClick={() => setIsFilterSheetOpen(true)}
-        className="md:hidden fixed bottom-20 right-4 h-14 w-14 rounded-full shadow-2xl bg-neon-green hover:bg-neon-green/90 text-dark-bg"
-        style={{ zIndex: 50 }}
-        size="icon"
-      >
-        <Filter className="h-6 w-6" />
-      </Button>
-
-      {/* Mobile Bottom Sheet for Filters */}
-      <BottomSheet
-        isOpen={isFilterSheetOpen}
-        onClose={() => setIsFilterSheetOpen(false)}
-        title="Filtros"
-      >
-        {/* Same filter content as desktop */}
-        <div className="space-y-6">
-          {/* Búsqueda Global */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por título, desc..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-              inputMode="search"
-              autoComplete="off"
+      {/* Mobile Drawer (Sidebar inside BottomSheet as a drawer) */}
+      {!isDesktop && (
+        <BottomSheet
+          isOpen={isFilterSheetOpen}
+          onClose={() => setIsFilterSheetOpen(false)}
+          title="Filtros y Exploración"
+        >
+          {/* Note: In mobile, we don't need the specialized Sidebar component logic 
+              but we reuse its sub-components or a simplified version for the drawer.
+              Actually, the user asked to move EVERYTHING to the sidebar, and for mobile it's a drawer.
+              I'll render the sidebar inside the drawer context partially or use the sidebar component without collapse logic.
+          */}
+          <div className="pb-10">
+            <ReportsSidebar
+               searchTerm={searchTerm}
+               setSearchTerm={setSearchTerm}
+               selectedCategory={selectedCategory}
+               setSelectedCategory={setSelectedCategory}
+               selectedStatus={selectedStatus}
+               setSelectedStatus={setSelectedStatus}
+               sortBy={sortBy}
+               setSortBy={setSortBy}
+               followedOnly={followedOnly}
+               setFollowedOnly={setFollowedOnly}
+               startDate={startDate}
+               setStartDate={setStartDate}
+               endDate={endDate}
+               setEndDate={setEndDate}
+               quickFilter={quickFilter}
+               setQuickFilter={setQuickFilter}
+               addressQuery={addressQuery}
+               setAddressQuery={setAddressQuery}
+               selectedLocation={selectedLocation}
+               setSelectedLocation={setSelectedLocation}
+               addressSuggestions={addressSuggestions}
+               setAddressSuggestions={setAddressSuggestions}
+               cityName={cityName}
+               searchInputRef={searchInputRef}
+               // No collapse logic in mobile drawer
             />
           </div>
+        </BottomSheet>
+      )}
 
-          {/* Categoría */}
-          <div>
-            <label className="text-sm font-medium mb-2 block">Categoría</label>
-            <Select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="all">Todas las categorías</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </Select>
-          </div>
-
-          {/* Estado */}
-          <div>
-            <label className="text-sm font-medium mb-2 block">Estado</label>
-            <Select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-            >
-              <option value="all">Todos los estados</option>
-              {statusOptions.map((status) => (
-                <option key={status.value} value={status.value}>{status.label}</option>
-              ))}
-            </Select>
-          </div>
-
-          {/* Ordenar Por */}
-          <div>
-            <Select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'recent' | 'popular' | 'oldest')}
-            >
-              <option value="recent">Más Recientes</option>
-              <option value="popular">Más Populares</option>
-              <option value="oldest">Más Antiguos</option>
-            </Select>
-          </div>
-
-          {/* Mi Círculo Mobile */}
-          <div
-            className={`flex items-center justify-between p-4 rounded-xl border transition-all ${followedOnly ? 'bg-neon-green/5 border-neon-green/30 shadow-[0_0_15px_rgba(33,255,140,0.05)]' : 'bg-zinc-900/50 border-zinc-800'}`}
-            onClick={() => setFollowedOnly(!followedOnly)}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${followedOnly ? 'bg-neon-green text-black' : 'bg-zinc-800 text-zinc-500'}`}>
-                <Users className="h-5 w-5" />
-              </div>
-              <div>
-                <div className={`font-bold transition-colors ${followedOnly ? 'text-white' : 'text-zinc-400'}`}>Mi Círculo</div>
-                <div className="text-xs text-zinc-600">Solo reportes de gente que sigues</div>
-              </div>
+      {/* Main Content Area */}
+      <main className="flex-1 min-w-0 overflow-y-auto">
+        <div className={`container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 transition-all duration-300 ${isDesktop ? 'max-w-[1200px]' : ''}`}>
+          
+          {/* Header Moble / Desktop simplified */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-foreground">
+                Feed de Reportes
+              </h1>
+              <p className="text-sm sm:text-base text-muted-foreground mt-1">
+                {reports.length} reportes activos en la comunidad
+              </p>
             </div>
-            <div className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-zinc-800'}`}>
-              <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-300 ${followedOnly ? 'right-1 bg-neon-green' : 'left-1 bg-zinc-600'}`} />
-            </div>
+            {!isDesktop && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFilterSheetOpen(true)}
+                className="gap-2 border-neon-green/30 text-neon-green bg-neon-green/5"
+              >
+                <Filter className="h-4 w-4" />
+                Filtros
+              </Button>
+            )}
           </div>
-
-          {/* Reset Button */}
-          <Button
-            variant="outline"
-            onClick={() => {
-              setSearchTerm('')
-              setSelectedCategory('all')
-              setSelectedStatus('all')
-              setSortBy('recent')
-              setStartDate('')
-              setEndDate('')
-              setSelectedLocation(null)
-              setAddressQuery('')
-            }}
-            className="w-full"
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Limpiar Filtros
-          </Button>
-
-          {/* Apply Button */}
-          <Button
-            onClick={() => setIsFilterSheetOpen(false)}
-            className="w-full bg-neon-green hover:bg-neon-green/90 text-dark-bg"
-          >
-            Aplicar Filtros
-          </Button>
-        </div>
-      </BottomSheet >
 
       {/* Listado de Reportes */}
       < PullToRefresh
@@ -776,8 +530,8 @@ export function Reportes() {
           <HighlightedReportCard
             reportId={highlightedReport.id}
             initialData={highlightedReport}
-            onToggleFavorite={(newState) => handleFavoriteUpdate(highlightedReport.id, newState)}
-            onFlag={(e) => handleFlag(e, highlightedReport.id)}
+            onToggleFavorite={(newState: boolean) => handleFavoriteUpdate(highlightedReport.id, newState)}
+            onFlag={(e: React.MouseEvent) => handleFlag(e, highlightedReport.id)}
             isFlagging={flaggingReports.has(highlightedReport.id)}
           />
         )}
@@ -807,7 +561,7 @@ export function Reportes() {
           ) : reports.length === 0 ? (
             <div className="py-12">
               <EmptyState
-                variant={searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' || showAdvancedFilters ? "search" : "default"}
+                variant={searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' || quickFilter !== 'all' ? "search" : "default"}
                 title={searchTerm ? "No encontramos coincidencias" : "No hay reportes aquí"}
                 description={searchTerm || selectedCategory !== 'all' ? "No hay reportes que coincidan con tus filtros. Intenta búsquedas más generales." : "Parece que esta zona está tranquila por ahora. Si ves algo, repórtalo."}
                 action={{
@@ -856,81 +610,80 @@ export function Reportes() {
         }
       </PullToRefresh >
 
-      {/* Flag Dialog */}
-      {
-        isFlagDialogOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center" style={{ zIndex: 50 }} onClick={() => {
-            setIsFlagDialogOpen(false)
-            setFlaggingReportId(null)
-          }}>
-            <Card className="w-full max-w-md bg-dark-card border-dark-border" onClick={(e) => e.stopPropagation()}>
-              <CardHeader>
-                <CardTitle>Reportar Contenido</CardTitle>
-                <CardDescription>
-                  ¿Por qué quieres reportar este contenido?
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-muted-foreground">
-                      Comentario adicional (opcional)
-                    </label>
-                    <Textarea
-                      placeholder="Añadir contexto extra..."
-                      value={flagComment}
-                      onChange={(e) => setFlagComment(e.target.value)}
-                      maxLength={300}
-                      className="resize-none bg-zinc-900/50 border-zinc-800 focus:border-neon-green/50 min-h-[80px]"
-                    />
-                    <div className="text-xs text-right text-muted-foreground">
-                      {flagComment.length}/300
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
-                      // Check if THIS specific reason is processing
-                      const isProcessingThis = processingReason === reason
-                      // Disable all if ANY is processing
-                      const isAnyProcessing = processingReason !== null
+        </div>
+      </main>
 
-                      return (
-                        <Button
-                          key={reason}
-                          variant="outline"
-                          className="w-full justify-start"
-                          onClick={() => handleFlagSubmit(reason)}
-                          disabled={isAnyProcessing}
-                        >
-                          {isProcessingThis ? (
-                            <>
-                              <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
-                              Reportando...
-                            </>
-                          ) : (
-                            reason
-                          )}
-                        </Button>
-                      )
-                    })}
-                    <Button
-                      variant="ghost"
-                      className="w-full mt-4"
-                      onClick={() => {
-                        setIsFlagDialogOpen(false)
-                        setFlaggingReportId(null)
-                      }}
-                      disabled={flaggingReports.has(flaggingReportId ?? '')}
-                    >
-                      Cancelar
-                    </Button>
+      {/* Flag Dialog */}
+      {isFlagDialogOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center" style={{ zIndex: 100 }} onClick={() => {
+          setIsFlagDialogOpen(false)
+          setFlaggingReportId(null)
+        }}>
+          <Card className="w-full max-w-md bg-zinc-900 border-zinc-800" onClick={(e) => e.stopPropagation()}>
+            <CardHeader>
+              <CardTitle>Reportar Contenido</CardTitle>
+              <CardDescription>
+                ¿Por qué quieres reportar este contenido?
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">
+                    Comentario adicional (opcional)
+                  </label>
+                  <Textarea
+                    placeholder="Añadir contexto extra..."
+                    value={flagComment}
+                    onChange={(e) => setFlagComment(e.target.value)}
+                    maxLength={300}
+                    className="resize-none bg-black/30 border-zinc-800 focus:border-neon-green/50 min-h-[80px]"
+                  />
+                  <div className="text-xs text-right text-muted-foreground">
+                    {flagComment.length}/300
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        )
-      }
-    </div >
+                <div className="space-y-2">
+                  {['Spam', 'Contenido Inapropiado', 'Información Falsa', 'Otro'].map((reason) => {
+                    const isProcessingThis = processingReason === reason
+                    const isAnyProcessing = processingReason !== null
+
+                    return (
+                      <Button
+                        key={reason}
+                        variant="outline"
+                        className="w-full justify-start h-11 border-zinc-800 hover:border-neon-green/50 hover:bg-neon-green/5"
+                        onClick={() => handleFlagSubmit(reason)}
+                        disabled={isAnyProcessing}
+                      >
+                        {isProcessingThis ? (
+                          <>
+                            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                            Reportando...
+                          </>
+                        ) : (
+                          reason
+                        )}
+                      </Button>
+                    )
+                  })}
+                  <Button
+                    variant="ghost"
+                    className="w-full mt-4 text-muted-foreground"
+                    onClick={() => {
+                      setIsFlagDialogOpen(false)
+                      setFlaggingReportId(null)
+                    }}
+                    disabled={flaggingReports.has(flaggingReportId ?? '')}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
   )
 }

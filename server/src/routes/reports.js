@@ -1,8 +1,7 @@
 import express from 'express';
 import multer from 'multer';
-import { requireAnonymousId, validateFlagReason, validateCoordinates, validateImageBuffer, isValidUuid, sanitizeUuidParam } from '../utils/validation.js';
-import { validate } from '../utils/validateMiddleware.js';
-import { reportSchema, geoQuerySchema } from '../utils/schemas.js';
+import { requireAnonymousId, validateFlagReason, validateImageBuffer, isValidUuid, sanitizeUuidParam } from '../utils/validation.js';
+import { geoQuerySchema } from '../utils/schemas.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { logError, logSuccess } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
@@ -18,7 +17,7 @@ import { NotificationService as AppNotificationService } from '../utils/appNotif
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { NotificationService } from '../utils/notificationService.js';
-import { AppError, ValidationError, NotFoundError, ForbiddenError } from '../utils/AppError.js';
+import { AppError, ValidationError, NotFoundError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
 import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
 import { executeUserAction } from '../utils/governance.js';
@@ -147,7 +146,6 @@ router.get('/', async (req, res, next) => {
       const userLng = validatedGeo.lng;
       // If radius was not in query, we pass null to let SQL use user setting
       const explicitRadius = req.query.radius ? validatedGeo.radius_meters : null;
-      const defaultRadius = 1000;
 
       // Parse cursor for geographic feed
       const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -237,7 +235,7 @@ router.get('/', async (req, res, next) => {
             ST_Distance(r.location, ul.point) AS distance_meters,
             CASE WHEN f.id IS NOT NULL THEN true ELSE false END AS is_favorite,
             CASE WHEN rf.id IS NOT NULL THEN true ELSE false END AS is_flagged,
-            CASE WHEN rl.id IS NOT NULL THEN true ELSE false END AS is_liked,
+            CASE WHEN v.id IS NOT NULL THEN true ELSE false END AS is_liked,
             r.threads_count,
             uz.type as priority_zone,
             u.avatar_url,
@@ -488,7 +486,7 @@ router.get('/', async (req, res, next) => {
     };
 
     // Calculate total count (Optional/Legacy compatibility)
-    let totalItems = 0;
+    const totalItems = 0;
     // We skip exact total count for complex filters if performance is an issue, but for now we keep it.
 
     // ----------- 2. FETCH DATA WITH CURSOR -----------
@@ -529,8 +527,8 @@ router.get('/', async (req, res, next) => {
       // Authenticated flow: Includes personal signals (is_liked, is_favorite, etc.)
       const sanitizedId = sanitizeUuidParam(anonymousId);
       const f = buildFilters(3, 1, 2); // $1 is anonymousId, $2 is role, start from $3
-      let whereConds = [...f.conds];
-      let queryParams = [sanitizedId, userRole, ...f.vals];
+      const whereConds = [...f.conds];
+      const queryParams = [sanitizedId, userRole, ...f.vals];
       let pIdx = f.nextIdx;
 
       const orderByClause = getOrderByClause(f.searchIdx);
@@ -582,8 +580,8 @@ router.get('/', async (req, res, next) => {
     } else {
       // Public flow: Optmized, no social joins
       const f = buildFilters(2, null, 1); // $1 is role
-      let whereConds = [...f.conds];
-      let queryParams = [userRole, ...f.vals];
+      const whereConds = [...f.conds];
+      const queryParams = [userRole, ...f.vals];
       let pIdx = f.nextIdx;
 
       const orderByClause = getOrderByClause(f.searchIdx);
@@ -639,7 +637,7 @@ router.get('/', async (req, res, next) => {
         } else if (typeof report.image_urls === 'string') {
           try {
             normalizedImageUrls = JSON.parse(report.image_urls);
-            if (!Array.isArray(normalizedImageUrls)) normalizedImageUrls = [];
+            if (!Array.isArray(normalizedImageUrls)) { normalizedImageUrls = []; }
           } catch (e) { normalizedImageUrls = []; }
         }
       }
@@ -760,7 +758,7 @@ router.post('/',
   createReportLimiter, // ✅ Limit: 3/min
   imageUploadLimiter,
   upload.array('images', 3),
-  async (req, res, next) => {
+  async (req, res, _next) => {
     let client;
     let newReport;
 
@@ -820,7 +818,7 @@ router.post('/',
       let isHidden = false;
       try {
         const visibility = await checkContentVisibility(anonymousId);
-        if (visibility.isHidden) isHidden = true;
+        if (visibility.isHidden) { isHidden = true; }
       } catch (err) {
         logError(err, { context: 'visibility_check_pre_transaction' });
       }
@@ -828,8 +826,45 @@ router.post('/',
       // Client-generated ID support
       const reportId = (req.body.id && isValidUuid(req.body.id)) ? req.body.id : crypto.randomUUID();
 
+      // Idempotency Key: Prevent duplicate creation on retry/double-click
+      const idempotencyKey = req.body.idempotency_key || null;
+      let existingReport = null;
+      
+      if (idempotencyKey && typeof idempotencyKey === 'string' && idempotencyKey.length > 0) {
+        // Check if this idempotency key was already used (within last 60 minutes)
+        const idempotencyCheck = await pool.query(`
+          SELECT id, title, created_at FROM reports 
+          WHERE idempotency_key = $1 AND anonymous_id = $2 
+          AND created_at >= NOW() - INTERVAL '60 minutes'
+          LIMIT 1
+        `, [idempotencyKey, anonymousId]);
+        
+        if (idempotencyCheck.rows.length > 0) {
+          // Return existing report instead of creating duplicate
+          existingReport = idempotencyCheck.rows[0];
+          logger.info('Idempotent report returned', { idempotencyKey, reportId: existingReport.id });
+        }
+      }
+
+      // If idempotent report exists, return it
+      if (existingReport) {
+        // Fetch full report details
+        const fullReport = await queryWithRLS(anonymousId, `
+          SELECT r.*, u.alias, u.avatar_url 
+          FROM reports r 
+          LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id 
+          WHERE r.id = $1
+        `, [existingReport.id]);
+        
+        return res.status(200).json({
+          success: true,
+          data: fullReport.rows[0],
+          idempotent: true
+        });
+      }
+
       // 3. ATOMIC TRANSACTION WITH RLS
-      const data = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const data = await transactionWithRLS(anonymousId, async (client, _sse) => {
         // 3.1 Idempotent user ensure
         await ensureAnonymousUser(anonymousId);
 
@@ -848,12 +883,13 @@ router.post('/',
         const columns = [
           'id', 'anonymous_id', 'title', 'description', 'category', 'zone', 'address',
           'latitude', 'longitude', 'status', 'incident_date', 'is_hidden',
-          'province', 'locality', 'department'
+          'province', 'locality', 'department', 'idempotency_key'
         ];
         const values = [
           reportId, anonymousId, sanitizedTitle, sanitizedDescription, category,
           finalZone, sanitizedAddress, req.body.latitude || null, req.body.longitude || null,
-          normalizeStatus(req.body.status) || 'abierto', incidentDate, isHidden, province, locality, department
+          normalizeStatus(req.body.status) || 'abierto', incidentDate, isHidden, province, locality, department,
+          idempotencyKey
         ];
 
         const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
@@ -944,7 +980,7 @@ router.post('/',
           zone: data.zone,
           status: data.status
         },
-        metadata: { imageCount: imageUrls?.length || 0 },
+        metadata: { imageCount: req.files?.length || 0 },
         success: true
       }).catch(() => { });
 
@@ -972,7 +1008,7 @@ router.post('/',
         details: error.message
       });
     } finally {
-      if (client) client.release();
+      if (client) { client.release(); }
     }
   });
 
@@ -1002,7 +1038,7 @@ router.get('/:id/related', async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    const { category, latitude, longitude, zone, locality, province } = referenceResult.rows[0];
+    const { category, latitude, longitude, zone, locality } = referenceResult.rows[0];
 
     let query = '';
     let params = [];
@@ -1067,9 +1103,9 @@ router.get('/:id/related', async (req, res) => {
 
     // Initial Dev Log to verify results
     if (result.rows.length === 0) {
-      console.log(`[RELATED] No related reports found for Report ${id} (Locality: ${locality}, Zone: ${zone})`);
+      logger.debug(`[RELATED] No related reports found for Report ${id} (Locality: ${locality}, Zone: ${zone})`);
     } else {
-      console.log(`[RELATED] Found ${result.rows.length} related reports for Report ${id} (Locality: ${locality})`);
+      logger.debug(`[RELATED] Found ${result.rows.length} related reports for Report ${id} (Locality: ${locality})`);
     }
 
     res.json({
@@ -1104,7 +1140,6 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     }
 
     const report = checkResult.rows[0];
-    const prevStatus = report.status;
 
     if (report.anonymous_id !== anonymousId) {
       return res.status(403).json({
@@ -1189,7 +1224,7 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     const updatedReport = updateResult.rows[0];
 
     // 🔍 AUDIT LOG: Confirmar datos antes de emitir SSE
-    console.log('[AUDIT PATCH REPORT] Updated data from DB:', {
+    logger.info('[AUDIT PATCH REPORT] Updated data from DB:', {
       id: updatedReport.id,
       title: updatedReport.title,
       description: updatedReport.description?.substring(0, 50),
@@ -1520,7 +1555,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
     if (statusCheck.rows.length > 0 && statusCheck.rows[0].is_hidden) {
       const r = statusCheck.rows[0];
       realtimeEvents.emitReportDelete(id, r.category, r.status);
-      console.log(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
+      logger.info(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
     }
 
     // AUDIT LOG
@@ -1705,7 +1740,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
         const fileName = `${id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        const { error: uploadError } = await supabaseAdmin.storage
           .from(bucketName)
           .upload(fileName, file.buffer, {
             contentType: file.mimetype,
@@ -1729,8 +1764,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
         }
       } catch (fileError) {
         logError(fileError, req);
-        // Continue with other files, but log the error
-        console.error(`Error uploading file ${file.originalname}:`, fileError.message);
+        // Continue with other files, but log the error (via logger in logError)
       }
     }
 

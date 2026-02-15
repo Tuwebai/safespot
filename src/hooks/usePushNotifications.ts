@@ -8,7 +8,7 @@ const SUBSCRIBE_URL = '/push/subscribe';
 function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding)
-        .replace(/\-/g, '+')
+        .replace(/-/g, '+')
         .replace(/_/g, '/');
 
     const rawData = window.atob(base64);
@@ -101,7 +101,7 @@ export function usePushNotifications() {
         } finally {
             setLoading(false);
         }
-    }, [isSupported, success, error]);
+    }, [isSupported, error]);
 
     // Check current status on mount AND perform Authority Check
     useEffect(() => {

@@ -5,12 +5,12 @@ import { validate } from '../utils/validateMiddleware.js';
 import { commentSchema, commentUpdateSchema } from '../utils/schemas.js';
 import { logError, logSuccess, logInfo } from '../utils/logger.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { flagRateLimiter, likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
+import { likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import supabase from '../config/supabase.js';
-import { sanitizeContent, sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
+import { sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
 import { NotificationService } from '../utils/appNotificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { extractMentions } from '../utils/mentions.js';
@@ -42,7 +42,7 @@ router.get('/id/:id', requireAnonymousId, async (req, res, next) => {
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        INNER JOIN reports r ON c.report_id = r.id
-       WHERE c.id = $1 AND c.deleted_at IS NULL`,
+       WHERE c.id = $1 AND c.deleted_at IS NULL AND r.deleted_at IS NULL`,
       [id]
     );
 
@@ -123,8 +123,13 @@ router.get('/:reportId', async (req, res, next) => {
     // Execute queries in parallel using raw SQL for better control and JOIN support
     const countPromise = queryWithRLS(
       anonymousId || '', // Use empty string if no ID provided for RLS context
-      `SELECT COUNT(*) as count FROM comments WHERE report_id = $1 AND deleted_at IS NULL`,
-      [reportId]
+      `SELECT COUNT(*) as count 
+       FROM comments c
+       JOIN reports r ON c.report_id = r.id
+       WHERE c.report_id = $1 
+       AND c.deleted_at IS NULL
+       AND r.deleted_at IS NULL`,
+       [reportId]
     );
 
     const dataPromise = queryWithRLS(
@@ -161,7 +166,9 @@ router.get('/:reportId', async (req, res, next) => {
        FROM comments c
        LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
        INNER JOIN reports r ON c.report_id = r.id
-       WHERE c.report_id = $1 AND c.deleted_at IS NULL
+       WHERE c.report_id = $1 
+       AND c.deleted_at IS NULL
+       AND r.deleted_at IS NULL
        ORDER BY 
          c.is_pinned DESC NULLS LAST,
          CASE WHEN c.is_pinned THEN c.updated_at END DESC,
@@ -249,18 +256,7 @@ router.get('/:reportId', async (req, res, next) => {
       }
     });
   } catch (err) {
-    try {
-      const fs = await import('fs');
-      const debugInfo = {
-        message: err.message,
-        stack: err.stack,
-        reportId: req.params.reportId,
-        query: req.query,
-        timestamp: new Date().toISOString()
-      };
-      // Keep debug log in development (optional, but safe to keep local debug file if needed)
-      // fs.writeFileSync... (Commented out to clean up codebase, or rely on structured logs)
-    } catch (e) { }
+    // try-catch removed as it was empty and causing lint error
 
     next(err);
   }
@@ -271,7 +267,7 @@ router.get('/:reportId', async (req, res, next) => {
  * Create a new comment
  * Requires: X-Anonymous-Id header
  */
-router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, validate(commentSchema), async (req, res) => {
+router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, validate(commentSchema), async (req, res, next) => {
   try {
     const anonymousId = req.anonymousId;
     let isHidden = false; // Shadow ban status
@@ -308,14 +304,18 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       const visibilityResult = hasParentId ? results[3] : results[2];
 
       // Handle Report Check Result
-      if (reportResult.error) throw reportResult.error;
+      if (reportResult.error) {
+         throw reportResult.error;
+      }
       if (!reportResult.data) {
         return res.status(404).json({ error: 'Report not found' });
       }
 
       // Handle Parent Check Result
       if (hasParentId) {
-        if (parentResult.error) throw parentResult.error;
+        if (parentResult.error) {
+          throw parentResult.error;
+        }
         if (!parentResult.data) {
           throw new NotFoundError('Parent comment not found');
         }
@@ -350,7 +350,7 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 
     // SECURITY: Sanitize content BEFORE database insert
     // This handles both plain text and JSON-structured comments (automatically detects JSON)
-    let content = sanitizeCommentContent(req.body.content, sanitizeContext);
+    const content = sanitizeCommentContent(req.body.content, sanitizeContext);
 
     // CRITICAL: Validate required fields before INSERT
     if (!req.body.report_id || !anonymousId || !content) {
@@ -375,9 +375,9 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
     // ENTERPRISE FIX: Accept client-generated UUID for 0ms optimistic updates
 
     // 🔬 DIAGNOSTIC LOGS: Trace ID transmission wire
-    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: req.body.id:', req.body.id);
-    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: typeof req.body.id:', typeof req.body.id);
-    console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: isValidUuid result:', isValidUuid(req.body.id));
+    // console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: req.body.id:', req.body.id);
+    // console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: typeof req.body.id:', typeof req.body.id);
+    // console.log('[CREATE COMMENT] 🔍 DIAGNOSTIC: isValidUuid result:', isValidUuid(req.body.id));
 
     // Ensure ID is valid if provided, otherwise let DB generate it
     const clientGeneratedId = isValidUuid(req.body.id) ? req.body.id : null;
@@ -436,13 +436,13 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 
     // Development mode: log params for debugging
     if (process.env.NODE_ENV === 'development') {
-      console.log('[CREATE COMMENT] Params:', insertParams);
+      // console.log('[CREATE COMMENT] Params:', insertParams);
     }
 
     // 4. EXECUTE MUTATION (Atomic Transaction)
     // ============================================
     const transactionStartTime = Date.now();
-    console.log(`[CREATE COMMENT] 🔵 TRANSACTION START: ${clientGeneratedId || 'DB-generated'} at ${new Date().toISOString()}`);
+    // console.log(`[CREATE COMMENT] 🔵 TRANSACTION START: ${clientGeneratedId || 'DB-generated'} at ${new Date().toISOString()}`);
 
     const data = await transactionWithRLS(anonymousId, async (client, sse) => {
       // a. Insert Comment
@@ -469,10 +469,11 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
     });
 
     const transactionDuration = Date.now() - transactionStartTime;
-    console.log(`[CREATE COMMENT] ✅ TRANSACTION COMMITTED: ${data.id} in ${transactionDuration}ms at ${new Date().toISOString()}`);
+    logSuccess(`Comment created: ${data.id}`, { transactionDuration });
 
     // 5. SIDE EFFECTS (Post-Commit)PROCESSING (Non-blocking)
     // ============================================
+    let mentionedIds = [];
     try {
       // Trigger gamification sync asynchronously (non-blocking)
       syncGamification(anonymousId).catch(err => {
@@ -495,7 +496,7 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       }
 
       // 3. Notify Mentioned Users
-      const mentionedIds = extractMentions(req.body.content);
+      mentionedIds = extractMentions(req.body.content);
       if (mentionedIds.length > 0) {
         mentionedIds.forEach(targetId => {
           if (targetId !== anonymousId) {
@@ -535,7 +536,7 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
   } catch (error) {
     // Manual Validation Errors
     if (error.message.startsWith('VALIDATION_ERROR')) {
-      return next(new ValidationError(error.message));
+       return next(new ValidationError(error.message));
     }
 
     next(error);
@@ -551,7 +552,7 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res, next) => {
   const patchStartTime = Date.now();
   const { id } = req.params;
-  console.log(`[PATCH COMMENT] 🟡 PATCH RECEIVED: ${id} at ${new Date().toISOString()}`);
+  // console.log(`[PATCH COMMENT] 🟡 PATCH RECEIVED: ${id} at ${new Date().toISOString()}`);
 
   try {
     const anonymousId = req.anonymousId;
@@ -565,7 +566,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     );
 
     if (checkResult.rows.length === 0) {
-      console.log(`[PATCH COMMENT] ❌ COMMENT NOT FOUND: ${id} - Possible race condition with POST`);
+      // console.log(`[PATCH COMMENT] ❌ COMMENT NOT FOUND: ${id} - Possible race condition with POST`);
       logInfo('Comment PATCH failed: Not Found', { commentId: id, actorId: anonymousId });
       throw new NotFoundError('Comment not found');
     }
@@ -579,7 +580,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
       throw new ForbiddenError('You do not have permission to edit this comment');
     }
 
-    const comment = checkResult.rows[0];
+    // const comment = checkResult.rows[0]; // Unused variable removed
     const content = req.body.content;
 
     // UPDATE query with JOIN to return full identity (SSOT)
@@ -605,7 +606,7 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
     const updatedComment = updateResult.rows[0];
 
     const patchDuration = Date.now() - patchStartTime;
-    console.log(`[PATCH COMMENT] ✅ PATCH SUCCESS: ${id} in ${patchDuration}ms at ${new Date().toISOString()}`);
+    logSuccess(`Comment patched: ${id}`, { patchDuration });
 
     res.json({
       success: true,
@@ -746,9 +747,9 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, asyn
       // Fail open
     }
 
-    // Try to insert like into unified votes table
-    try {
-      const insertResult = await queryWithRLS(
+      // Try to insert like into unified votes table
+      try {
+        await queryWithRLS(
         anonymousId,
         `INSERT INTO votes (target_type, target_id, anonymous_id, is_hidden)
          VALUES ('comment', $1, $2, $3)
@@ -800,8 +801,7 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, asyn
         message: 'Comment liked successfully'
       });
     } catch (likeError) {
-      // Check if it's a unique constraint violation (already liked)
-      if (likeError.code === '23505' || likeError.message?.includes('unique')) {
+        if (likeError.code === '23505' || likeError.message?.includes('unique')) {
         // Already liked, return current count
         const { data: updatedComment } = await supabase
           .from('comments')
@@ -1121,7 +1121,9 @@ router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
     const anonymousId = req.anonymousId;
 
     const { data: comment } = await supabase.from('comments').select('id, report_id').eq('id', id).maybeSingle();
-    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
 
     const { data: report } = await supabase.from('reports').select('anonymous_id').eq('id', comment.report_id).maybeSingle();
     if (report.anonymous_id !== anonymousId) {

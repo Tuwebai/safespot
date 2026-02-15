@@ -39,55 +39,82 @@ const upload = multer({
  */
 router.get('/rooms', async (req, res) => {
     const anonymousId = req.anonymousId;
-    if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
+    if (!anonymousId) { return res.status(401).json({ error: 'Anonymous ID required' }); }
 
     try {
+        // ✅ ENTERPRISE REFACTOR: Single Optimized Query (No N+1)
+        // Uses LATERAL JOINs for efficient retrieval of related data without loop overhead.
+        // Handles DMs gracefully and prevents row explosion for Groups via LIMIT 1 on participants.
+        
         const chatQuery = `
-      SELECT 
-        c.*,
-        r.title as report_title,
-        r.category as report_category,
-        cm.is_pinned,
-        cm.is_archived,
-        cm.is_manually_unread,
-        -- Obtener el alias/avatar del OTRO participante (para DMs)
-        u_other.alias as other_participant_alias,
-        u_other.avatar_url as other_participant_avatar,
-        u_other.anonymous_id as other_participant_id,
-        u_other.last_seen_at as other_participant_last_seen,
-        m.content as last_message_content,
+            SELECT 
+                c.*,
+                r.title as report_title,
+                r.category as report_category,
+                cm.is_pinned,
+                cm.is_archived,
+                cm.is_manually_unread,
+                
+                -- Participant Info (DM Optimized, Group Safe)
+                p.alias as other_participant_alias,
+                p.avatar_url as other_participant_avatar,
+                p.anonymous_id as other_participant_id,
+                p.last_seen_at as other_participant_last_seen,
 
+                -- Last Message (Zero Subquery Overhead)
+                lm.content as last_message_content,
+                lm.type as last_message_type,
+                lm.sender_id as last_message_sender_id,
+                lm.created_at as last_message_at, -- Override conv.last_message_at with real msg time
 
-        m.type as last_message_type,
-        m.sender_id as last_message_sender_id,
-        (
-          SELECT COUNT(*)::int 
-          FROM chat_messages 
-          WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false
-        ) as unread_count
-      FROM conversation_members cm
-      JOIN conversations c ON cm.conversation_id = c.id
-      LEFT JOIN reports r ON c.report_id = r.id
-      -- Join con el otro miembro para obtener su perfil (asumiendo 1-a-1 por ahora)
-      LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
-      LEFT JOIN anonymous_users u_other ON cm_other.user_id = u_other.anonymous_id
-      LEFT JOIN LATERAL (
-        SELECT content, sender_id, type 
-        FROM chat_messages 
-        WHERE conversation_id = c.id 
-        ORDER BY created_at DESC 
-        LIMIT 1
-      ) m ON true
-      WHERE cm.user_id = $1
-      ORDER BY cm.is_pinned DESC, c.last_message_at DESC
-    `;
+                -- Unread Count (Optimized)
+                COALESCE(uc.unread_count, 0)::int as unread_count
 
+            FROM conversation_members cm
+            JOIN conversations c ON cm.conversation_id = c.id
+            LEFT JOIN reports r ON c.report_id = r.id
+
+            -- 1. Get Other Participant (Lateral for safety)
+            -- For DMs, this gets the other person. For Groups, gets *one* member (UI should handle groups differently eventually)
+            LEFT JOIN LATERAL (
+                SELECT u.alias, u.avatar_url, u.anonymous_id, u.last_seen_at
+                FROM conversation_members cm_other
+                JOIN anonymous_users u ON cm_other.user_id = u.anonymous_id
+                WHERE cm_other.conversation_id = c.id 
+                AND cm_other.user_id != $1
+                LIMIT 1
+            ) p ON true
+
+            -- 2. Last Message (Efficient Index Scan)
+            LEFT JOIN LATERAL (
+                SELECT content, type, sender_id, created_at
+                FROM chat_messages 
+                WHERE conversation_id = c.id 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            ) lm ON true
+
+            -- 3. Unread Count (Filtered Aggregate)
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*)::int as unread_count
+                FROM chat_messages
+                WHERE conversation_id = c.id 
+                AND sender_id != $1 
+                AND (is_read = false OR is_delivered = false)
+            ) uc ON true
+
+            WHERE cm.user_id = $1
+            ORDER BY cm.is_pinned DESC, COALESCE(lm.created_at, c.last_message_at) DESC
+            LIMIT 20;
+        `;
 
         const result = await queryWithRLS(anonymousId, chatQuery, [anonymousId]);
 
+        // Hydrate presence status (Redis/Memory lookup is fast enough to keep outside SQL for now)
+        // This is typically O(N) but N is small (20).
         const roomsWithPresence = await Promise.all(result.rows.map(async row => ({
             ...row,
-            is_online: await presenceTracker.isOnline(row.other_participant_id)
+            is_online: row.other_participant_id ? await presenceTracker.isOnline(row.other_participant_id) : false
         })));
 
         res.json(roomsWithPresence);
@@ -110,7 +137,7 @@ router.post('/rooms', async (req, res) => {
     const final_report_id = report_id || reportId;
     const final_recipient_id = recipient_id || recipientId;
 
-    if (!anonymousId) return res.status(400).json({ error: 'Anonymous ID required' });
+    if (!anonymousId) { return res.status(400).json({ error: 'Anonymous ID required' }); }
 
     try {
         let conversationId;
@@ -119,11 +146,11 @@ router.post('/rooms', async (req, res) => {
         // Si hay reporte, el destinatario es el dueño del reporte
         if (final_report_id) {
             const reportResult = await queryWithRLS(anonymousId, 'SELECT anonymous_id FROM reports WHERE id = $1', [final_report_id]);
-            if (reportResult.rows.length === 0) return res.status(404).json({ error: 'Report not found' });
+            if (reportResult.rows.length === 0) { return res.status(404).json({ error: 'Report not found' }); }
             participantB = reportResult.rows[0].anonymous_id;
         }
 
-        if (participantB === anonymousId) return res.status(400).json({ error: 'Cannot start a chat with yourself' });
+        if (participantB === anonymousId) { return res.status(400).json({ error: 'Cannot start a chat with yourself' }); }
 
         // Verificar si ya existe una conversación entre ambos miembros para este contexto
         let existingConvQuery;
@@ -306,7 +333,9 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
             // Notificar a senders (fire-and-forget)
             const senderNotifications = {};
             messagesToMark.forEach(m => {
-                if (!senderNotifications[m.sender_id]) senderNotifications[m.sender_id] = [];
+                if (!senderNotifications[m.sender_id]) {
+                    senderNotifications[m.sender_id] = [];
+                }
                 senderNotifications[m.sender_id].push({
                     messageId: m.id,
                     roomId,
@@ -356,7 +385,9 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
     const clientId = req.headers['x-client-id'];
     const { content, type = 'text', caption, reply_to_id, id: providedId } = req.body;
 
-    if (!content) return res.status(400).json({ error: 'Content is required' });
+    if (!content) {
+        return res.status(400).json({ error: 'Content is required' });
+    }
 
     try {
         const sanitizedArr = sanitizeContent(content, 'chat.message', { anonymousId });
@@ -406,7 +437,7 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
                 const members = memberResult.rows;
 
                 // 2. Fetch reply context if needed
-                let fullMessage = { ...newMessage };
+                const fullMessage = { ...newMessage };
                 if (reply_to_id) {
                     try {
                         const replyResult = await queryWithRLS(anonymousId,
@@ -423,7 +454,9 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
                             fullMessage.reply_to_sender_alias = r.alias;
                             fullMessage.reply_to_sender_id = r.sender_id;
                         }
-                    } catch (e) { console.error('[Deferred] Reply context error:', e); }
+                    } catch (e) {
+                        console.error('[Deferred] Reply context error:', e);
+                    }
                 }
 
                 // 3. Update conversation metadata (fire-and-forget)
@@ -697,7 +730,7 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
         // 2. Only update if not already delivered (Idempotency)
         if (!message.is_delivered) {
             const deliveredAt = new Date();
-            const latencyMs = deliveredAt - new Date(message.created_at);
+            const _latencyMs = deliveredAt - new Date(message.created_at);
 
             // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous Selective query)
             const { default: pool } = await import('../config/database.js');
@@ -825,7 +858,7 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, requireRo
         const fileExt = file.originalname.split('.').pop();
         const fileName = `chats/${roomId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        const { data: _uploadData, error: uploadError } = await supabaseAdmin.storage
             .from(bucketName)
             .upload(fileName, file.buffer, {
                 contentType: file.mimetype,
@@ -1073,7 +1106,7 @@ router.post('/rooms/:roomId/messages/:messageId/react', requireRoomMembership, a
             const users = reactions[key] || [];
             if (users.includes(anonymousId)) {
                 // If removing from the same emoji target, mark as toggle-off candidate
-                if (key === emoji) alreadyHadThisEmoji = true;
+                if (key === emoji) { alreadyHadThisEmoji = true; }
 
                 // Filter out user
                 reactions[key] = users.filter(id => id !== anonymousId);
@@ -1195,7 +1228,7 @@ router.delete('/rooms/:roomId/messages/:messageId/pin', requireRoomMembership, a
  */
 router.post('/rooms/:roomId/messages/:messageId/star', requireRoomMembership, async (req, res) => {
     const anonymousId = req.anonymousId;
-    const { roomId, messageId } = req.params;
+    const { messageId } = req.params;
 
     try {
         // Verify message exists and user has access
@@ -1231,7 +1264,7 @@ router.post('/rooms/:roomId/messages/:messageId/star', requireRoomMembership, as
  */
 router.delete('/rooms/:roomId/messages/:messageId/star', requireRoomMembership, async (req, res) => {
     const anonymousId = req.anonymousId;
-    const { roomId, messageId } = req.params;
+    const { messageId } = req.params;
 
     try {
         await queryWithRLS(anonymousId,
@@ -1284,7 +1317,7 @@ router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, async 
     const { roomId, messageId } = req.params;
     const { content } = req.body;
 
-    if (!anonymousId) return res.status(401).json({ error: 'Anonymous ID required' });
+    if (!anonymousId) { return res.status(401).json({ error: 'Anonymous ID required' }); }
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
         return res.status(400).json({ error: 'Content is required' });
     }

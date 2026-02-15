@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportsApi, type CreateReportData } from '@/lib/api'
 import { type Report } from '@/lib/schemas'
 import { reportsCache } from '@/lib/cache-helpers'
-import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { resolveMutationIdentity } from '@/lib/auth/identityResolver'
 import { getAvatarUrl } from '@/lib/avatar'
 import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard'
@@ -24,15 +23,14 @@ import { useToast } from '@/components/ui/toast'
  */
 export function useCreateReportMutation() {
     const queryClient = useQueryClient()
-    const { checkAuth } = useAuthGuard()
     const toast = useToast()
 
     return useMutation({
         mutationKey: ['createReport'],
         mutationFn: async (data: CreateReportData) => {
-            if (!checkAuth()) {
-                throw new Error('AUTH_REQUIRED');
-            }
+            // ✅ ENTERPRISE UPDATE: Core Feature (Anonymous Allowed)
+            // Auth Guard removed to allow anonymous reporting.
+            // Identity is guaranteed by guardIdentityReady() in onMutate.
             return reportsApi.create(data);
         },
         onMutate: async (newReportData) => {
@@ -62,7 +60,7 @@ export function useCreateReportMutation() {
                 title: newReportData.title,
                 description: newReportData.description,
                 category: newReportData.category,
-                status: (newReportData.status as any) || 'pendiente',
+                status: (newReportData.status as Report['status']) || 'pendiente',
                 upvotes_count: 0,
                 comments_count: 0,
                 created_at: new Date().toISOString(),

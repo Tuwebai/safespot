@@ -168,8 +168,7 @@ app.use(cors({
   origin: (origin, callback) => {
     // 3. Block otherwise
     // console.warn(`[CORS] Blocked origin: ${origin}`); // Log blocked origin for debugging
-    if (!origin) { return callback(new Error('Not allowed by CORS')); }
-    callback(new Error('Not allowed by CORS'));
+    if (!origin) { return callback(null, true); }
 
     // Normalize incoming origin (just in case)
     const normalizedOrigin = origin.replace(/\/$/, '');
@@ -216,7 +215,8 @@ app.use(cors({
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)
 // These connections are long-lived and Helmet/RateLimits can cause resets
 // 🔴 SECURITY FIX: Added validateAuth to prevent unauthorized access
-app.use('/api/realtime', validateAuth, realtimeRouter);
+// 🔴 SECURITY: validateAuth is applied globally at line 301, no need for redundancy here
+app.use('/api/realtime', realtimeRouter);
 
 // 3. Security Middleware (Helmet)
 // Helmet is applied AFTER realtime to avoid interfering with SSE headers

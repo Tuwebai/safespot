@@ -1,14 +1,14 @@
 # 🔔 AUDITORÍA SISTEMA DE NOTIFICACIONES - ESTADO ACTUALIZADO
 
-**Última Actualización:** 2026-02-14 03:42:00 ART  
+**Última Actualización:** 2026-02-14 04:01:00 ART  
 **Base de Datos Auditada:** ✅ Producción (Supabase PostgreSQL)  
-**Estado General:** � IMPLEMENTACIÓN COMPLETADA - TESTING PENDIENTE
+**Estado General:** 🟢 HARDENING COMPLETADO - TESTING PENDIENTE
 
 ---
 
 ## 📊 RESUMEN EJECUTIVO
 
-### ✅ **COMPLETADO** (Fase 1-3: Presence + Migraciones + Código)
+### ✅ **COMPLETADO** (Fase 1-4: Presence + Migraciones + Código + Hardening)
 
 - [x] **Presence Tracker Phase 1 Fix** → `presenceTracker.js` corregido
   - Implementado TTL atómico con `MULTI/EXEC`
@@ -50,6 +50,14 @@
   - Fail-safe: Si query falla → envía push (seguro)
   - TypeScript compila sin errores
 
+- [x] **Hardening Tabla Notifications** → ✅ IMPLEMENTADO 2026-02-14
+  - Migración: `20260214_notifications_hardening.sql`
+  - Columna `updated_at` con trigger automático ✅
+  - Columna `metadata` JSONB para extensibilidad ✅
+  - Columna `deleted_at` para soft delete ✅
+  - Índice parcial opcional: `idx_notifications_active_user_created` ✅
+  - Total columnas: 14 (10 original + 4 hardening)
+
 ### 🟡 **TESTING PENDIENTE** (Próximos Pasos)
 
 - [ ] **Restart server** → Cargar cambios en routeAndDispatch()
@@ -58,13 +66,11 @@
 - [ ] **Test: Prevención duplicados** → Verificar skip cuando ya enviado
 - [ ] **Monitor logs** → Primera hora post-deploy
 
-### 🟡 **MEJORAS RECOMENDADAS** (Futuro)
+### 🟡 **MEJORAS OPCIONALES** (Futuro)
 
-- [ ] Agregar `updated_at` timestamp
-- [ ] Agregar `metadata` jsonb para datos flexibles
-- [ ] Agregar `deleted_at` para soft delete
 - [ ] Implementar cursor-based pagination
 - [ ] Job de limpieza para notificaciones >90 días
+- [ ] Actualizar queries SELECT con `deleted_at IS NULL` (si se usa soft delete)
 - [ ] Rate limiting en suscripciones push
 
 ---
@@ -95,24 +101,26 @@ created_at: timestamp with time zone NULL DEFAULT now()
 report_id: uuid NULL
 ```
 
-**Columnas:**
+**Columnas actuales (14 total):**
 
-- `push_sent_at` → ✅ AGREGADA 2026-02-14 (TIMESTAMPTZ NULL)
-- `updated_at` → 🟡 Recomendado (futuro)
-- `metadata` → 🟡 Opcional (futuro)
-- `deleted_at` → 🟡 Opcional (futuro, soft delete)
+- ✅ 10 columnas originales (id, anonymous_id, type, title, message, entity_type, entity_id, is_read, created_at, report_id)
+- ✅ `push_sent_at` → AGREGADA 2026-02-14 (TIMESTAMPTZ NULL)
+- ✅ `updated_at` → AGREGADA 2026-02-14 (TIMESTAMPTZ NULL, con trigger)
+- ✅ `metadata` → AGREGADA 2026-02-14 (JSONB NULL)
+- ✅ `deleted_at` → AGREGADA 2026-02-14 (TIMESTAMPTZ NULL)
 
-### Índices Existentes (5)
+### Índices Existentes (6)
 
 ```sql
 ✅ notifications_pkey (PRIMARY KEY)
 ✅ idx_notifications_anonymous_id
 ✅ idx_notifications_is_read
 ✅ idx_notifications_report_id
-✅ idx_notifications_user_created (anonymous_id, created_at DESC) [AGREGADO 2026-02-14]
+✅ idx_notifications_user_created (anonymous_id, created_at DESC) [2026-02-14]
+✅ idx_notifications_active_user_created (partial, WHERE deleted_at IS NULL) [2026-02-14]
 ```
 
-**Nota:** Índice compuesto simplificado (sin `is_read`) para ajustarse al patrón de query principal.
+**Nota:** Índice compuesto simplificado (sin `is_read`) + índice parcial para soft delete.
 
 ### Seguridad
 
