@@ -500,7 +500,7 @@ export function DetalleReporte() {
 
               {/* DESKTOP: Related Reports */}
               <div className="hidden lg:block">
-                <RelatedReports reportId={id!} />
+                <RelatedReports reportId={id!} isSidebar={true} />
               </div>
             </div>
           </div>

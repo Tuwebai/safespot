@@ -48,6 +48,7 @@ const Comunidad = lazyRetry(() => import('@/pages/Comunidad').then(m => ({ defau
 const ResetPassword = lazyRetry(() => import('@/pages/ResetPassword'), 'ResetPassword')
 const SystemStatus = lazyRetry(() => import('@/pages/SystemStatus').then(m => ({ default: m.SystemStatus })), 'SystemStatus')
 const CookiesPolicy = lazyRetry(() => import('@/pages/CookiesPolicy').then(m => ({ default: m.CookiesPolicy })), 'CookiesPolicy')
+const WeeklySummaryPage = lazyRetry(() => import('@/pages/WeeklySummaryPage').then(m => ({ default: m.WeeklySummaryPage })), 'WeeklySummaryPage')
 
 // Product Pages
 const ComoFuncionaPage = lazyRetry(() => import('@/pages/ComoFuncionaPage'), 'ComoFunciona')
@@ -202,6 +203,9 @@ function App() {
                                 {/* Enterprise Security Pages */}
                                 <Route path="/status" element={<SystemStatus />} />
                                 <Route path="/cookies" element={<CookiesPolicy />} />
+
+                                {/* Retention Features */}
+                                <Route path="/weekly-summary" element={<WeeklySummaryPage />} />
 
                                 {/* --- ADMIN ROUTES (Protected by Guard) --- */}
                                 {/* 

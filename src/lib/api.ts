@@ -1062,13 +1062,29 @@ export const usersApi = {
 // NOTIFICATIONS API
 // ============================================
 
+export type NotificationMetadata = {
+  motive: 'proximity' | 'similar' | 'social' | 'system' | 'gamification';
+  subtype?: string; // ej: 'mention', 'reply', 'like'
+  zone_type?: 'home' | 'work' | 'custom';
+  source_entity_id?: string;
+  algorithm_version?: string;
+  channel?: 'push' | 'in-app';
+  deep_link?: string | null;     // [NUEVO]
+  action_label?: string | null;  // [NUEVO] (Opcional, para el badge text)
+  navigation_priority?: 'primary' | 'secondary' | 'informational'; // [NUEVO] Estrategia futura
+};
+
 export interface Notification {
   id: string;
   user_id: string;
-  type: 'comment' | 'mention' | 'like' | 'alert' | 'system' | 'badge';
+  type: 'comment' | 'mention' | 'like' | 'alert' | 'system' | 'badge' | 'proximity' | 'similar' | 'follow' | 'achievement' | 'reply' | 'activity' | 'zone' | 'user' | 'report';
   title: string;
   message: string;
   data?: Record<string, unknown>;
+  metadata?: NotificationMetadata;
+  entity_id?: string;
+  entity_type?: string;
+  report_id?: string;
   is_read: boolean;
   created_at: string;
 }

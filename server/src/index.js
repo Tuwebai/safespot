@@ -11,13 +11,13 @@ const silenceFilter = (...args) => {
     msg.includes('[RealtimeEvents]') ||
     msg.includes('Eviction policy') ||
     msg.includes('volatile-lru')) {
-    if (!DEBUG) return true; // Silenced
+    if (!DEBUG) { return true; } // Silenced
   }
   return false; // Show
 };
 
-console.log = (...args) => { if (!silenceFilter(...args)) originalLog(...args); };
-console.warn = (...args) => { if (!silenceFilter(...args)) originalWarn(...args); };
+console.log = (...args) => { if (!silenceFilter(...args)) { originalLog(...args); } };
+console.warn = (...args) => { if (!silenceFilter(...args)) { originalWarn(...args); } };
 
 import dotenv from 'dotenv';
 // import { NotificationWorker } from './engine/NotificationWorker.js'; // Unused
@@ -87,6 +87,7 @@ import syncRouter from './routes/sync.js';
 // import { logCriticalError } from './utils/adminTasks.js'; // Unused
 import { NotificationService } from './utils/notificationService.js';
 import { strictAdminGateway } from './utils/adminGateway.js';
+import weeklyStatsRouter from './routes/weeklyStats.js';
 
 // Load environment variables
 // dotenv.config(); (Redundant, already called at top)
@@ -165,7 +166,10 @@ app.use(cookieParser());
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // Allow server-to-server, mobile apps, or curl
+    // 3. Block otherwise
+    // console.warn(`[CORS] Blocked origin: ${origin}`); // Log blocked origin for debugging
+    if (!origin) { return callback(new Error('Not allowed by CORS')); }
+    callback(new Error('Not allowed by CORS'));
 
     // Normalize incoming origin (just in case)
     const normalizedOrigin = origin.replace(/\/$/, '');
@@ -247,7 +251,7 @@ const MIN_CLIENT_VERSION = '2.4.0'; // Update this to force 426 on all clients
 
 const versionEnforcement = (req, res, next) => {
   // Skip for non-API or static assets
-  if (!req.path.startsWith('/api')) return next();
+  if (!req.path.startsWith('/api')) { return next(); }
 
   const clientVersion = req.get('X-App-Version');
 
@@ -387,6 +391,7 @@ app.use('/api/push', pushRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/contact', contactRouter); // Register Contact Route
 app.use('/api/presence', presenceRouter);
+app.use('/api/weekly-stats', weeklyStatsRouter);
 // app.use('/api/realtime', realtimeRouter); // Moved up to bypass rate limit
 // ============================================
 // ADMIN ROUTES – ENTERPRISE ROUTING STRUCTURE
@@ -640,10 +645,10 @@ const activeSockets = new Set();
  * Starts the Express server with protection against double-listening
  */
 const startServer = () => {
-  if (isStarting) return;
+  if (isStarting) { return; }
   isStarting = true;
 
-  if (process.env.NODE_ENV === 'test') return;
+  if (process.env.NODE_ENV === 'test') { return; }
 
   const isProduction = process.env.NODE_ENV === 'production';
   server = app.listen(PORT, () => {

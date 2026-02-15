@@ -1,12 +1,9 @@
 import { DB } from './db.js';
-import { logError } from './logger.js';
-import { NOTIFICATIONS } from '../config/constants.js';
+import logger, { logError } from './logger.js';
 import {
-    createActivityNotificationPayload,
     isPushConfigured
 } from './webPush.js';
 import { NotificationQueue } from '../engine/NotificationQueue.js';
-import { v4 as uuidv4 } from 'uuid';
 
 /**
  * NotificationService (INTERNAL APP NOTIFICATIONS)
@@ -20,9 +17,12 @@ export const NotificationService = {
      * Notify users near a new report
      */
     async notifyNearbyNewReport(report) {
-        if (!report.latitude || !report.longitude) return;
+        if (!report.latitude || !report.longitude) {
+            return;
+        }
 
-        if (process.env.DEBUG) console.log(`[Notify] Bulk: notifyNearbyNewReport for report ${report.id}`);
+
+        logger.debug(`[Notify] Bulk: notifyNearbyNewReport for report ${report.id}`);
 
         try {
             const db = DB.public();
@@ -78,7 +78,7 @@ export const NotificationService = {
                              END ASC
                 ),
                 inserted_notifications AS (
-                    INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
+                    INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id, metadata)
                     SELECT 
                         anonymous_id,
                         alert_type,
@@ -99,7 +99,13 @@ export const NotificationService = {
                         END || '.' as message,
                         'report',
                         $5,
-                        $5
+                        $5,
+                        jsonb_build_object(
+                            'motive', CASE WHEN alert_type = 'zone' THEN 'proximity' ELSE 'proximity' END,
+                            'zone_type', zone_type,
+                            'algorithm_version', 'v1',
+                            'deep_link', '/reporte/' || $5
+                        )
                     FROM unique_recipients
                     RETURNING *
                 ),
@@ -119,7 +125,7 @@ export const NotificationService = {
             ]);
 
             const notifications = result.rows;
-            console.log(`[Notify] Bulk notification process completed for report ${report.id}. emitted=${notifications.length}`);
+            logger.info(`[Notify] Bulk notification process completed for report ${report.id}. emitted=${notifications.length}`);
 
             // 5. Enqueue Push Notifications for nearby users (Enterprise Engine)
             if (notifications.length > 0 && isPushConfigured()) {
@@ -163,7 +169,7 @@ export const NotificationService = {
      * Notify report owner of new activity (comment, share, sighting)
      */
     async notifyActivity(reportId, type, entityId, triggerAnonymousId) {
-        if (process.env.DEBUG) console.log(`[Notify] Event: notifyActivity type=${type} report=${reportId}`);
+        logger.debug(`[Notify] Event: notifyActivity type=${type} report=${reportId}`);
         try {
             const db = DB.public();
 
@@ -175,7 +181,11 @@ export const NotificationService = {
                 WHERE r.id = $1
             `, [reportId]);
 
-            if (reportResult.rows.length === 0) return;
+
+
+            if (reportResult.rows.length === 0) {
+                return;
+            }
             const report = reportResult.rows[0];
 
             // Don't notify if user triggered own activity or has disabled this type
@@ -222,9 +232,15 @@ export const NotificationService = {
                 message,
                 entity_type: entityType,
                 entity_id: entityId, // Original entity (comment_id or report_id for shares)
-                report_id: reportId
+                report_id: reportId,
+                metadata: {
+                    motive: 'social',
+                    subtype: type, // 'comment', 'sighting', 'share'
+                    source_entity_id: entityId,
+                    deep_link: `/reporte/${reportId}`
+                }
             });
-            console.log(`[Notify] Notification stored for activity ${type} on report ${reportId}`);
+            logger.info(`[Notify] Notification stored for activity ${type} on report ${reportId}`);
 
             // 4. Enqueue Push Notification (Resilient Background Engine)
             if (isPushConfigured()) {
@@ -263,7 +279,9 @@ export const NotificationService = {
      * OPTIMIZED: Uses batch INSERT for all recipients in a single query
      */
     async notifySimilarReports(report) {
-        if (!report.latitude || !report.longitude) return;
+        if (!report.latitude || !report.longitude) {
+            return;
+        }
 
         try {
             const db = DB.public();
@@ -288,14 +306,19 @@ export const NotificationService = {
                     'Se reportó un nuevo caso de "' || $1::text || '" en tu zona.',
                     'report',
                     $5,
-                    $5
+                    $5,
+                    jsonb_build_object(
+                        'motive', 'similar',
+                        'algorithm_version', 'v1',
+                        'deep_link', '/reporte/' || $5
+                    )
                 FROM eligible_recipients
                 RETURNING *
             `, [report.category, report.anonymous_id, report.latitude, report.longitude, report.id]);
 
             const notifications = result.rows;
             const notifiedCount = notifications.length;
-            console.log(`[Notify] Batch created ${notifiedCount} similar report notifications`);
+            logger.info(`[Notify] Batch created ${notifiedCount} similar report notifications`);
 
             // Batch UPDATE: Increment notification counts for all recipients
             if (notifiedCount > 0) {
@@ -344,9 +367,11 @@ export const NotificationService = {
      * Create the notification record and increment daily count
      */
     async notifyBadgeEarned(anonymousId, badge) {
-        if (!badge || !badge.name) return;
+        if (!badge || !badge.name) {
+            return;
+        }
 
-        console.log(`[Notify] Badge Earned: ${badge.name} for ${anonymousId}`);
+        logger.info(`[Notify] Badge Earned: ${badge.name} for ${anonymousId}`);
 
         try {
             // 1. Insert and get the full notification object (SSOT)
@@ -357,7 +382,12 @@ export const NotificationService = {
                 message: `Has ganado la insignia "${badge.name}". ¡Felicitaciones!`,
                 entity_type: 'badge',
                 entity_id: badge.id || null,
-                report_id: null
+                report_id: null,
+                metadata: {
+                    motive: 'gamification',
+                    subtype: 'badge_earned',
+                    deep_link: '/perfil?tab=achievements'
+                }
             });
 
             // 2. Emit Real-time Event (SSE) with strict contract
@@ -376,7 +406,7 @@ export const NotificationService = {
      * Notify parent comment author of a reply
      */
     async notifyCommentReply(parentCommentId, replyId, triggerAnonymousId) {
-        if (process.env.DEBUG) console.log(`[Notify] Event: notifyCommentReply parent=${parentCommentId}`);
+        logger.debug(`[Notify] Event: notifyCommentReply parent=${parentCommentId}`);
         try {
             const db = DB.public();
 
@@ -388,14 +418,20 @@ export const NotificationService = {
                 WHERE c.id = $1
             `, [parentCommentId]);
 
-            if (parentResult.rows.length === 0) return;
+            if (parentResult.rows.length === 0) {
+                return;
+            }
             const parent = parentResult.rows[0];
 
             // Don't notify self
-            if (parent.anonymous_id === triggerAnonymousId) return;
+            if (parent.anonymous_id === triggerAnonymousId) {
+                return;
+            }
 
             // Check limits
-            if (parent.notifications_today >= parent.max_notifications_per_day) return;
+            if (parent.notifications_today >= parent.max_notifications_per_day) {
+                return;
+            }
 
             // 2. Create Notification
             const notification = await this.createNotification({
@@ -405,9 +441,15 @@ export const NotificationService = {
                 message: `Alguien respondió a tu comentario en un reporte.`,
                 entity_type: 'comment', // The reply
                 entity_id: replyId,
-                report_id: parent.report_id
+                report_id: parent.report_id,
+                metadata: {
+                    motive: 'social',
+                    subtype: 'reply',
+                    source_entity_id: replyId,
+                    deep_link: `/reporte/${parent.report_id}`
+                }
             });
-            console.log(`[Notify] Notification sent to parent comment author ${parent.anonymous_id}`);
+            logger.info(`[Notify] Notification sent to parent comment author ${parent.anonymous_id}`);
 
             // 3. Enqueue Push Notification (Enterprise Engine)
             if (isPushConfigured()) {
@@ -446,7 +488,7 @@ export const NotificationService = {
      * Notify user when mentioned in a comment
      */
     async notifyMention(targetAnonymousId, commentId, triggerAnonymousId, reportId) {
-        if (process.env.DEBUG) console.log(`[Notify] Event: notifyMention target=${targetAnonymousId.substring(0, 8)}...`);
+        logger.debug(`[Notify] Event: notifyMention target=${targetAnonymousId.substring(0, 8)}...`);
         try {
             const db = DB.public();
 
@@ -458,11 +500,11 @@ export const NotificationService = {
             `, [targetAnonymousId]);
 
             // If no settings (rare), create default or skip? Let's assume defaults if missing but usually valid users have settings
-            let targetSettings = targetResult.rows[0];
+            const targetSettings = targetResult.rows[0];
 
             // Skip limits or strict checks? Mentions are high priority, but let's respect daily limit to avoid spam
             if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
-                console.log('[Notify] Skipped Mention: Daily limit reached for target');
+                logger.info('[Notify] Skipped Mention: Daily limit reached for target');
                 return;
             }
 
@@ -474,7 +516,13 @@ export const NotificationService = {
                 message: 'Alguien te mencionó en un comentario.',
                 entity_type: 'comment',
                 entity_id: commentId,
-                report_id: reportId
+                report_id: reportId,
+                metadata: {
+                    motive: 'social',
+                    subtype: 'mention',
+                    source_entity_id: commentId,
+                    deep_link: `/reporte/${reportId}`
+                }
             });
 
             // 3. Enqueue Push Notification (Enterprise Engine)
@@ -514,7 +562,7 @@ export const NotificationService = {
      * Notify author of a like/vote
      */
     async notifyLike(targetType, targetId, triggerAnonymousId) {
-        if (process.env.DEBUG) console.log(`[Notify] Event: notifyLike type=${targetType}`);
+        logger.debug(`[Notify] Event: notifyLike type=${targetType}`);
         try {
             const db = DB.public();
             let ownerQuery = '';
@@ -536,14 +584,20 @@ export const NotificationService = {
             }
 
             const ownerResult = await db.query(ownerQuery, [targetId]);
-            if (ownerResult.rows.length === 0) return;
+            if (ownerResult.rows.length === 0) {
+                return;
+            }
             const owner = ownerResult.rows[0];
 
             // Don't notify self
-            if (owner.anonymous_id === triggerAnonymousId) return;
+            if (owner.anonymous_id === triggerAnonymousId) {
+                return;
+            }
 
             // Check limits
-            if (owner.notifications_today >= owner.max_notifications_per_day) return;
+            if (owner.notifications_today >= owner.max_notifications_per_day) {
+                return;
+            }
 
             // 2. Create Notification
             const title = targetType === 'report' ? '❤️ A alguien le gustó tu reporte' : '❤️ A alguien le gustó tu comentario';
@@ -558,7 +612,13 @@ export const NotificationService = {
                 message,
                 entity_type: targetType,
                 entity_id: targetId,
-                report_id: owner.report_id
+                report_id: owner.report_id,
+                metadata: {
+                    motive: 'social',
+                    subtype: 'like',
+                    source_entity_id: targetId,
+                    deep_link: targetType === 'report' ? `/reporte/${targetId}` : `/reporte/${owner.report_id}`
+                }
             });
 
             // 3. Enqueue Push Notification (Enterprise Engine)
@@ -614,15 +674,15 @@ export const NotificationService = {
      * Create the notification record and increment daily count
      * @returns {Promise<object>} The full notification object from DB
      */
-    async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id }) {
+    async createNotification({ anonymous_id, type, title, message, entity_type, entity_id, report_id, metadata }) {
         const db = DB.public();
 
         // 1. Insert notification and return it
         const result = await db.query(`
-                INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO notifications (anonymous_id, type, title, message, entity_type, entity_id, report_id, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *
-            `, [anonymous_id, type, title, message, entity_type, entity_id, report_id]);
+            `, [anonymous_id, type, title, message, entity_type, entity_id, report_id, metadata || null]);
 
         // 2. Increment count in settings (fire and forget / parallel)
         db.query(`
@@ -639,7 +699,7 @@ export const NotificationService = {
      * Notify user of a new follower
      */
     async notifyNewFollower(followerId, followedId) {
-        if (process.env.DEBUG) console.log(`[Notify] Event: notifyNewFollower`);
+        logger.debug(`[Notify] Event: notifyNewFollower`);
         try {
             const db = DB.public();
 
@@ -659,7 +719,7 @@ export const NotificationService = {
             // Check limits
             const targetSettings = targetResult.rows[0];
             if (targetSettings && targetSettings.notifications_today >= targetSettings.max_notifications_per_day) {
-                if (process.env.DEBUG) console.log(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day})`);
+                logger.debug(`[Notify] Daily limit reached (${targetSettings.notifications_today}/${targetSettings.max_notifications_per_day})`);
             }
 
             // 2. Create Notification
@@ -670,7 +730,13 @@ export const NotificationService = {
                 message: `"${followerAlias}" comenzó a seguirte.`,
                 entity_type: 'user',
                 entity_id: followerId, // 🧠 SSOT: entity_id is the FOLLOWER (to visit their profile)
-                report_id: null
+                report_id: null,
+                metadata: {
+                    motive: 'social',
+                    subtype: 'follow',
+                    source_entity_id: followerId,
+                    deep_link: `/usuario/${followerId}`
+                }
             });
 
             // 3. Enqueue Push Notification (Enterprise Engine)

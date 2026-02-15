@@ -2,6 +2,9 @@ import React, { Suspense } from 'react';
 import { useHomeDataQuery } from '@/hooks/queries/useHomeDataQuery';
 import { HeroSection } from './HeroSection';
 import { OperationalFlow } from './OperationalFlow';
+import { UrgentReportButton } from '@/components/urgent-mode/UrgentReportButton';
+import { UrgentReportDialog } from '@/components/urgent-mode/UrgentReportDialog';
+import { useLocationAuthority } from '@/hooks/useLocationAuthority';
 
 // Lazy Load Heavy/Secondary Components for LCP Optimization
 // Using adapter for named exports
@@ -11,6 +14,8 @@ const SafetyIntel = React.lazy(() => import('./SafetyIntel').then(module => ({ d
 
 export const HomeOrchestrator: React.FC = () => {
     const { data, isLoading, error } = useHomeDataQuery();
+    const [showUrgent, setShowUrgent] = React.useState(false);
+    const { position } = useLocationAuthority({ autoRequest: true });
 
     if (error) {
         console.error("Home Data Error:", error);
@@ -26,7 +31,7 @@ export const HomeOrchestrator: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-dark-bg text-foreground overflow-x-hidden">
+        <div className="min-h-screen bg-dark-bg text-foreground overflow-x-hidden relative">
             <main className="flex flex-col gap-0 relative">
                 {/* 1. Hero (Instant, Eager) */}
                 <HeroSection
@@ -58,6 +63,18 @@ export const HomeOrchestrator: React.FC = () => {
                     </section>
                 </div>
             </main>
+
+            {/* 🚨 SOS Floating Button (Home Screen) */}
+            <UrgentReportButton
+                onClick={() => setShowUrgent(true)}
+                className="fixed bottom-24 right-4 z-[9999] md:bottom-8 md:right-8"
+            />
+
+            <UrgentReportDialog
+                isOpen={showUrgent}
+                onClose={() => setShowUrgent(false)}
+                currentLocation={position ? { lat: position.lat, lng: position.lng } : null}
+            />
         </div>
     );
 };

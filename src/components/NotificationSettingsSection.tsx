@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -17,6 +18,8 @@ export function NotificationSettingsSection() {
     const { success, error } = useToast();
     const { isSubscribed, subscribe } = usePushNotifications();
     const { checkAuth } = useAuthGuard();
+    const [searchParams] = useSearchParams();
+    const highlight = searchParams.get('highlight');
     
     // 🏛️ SAFE MODE: React Query hooks en lugar de API directa
     const { 
@@ -25,6 +28,27 @@ export function NotificationSettingsSection() {
         error: loadError,
         refetch 
     } = useNotificationSettingsQuery();
+    
+    // Refs for scrolling (memoized to be stable in useEffect dependency)
+    const proximityRef = useRef<HTMLDivElement>(null);
+    const activityRef = useRef<HTMLDivElement>(null);
+    const similarRef = useRef<HTMLDivElement>(null);
+
+    const settingsRefs = useMemo(() => ({
+        proximity_alerts: proximityRef,
+        report_activity: activityRef,
+        similar_reports: similarRef,
+    }), []);
+
+    // Effect for highlighting
+    useEffect(() => {
+        if (highlight && settingsRefs[highlight as keyof typeof settingsRefs]?.current) {
+            const element = settingsRefs[highlight as keyof typeof settingsRefs].current;
+            element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [highlight, settings, settingsRefs]); // Run when settings load
+    
+
     
     const updateSettingsMutation = useUpdateNotificationSettingsMutation();
     const updateLocationMutation = useUpdateLocationMutation();
@@ -201,7 +225,14 @@ export function NotificationSettingsSection() {
                 <CardContent className="p-4 sm:p-6 pt-0">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {/* Proximidad */}
-                        <div className="flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border hover:border-primary/30 transition-colors">
+                        {/* Proximidad */}
+                        <div 
+                            ref={settingsRefs.proximity_alerts}
+                            className={cn(
+                                "flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border transition-all duration-500",
+                                highlight === 'proximity_alerts' ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:border-primary/30"
+                            )}
+                        >
                             <div className="p-3 rounded-full bg-muted border border-border">
                                 <MapPin className="h-5 w-5 text-orange-500" />
                             </div>
@@ -217,7 +248,14 @@ export function NotificationSettingsSection() {
                         </div>
 
                         {/* Actividad */}
-                        <div className="flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border hover:border-primary/30 transition-colors">
+                        {/* Actividad */}
+                        <div 
+                            ref={settingsRefs.report_activity}
+                            className={cn(
+                                "flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border transition-all duration-500",
+                                highlight === 'report_activity' ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:border-primary/30"
+                            )}
+                        >
                             <div className="p-3 rounded-full bg-muted border border-border">
                                 <Zap className="h-5 w-5 text-primary" />
                             </div>
@@ -233,7 +271,14 @@ export function NotificationSettingsSection() {
                         </div>
 
                         {/* Casos similares */}
-                        <div className="flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border hover:border-primary/30 transition-colors">
+                        {/* Casos similares */}
+                        <div 
+                            ref={settingsRefs.similar_reports}
+                            className={cn(
+                                "flex flex-col items-center text-center gap-3 p-4 rounded-xl bg-muted/50 border border-border transition-all duration-500",
+                                highlight === 'similar_reports' ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:border-primary/30"
+                            )}
+                        >
                             <div className="p-3 rounded-full bg-muted border border-border">
                                 <Shield className="h-5 w-5 text-blue-500" />
                             </div>

@@ -14,8 +14,13 @@ const Avatar = React.forwardRef<
 >(({ className, children, ...props }, ref) => {
     const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('loading')
 
+    const contextValue = React.useMemo(() => ({ 
+        imageLoadingStatus: status, 
+        onImageLoadingStatusChange: setStatus 
+    }), [status])
+
     return (
-        <AvatarContext.Provider value={{ imageLoadingStatus: status, onImageLoadingStatusChange: setStatus }}>
+        <AvatarContext.Provider value={contextValue}>
             <div
                 ref={ref}
                 className={cn(
@@ -36,32 +41,56 @@ const AvatarImage = React.forwardRef<
     React.ImgHTMLAttributes<HTMLImageElement>
 >(({ className, src, ...props }, ref) => {
     const context = React.useContext(AvatarContext)
+    const [mounted, setMounted] = React.useState(false)
+
+    React.useEffect(() => {
+        setMounted(true)
+    }, [])
+    
+    // Fix: Use ref to track src changes and prevent dependency loop with context
+    const prevSrc = React.useRef(src)
+    
+    React.useLayoutEffect(() => {
+        if (mounted && prevSrc.current !== src) {
+            prevSrc.current = src
+            if (context?.imageLoadingStatus !== 'loading') {
+                context?.onImageLoadingStatusChange('loading')
+            }
+        }
+    }, [src, mounted, context])
 
     React.useLayoutEffect(() => {
         if (!src) {
-            context?.onImageLoadingStatusChange('error')
-            return
-        }
-
-        // Reset to loading on src change to allow retry
-        context?.onImageLoadingStatusChange('loading')
-
-        const img = new Image()
-        img.src = src
-
-        if (img.complete) {
-            if (img.naturalWidth > 0) {
-                context?.onImageLoadingStatusChange('loaded')
-            } else {
+            // Only update if not already error to prevent loop
+            if (context?.imageLoadingStatus !== 'error') {
                 context?.onImageLoadingStatusChange('error')
             }
             return
         }
 
-        img.onload = () => context?.onImageLoadingStatusChange('loaded')
-        img.onerror = () => context?.onImageLoadingStatusChange('error')
+        const img = new Image()
+        img.src = src
 
-    }, [src, context])
+        if (img.complete) {
+            const newStatus = img.naturalWidth > 0 ? 'loaded' : 'error'
+            if (context?.imageLoadingStatus !== newStatus) {
+                context?.onImageLoadingStatusChange(newStatus)
+            }
+            return
+        }
+
+        img.onload = () => {
+             if (context?.imageLoadingStatus !== 'loaded') {
+                context?.onImageLoadingStatusChange('loaded')
+             }
+        }
+        img.onerror = () => {
+            if (context?.imageLoadingStatus !== 'error') {
+                context?.onImageLoadingStatusChange('error')
+            }
+        }
+        
+    }, [src, context]) // Keep context here but guarded logic prevents updates if same
 
     // Render img if loaded OR if we want to let the browser try during 'loading'
     if (context?.imageLoadingStatus === 'error') return null

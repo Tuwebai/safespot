@@ -15,6 +15,8 @@ import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { LocationPermissionDenied } from './LocationPermissionDenied'
 import { SafeSpotMapMarker } from './SafeSpotMapMarker'
+import { UrgentReportButton } from '@/components/urgent-mode/UrgentReportButton'
+import { UrgentReportDialog } from '@/components/urgent-mode/UrgentReportDialog'
 
 // Add custom style for placement mode cursor
 // Extracted CenterManager to prevent re-mounting loops
@@ -281,7 +283,7 @@ const AlertZoneControl = ({
 }: {
     activeType: ZoneType | null,
     setActiveType: (t: ZoneType | null) => void,
-    zones?: any[]
+    zones?: { type: string; lat: number; lng: number; radius_meters?: number }[]
 }) => {
     const hasZone = (type: string) => zones.some(z => z.type === type);
 
@@ -486,6 +488,7 @@ export function SafeSpotMapClient({
     const cleanMap = typeof window !== 'undefined' ? (localStorage.getItem('safespot_map_density') === 'true') : false;
 
     const [activeZoneType, setActiveZoneType] = useState<ZoneType | null>(null)
+    const [showUrgentReport, setShowUrgentReport] = useState(false)
     const { zones, saveZone } = useUserZones()
     
     // 🏛️ SAFE MODE: Trackear última zona activada externamente para evitar duplicados
@@ -651,11 +654,24 @@ export function SafeSpotMapClient({
         >
             {/* Zone Management UI */}
             {!hideControls && (
-                <AlertZoneControl
-                    activeType={activeZoneType}
-                    setActiveType={setActiveZoneType}
-                    zones={zones}
-                />
+                <>
+                    <AlertZoneControl
+                        activeType={activeZoneType}
+                        setActiveType={setActiveZoneType}
+                        zones={zones}
+                    />
+                    
+                    {/* 🚨 Urgent Report Trigger */}
+                    <UrgentReportButton 
+                        onClick={() => setShowUrgentReport(true)} 
+                    />
+
+                    <UrgentReportDialog
+                        isOpen={showUrgentReport}
+                        onClose={() => setShowUrgentReport(false)}
+                        currentLocation={startPosition ? { lat: startPosition[0], lng: startPosition[1] } : null}
+                    />
+                </>
             )}
 
 

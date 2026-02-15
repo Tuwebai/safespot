@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthForm, AuthMode } from '@/components/auth/AuthForm';
-import { ArrowLeft, MapPin } from 'lucide-react';
+import { ArrowLeft, Ghost, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 export default function AuthPage() {
@@ -38,16 +38,26 @@ export default function AuthPage() {
                     </Link>
 
                     <div className="flex justify-center mb-4">
-                        <div className="h-12 w-12 rounded-xl bg-gradient-to-r from-neon-green to-green-400 flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.3)]">
-                            <MapPin className="w-7 h-7 text-zinc-950" />
+                        <div className="relative">
+                            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-zinc-700 flex items-center justify-center shadow-2xl relative z-10">
+                                <Ghost className="w-8 h-8 text-neon-green" strokeWidth={1.5} />
+                            </div>
+                            {/* Security Badge */}
+                            <div className="absolute -bottom-2 -right-2 bg-green-500 text-zinc-950 p-1 rounded-full border-2 border-zinc-950 z-20">
+                                <ShieldCheck className="w-4 h-4" />
+                            </div>
+                            {/* Glow */}
+                            <div className="absolute inset-0 bg-neon-green/20 blur-xl rounded-full z-0" />
                         </div>
                     </div>
 
                     <h1 className="text-3xl font-black tracking-tighter text-white mb-2">
                         SafeSpot
                     </h1>
-                    <p className="text-zinc-400">
-                        {isRegister ? 'Únete a la comunidad de seguridad colaborativa.' : 'Bienvenido de nuevo.'}
+                    <p className="text-zinc-400 max-w-xs mx-auto text-pretty">
+                        {isRegister 
+                            ? 'Reporta sin dejar rastro. Tu identidad está encriptada y protegida.' 
+                            : 'Bienvenido de nuevo. Tu seguridad es nuestra prioridad.'}
                     </p>
                 </div>
 

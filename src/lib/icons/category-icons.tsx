@@ -1,4 +1,4 @@
-import { Bike, Car, Smartphone, Laptop, Wallet, Flame, HelpCircle, type LucideIcon } from 'lucide-react'
+import { Bike, Car, Smartphone, Laptop, Wallet, Flame, HelpCircle, AlertTriangle, Siren, Eye, type LucideIcon } from 'lucide-react'
 import { ALL_CATEGORIES, type Category } from '@/lib/constants'
 
 // Enterprise Icon Configuration Contract
@@ -40,6 +40,26 @@ export const CATEGORY_ICONS: Record<Category, IconConfig> = {
         icon: Wallet,
         color: '#10b981', // Emerald-500 (Valuables)
         label: 'Robo de Cartera'
+    },
+    'Robo': {
+        icon: AlertTriangle,
+        color: '#dc2626', // Red-600 (Urgent)
+        label: 'Robo en Curso'
+    },
+    'Accidente': {
+        icon: Siren,
+        color: '#ea580c', // Orange-600
+        label: 'Accidente de Tránsito'
+    },
+    'Sospechoso': {
+        icon: Eye,
+        color: '#ca8a04', // Yellow-600
+        label: 'Actividad Sospechosa'
+    },
+    'Violencia': {
+        icon: Flame,
+        color: '#7f1d1d', // Red-900
+        label: 'Violencia'
     }
 }
 

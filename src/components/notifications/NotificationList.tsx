@@ -5,7 +5,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BellOff } from 'lucide-react';
 
-import { Notification } from '@/pages/NotificationsPage';
+import type { Notification } from '@/lib/api';
 
 interface NotificationListProps {
     notifications: Notification[];

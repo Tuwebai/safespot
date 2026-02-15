@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, PanInfo, useAnimation } from 'framer-motion';
 import {
     Trash2,
@@ -9,7 +10,11 @@ import {
     Bell,
     ExternalLink,
     MoreHorizontal,
-    User
+    User,
+    MapPin,
+    Users,
+    Zap,
+    Settings
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -21,7 +26,8 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import { Notification } from '@/pages/NotificationsPage';
+import { Notification } from '@/lib/api';
+import { resolveNotificationNavigation } from '@/utils/notificationNavigation';
 
 interface NotificationItemProps {
     notification: Notification;
@@ -49,6 +55,57 @@ export function NotificationItem({
     const controls = useAnimation();
     const [isSwiping, setIsSwiping] = useState(false);
     const wasSwipingRef = useRef(false);
+    const navigate = useNavigate();
+
+    // Context Badge Logic
+    const getContextBadge = () => {
+        if (!notification.metadata?.motive) return null;
+
+        const { motive, zone_type, action_label } = notification.metadata;
+        
+        // Helper for badge rendering
+        const Badge = ({ icon: Icon, text, onClick }: { icon: any, text: string, onClick?: (e: React.MouseEvent) => void }) => (
+            <div 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onClick?.(e);
+                }}
+                className={cn(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border w-fit mt-1.5 transition-colors cursor-pointer",
+                    "bg-secondary/30 border-secondary/50 text-secondary-foreground hover:bg-secondary/50",
+                    !onClick && "cursor-default hover:bg-secondary/30"
+                )}
+            >
+                <Icon className="w-3 h-3" />
+                <span>{text}</span>
+            </div>
+        );
+
+        if (motive === 'proximity') {
+            const zoneLabel = zone_type === 'home' ? 'Casa' : 
+                              zone_type === 'work' ? 'Trabajo' : 
+                              zone_type === 'custom' ? 'Zona Personal' : 'Cerca tuyo';
+            return <Badge icon={MapPin} text={action_label || zoneLabel} />;
+        }
+
+        if (motive === 'similar') {
+            return <Badge icon={Zap} text={action_label || "Reporte Similar"} />;
+        }
+
+        if (motive === 'social') {
+            return <Badge icon={Users} text={action_label || "Social"} />;
+        }
+
+        if (motive === 'system') {
+            return <Badge icon={Settings} text={action_label || "Sistema"} onClick={() => navigate('/settings')} />;
+        }
+        
+        if (motive === 'gamification') {
+            return <Badge icon={Trophy} text={action_label || "Insignia"} />;
+        }
+
+        return null;
+    };
 
     // Icon & Color Logic
     const getIcon = () => {
@@ -99,7 +156,18 @@ export function NotificationItem({
             wasSwipingRef.current = false;
             return;
         }
-        onOpenContext(notification);
+        
+        const targetPath = resolveNotificationNavigation(notification);
+        
+        // 🧠 NAVEGACIÓN INTELIGENTE
+        // Si el helper no encuentra un destino específico (devuelve default),
+        // usamos el comportamiento original (modal/contexto).
+        if (targetPath === '/notificaciones') {
+            onOpenContext(notification);
+        } else {
+            navigate(targetPath);
+            onRead(notification.id);
+        }
     };
 
     return (
@@ -109,7 +177,7 @@ export function NotificationItem({
             {isSwiping && (
                 <div className="absolute inset-y-0 right-0 w-[140px] flex md:hidden">
                     <button
-                        onClick={() => { onOpenContext(notification); resetSwipe(); }}
+                        onClick={() => { handleClick(); resetSwipe(); }} // Use handleClick semantics
                         className="flex-1 bg-blue-600 flex items-center justify-center text-white"
                     >
                         <ExternalLink className="w-5 h-5" />
@@ -156,6 +224,7 @@ export function NotificationItem({
                     <p className="text-xs text-muted-foreground line-clamp-2">
                         {notification.message}
                     </p>
+                    {getContextBadge()}
                 </div>
 
                 {/* Unread Dot */}
@@ -172,7 +241,7 @@ export function NotificationItem({
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-card border border-border shadow-xl">
-                            <DropdownMenuItem onClick={() => onOpenContext(notification)}>
+                            <DropdownMenuItem onClick={handleClick}>
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 Abrir
                             </DropdownMenuItem>
@@ -189,29 +258,7 @@ export function NotificationItem({
                 </div>
             </motion.div>
 
-            {/* Context Menu (Invisible Trigger for Right Click placement is hard with Radix, 
-                so we use the controlled state from onContextMenu above bounded to a hidden trigger or 
-                we just overlay strict UI. 
-                Using a hidden trigger at cursor position is tricky. 
-                A simpler approach for "WhatsApp Desktop" feel: 
-                Just show the chevron on hover for desktop, and let standard click work.
-                But user asked for Right Click. 
-                We will use the same Dropdown logic but trigger it differently? 
-                Actually, standard Radix dropdown is click-triggered. 
-                Right-click custom menus in React usually require a custom position state.
-                For MVP/Robustness: We'll stick to the "More" button visible on hover (Desktop) / always (Mobile) 
-                AND allow Right-Click to open the same menu if possible, or just rely on the button 
-                as standard web behavior is safer.
-                
-                User Rule: "Right Click (PC) -> Context Menu".
-                
-                Let's add a `ContextMenu` wrapper from Radix or Shadcn if available? 
-                Checking imports... I don't see `ContextMenu` in imports, only `DropdownMenu`.
-                I will simulate it with the `isMenuOpen` state and positioning if I had coordinates, 
-                but simpler is to just Open the DropdownMenu normally centered or at list item corner.
-             */}
-
-            {/* Invisible trigger attached to cursor coordinates for Right Click context */}
+            {/* Hidden/Custom Context Menu */}
             {isMenuOpen && menuPosition && (
                 <DropdownMenu open={isMenuOpen} onOpenChange={(open) => !open && onCloseMenu()}>
                     <DropdownMenuTrigger
@@ -222,7 +269,7 @@ export function NotificationItem({
                     </DropdownMenuTrigger>
                     {/* BUG 7 FIX: Fondo opaco */}
                     <DropdownMenuContent align="start" className={`bg-popover border border-border shadow-xl z-[75]`}>
-                        <DropdownMenuItem onClick={() => onOpenContext(notification)}>
+                        <DropdownMenuItem onClick={handleClick}>
                             <ExternalLink className="w-4 h-4 mr-2" />
                             Abrir
                         </DropdownMenuItem>

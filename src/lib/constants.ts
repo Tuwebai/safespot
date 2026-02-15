@@ -5,7 +5,11 @@ export const ALL_CATEGORIES = [
   'Motos',
   'Autos',
   'Laptops',
-  'Carteras'
+  'Carteras',
+  'Robo',
+  'Accidente',
+  'Sospechoso',
+  'Violencia'
 ] as const
 
 export type Category = typeof ALL_CATEGORIES[number]

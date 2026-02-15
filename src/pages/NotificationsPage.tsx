@@ -16,17 +16,7 @@ import { useConfirm } from '@/components/ui/useConfirm';
 // 🔴 CRITICAL FIX: Auth guard for notification delete
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 
-export interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    type: string;
-    entity_id?: string;
-    entity_type?: string;
-    report_id?: string;
-    is_read: boolean;
-    created_at: string;
-}
+import type { Notification } from '@/lib/api';
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
