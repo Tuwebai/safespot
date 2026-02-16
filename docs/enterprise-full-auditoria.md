@@ -700,18 +700,21 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - **DONE (scope acotado)** para favoritos + identidad + anti-flicker en cache.
 - **DONE (scope acotado)** para `POST/DELETE /api/reports/:id/like` con side-effects post-commit.
 - **DONE (scope acotado)** para `POST /api/reports/:id/favorite` con transaccion unica en toggle.
+- **DONE (scope acotado)** para `PATCH /api/reports/:id` con side-effects realtime post-commit.
+- **DONE (scope acotado)** para suite de contrato `reports` (status/shape) en rutas criticas.
 - **PENDIENTE (siguiente bloque P1 de reports, sin regresiones):**
-  - revisar `PATCH /api/reports/:id` para side-effects estrictamente post-commit en caso de ampliar efectos colaterales.
+  - extraer modulo de mutaciones `reports` para reducir acoplamiento sin cambiar contratos.
 
 #### Reports - Fase A Read-Only (matriz de continuidad sin regresiones)
 | Endpoint | Como escribe hoy | Riesgo real | Fix minimo sugerido |
 |---|---|---|---|
-| `POST /api/reports/:id/like` | `executeUserAction` (tx interna con `pool`) + readback `queryWithRLS` + `realtimeEvents.emitLikeUpdate` | Drift de camino de datos (write/read en motores distintos), side-effects fuera de una cola post-commit explicita del endpoint | Unificar write + readback en una sola tx controlada y emitir realtime solo post-commit |
-| `DELETE /api/reports/:id/like` | Igual patron que `like` | Mismo riesgo de consistencia bajo concurrencia/reintentos | Misma receta: tx unica + side-effects post-commit |
-| `POST /api/reports/:id/favorite` | Check/insert-delete secuencial con `queryWithRLS` (sin tx explicita) | Ventana de carrera menor (mitigada parcialmente por unique), sin side-effects realtime | Dejar para bloque posterior (P2) salvo bug visible |
-| `PATCH /api/reports/:id` | check + update con `queryWithRLS`, luego `emitReportUpdate` | No hay rollback de side-effect si el flujo crece con mas efectos colaterales | Mantener fuera de scope ahora; revisar en bloque dedicado |
+| `POST /api/reports/:id/like` | `transactionWithRLS` (check + insert voto + readback) + SSE via cola transaccional | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
+| `DELETE /api/reports/:id/like` | `transactionWithRLS` (check + delete voto + readback) + SSE via cola transaccional | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
+| `POST /api/reports/:id/favorite` | Toggle en `transactionWithRLS` (check + insert/delete atomico) | Riesgo de carrera mitigado; contrato estable | **DONE** |
+| `PATCH /api/reports/:id` | Ownership check + update + readback en `transactionWithRLS`; `emitReportUpdate` en cola post-commit | Evita side-effects en rollback | **DONE** |
+| `POST /api/reports/:id/flag` | `transactionWithRLS` (check + dedupe + insert + status check) + SSE/audit post-commit | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
 
-**Endpoint elegido para siguiente bloque P1:** `POST/DELETE /api/reports/:id/like` (mayor impacto funcional y mayor riesgo de consistencia).
+**Endpoint elegido para siguiente bloque P1:** `POST /api/reports/:id/flag` (normalizado y cerrado en este ciclo).
 
 ### Post Semana 3 - P1 Reports (Favorite Toggle Transaccional) (DONE)
 
@@ -739,6 +742,88 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Tipado:
   - `server`: `npx tsc --noEmit` -> **PASS**.
 
+### Post Semana 3 - P1 Reports (PATCH Transaccional + Realtime Post-Commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `PATCH /api/reports/:id`:
+  - ownership check + `UPDATE` + readback unificados en `transactionWithRLS`.
+  - `emitReportUpdate` migrado a cola transaccional (`sse.emit`) para emitir solo post-commit.
+  - contrato HTTP preservado (`400` no fields/strict lifecycle, `403` no owner, `404` not found, `500` error real).
+
+#### Beneficio tecnico concreto
+- Elimina riesgo de emitir `report-update` cuando la transaccion falla.
+- Reduce drift entre precheck y write path al ejecutarse en un solo client transaccional.
+- Mantiene contrato API estable para frontend.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito (200 + evento post-commit).
+    - falla intermedia (500 + cero side-effects realtime).
+    - seguridad (403 no owner).
+- Revalidacion bloque reports:
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (Contrato Status/Shape) (DONE)
+
+#### Scope cerrado
+- Se agrego suite de contrato para rutas criticas de `reports` enfocada en:
+  - status codes esperados.
+  - shape de respuesta estable (`success/data/message` o `error` segun caso).
+- Cobertura incluida:
+  - `PATCH /api/reports/:id` success + forbidden.
+  - `POST /api/reports/:id/favorite` `already_exists`.
+  - `POST /api/reports/:id/like` not found.
+
+#### Beneficio tecnico concreto
+- Previene regresiones silenciosas de contrato al endurecer internamente la capa transaccional.
+- Reduce riesgo de rotura en frontend por cambios involuntarios de shape/estado HTTP.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/reports-contract-shape.test.js` -> **4/4 PASS**.
+- Revalidacion bloque reports:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (FLAG Transaccional + Side-Effects Post-Commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/reports/:id/flag`:
+  - verificacion de reporte + ownership guard + dedupe + insert de `report_flags` en `transactionWithRLS`.
+  - verificacion de auto-hide (`reports.is_hidden`) dentro de la misma tx.
+  - `emitReportDelete` en cola transaccional (`sse.emit`) para emitir solo post-commit.
+  - `auditLog` ejecutado post-commit (no bloqueante).
+  - contrato HTTP preservado (`400`, `403`, `404`, `200 already_exists`, `201`, `500`).
+
+#### Beneficio tecnico concreto
+- Elimina riesgo de side-effects (realtime/audit) si falla la transaccion de flag.
+- Reduce estados parciales en flujo de moderacion por flag.
+- Mantiene compatibilidad de contrato para clientes existentes.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + side-effects post-commit).
+    - falla intermedia (500 + cero side-effects).
+- Revalidacion bloque reports:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-contract-shape.test.js` -> **4/4 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
 ---
 
 ## 🔟 Score Final
@@ -756,9 +841,9 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 ### Recomendación estratégica
 - **Tocar primero**:
-  1. Consistencia transaccional/persistencia en `reports` (like/unlike como siguiente P1).
+  1. Consolidar tests de contrato `reports` (status + shape) para blindaje anti-regresión.
   2. Normalización de capa de datos frontend para evitar drift residual en reconciliaciones realtime.
-  3. Endurecer contratos de API y reducir acoplamiento en rutas monolíticas.
+  3. Reducir acoplamiento en rutas monolíticas (extracción incremental por dominio).
 - **No tocar ahora**:
   1. Rewrites cosméticos de UI.
   2. Sobreingeniería de microservicios antes de cerrar seguridad/consistencia.

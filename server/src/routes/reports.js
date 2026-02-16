@@ -1168,25 +1168,6 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
 
-    // Check if report exists and belongs to user
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT anonymous_id, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    const report = checkResult.rows[0];
-
-    if (report.anonymous_id !== anonymousId) {
-      return res.status(403).json({
-        error: 'Forbidden: You can only update your own reports'
-      });
-    }
-
     // Build update SET clause dynamically
     const updates = [];
     const params = [id, anonymousId];
@@ -1231,56 +1212,64 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
     updates.push(`updated_at = $${paramIndex}`);
     params.push(new Date().toISOString());
 
-    // Update report using queryWithRLS for RLS consistency
-    // CTE: Update and Retrieve enriched data in one go
-    // ⚠️ CONTRACT ENFORCEMENT: Explicit projection to exclude legacy fields (likes_count)
-    const CANONICAL_REPORT_FIELDS = `
-      r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
-      r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count,
-      r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
-      r.province, r.locality, r.department, r.threads_count, r.is_hidden, r.deleted_at
-    `;
+    const updatedReport = await transactionWithRLS(anonymousId, async (client, sse) => {
+      // Check if report exists and belongs to user (same tx/client)
+      const checkResult = await client.query(
+        'SELECT anonymous_id, status FROM reports WHERE id = $1',
+        [id]
+      );
 
-    const updateResult = await queryWithRLS(anonymousId, `
-      WITH updated_report AS (
-        UPDATE reports SET ${updates.join(', ')}
-        WHERE id = $1 AND anonymous_id = $2
-        RETURNING *
-      )
-      SELECT 
-        ${CANONICAL_REPORT_FIELDS},
-        u.alias,
-        u.avatar_url
-      FROM updated_report r
-      LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-    `, params);
+      if (checkResult.rows.length === 0) {
+        throw new NotFoundError('Report not found');
+      }
 
-    if (updateResult.rows.length === 0) {
-      return res.status(403).json({
-        error: 'Forbidden: You can only update your own reports'
+      const report = checkResult.rows[0];
+      if (report.anonymous_id !== anonymousId) {
+        throw new AppError('Forbidden: You can only update your own reports', 403, 'FORBIDDEN', true);
+      }
+
+      // CTE: Update and Retrieve enriched data in one go
+      // CONTRACT ENFORCEMENT: Explicit projection to exclude legacy fields (likes_count)
+      const CANONICAL_REPORT_FIELDS = `
+        r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
+        r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count,
+        r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
+        r.province, r.locality, r.department, r.threads_count, r.is_hidden, r.deleted_at
+      `;
+
+      const updateResult = await client.query(`
+        WITH updated_report AS (
+          UPDATE reports SET ${updates.join(', ')}
+          WHERE id = $1 AND anonymous_id = $2
+          RETURNING *
+        )
+        SELECT 
+          ${CANONICAL_REPORT_FIELDS},
+          u.alias,
+          u.avatar_url
+        FROM updated_report r
+        LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
+      `, params);
+
+      if (updateResult.rows.length === 0) {
+        throw new AppError('Forbidden: You can only update your own reports', 403, 'FORBIDDEN', true);
+      }
+
+      const updated = updateResult.rows[0];
+
+      logger.info('[AUDIT PATCH REPORT] Updated data from DB:', {
+        id: updated.id,
+        title: updated.title,
+        description: updated.description?.substring(0, 50),
+        updated_at: updated.updated_at,
+        timestamp: Date.now()
       });
-    }
 
-    const updatedReport = updateResult.rows[0];
+      // REALTIME: Broadcast only post-commit via transactional queue
+      sse.emit('emitReportUpdate', updated);
 
-    // 🔍 AUDIT LOG: Confirmar datos antes de emitir SSE
-    logger.info('[AUDIT PATCH REPORT] Updated data from DB:', {
-      id: updatedReport.id,
-      title: updatedReport.title,
-      description: updatedReport.description?.substring(0, 50),
-      updated_at: updatedReport.updated_at,
-      timestamp: Date.now()
+      return updated;
     });
-
-    // REALTIME: Broadcast report update using local enriched data (CTE)
-    try {
-      realtimeEvents.emitReportUpdate(updatedReport);
-
-      // If status changed and we have prevStatus available from scope, handled here or client side.
-      // For now, emit Update covers the data change.
-    } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitReportUpdate', reportId: id });
-    }
 
     logSuccess('Report updated', { id, anonymousId });
 
@@ -1290,13 +1279,22 @@ router.patch('/:id', requireAnonymousId, async (req, res) => {
       message: 'Report updated successfully'
     });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
+    if (error instanceof AppError && error.statusCode === 403) {
+      return res.status(403).json({
+        error: 'Forbidden: You can only update your own reports'
+      });
+    }
     logError(error, req);
     res.status(500).json({
       error: 'Failed to update report'
     });
   }
 });
-
 /**
  * POST /api/reports/:id/favorite
  * Toggle favorite status for a report
@@ -1545,26 +1543,6 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       throw error;
     }
 
-    // Verify report exists and get owner
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, anonymous_id FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    const report = reportResult.rows[0];
-
-    // Check if user is trying to flag their own report
-    if (report.anonymous_id === anonymousId) {
-      return res.status(403).json({
-        error: 'You cannot flag your own report'
-      });
-    }
-
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
@@ -1577,54 +1555,86 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
 
     const comment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
 
-    // Check if already flagged
-    // Return 200 OK instead of 409 - user's intent is satisfied (report is flagged)
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2
-    `, [anonymousId, id]);
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      // Verify report exists and get owner
+      const reportResult = await client.query(
+        'SELECT id, anonymous_id FROM reports WHERE id = $1',
+        [id]
+      );
+      if (reportResult.rows.length === 0) {
+        throw new NotFoundError('Report not found');
+      }
 
-    if (checkResult.rows.length > 0) {
+      const report = reportResult.rows[0];
+
+      // Check if user is trying to flag their own report
+      if (report.anonymous_id === anonymousId) {
+        throw new AppError('You cannot flag your own report', 403, 'FORBIDDEN', true);
+      }
+
+      // Return 200 OK instead of 409 - user's intent is satisfied (report is flagged)
+      const checkResult = await client.query(
+        'SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2',
+        [anonymousId, id]
+      );
+
+      if (checkResult.rows.length > 0) {
+        return {
+          status: 'already_exists',
+          existingFlagId: checkResult.rows[0].id,
+          targetOwnerId: report.anonymous_id
+        };
+      }
+
+      const insertResult = await client.query(
+        `INSERT INTO report_flags (anonymous_id, report_id, reason, comment)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, report_id, reason`,
+        [anonymousId, id, reason, comment]
+      );
+
+      if (insertResult.rows.length === 0) {
+        throw new Error('Insert returned no data');
+      }
+
+      const newFlag = insertResult.rows[0];
+
+      // If threshold met, trigger sets is_hidden=true. Emit realtime only post-commit.
+      const statusCheck = await client.query(
+        'SELECT is_hidden, category, status FROM reports WHERE id = $1',
+        [id]
+      );
+
+      const reportState = statusCheck.rows[0];
+      if (reportState?.is_hidden) {
+        sse.emit('emitReportDelete', id, reportState.category, reportState.status);
+      }
+
+      return {
+        status: 'created',
+        flagId: newFlag.id,
+        targetOwnerId: report.anonymous_id,
+        autoHidden: Boolean(reportState?.is_hidden)
+      };
+    });
+
+    if (txResult.status === 'already_exists') {
       return res.status(200).json({
         success: true,
         data: {
           is_flagged: true,
-          flag_id: checkResult.rows[0].id
+          flag_id: txResult.existingFlagId
         },
         status: 'already_exists',
         message: 'Already flagged'
       });
     }
 
-    // Create flag using queryWithRLS for RLS consistency
-    const insertResult = await queryWithRLS(anonymousId, `
-      INSERT INTO report_flags (anonymous_id, report_id, reason, comment)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, report_id, reason
-    `, [anonymousId, id, reason, comment]);
-
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no data'), req);
-      return res.status(500).json({
-        error: 'Failed to flag report',
-        message: 'Insert operation returned no data'
-      });
+    if (txResult.autoHidden) {
+      logger.info(`[Moderation] Auto-hide triggered by flags for report ${id}. Event queued post-commit.`);
     }
 
-    const newFlag = insertResult.rows[0];
-
-    // SYSTEMIC FIX: Check for Auto-Hide (Realtime Consistency)
-    // If threshold met, trigger will set is_hidden = true. We must notify SSE clients.
-    const statusCheck = await queryWithRLS(anonymousId, `
-      SELECT is_hidden, category, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (statusCheck.rows.length > 0 && statusCheck.rows[0].is_hidden) {
-      const r = statusCheck.rows[0];
-      realtimeEvents.emitReportDelete(id, r.category, r.status);
-      logger.info(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
-    }
-
-    // AUDIT LOG
+    // AUDIT LOG (post-commit, no bloqueante)
     auditLog({
       action: AuditAction.REPORT_FLAG,
       actorType: ActorType.ANONYMOUS,
@@ -1632,8 +1642,8 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       req,
       targetType: 'report',
       targetId: id,
-      targetOwnerId: report.anonymous_id,
-      metadata: { reason, flagId: newFlag.id },
+      targetOwnerId: txResult.targetOwnerId,
+      metadata: { reason, flagId: txResult.flagId },
       success: true
     }).catch(() => { });
 
@@ -1641,18 +1651,36 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) =
       success: true,
       data: {
         is_flagged: true,
-        flag_id: newFlag.id
+        flag_id: txResult.flagId
       },
       message: 'Report flagged successfully'
     });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
+
+    if (error instanceof AppError && error.statusCode === 403) {
+      return res.status(403).json({
+        error: 'You cannot flag your own report'
+      });
+    }
+
+    if (error?.message === 'Insert returned no data') {
+      return res.status(500).json({
+        error: 'Failed to flag report',
+        message: 'Insert operation returned no data'
+      });
+    }
+
     logError(error, req);
     res.status(500).json({
       error: 'Failed to flag report'
     });
   }
 });
-
 /**
  * DELETE /api/reports/:id
  * Delete a report (only by creator)
@@ -1888,4 +1916,7 @@ router.post('/:id/share', requireAnonymousId, async (req, res) => {
 });
 
 export default router;
+
+
+
 
