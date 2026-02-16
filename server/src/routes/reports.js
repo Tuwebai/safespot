@@ -23,7 +23,7 @@ import { reportsListResponseSchema, singleReportResponseSchema } from '../schema
 import { executeUserAction } from '../utils/governance.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
-import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport, createReport } from './reports.mutations.js';
+import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport, createReport, shareReport } from './reports.mutations.js';
 
 const router = express.Router();
 
@@ -1086,23 +1086,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
  * POST /api/reports/:id/share
  * Register a share event and notify report owner
  */
-router.post('/:id/share', requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // Trigger notification for the owner
-    // We don't need to await this as it's non-critical for the response
-    AppNotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
-      logError(err, { context: 'notifyActivity.share', reportId: id });
-    });
-
-    res.json({ success: true, message: 'Share registered' });
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({ error: 'Failed to register share' });
-  }
-});
+router.post('/:id/share', requireAnonymousId, shareReport);
 
 export default router;
 

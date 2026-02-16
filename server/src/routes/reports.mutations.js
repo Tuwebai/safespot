@@ -843,3 +843,21 @@ export async function deleteReport(req, res) {
     });
   }
 }
+
+export async function shareReport(req, res) {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    // Trigger notification for the owner
+    // We don't need to await this as it's non-critical for the response
+    AppNotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
+      logError(err, { context: 'notifyActivity.share', reportId: id });
+    });
+
+    res.json({ success: true, message: 'Share registered' });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to register share' });
+  }
+}
