@@ -1308,17 +1308,6 @@ router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, async (req, re
     const { id } = req.params;
     const anonymousId = req.anonymousId;
 
-    // Verify report exists
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
@@ -1329,56 +1318,77 @@ router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, async (req, re
       });
     }
 
-    // Check if favorite already exists
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2
-    `, [anonymousId, id]);
+    const result = await transactionWithRLS(anonymousId, async (client) => {
+      const reportResult = await client.query(
+        'SELECT id FROM reports WHERE id = $1',
+        [id]
+      );
+      if (reportResult.rows.length === 0) {
+        throw new NotFoundError('Report not found');
+      }
 
-    if (checkResult.rows.length > 0) {
-      // Remove favorite (toggle off)
-      await queryWithRLS(anonymousId, `
-        DELETE FROM favorites WHERE id = $1 AND anonymous_id = $2
-      `, [checkResult.rows[0].id, anonymousId]);
+      const checkResult = await client.query(
+        'SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2',
+        [anonymousId, id]
+      );
 
-      res.json({
+      if (checkResult.rows.length > 0) {
+        await client.query(
+          'DELETE FROM favorites WHERE id = $1 AND anonymous_id = $2',
+          [checkResult.rows[0].id, anonymousId]
+        );
+        return { isFavorite: false, status: 'removed' };
+      }
+
+      try {
+        await client.query(
+          'INSERT INTO favorites (anonymous_id, report_id) VALUES ($1, $2)',
+          [anonymousId, id]
+        );
+        return { isFavorite: true, status: 'added' };
+      } catch (insertError) {
+        // Idempotencia por carrera de concurrencia (unique).
+        if (insertError.code === '23505' || insertError.message?.includes('unique') || insertError.message?.includes('duplicate')) {
+          return { isFavorite: true, status: 'already_exists' };
+        }
+        throw insertError;
+      }
+    });
+
+    if (result.status === 'removed') {
+      return res.json({
         success: true,
         data: {
           is_favorite: false
         },
         message: 'Favorite removed successfully'
       });
-    } else {
-      // Add favorite (toggle on)
-      try {
-        await queryWithRLS(anonymousId, `
-          INSERT INTO favorites (anonymous_id, report_id) VALUES ($1, $2)
-        `, [anonymousId, id]);
-
-        res.json({
-          success: true,
-          data: {
-            is_favorite: true
-          },
-          message: 'Favorite added successfully'
-        });
-      } catch (insertError) {
-        // Check if it's a unique constraint violation (race condition)
-        // Return 200 OK with status field so frontend knows it's idempotent
-        if (insertError.code === '23505' || insertError.message?.includes('unique') || insertError.message?.includes('duplicate')) {
-          return res.status(200).json({
-            success: true,
-            data: {
-              is_favorite: true
-            },
-            status: 'already_exists',
-            message: 'Already favorited'
-          });
-        } else {
-          throw insertError;
-        }
-      }
     }
+
+    if (result.status === 'already_exists') {
+      return res.status(200).json({
+        success: true,
+        data: {
+          is_favorite: true
+        },
+        status: 'already_exists',
+        message: 'Already favorited'
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        is_favorite: true
+      },
+      message: 'Favorite added successfully'
+    });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
     logError(error, req);
     res.status(500).json({
       error: 'Failed to toggle favorite'
@@ -1395,39 +1405,41 @@ router.post('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) =
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    // Verify report exists
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, category, status FROM reports WHERE id = $1
-    `, [id]);
+    const { upvotesCount } = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const reportResult = await client.query(
+        `SELECT id, category, status 
+         FROM reports 
+         WHERE id = $1`,
+        [id]
+      );
 
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-    const report = reportResult.rows[0];
+      if (reportResult.rows.length === 0) {
+        throw new NotFoundError('Report not found');
+      }
 
-    // Atomic Like with SSOT (DB trigger handles counter)
-    await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'LIKE_REPORT',
-      updateQuery: `
-        INSERT INTO votes (anonymous_id, target_type, target_id)
-        VALUES ($1::uuid, 'report'::vote_target_type, $2)
-        ON CONFLICT (anonymous_id, target_type, target_id) DO NOTHING;
-      `,
-      updateParams: [anonymousId, id]
+      const report = reportResult.rows[0];
+
+      // Idempotente por unique constraint (ON CONFLICT DO NOTHING).
+      await client.query(
+        `INSERT INTO votes (anonymous_id, target_type, target_id)
+         VALUES ($1::uuid, 'report'::vote_target_type, $2)
+         ON CONFLICT (anonymous_id, target_type, target_id) DO NOTHING`,
+        [anonymousId, id]
+      );
+
+      const countResult = await client.query(
+        'SELECT upvotes_count FROM reports WHERE id = $1',
+        [id]
+      );
+      const count = countResult.rows[0]?.upvotes_count || 0;
+
+      // Realtime estrictamente post-commit via cola transaccional.
+      sse.emit('emitLikeUpdate', id, count, report.category, report.status, clientId);
+
+      return { upvotesCount: count };
     });
-
-    // Get updated count from SSOT
-    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
-    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
-
-    // Realtime broadcast
-    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
 
     res.json({
       success: true,
@@ -1438,7 +1450,9 @@ router.post('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) =
       message: 'Like added'
     });
   } catch (error) {
-    // Handle unique constraint manually if needed, though DO NOTHING handles it
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
     logError(error, req);
     res.status(500).json({ error: 'Failed to like report' });
   }
@@ -1452,32 +1466,41 @@ router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res)
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, category, status FROM reports WHERE id = $1
-    `, [id]);
+    const { upvotesCount } = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const reportResult = await client.query(
+        `SELECT id, category, status 
+         FROM reports 
+         WHERE id = $1`,
+        [id]
+      );
 
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-    const report = reportResult.rows[0];
+      if (reportResult.rows.length === 0) {
+        throw new NotFoundError('Report not found');
+      }
 
-    await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'UNLIKE_REPORT',
-      updateQuery: `
-        DELETE FROM votes 
-        WHERE anonymous_id = $1::uuid AND target_type = 'report' AND target_id = $2;
-      `,
-      updateParams: [anonymousId, id]
+      const report = reportResult.rows[0];
+
+      await client.query(
+        `DELETE FROM votes 
+         WHERE anonymous_id = $1::uuid 
+           AND target_type = 'report'
+           AND target_id = $2`,
+        [anonymousId, id]
+      );
+
+      const countResult = await client.query(
+        'SELECT upvotes_count FROM reports WHERE id = $1',
+        [id]
+      );
+      const count = countResult.rows[0]?.upvotes_count || 0;
+
+      // Realtime estrictamente post-commit via cola transaccional.
+      sse.emit('emitLikeUpdate', id, count, report.category, report.status, clientId);
+
+      return { upvotesCount: count };
     });
-
-    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
-    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
-
-    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
 
     res.json({
       success: true,
@@ -1488,6 +1511,9 @@ router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res)
       message: 'Like removed'
     });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
     logError(error, req);
     res.status(500).json({ error: 'Failed to unlike report' });
   }

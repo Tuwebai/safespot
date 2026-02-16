@@ -18,10 +18,22 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 
 ### Top 5 riesgos críticos
 1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
-2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros.
-3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad.
+2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
+3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
 4. **Rutas monolíticas con alto acoplamiento** (`server/src/routes/reports.js`, `server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales.
 5. **Drift de capas y contratos** (mix de `queryWithRLS`, `supabase.from`, `pool.query` en mismas rutas, p.ej. `server/src/routes/comments.js:283`, `server/src/routes/comments.js:1123`, `server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`): rompe predictibilidad transaccional y aumenta bugs de concurrencia.
+
+### Estado de hallazgos reportados (actualizado)
+| Hallazgo original | Estado | Evidencia |
+|---|---|---|
+| AuthZ incompleto en `/api/realtime/user/:id`, `/api/realtime/chats/:roomId`, `/api/realtime/catchup` | **CORREGIDO** | `server/src/routes/realtime.js` + `tests/security/realtime-authz.test.js` en verde |
+| Catchup con fuga de metadatos globales | **CORREGIDO** | Filtros de visibilidad/membresía en `catchup` (`server/src/routes/realtime.js`) + suite seguridad |
+| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/auth-realtime-error-contract.test.js` |
+| Hardening de secretos (arranque inseguro) | **CORREGIDO PARCIAL** | `server/src/utils/env.js` + `tests/security/env-validation.test.js` (pendiente: operación continua de rotación) |
+| Deriva transaccional en comments (like/flag/pin/create/edit) | **CORREGIDO** | Secciones `Post Semana 3 - P1 Consistencia Transaccional Comments (...) (DONE)` |
+| Bug `/reportes` favoritos (mostraba no favoritos) | **CORREGIDO** | `server/src/routes/reports.js` (`favorites_only` con `EXISTS` + `1=0` sin identidad), `src/lib/cache-helpers.ts` (`matchesFilters`) |
+| Drift de identidad en `is_liked/is_favorite` de reports | **CORREGIDO** | `server/tests/security/reports-identity-source.test.js` (**2/2 PASS**) |
+| Flicker de like en reports por patch parcial | **CORREGIDO (defensa cache)** | `src/lib/cache-helpers.ts` + `src/lib/cache-helpers.report-like.test.ts` (**1/1 PASS**) |
 
 ---
 
@@ -569,7 +581,163 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 #### Estado
 - **DONE (scope acotado)** para `flag`.
-- `pin/unpin` queda fuera de este bloque (solo abordar si hay bug visible o cierre higienico posterior).
+- `pin/unpin` y `create` se cierran en bloques P1 posteriores (ver secciones siguientes).
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (PIN/UNPIN) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/pin`:
+  - verificacion `comment/report owner` + `UPDATE` unificados en `transactionWithRLS`.
+  - `emitCommentUpdate` emitido via cola transaccional (`sse.emit`) post-commit.
+- Endpoint `DELETE /api/comments/:id/pin`:
+  - verificacion `comment/report owner` + `UPDATE` unificados en `transactionWithRLS`.
+  - side-effects realtime emitidos solo post-commit.
+
+#### Beneficio tecnico concreto
+- Se elimina mezcla de drivers (`supabase + queryWithRLS`) en write-path de pin/unpin.
+- Se elimina riesgo de emitir realtime cuando la transaccion falla (rollback).
+- Se vuelve determinista el comportamiento ante errores intermedios.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito pin (evento emitido post-commit).
+    - falla intermedia unpin (500 + cero side-effects realtime).
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `pin/unpin`.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (CREATE) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments`:
+  - prechecks de `report` y `parent` movidos al mismo `transactionWithRLS` (sin drift de driver).
+  - validacion de visibilidad/moderacion (`trust_score`, `moderation_status`) ejecutada con el mismo `client` transaccional.
+  - `emitNewComment` se mantiene via cola transaccional (`sse.emit`) post-commit.
+  - notificaciones/auditoria/gamification se mantienen post-commit (no bloqueantes).
+
+#### Beneficio tecnico concreto
+- Se elimina race entre prechecks fuera de tx y write dentro de tx.
+- Se reduce riesgo de estados parciales en alta concurrencia.
+- Se preserva contrato API sin cambios de schema.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-create-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + `emitNewComment` + side-effects post-commit).
+    - falla intermedia de insert (500 + rollback + cero side-effects).
+- Revalidacion de flujos relacionados:
+  - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `create` de comments.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (EDIT) (DONE)
+
+#### Scope cerrado
+- Endpoint `PATCH /api/comments/:id`:
+  - ownership check + `UPDATE` + readback unificados en `transactionWithRLS`.
+  - realtime de edicion (`emitCommentUpdate`) emitido via cola transaccional (`sse.emit`) post-commit.
+  - contrato HTTP preservado (`404` no existe, `403` no owner, `200` exito, `500` error real).
+
+#### Beneficio tecnico concreto
+- Se elimina drift entre check y write por ejecutarse con un mismo `client` transaccional.
+- Se evita emitir eventos de edicion en escenarios de rollback.
+- Se endurece una ruta sensible de ownership sin cambiar schema ni contrato.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-edit-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito (200 + `emitCommentUpdate` post-commit).
+    - falla intermedia (500 + rollback + cero side-effects realtime).
+    - seguridad (403 cuando el actor no es owner).
+- Gate del bloque comments:
+  - `server/tests/security/comment-create-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `edit` de comments.
+
+### Post Semana 3 - P1 Reports (Favoritos + Identidad + Like Flicker) (DONE PARCIAL)
+
+#### Scope cerrado
+- Filtro `favorites_only` en `GET /api/reports`:
+  - backend aplica `EXISTS (favorites...)` por usuario en feeds geografico y cronologico.
+  - si no hay identidad valida, responde vacio funcional (`1 = 0`) y evita fuga global.
+- Fuente de identidad para personalizacion (`is_liked`, `is_favorite`) normalizada a `req.anonymousId`/`resolveRequestAnonymousId`:
+  - lista (`GET /api/reports`)
+  - detalle (`GET /api/reports/:id`)
+- Reconciliacion de cache para like:
+  - `reportsCache.patch` preserva `is_liked` cuando llega patch parcial sin ese campo.
+  - evita rebote visual por payload parcial en reconciliacion.
+
+#### Beneficio tecnico concreto
+- El filtro de favoritos deja de devolver reportes fuera del usuario actual.
+- Se elimina drift de identidad entre lectura de feed y mutaciones like/unlike.
+- Se reduce flicker de estado personal de like sin cambiar contrato API.
+
+#### Evidencia de validacion
+- Backend:
+  - `tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Frontend:
+  - `src/lib/cache-helpers.report-like.test.ts` -> **1/1 PASS**.
+- Gate de tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+  - `frontend`: `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para favoritos + identidad + anti-flicker en cache.
+- **DONE (scope acotado)** para `POST/DELETE /api/reports/:id/like` con side-effects post-commit.
+- **DONE (scope acotado)** para `POST /api/reports/:id/favorite` con transaccion unica en toggle.
+- **PENDIENTE (siguiente bloque P1 de reports, sin regresiones):**
+  - revisar `PATCH /api/reports/:id` para side-effects estrictamente post-commit en caso de ampliar efectos colaterales.
+
+#### Reports - Fase A Read-Only (matriz de continuidad sin regresiones)
+| Endpoint | Como escribe hoy | Riesgo real | Fix minimo sugerido |
+|---|---|---|---|
+| `POST /api/reports/:id/like` | `executeUserAction` (tx interna con `pool`) + readback `queryWithRLS` + `realtimeEvents.emitLikeUpdate` | Drift de camino de datos (write/read en motores distintos), side-effects fuera de una cola post-commit explicita del endpoint | Unificar write + readback en una sola tx controlada y emitir realtime solo post-commit |
+| `DELETE /api/reports/:id/like` | Igual patron que `like` | Mismo riesgo de consistencia bajo concurrencia/reintentos | Misma receta: tx unica + side-effects post-commit |
+| `POST /api/reports/:id/favorite` | Check/insert-delete secuencial con `queryWithRLS` (sin tx explicita) | Ventana de carrera menor (mitigada parcialmente por unique), sin side-effects realtime | Dejar para bloque posterior (P2) salvo bug visible |
+| `PATCH /api/reports/:id` | check + update con `queryWithRLS`, luego `emitReportUpdate` | No hay rollback de side-effect si el flujo crece con mas efectos colaterales | Mantener fuera de scope ahora; revisar en bloque dedicado |
+
+**Endpoint elegido para siguiente bloque P1:** `POST/DELETE /api/reports/:id/like` (mayor impacto funcional y mayor riesgo de consistencia).
+
+### Post Semana 3 - P1 Reports (Favorite Toggle Transaccional) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/reports/:id/favorite`:
+  - verificacion de reporte + check existente + insert/delete de favorito unificados en `transactionWithRLS`.
+  - se mantiene idempotencia (`already_exists`) sin cambiar contrato API.
+  - se conserva respuesta original (`added/removed/already_exists/404/500`).
+
+#### Beneficio tecnico concreto
+- Menor riesgo de estado parcial en toggle concurrente.
+- Camino de datos mas predecible (una sola tx para el write-path).
+- Cero impacto de contrato para frontend (sin regresiones de integración).
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito add favorite.
+    - falla intermedia (500 sin romper contrato).
+    - `404` no encontrado.
+- Revalidacion relacionada:
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
 
@@ -588,8 +756,8 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 ### Recomendación estratégica
 - **Tocar primero**:
-  1. Consistencia transaccional/persistencia en chat/comments/reports.
-  2. Normalización de capa de datos frontend para evitar drift.
+  1. Consistencia transaccional/persistencia en `reports` (like/unlike como siguiente P1).
+  2. Normalización de capa de datos frontend para evitar drift residual en reconciliaciones realtime.
   3. Endurecer contratos de API y reducir acoplamiento en rutas monolíticas.
 - **No tocar ahora**:
   1. Rewrites cosméticos de UI.
@@ -611,6 +779,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/src/routes/auth.js:56`
 - `server/src/routes/auth.js:228`
 - `server/src/routes/comments.js:283`
+- `server/src/routes/comments.js:576`
 - `server/src/routes/comments.js:1123`
 - `server/src/routes/chats.js:326`
 - `server/src/routes/chats.js:1419`
