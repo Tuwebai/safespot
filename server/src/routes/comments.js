@@ -557,53 +557,60 @@ router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (r
   try {
     const anonymousId = req.anonymousId;
 
-    // [CMT-001] Precise ownership check (403 vs 404)
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id, anonymous_id FROM comments 
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [id]
-    );
+    const content = req.body.content;
 
-    if (checkResult.rows.length === 0) {
-      // console.log(`[PATCH COMMENT] ❌ COMMENT NOT FOUND: ${id} - Possible race condition with POST`);
+    const txResult = await transactionWithRLS(anonymousId, async (client) => {
+      const checkResult = await client.query(
+        `SELECT id, anonymous_id FROM comments 
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return { notFound: true };
+      }
+
+      if (checkResult.rows[0].anonymous_id !== anonymousId) {
+        return { forbidden: true, ownerId: checkResult.rows[0].anonymous_id };
+      }
+
+      const updateResult = await client.query(
+        `WITH updated AS (
+           UPDATE comments 
+           SET content = $1, last_edited_at = NOW()
+           WHERE id = $2 AND anonymous_id = $3
+           RETURNING *
+         )
+         SELECT 
+           c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, 
+           c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
+           u.alias, 
+           u.avatar_url,
+           (c.anonymous_id = r.anonymous_id) as is_author
+         FROM updated c
+         LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id
+         LEFT JOIN reports r ON c.report_id = r.id`,
+        [content, id, anonymousId]
+      );
+
+      return { updatedComment: updateResult.rows[0] };
+    });
+
+    if (txResult?.notFound) {
       logInfo('Comment PATCH failed: Not Found', { commentId: id, actorId: anonymousId });
       throw new NotFoundError('Comment not found');
     }
 
-    if (checkResult.rows[0].anonymous_id !== anonymousId) {
+    if (txResult?.forbidden) {
       logInfo('Comment PATCH failed: Forbidden (Ownership Mismatch)', {
         commentId: id,
         actorId: anonymousId,
-        ownerId: checkResult.rows[0].anonymous_id
+        ownerId: txResult.ownerId
       });
       throw new ForbiddenError('You do not have permission to edit this comment');
     }
 
-    // const comment = checkResult.rows[0]; // Unused variable removed
-    const content = req.body.content;
-
-    // UPDATE query with JOIN to return full identity (SSOT)
-    // Using CTE to update and join in one atomic operation
-    const updateResult = await queryWithRLS(
-      anonymousId,
-      `WITH updated AS (
-         UPDATE comments 
-         SET content = $1, last_edited_at = NOW()
-         WHERE id = $2 AND anonymous_id = $3
-         RETURNING *
-       )
-       SELECT 
-         c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, 
-         c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
-         u.alias, 
-         u.avatar_url
-       FROM updated c
-       LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id`,
-      [content, id, anonymousId]
-    );
-
-    const updatedComment = updateResult.rows[0];
+    const updatedComment = txResult.updatedComment;
 
     const patchDuration = Date.now() - patchStartTime;
     logSuccess(`Comment patched: ${id}`, { patchDuration });
@@ -643,16 +650,19 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
 
     const currentItem = result.snapshot;
     const reportId = currentItem.report_id;
+    const deletedNow = !result.idempotent && result.rowCount > 0;
 
-    // REALTIME: Broadcast deletion
-    try {
-      const clientId = req.headers['x-client-id'];
-      const eventId = crypto.randomUUID(); // Single ID for all broadcasts related to this action
+    if (deletedNow) {
+      // REALTIME: Broadcast deletion
+      try {
+        const clientId = req.headers['x-client-id'];
+        const eventId = crypto.randomUUID(); // Single ID for all broadcasts related to this action
 
-      realtimeEvents.emitCommentDelete(reportId, id, clientId, eventId);
+        realtimeEvents.emitCommentDelete(reportId, id, clientId, eventId);
 
-    } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
+      } catch (err) {
+        logError(err, { context: 'realtimeEvents.emitCommentDelete', reportId });
+      }
     }
 
     // CRITICAL Manual decrement removed - Handled by DB Trigger
@@ -669,20 +679,22 @@ router.delete('/:id', requireAnonymousId, async (req, res, next) => {
     }
     */
 
-    // AUDIT LOG
-    auditLog({
-      action: AuditAction.COMMENT_DELETE,
-      actorType: ActorType.ANONYMOUS,
-      actorId: anonymousId,
-      req,
-      targetType: 'comment',
-      targetId: id,
-      oldValues: {
-        content: currentItem.content?.substring(0, 100),
-        reportId: currentItem.report_id
-      },
-      success: true
-    }).catch(() => { });
+    if (deletedNow) {
+      // AUDIT LOG
+      auditLog({
+        action: AuditAction.COMMENT_DELETE,
+        actorType: ActorType.ANONYMOUS,
+        actorId: anonymousId,
+        req,
+        targetType: 'comment',
+        targetId: id,
+        oldValues: {
+          content: currentItem.content?.substring(0, 100),
+          reportId: currentItem.report_id
+        },
+        success: true
+      }).catch(() => { });
+    }
 
     res.json({
       success: true,
@@ -1222,4 +1234,5 @@ router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
 });
 
 export default router;
+
 

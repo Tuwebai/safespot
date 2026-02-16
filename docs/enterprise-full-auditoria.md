@@ -1509,6 +1509,41 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 **Resultado**
 - Riesgo de estados parciales y race conditions en mutaciones chat reducido a nivel operativo.
+
+### Post Semana 3 - P1 Comments (PATCH transaccional homogéneo) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `PATCH /api/comments/:id`
+- Ajuste aplicado en `server/src/routes/comments.js`:
+  - ownership check + update/readback unificados en `transactionWithRLS`,
+  - se preservan mensajes de error y semántica (`404` not found, `403` forbidden, `200` success).
+  - hotfix de contrato: PATCH devuelve `is_author` (join a `reports`) para no perder badge de autor en UI tras editar.
+- Contrato preservado:
+  - `200` -> `{ success: true, data, message: 'Comment updated successfully' }`
+  - `404` -> `Comment not found`
+  - `403` -> `You do not have permission to edit this comment`
+
+**Gate**
+- `server/tests/security/comment-edit-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Comments (DELETE idempotente sin side-effects duplicados) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `DELETE /api/comments/:id`
+- Ajuste aplicado en `server/src/routes/comments.js`:
+  - se conserva `executeUserAction` (tx governance),
+  - realtime (`emitCommentDelete`) y `auditLog` solo cuando `rowCount > 0 && !idempotent`,
+  - en delete idempotente mantiene `200 success` pero evita re-emisión/re-auditoría duplicada.
+
+**Gate**
+- `server/tests/security/comment-delete-idempotency.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-edit-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
