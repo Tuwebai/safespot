@@ -280,6 +280,7 @@ export function createChatNotificationPayload(message, room) {
             recipientId: message.recipientAnonymousId || null, // ⚡ Needed for SW ACK
             type: 'chat', // ⚡ Match SW expectation (was chat-message)
             url: conversationId ? `/mensajes/${conversationId}` : '/mensajes',
+            deepLink: conversationId ? `/mensajes/${conversationId}` : '/mensajes',
             timestamp: Date.now()
         },
         actions: [
@@ -288,6 +289,10 @@ export function createChatNotificationPayload(message, room) {
                 title: '💬 Responder',
                 type: 'text', // Inline reply if supported by OS
                 placeholder: 'Escribe tu mensaje...'
+            },
+            {
+                action: 'mark_read',
+                title: '✓ Marcar leído'
             },
             {
                 action: 'view',

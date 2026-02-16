@@ -240,6 +240,10 @@ self.addEventListener('push', (event: any) => {
         requireInteraction: false,
         vibrate: [200, 100, 200]
     };
+    const rawActions = data?.actions || data?.data?.actions;
+    if (Array.isArray(rawActions) && rawActions.length > 0) {
+        options.actions = rawActions;
+    }
 
     // 3. 🏛️ ENTERPRISE PUSH SUPPRESSION (SSOT)
     // Single authority: PostgreSQL. No MessageChannel, no Redis, no heuristics.
@@ -333,7 +337,14 @@ self.addEventListener('notificationclick', (event: any) => {
     const notification = event.notification;
     const action = event.action;
     const data = notification.data || {};
-    const urlToOpen = data.deepLink || data.url || '/'; // 🚀 Priority: deepLink -> url -> root
+    const nestedData = data?.data || {};
+    const baseDeepLink =
+        data.deepLink ||
+        data.url ||
+        nestedData.deepLink ||
+        nestedData.url ||
+        '/';
+    let urlToOpen = baseDeepLink;
 
     console.log(`[SW] 🖱️ Notification Clicked. Action: ${action || 'default'}, URL: ${urlToOpen}`);
 
@@ -350,6 +361,21 @@ self.addEventListener('notificationclick', (event: any) => {
             console.log(`[SW] 💬 Inline Reply received: "${replyText}"`);
             // Note: Inline reply handling usually requires opening the client
             // to process the message in a stateful way, but the ACK is already sent.
+        }
+    }
+
+    if (action === 'mark_read') {
+        const messageId = data.messageId || data.entityId || nestedData.messageId || nestedData.entityId;
+        try {
+            const deepLinkUrl = new URL(baseDeepLink, self.location.origin);
+            deepLinkUrl.searchParams.set('action', 'mark_read');
+            if (messageId) {
+                deepLinkUrl.searchParams.set('messageId', String(messageId));
+            }
+            urlToOpen = `${deepLinkUrl.pathname}${deepLinkUrl.search}${deepLinkUrl.hash}`;
+        } catch {
+            const messageQuery = messageId ? `&messageId=${encodeURIComponent(String(messageId))}` : '';
+            urlToOpen = `${baseDeepLink}${baseDeepLink.includes('?') ? '&' : '?'}action=mark_read${messageQuery}`;
         }
     }
 
