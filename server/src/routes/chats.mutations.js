@@ -811,7 +811,7 @@ export async function deleteRoomMessage(req, res) {
     const { roomId, messageId } = req.params;
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const msgResult = await client.query(
                 'SELECT sender_id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
                 [messageId, roomId]
@@ -830,6 +830,22 @@ export async function deleteRoomMessage(req, res) {
                 'SELECT user_id FROM conversation_members WHERE conversation_id = $1',
                 [roomId]
             );
+
+            memberResult.rows.forEach((member) => {
+                sse.emit('emitUserChatUpdate', member.user_id, {
+                    eventId: `deleted:${roomId}:${messageId}`,
+                    conversationId: roomId,
+                    roomId,
+                    action: 'message-deleted',
+                    messageId
+                });
+            });
+
+            sse.emit('emitChatStatus', 'update', roomId, {
+                action: 'message-deleted',
+                messageId
+            });
+
             return { members: memberResult.rows };
         });
 
@@ -840,21 +856,6 @@ export async function deleteRoomMessage(req, res) {
         if (txResult?.forbidden) {
             return res.status(403).json({ error: 'Forbidden: You can only delete your own messages' });
         }
-
-        txResult.members.forEach(member => {
-            realtimeEvents.emitUserChatUpdate(member.user_id, {
-                eventId: `deleted:${roomId}:${messageId}`,
-                conversationId: roomId,
-                roomId,
-                action: 'message-deleted',
-                messageId
-            });
-        });
-
-        realtimeEvents.emitChatStatus('update', roomId, {
-            action: 'message-deleted',
-            messageId
-        });
 
         res.json({ success: true });
     } catch (err) {

@@ -219,6 +219,23 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'Forbidden: You can only delete your own messages' });
     });
 
+    it('deleteRoomMessage falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await deleteRoomMessage(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
+
     it('editRoomMessage ejecuta update en tx y emite broadcast post-commit', async () => {
         const req = {
             anonymousId: 'user-1',

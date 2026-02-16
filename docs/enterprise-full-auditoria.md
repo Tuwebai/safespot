@@ -1379,7 +1379,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `DELETE /api/chats/rooms/:roomId/messages/:messageId`
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - validación de ownership + delete + readback de miembros bajo `transactionWithRLS`,
-  - side-effects realtime ejecutados exclusivamente post-commit.
+  - side-effects realtime encolados con `sse.emit` dentro de la tx y flush post-commit.
 - Contrato preservado:
   - `404` -> `{ error: 'Message not found' }`
   - `403` -> `{ error: 'Forbidden: You can only delete your own messages' }`
@@ -1387,8 +1387,11 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - mismo payload realtime (`action: 'message-deleted'` + `eventId` determinístico).
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **9/9 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **27/27 PASS** (incluye rollback sin side-effects en `deleteRoomMessage`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **3/3 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
 ### Post Semana 3 - P1 Chats (EDIT MESSAGE transaccional + broadcast post-commit) (DONE)
