@@ -36,7 +36,7 @@ export function getVapidSubject() {
 export function isPushFeatureEnabled() {
     const raw = process.env.ENABLE_PUSH_NOTIFICATIONS;
     if (isBlank(raw)) {
-        return true;
+        return false;
     }
     const normalized = raw.trim().toLowerCase();
     return normalized !== 'false' && normalized !== '0' && normalized !== 'off';
