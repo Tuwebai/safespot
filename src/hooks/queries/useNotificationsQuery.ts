@@ -123,3 +123,16 @@ export function useDeleteAllNotificationsMutation() {
         }
     });
 }
+
+export function useDeleteNotificationMutation() {
+    const { checkAuth } = useAuthGuard();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            if (!checkAuth()) {
+                throw new Error('AUTH_REQUIRED');
+            }
+            return notificationsApi.delete(id);
+        }
+    });
+}

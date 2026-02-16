@@ -26,7 +26,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import { Notification } from '@/lib/api';
+import type { Notification } from '@/lib/api';
 import { resolveNotificationNavigation } from '@/utils/notificationNavigation';
 
 interface NotificationItemProps {

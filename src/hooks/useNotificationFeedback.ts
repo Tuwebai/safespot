@@ -7,34 +7,32 @@ export function useNotificationFeedback() {
     const { data: notifications } = useNotificationsQuery();
     const { info } = useToast();
 
-    // Track the ID of the latest notification we have seen
     const lastLatestIdRef = useRef<string | null>(null);
+    const lastCountRef = useRef<number>(0);
     const isFirstRun = useRef(true);
 
     useEffect(() => {
         if (!notifications || notifications.length === 0) return;
 
-        // Assuming API returns sorted DESC (newest first)
         const latest = notifications[0];
 
         if (isFirstRun.current) {
-            // On first mount, just store the latest ID, don't notify
             lastLatestIdRef.current = latest.id;
+            lastCountRef.current = notifications.length;
             isFirstRun.current = false;
             return;
         }
 
-        // If we have a new latest ID, it means a new notification arrived
-        if (lastLatestIdRef.current !== latest.id) {
-            // Trigger feedback
+        // Only notify on real arrivals (count grows). This prevents
+        // false positives when deleting a notification changes list head.
+        const hasRealArrival = notifications.length > lastCountRef.current;
+        if (hasRealArrival && lastLatestIdRef.current !== latest.id) {
             playNotificationSound();
-
-            const title = latest.title || 'Nueva notificación';
-            // Combine title and message since our toast only accepts a string message
+            const title = latest.title || 'Nueva notificacion';
             info(`${title}: ${latest.message}`, 5000);
-
-            // Update ref
-            lastLatestIdRef.current = latest.id;
         }
+
+        lastLatestIdRef.current = latest.id;
+        lastCountRef.current = notifications.length;
     }, [notifications, info]);
 }
