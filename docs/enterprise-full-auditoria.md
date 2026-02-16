@@ -35,7 +35,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 | Drift de identidad en `is_liked/is_favorite` de reports | **CORREGIDO** | `server/tests/security/reports-identity-source.test.js` (**2/2 PASS**) |
 | Flicker de like en reports por patch parcial | **CORREGIDO (defensa cache)** | `src/lib/cache-helpers.ts` + `src/lib/cache-helpers.report-like.test.ts` (**1/1 PASS**) |
 | Acoplamiento de write-paths en `reports.js` | **CORREGIDO** | Extracción por lotes a `server/src/routes/reports.mutations.js` + suite de contrato verde |
-| Acoplamiento de mutaciones en `chats.js` | **CORREGIDO PARCIAL** | Lote 1 extraído a `server/src/routes/chats.mutations.js` (`pin/unpin/archive/unarchive/unread`) |
+| Acoplamiento de mutaciones en `chats.js` | **CORREGIDO** | Lote 1+2+3+4+5+6+7+8+9+10+11+12+13+14+15 aplicado: extracción completa + router puro (sin lógica inline) |
 
 ---
 
@@ -46,8 +46,8 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 - **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
   - `server/src/routes/reports.js` (971 líneas, router/wiring)
   - `server/src/routes/reports.mutations.js` (991 líneas, mutaciones de dominio)
-  - `server/src/routes/chats.js` (1485 líneas, router + handlers pendientes)
-  - `server/src/routes/chats.mutations.js` (275 líneas, lote 1/2 extraído)
+  - `server/src/routes/chats.js` (250 líneas, router puro / wiring)
+  - `server/src/routes/chats.mutations.js` (1570 líneas, lógica de mutaciones y lecturas extraídas)
   - `server/src/routes/comments.js` (1226 líneas)
   - `src/lib/api.ts` (1402 líneas)
 - **Riesgo real**: cambios locales generan efectos laterales sistémicos y regresiones silenciosas.
@@ -977,6 +977,350 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 - `frontend`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 2) (DONE)
+
+#### Scope cerrado
+- Se extrajeron adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `DELETE /api/chats/rooms/:roomId` (`deleteRoom`)
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId` (`deleteRoomMessage`)
+  - `PATCH /api/chats/rooms/:roomId/messages/:messageId` (`editRoomMessage`)
+  - `PATCH /api/chats/rooms/:roomId/messages/:messageId/pin` (`pinRoomMessage`)
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId/pin` (`unpinRoomMessage`)
+  - `POST /api/chats/rooms/:roomId/messages/:messageId/star` (`starRoomMessage`)
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId/star` (`unstarRoomMessage`)
+- `server/src/routes/chats.js` conserva rutas + middlewares y delega ejecución.
+
+#### Contrato preservado
+- Status codes y shape JSON sin cambios.
+- Mismos side-effects y semántica de negocio.
+- Sin cambios de schema ni de rutas.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+- `frontend`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 3) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms/:roomId/messages` (`sendRoomMessage`)
+- `server/src/routes/chats.js` conserva el mismo middleware (`requireRoomMembership`) y delega la ejecución al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo contrato HTTP del endpoint:
+  - `201` con el mensaje persistido.
+  - `400 { error: 'Content is required' }`.
+  - `500 { error: 'Internal server error' }`.
+- Misma semántica de pipeline:
+  - write-path dentro de `transactionWithRLS`.
+  - fan-out SSE + enqueue push solo post-commit (fire-and-forget).
+- Sin cambios de schema ni de rutas.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 4) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms/:roomId/read` (`markRoomRead`)
+- `server/src/routes/chats.js` mantiene misma ruta y mismo middleware (`requireRoomMembership`), delegando el handler al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo shape de respuesta: `{ success: true, count }`.
+- Misma semántica de negocio:
+  - actualización read/delivered en `chat_messages`.
+  - limpieza de `is_manually_unread`.
+  - side-effects post-commit (`emitMessageRead`, `emitUserChatUpdate`, `emitChatStatus`) sólo cuando corresponde.
+- Sin cambios de schema ni de contratos API.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 5) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms/:roomId/delivered` (`markRoomDelivered`)
+- `server/src/routes/chats.js` mantiene misma ruta y mismo middleware (`requireRoomMembership`), delegando el handler al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo shape de respuesta: `{ success: true, count }`.
+- Misma semántica de negocio:
+  - update transaccional de `is_delivered`.
+  - emisión de side-effects post-update (`emitChatStatus('delivered')` + `emitMessageDelivered` por sender).
+- Sin cambios de schema ni contratos API.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 6) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/messages/:messageId/ack-delivered` (`ackDeliveredMessage`)
+- `server/src/routes/chats.js` mantiene la misma ruta y delega al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismos status y shape:
+  - `400` -> `{ error: 'MessageId and X-Anonymous-Id are required' }`
+  - `404` -> `{ error: 'Message not found or access denied' }`
+  - `200` -> `{ success: true }`
+  - `500` -> `{ error: 'Internal server error' }`
+- Misma semántica:
+  - tx con `transactionWithRLS`,
+  - side-effects (`emitMessageDelivered`, `emitChatStatus`) solo cuando aplica,
+  - telemetría `logChatAckFailure` y `CHAT_PIPELINE` intacta.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 7) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms/:roomId/typing` (`emitTypingStatus`)
+- `server/src/routes/chats.js` mantiene la misma ruta y middleware (`requireRoomMembership`), delegando al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo shape de respuesta: `{ success: true }` inmediata.
+- Misma semántica:
+  - emisión realtime a room (`emitChatStatus('typing')`) en camino crítico.
+  - fan-out diferido a inbox (`emitUserChatUpdate`) con `queryWithRLS`.
+  - falla diferida silenciosa (`console.warn`) preservada.
+- Sin cambios de schema, rutas ni contrato API.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 8) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/:roomId/images` (`uploadRoomImage`)
+- `server/src/routes/chats.js` conserva el mismo wiring:
+  - `imageUploadLimiter`, `requireAnonymousId`, `requireRoomMembership`, `upload.single('image')`.
+
+#### Contrato preservado
+- Mismo comportamiento y shape:
+  - `400` -> `{ error: 'No image provided' }`
+  - `403` -> `{ error: 'Forbidden: You are not a member of this conversation' }`
+  - `500` -> `{ error: 'Storage service not configured' }` o `{ error: err.message || 'Internal server error' }`
+  - `200` -> `{ success: true, url }`
+- Misma integración con `supabaseAdmin.storage` y validación `validateImageBuffer`.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 9) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/:roomId/messages/:messageId/react` (`toggleMessageReaction`)
+- `server/src/routes/chats.js` mantiene misma ruta + middleware (`requireRoomMembership`) y delega la ejecución.
+
+#### Contrato preservado
+- Mismos status y shape:
+  - `400` -> `{ error: 'emoji is required' }`
+  - `404` -> `{ error: 'Message not found' }`
+  - `200` -> `{ success: true, reactions, action }`
+  - `500` -> `{ error: 'Internal server error' }`
+- Misma semántica:
+  - toggle único por usuario (remove de reacciones previas + add/remove objetivo),
+  - persistencia en `chat_messages.reactions`,
+  - SSE `emitChatStatus('message-reaction')` con estado completo.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 10) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms` (`createRoom`)
+- `server/src/routes/chats.js` mantiene ruta y contrato, delegando ejecución al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismos status y shape:
+  - `400` -> `{ error: 'Anonymous ID required' }` / `{ error: 'Cannot start a chat with yourself' }`
+  - `404` -> `{ error: 'Report not found' }`
+  - `201` -> `fullRoom` con metadata del otro participante.
+  - `500` -> `{ error: 'Internal server error' }`
+- Misma lógica de deduplicación de conversación existente y creación de miembros.
+- Sin cambios de schema, rutas ni reglas de negocio.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 11) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/messages/reconcile-status` (`reconcileMessageStatus`)
+- `server/src/routes/chats.js` conserva ruta y contrato, delegando ejecución.
+
+#### Contrato preservado
+- Mismos status y shape:
+  - `400` -> `{ error: 'X-Anonymous-Id required' }`
+  - `200` -> `{ success: true, results, summary }`
+  - `500` -> `{ error: 'Internal server error' }`
+- Misma semántica batch:
+  - reconciliación `delivered` y `read`,
+  - acumulación de `failed/already/reconciled`,
+  - telemetría `logChatAckFailure` (`207` parcial) y `CHAT_PIPELINE`.
+- Se preserva el mismo patrón de acceso DB actual del endpoint (`pool.query`).
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 12) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `GET /api/chats/starred` (`getStarredMessages`)
+- `server/src/routes/chats.js` conserva ruta y delega al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo status/shape:
+  - `200` -> array de mensajes destacados con `sender_alias`, `sender_avatar`, `conversation_id`.
+  - `500` -> `{ error: 'Internal server error' }`.
+- Misma query SQL y orden (`ORDER BY sm.created_at DESC`).
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 13) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `GET /api/chats/rooms` (`getRooms`)
+- `server/src/routes/chats.js` conserva la ruta y delega al módulo de mutaciones.
+
+#### Contrato preservado
+- Mismo comportamiento:
+  - retorna lista de rooms con metadata + `unread_count`.
+  - hidrata `is_online` vía `presenceTracker`.
+  - límite de 20 y orden por `is_pinned` + `last_message_at`.
+- Mismos status:
+  - `401` si falta `anonymousId`.
+  - `500` en error interno.
+- Misma SQL de consulta y misma forma de respuesta.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 14) (DONE)
+
+#### Scope cerrado
+- Se extrajo adicionalmente a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `GET /api/chats/rooms/:roomId/messages` (`getRoomMessages`)
+- `server/src/routes/chats.js` mantiene ruta + middleware (`requireRoomMembership`) y delega la ejecución.
+
+#### Contrato preservado
+- Mismos status/shape:
+  - `403` -> `{ error: 'Access denied: Not a member of this conversation' }`
+  - `410` -> `{ error, code: 'REF_GONE', retry_strategy: 'full_resync' }` para gap inválido.
+  - `200` -> array de mensajes con enriquecimiento (`reply_to_*`, `is_starred`).
+  - `500` -> `{ error: 'Internal server error' }`
+- Misma semántica:
+  - gap recovery por `since`,
+  - auto-mark delivered al leer historial,
+  - emisión `emitMessageDelivered` para sincronizar ticks.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 15 - Router Puro) (DONE)
+
+#### Scope cerrado
+- `server/src/routes/chats.js` se normalizó a router puro:
+  - rutas declaradas con handler directo (`router.get('/x', handler)`),
+  - wrappers `async (req, res) => handler(req, res)` removidos.
+- se removieron imports no usados del router (`queryWithRLS`, `transactionWithRLS`, `logError`, `logInfo`, `realtimeEvents`, `logChatAckFailure`).
+
+#### Contrato preservado
+- Sin cambios de rutas, middlewares, status codes ni shape de respuesta.
+- Sin cambios de lógica de negocio (toda lógica permanece en `chats.mutations.js`).
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Hotfix UX Orden Inbox Nuevo Chat) (DONE)
+
+#### Scope cerrado
+- Ajuste puntual en `server/src/routes/chats.mutations.js` (`getRooms`) para priorizar conversaciones nuevas sin mensajes.
+
+#### Root cause confirmado
+- El orden de inbox y el campo `last_message_at` usaban solo `lm.created_at`/`c.last_message_at`.
+- Conversaciones recién creadas podían quedar con ambos campos nulos y caer al final (orden efectivo por `NULL`/`0`).
+
+#### Fix aplicado (mínimo)
+- `last_message_at` ahora se calcula con fallback explícito:
+  - `COALESCE(lm.created_at, c.last_message_at, c.created_at) as last_message_at`
+- `ORDER BY` usa el mismo fallback:
+  - `COALESCE(lm.created_at, c.last_message_at, c.created_at) DESC`
+
+#### Evidencia de validación
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+
+### Post Semana 3 - P1 Chats (PIN/UNREAD transaccional homogéneo) (DONE)
+
+- Endpoints estabilizados sin cambio de contrato:
+  - `POST /api/chats/rooms/:roomId/pin`
+  - `DELETE /api/chats/rooms/:roomId/pin`
+  - `PATCH /api/chats/rooms/:roomId/unread`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - write path movido a `transactionWithRLS` (tx única por request),
+  - emisión realtime mantenida únicamente después del commit exitoso.
+- Contrato preservado:
+  - mismos `status codes`,
+  - mismo shape de respuesta (`{ success: true }`),
+  - mismo payload/eventId determinístico en `emitUserChatUpdate`.
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
 
