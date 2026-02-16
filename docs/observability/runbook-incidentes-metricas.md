@@ -1,103 +1,160 @@
-# Runbook de Incidentes - Observabilidad Semana 3
+# Runbook Operativo Enterprise - Semana 3
 
-## Alcance
+## 0. Objetivo
+Operar incidentes de `auth + realtime + push` con respuesta predecible, trazable y segura, sin improvisacion.
+
+## 1. Alcance y guardrails
 - Backend only (sin UI admin).
-- Stack: Loki + Grafana.
-- Metricas permitidas:
-  - `METRIC_REALTIME_AUTHZ_DENIED` (401/403 realtime)
-  - `METRIC_REALTIME_CATCHUP` (latencia catchup)
-  - `METRIC_CHAT_ACK_FAILURE` (fallos ACK delivered/read)
-  - `METRIC_AUTH_5XX` (errores 5xx en auth)
-  - Base: `METRIC_HTTP_REQUEST` (requests + latency)
+- Stack observabilidad: logs estructurados (sin dependencia de Grafana).
+- No exponer PII en logs: nunca tokens, cookies, payloads completos ni query strings crudas.
+- Correlacion obligatoria por `requestId`.
 
-## Guardrails de PII (obligatorio)
-- Nunca loggear payloads completos, tokens JWT, emails, headers Authorization, cookies, ni query strings crudas.
-- Endpoint en logs debe ser path saneado (`/api/...`) sin query params.
-- `requestId` es el correlativo unico para trazabilidad.
-- Si se requiere investigacion profunda, usar `requestId` para pivotear en logs de app y DB; no ampliar logs con datos sensibles.
+## 2. Metricas y SLO operativo
+- `METRIC_REALTIME_AUTHZ_DENIED` (401/403 realtime)
+- `METRIC_REALTIME_CATCHUP` (latencia catchup)
+- `METRIC_CHAT_ACK_FAILURE` (fallos ACK delivered/read)
+- `METRIC_AUTH_5XX` (errores 5xx auth)
+- Base: `METRIC_HTTP_REQUEST` (requests/latencia general)
 
-## Retencion
-- 14 dias: `METRIC_HTTP_REQUEST` (alto volumen).
-- 30 dias: `METRIC_REALTIME_AUTHZ_DENIED`, `METRIC_REALTIME_CATCHUP`, `METRIC_CHAT_ACK_FAILURE`, `METRIC_AUTH_5XX`.
+SLO de respuesta inicial:
+- SEV1: ack humano <= 5 min
+- SEV2: ack humano <= 15 min
 
-## Alertas (4)
-1. `ALERT_REALTIME_AUTH_REJECTIONS_SPIKE`
-- Query: suma de 401+403 realtime en 5 minutos.
-- Umbral: `> 40` eventos / 5m por 10m.
-- Severidad: Warning.
+## 3. Triage inicial (primeros 5 minutos)
+1. Confirmar severidad:
+- SEV1: login caido masivo, auth 5xx sostenido, realtime inutilizable.
+- SEV2: degradacion parcial, picos acotados, workaround disponible.
+2. Identificar patron dominante por metrica.
+3. Tomar `requestId` de casos reales y pivotear trazas.
+4. Congelar deploys si el incidente es auth/realtime activo.
+5. Abrir canal de incidente y registrar timestamp de inicio.
 
-2. `ALERT_REALTIME_CATCHUP_P95_HIGH`
-- Query: p95 `durationMs` de `METRIC_REALTIME_CATCHUP`.
-- Umbral: `> 1000ms` por 10m.
-- Severidad: Critical.
+## 4. Playbook por tipo de incidente
 
-3. `ALERT_CHAT_ACK_FAILURES`
-- Query: suma `METRIC_CHAT_ACK_FAILURE`.
-- Umbral: `> 5` / 5m por 10m.
-- Severidad: Critical.
+### 4.1 401/403 realtime anomalo
+Objetivo: diferenciar fallo de autenticacion vs autorizacion esperada.
 
-4. `ALERT_AUTH_5XX_PRESENT`
-- Query: suma `METRIC_AUTH_5XX`.
-- Umbral: `> 0` por 5m.
-- Severidad: Critical.
+Checklist:
+1. Revisar volumen y reason:
+- `AUTH_REQUIRED`
+- `FORBIDDEN_STREAM`
+- `NOT_ROOM_MEMBER`
+2. Validar si hubo deploy reciente frontend/backend.
+3. Verificar expiracion de JWT y sincronizacion de reloj.
+4. Confirmar que los endpoints criticos responden con contrato uniforme (`error, code, message, requestId`).
+5. Si salto post-deploy: rollback del cambio de cliente/orquestador realtime.
 
-## Respuesta por metrica
-### 1) 401/403 realtime
-- Confirmar si incremento es por deploy reciente o cambios de token/session.
-- Filtrar por `endpoint` y `reason` para detectar patron (AUTH_REQUIRED vs FORBIDDEN_STREAM vs NOT_ROOM_MEMBER).
-- Si hay salto abrupto post-deploy: rollback frontend realtime que genera URL/token.
-- Verificar expiracion JWT y clock skew.
+Salida esperada:
+- tasa 401/403 vuelve a baseline
+- sin nuevos `FORBIDDEN` inesperados para usuarios validos
 
-### 2) p95 catchup alto
-- Revisar volumen de eventos (`eventCount`) y correlacion con p95.
-- Chequear salud DB (latencia, locks, pool saturation).
-- Validar que `since` enviado por cliente no este reiniciando a ventanas masivas.
-- Si degradacion persiste: activar mitigacion temporal de limite en catchup y escalar a on-call DB.
+### 4.2 Catchup p95 alto
+Objetivo: recuperar latencia y evitar backlog.
 
-### 3) ACK failures
-- Separar por `flow` (`ack_delivered` vs `reconcile_status`) y `reason`.
-- Si predomina `NOT_FOUND_OR_NO_ACCESS`: revisar membresia/conversation drift en cliente.
-- Si predomina `INTERNAL_ERROR`: revisar errores DB, deadlocks o tiempo de respuesta.
-- Verificar que no haya release reciente en chat orchestration.
+Checklist:
+1. Confirmar `durationMs` p95 y `eventCount`.
+2. Correlacionar con DB (latencia, locks, pool saturation).
+3. Validar que el cliente no envie `since` roto (ventanas gigantes).
+4. Aplicar mitigacion operativa:
+- reducir carga concurrente
+- forzar estrategia de reconexion progresiva
+5. Escalar a on-call DB si persiste > 15 min.
 
-### 4) Auth 5xx
-- Revisar endpoint exacto y `code` de error.
-- Confirmar estado de secretos obligatorios (`JWT_SECRET`, DB, providers) y conectividad.
-- Si hay 5xx continuos: freeze deploys de auth y rollback a ultima version estable.
-- Prioridad P0: auth 5xx rompe login/bootstrap.
+Salida esperada:
+- p95 catchup bajo umbral operativo
 
-## Fire-Drill (obligatorio, semanal)
-Objetivo: validar deteccion + respuesta en <= 15 minutos.
+### 4.3 ACK failures (delivered/read)
+Objetivo: evitar desincronizacion de ticks y estados.
 
-1. Simular 401/403 realtime
-- Forzar token invalido en entorno staging para un grupo de prueba.
-- Esperado: alerta 1 dispara dentro de 10 minutos.
+Checklist:
+1. Segmentar por flujo:
+- `ack_delivered`
+- `reconcile_status`
+2. Si domina `NOT_FOUND_OR_NO_ACCESS`: revisar membresia/conversationId.
+3. Si domina `INTERNAL_ERROR`: revisar errores DB y tiempos de respuesta.
+4. Confirmar headers de identidad en ACK (`X-Anonymous-Id`, `X-Anonymous-Signature`, `Authorization` cuando aplica).
+5. Validar que errores se registran sin cortar envio de mensajes.
 
-2. Simular catchup lento
-- Introducir delay controlado en staging para endpoint catchup.
-- Esperado: alerta 2 dispara y panel de p95 cruza umbral.
+Salida esperada:
+- caida sostenida de `METRIC_CHAT_ACK_FAILURE`
 
-3. Simular ACK failures
-- En staging, enviar ACK con mensaje inexistente para generar errores controlados.
-- Esperado: alerta 3 dispara.
+### 4.4 Auth 5xx
+Objetivo: restaurar login/bootstrap cuanto antes.
 
-4. Simular auth 5xx
-- Romper temporalmente variable de entorno en staging (sin impacto prod).
-- Esperado: alerta 4 dispara en <= 5 minutos.
+Checklist:
+1. Identificar endpoint exacto y code.
+2. Verificar estado de secretos criticos (`DATABASE_URL`, `JWT_SECRET`, `SUPABASE_*`).
+3. Confirmar que no hay `ENV_VALIDATION_FAILED` en arranque.
+4. Si hay regresion de release: rollback inmediato del backend.
+5. Ejecutar smoke de auth despues de mitigacion.
 
-### Checklist de cierre fire-drill
-- [ ] Las 4 alertas dispararon.
-- [ ] On-call recibio notificacion.
-- [ ] Se documento MTTA y MTTR.
-- [ ] Se restauraron condiciones normales.
-- [ ] Se archivaron evidencias con requestId.
+Salida esperada:
+- `METRIC_AUTH_5XX` en 0 sostenido
 
-## Comandos utiles Loki (referencia)
-- Realtime deny:
-  - `{app="safespot-backend"} | json | message="METRIC_REALTIME_AUTHZ_DENIED"`
-- Catchup:
-  - `{app="safespot-backend"} | json | message="METRIC_REALTIME_CATCHUP"`
-- ACK failures:
-  - `{app="safespot-backend"} | json | message="METRIC_CHAT_ACK_FAILURE"`
-- Auth 5xx:
-  - `{app="safespot-backend"} | json | message="METRIC_AUTH_5XX"`
+## 5. Playbook de secretos y rotacion
+Referencia: `docs/observability/secrets-rotation-policy.md`.
+
+Accion inmediata ante incidente de secretos:
+1. Rotar secreto comprometido en gestor seguro.
+2. Actualizar entorno.
+3. Reiniciar proceso afectado.
+4. Verificar health y pruebas de auth/realtime.
+5. Revocar secreto anterior.
+
+Validaciones post-rotacion:
+- login email/password
+- login Google
+- `GET /api/realtime/catchup` autenticado
+- flujo push segun feature flag
+
+## 6. Modo push (feature flag operativo)
+`ENABLE_PUSH_NOTIFICATIONS=false`:
+- API y worker pueden arrancar sin `VAPID_*`.
+- Push queda deshabilitado de forma explicita.
+
+`ENABLE_PUSH_NOTIFICATIONS=true` (o no definido):
+- en produccion se exige `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` (o legacy `VAPID_EMAIL`).
+
+Uso recomendado en incidente:
+1. Si push rompe operacion: setear `ENABLE_PUSH_NOTIFICATIONS=false`.
+2. Estabilizar auth/realtime.
+3. Rehabilitar push con verificacion previa de VAPID.
+
+## 7. Rollback operativo
+Prioridad de rollback:
+1. Configuracion/env (secrets/flags)
+2. Deploy backend
+3. Cambios cliente realtime si fueron gatillo
+
+Condiciones para declarar rollback exitoso:
+- sin 5xx auth nuevos por 15 min
+- catchup p95 normalizado
+- 401/403 en rango esperado
+- sin crecimiento de ACK failures
+
+## 8. Comandos de verificacion (copy/paste)
+```bash
+npm run test --prefix server -- tests/security/auth-realtime-error-contract.test.js
+npm run test --prefix server -- tests/security/realtime-authz.test.js
+npm run test --prefix server -- tests/security/env-validation.test.js
+cd server && npx tsc --noEmit
+```
+
+## 9. Retencion y cumplimiento
+- 14 dias: `METRIC_HTTP_REQUEST` (alto volumen)
+- 30 dias: metricas criticas de seguridad/realtime/ack/auth
+
+## 10. Cierre de incidente (obligatorio)
+Checklist de cierre:
+- [ ] Timeline documentado (inicio, mitigacion, cierre)
+- [ ] Causa raiz confirmada (archivo/linea o config exacta)
+- [ ] Evidencia con `requestId`
+- [ ] Accion preventiva definida (test, alerta, guardrail)
+- [ ] Estado final comunicado a equipo
+
+Plantilla minima postmortem:
+- Impacto
+- Causa raiz
+- Mitigacion aplicada
+- Leccion operativa
+- Accion permanente con owner y fecha

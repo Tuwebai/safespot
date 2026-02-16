@@ -125,7 +125,12 @@ export function AuthForm({
 
                 // Small delay to let user see "Ingresando..."
                 setTimeout(async () => {
-                    await performLogin(data);
+                    try {
+                        await performLogin(data);
+                    } catch (err: any) {
+                        setError(getHumanError(err?.message || 'Ocurrió un error al iniciar sesión.'));
+                        setIsLoading(false);
+                    }
                 }, 800);
             }
 
@@ -136,9 +141,11 @@ export function AuthForm({
     }
 
     async function performLogin(data: any) {
-        // 🔴 INVARIANTE: El backend DEBE retornar un user.id válido
-        if (!data.user?.id) {
-            throw new Error('Invalid server response: missing user ID. Please try again.');
+        // Normalización de contrato:
+        // login email/password no siempre retorna user.id, pero sí anonymous_id.
+        const resolvedAuthId = data.user?.id || data.user?.auth_id || data.anonymous_id;
+        if (!resolvedAuthId || !data.anonymous_id || !data.token) {
+            throw new Error('Invalid server response: missing authentication identity.');
         }
 
         let avatarUrl = data.user?.avatar_url ?? null;
@@ -155,7 +162,7 @@ export function AuthForm({
 
         const user = {
             email: data.user?.email || email,
-            auth_id: data.user.id,  // ✅ Sin fallback - falla explícitamente arriba
+            auth_id: resolvedAuthId,
             anonymous_id: data.anonymous_id,
             provider: data.user?.provider || (mode === 'register' || mode === 'login' ? 'email' : undefined),
             alias: data.user?.alias ?? null,           // ✅ FIX: Propagar alias del backend

@@ -9,7 +9,7 @@ import logger from '../utils/logger.js';
 import redis, { redisSubscriber } from '../config/redis.js';
 import { eventDeduplicator } from '../engine/DeliveryLedger.js';
 import { verifyMembership } from '../middleware/requireRoomMembership.js';
-import { AppError } from '../utils/AppError.js';
+import { AppError, ValidationError } from '../utils/AppError.js';
 import { attachOpsRequestTelemetry, logRealtimeAuthzDenied, logRealtimeCatchup } from '../utils/opsTelemetry.js';
 
 const router = express.Router();
@@ -64,14 +64,14 @@ router.get('/catchup', async (req, res, next) => {
     const { since } = req.query;
     if (!since) {
         logRealtimeCatchup(req, { statusCode: 400, durationMs: Date.now() - catchupStart, eventCount: 0 });
-        return res.status(400).json({ error: 'Missing since timestamp' });
+        return next(new ValidationError('Missing since timestamp'));
     }
 
     try {
         const sinceTs = parseInt(since, 10);
         if (!Number.isFinite(sinceTs) || sinceTs < 0) {
             logRealtimeCatchup(req, { statusCode: 400, durationMs: Date.now() - catchupStart, eventCount: 0 });
-            return res.status(400).json({ error: 'Invalid since timestamp' });
+            return next(new ValidationError('Invalid since timestamp'));
         }
 
         // Security: Catchup is authenticated-only to prevent unauthorized replay.
@@ -79,7 +79,7 @@ router.get('/catchup', async (req, res, next) => {
         if (!anonymousId) {
             logRealtimeForbidden(req, 'catchup', 'AUTH_REQUIRED', 401);
             logRealtimeCatchup(req, { statusCode: 401, durationMs: Date.now() - catchupStart, eventCount: 0 });
-            return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+            return next(new AppError('Authentication required', 401, 'AUTH_REQUIRED', true));
         }
         
         // 1. Fetch missed Chat Messages (ONLY from user's conversations)
@@ -353,13 +353,13 @@ router.get('/status/:eventId', async (req, res, next) => {
  * This is the AUTHORITATIVE source for delivered/read state.
  * SW uses this for Push suppression instead of Redis.
  */
-router.get('/message-status/:messageId', async (req, res) => {
+router.get('/message-status/:messageId', async (req, res, next) => {
     const { messageId } = req.params;
     try {
         const anonymousId = getAuthenticatedAnonymousId(req);
         if (!anonymousId) {
             logRealtimeForbidden(req, messageId, 'AUTH_REQUIRED', 401);
-            return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+            return next(new AppError('Authentication required', 401, 'AUTH_REQUIRED', true));
         }
 
         const result = await pool.query(
@@ -385,8 +385,7 @@ router.get('/message-status/:messageId', async (req, res) => {
         });
     } catch (err) {
         console.error('[SSOT] Error fetching message status:', err);
-        // Fail-open: if we can't check, allow Push
-        res.status(500).json({ delivered: false, read: false });
+        return next(new AppError('Message status check failed', 500, 'MESSAGE_STATUS_FAILED', false));
     }
 });
 
@@ -520,21 +519,21 @@ router.get('/comments/:reportId', (req, res) => {
  * SSE endpoint for real-time chat messages
  * GET /api/realtime/chats/:roomId
  */
-router.get('/chats/:roomId', async (req, res) => {
+router.get('/chats/:roomId', async (req, res, next) => {
     const { roomId } = req.params;
     const anonymousId = getAuthenticatedAnonymousId(req);
     const isAdmin = hasAdminRole(req);
 
     if (!anonymousId) {
         logRealtimeForbidden(req, roomId, 'AUTH_REQUIRED', 401);
-        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        return next(new AppError('Authentication required', 401, 'AUTH_REQUIRED', true));
     }
 
     if (!isAdmin) {
         const isMember = await verifyMembership(anonymousId, roomId);
         if (!isMember) {
             logRealtimeForbidden(req, roomId, 'NOT_ROOM_MEMBER', 403);
-            return res.status(403).json({ error: 'Access denied: Not a member of this conversation', code: 'NOT_ROOM_MEMBER' });
+            return next(new AppError('Access denied: Not a member of this conversation', 403, 'NOT_ROOM_MEMBER', true));
         }
     }
 
@@ -688,16 +687,16 @@ router.get('/chats/:roomId', async (req, res) => {
  * SSE endpoint for global user notifications (inbox updates)
  * GET /api/realtime/user/:anonymousId
  */
-router.get('/user/:anonymousId', (req, res) => {
+router.get('/user/:anonymousId', (req, res, next) => {
     const targetAnonymousId = req.params.anonymousId;
     const anonymousId = getAuthenticatedAnonymousId(req);
     if (!anonymousId) {
         logRealtimeForbidden(req, targetAnonymousId, 'AUTH_REQUIRED', 401);
-        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        return next(new AppError('Authentication required', 401, 'AUTH_REQUIRED', true));
     }
     if (anonymousId !== targetAnonymousId) {
         logRealtimeForbidden(req, targetAnonymousId, 'FORBIDDEN_STREAM', 403);
-        return res.status(403).json({ error: 'Access denied: Cannot subscribe to another user stream', code: 'FORBIDDEN_STREAM' });
+        return next(new AppError('Access denied: Cannot subscribe to another user stream', 403, 'FORBIDDEN_STREAM', true));
     }
 
     req.setTimeout(0);

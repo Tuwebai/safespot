@@ -35,7 +35,7 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 
-import { logError, requestLogger } from './utils/logger.js'; // Updated logger
+import logger, { logError, requestLogger } from './utils/logger.js'; // Updated logger
 import { correlationMiddleware, getCorrelationId } from './middleware/correlation.js';
 import { AppError } from './utils/AppError.js';
 import { ErrorCodes } from './utils/errorCodes.js';
@@ -90,6 +90,7 @@ import { strictAdminGateway } from './utils/adminGateway.js';
 import weeklyStatsRouter from './routes/weeklyStats.js';
 import { logAuth5xx } from './utils/opsTelemetry.js';
 import { NotificationWorker } from './engine/NotificationWorker.js';
+import { validateRequiredEnv } from './utils/env.js';
 
 // Load environment variables
 // dotenv.config(); (Redundant, already called at top)
@@ -124,12 +125,14 @@ const PORT = process.env.PORT || 3000;
 // ENVIRONMENT VALIDATION
 // ============================================
 
-const requiredEnvVars = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-const IS_TEST = process.env.NODE_ENV === 'test';
-
-if (!IS_TEST && missingVars.length > 0) {
-  console.error('❌ ERROR: Missing required environment variables:', missingVars.join(', '));
+try {
+  validateRequiredEnv();
+} catch (envError) {
+  logger.error('ENV_VALIDATION_FAILED', {
+    context: 'api',
+    missingKeys: Array.isArray(envError?.missingKeys) ? envError.missingKeys : [],
+    code: envError?.code || 'ENV_VALIDATION_FAILED'
+  });
   process.exit(1);
 }
 
@@ -521,10 +524,12 @@ app.use((req, res, _next) => {
   // If we reach here, no route matched. 
   // If it's an API or SEO route, send a specific 404.
   if (req.path.startsWith('/api/') || req.path.startsWith('/seo/')) {
-    return res.status(404).json({
-      error: 'Not Found',
-      message: `Endpoint ${req.method} ${req.originalUrl} not found in SafeSpot API`
-    });
+    return _next(new AppError(
+      `Endpoint ${req.method} ${req.originalUrl} not found in SafeSpot API`,
+      404,
+      ErrorCodes.ROUTE_NOT_FOUND,
+      true
+    ));
   }
 
   // Default fallback for everything else
@@ -539,9 +544,11 @@ app.use((req, res, _next) => {
 // ============================================
 
 app.use('/api/*', (req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `API Route ${req.method} ${req.originalUrl} not found`
+  return res.status(404).json({
+    error: true,
+    code: ErrorCodes.ROUTE_NOT_FOUND,
+    message: `API Route ${req.method} ${req.originalUrl} not found`,
+    requestId: getCorrelationId()
   });
 });
 
@@ -603,13 +610,15 @@ app.use((err, req, res, _next) => {
     NotificationService.notifyError(error, { path: req.path, method: req.method });
     logError(error, req);
   } else {
-    // Warnings (4xx) don't need notifications, just logs
-    // We use the new logger implicitly via logError's compatibility layer, 
-    // but ideally we should call logger.warn directly. 
-    // For now, allow logError to handle based on level logic or just use console.warn for operational?
-    // Actually, let's just use logError, but we might want to tune its level.
-    // The current logError wrapper logs as ERROR. 
-    // Let's import logger directly for better control.
+    // Warnings (4xx) should be logged with request correlation for auditability.
+    logger.warn('OPERATIONAL_ERROR', {
+      requestId,
+      code: error.code,
+      statusCode: error.statusCode,
+      path: req.path,
+      method: req.method,
+      message: error.message
+    });
   }
 
   // 3. Response Construction (The Contract)

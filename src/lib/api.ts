@@ -335,6 +335,7 @@ export interface ReportFilters {
   lng?: number;
   radius?: number; // meters
   followed_only?: boolean;
+  favorites_only?: boolean;
 }
 
 export const reportsApi = {

@@ -164,6 +164,7 @@ export const reportsCache = {
             const matches = report.title.toLowerCase().includes(term) || report.description.toLowerCase().includes(term);
             if (!matches) return false;
         }
+        if (filters.favorites_only && report.is_favorite !== true) return false;
         return true;
     },
 

@@ -21,25 +21,45 @@ export function ServiceWorkerController() {
 
     // ✅ ENTERPRISE: Auth Sync to Service Worker (IDB)
     useEffect(() => {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            try {
-                // Read from Zustand persistence
-                const storedAuth = localStorage.getItem('auth-storage');
-                if (storedAuth) {
-                    const parsed = JSON.parse(storedAuth);
-                    const token = parsed.state?.token;
+        if (!('serviceWorker' in navigator)) return;
 
-                    if (token) {
-                        navigator.serviceWorker.controller.postMessage({
-                            type: 'SYNC_AUTH',
-                            token: token
-                        });
-                    }
+        const syncAuthToSw = async () => {
+            try {
+                const storedAuth = localStorage.getItem('auth-storage');
+                if (!storedAuth) return;
+
+                const parsed = JSON.parse(storedAuth);
+                const rawToken = parsed?.state?.token;
+                if (!rawToken || typeof rawToken !== 'object') return;
+
+                const token = {
+                    anonymousId: rawToken.anonymousId || rawToken.anonymous_id || '',
+                    signature: rawToken.signature || '',
+                    jwt: rawToken.jwt || null
+                };
+
+                if (!token.anonymousId || !token.signature) {
+                    return;
                 }
+
+                const message = { type: 'SYNC_AUTH', token };
+                console.log('[ServiceWorkerController] Syncing auth to SW', {
+                    hasAnonymousId: !!token.anonymousId,
+                    hasSignature: !!token.signature,
+                    hasJwt: !!token.jwt
+                });
+                navigator.serviceWorker.controller?.postMessage(message);
+
+                const registration = await navigator.serviceWorker.ready;
+                registration.active?.postMessage(message);
+                registration.waiting?.postMessage(message);
+                registration.installing?.postMessage(message);
             } catch (e) {
                 console.error('[ServiceWorkerController] Auth Sync failed:', e);
             }
-        }
+        };
+
+        syncAuthToSw();
     }, [navigate]); // Re-check on navigation (low cost, ensures freshness)
 
     useEffect(() => {

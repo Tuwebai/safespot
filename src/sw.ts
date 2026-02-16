@@ -126,7 +126,11 @@ self.addEventListener('message', (event: any) => {
         if (parsed) {
             swAuthContext = parsed;
             persistSwAuth(parsed).catch(() => { /* noop */ });
-            console.log('[SW] ✅ Auth context synced');
+            console.log('[SW] ✅ Auth context synced', {
+                hasAnonymousId: !!parsed.anonymousId,
+                hasSignature: !!parsed.signature,
+                hasJwt: !!parsed.jwt
+            });
         } else {
             console.warn('[SW] ⚠️ Invalid SYNC_AUTH payload');
         }
@@ -209,6 +213,16 @@ interface PushEvent extends Event {
     waitUntil(promise: Promise<any>): void;
 }
 
+function extractConversationId(payload: any): string | null {
+    const nested = payload?.data || {};
+    return payload?.conversationId || payload?.roomId || nested?.conversationId || nested?.roomId || null;
+}
+
+function extractMessageId(payload: any): string | null {
+    const nested = payload?.data || {};
+    return payload?.messageId || payload?.entityId || nested?.messageId || nested?.entityId || null;
+}
+
 self.addEventListener('push', (event: any) => {
     const pushEvent = event as PushEvent;
     console.log('[SW] 📥 Push Event received', pushEvent);
@@ -251,7 +265,7 @@ self.addEventListener('push', (event: any) => {
         (async () => {
             const auth = await loadSwAuth();
             const chatData = data.data || data;
-            const messageId = chatData.messageId || chatData.entityId;
+            const messageId = extractMessageId(chatData);
             const recipientId = chatData.recipientId || auth?.anonymousId;
             const authHeaders: Record<string, string> = {};
             if (auth?.jwt) {
@@ -293,26 +307,55 @@ self.addEventListener('push', (event: any) => {
             // El SW SOLO confirma recepción, NO hace lógica de dominio
             // Orchestrator sigue siendo autoridad para SSE (app abierta)
             if ((chatData.type === 'chat' || data.type === 'chat') && messageId && recipientId) {
+                if (!auth?.anonymousId || !auth?.signature) {
+                    console.warn('[SW] ACK skipped: missing auth context', {
+                        messageId,
+                        recipientId,
+                        hasAnonymousId: !!auth?.anonymousId,
+                        hasSignature: !!auth?.signature
+                    });
+                    return;
+                }
+                const ackUrl = `${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`;
                 // DEBUG: Log ACK attempt
-                console.log(`[SW] 📬 Attempting ACK for message: ${messageId}, recipient: ${recipientId}`);
+                console.log('[SW] 📬 Attempting ACK delivered', {
+                    ackUrl,
+                    messageId,
+                    recipientId,
+                    hasAnonymousId: !!auth.anonymousId,
+                    hasSignature: !!auth.signature,
+                    hasJwt: !!auth.jwt
+                });
                 
                 // Fire-and-forget ACK: NO retry, NO lógica, NO persistencia
-                fetch(`${__API_BASE_URL__}/chats/messages/${messageId}/ack-delivered`, {
+                fetch(ackUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Anonymous-Id': recipientId,
+                        'X-Anonymous-Id': auth.anonymousId,
                         ...(auth?.signature ? { 'X-Anonymous-Signature': auth.signature } : {}),
                         ...(auth?.jwt ? { Authorization: `Bearer ${auth.jwt}` } : {})
                     }
                 }).then((response) => {
                     if (response.ok) {
-                        console.log(`[SW] 📬📬 Push ACK sent successfully for message: ${messageId}`);
+                        console.log('[SW] 📬📬 Push ACK delivered OK', {
+                            action: 'ack_delivered',
+                            ackUrl,
+                            messageId,
+                            recipientId,
+                            status: response.status
+                        });
                     } else if (response.status === 404) {
                         console.warn(`[SW] ⚠️ Message ${messageId} not found (404). Stopping ACK attempts.`);
                         // Don't retry 404s - message doesn't exist or no access
                     } else {
-                        console.warn(`[SW] ⚠️ Push ACK failed with status ${response.status} for ${messageId}`);
+                        console.warn('[SW] ⚠️ Push ACK failed', {
+                            action: 'ack_delivered',
+                            ackUrl,
+                            messageId,
+                            recipientId,
+                            status: response.status
+                        });
                     }
                 }).catch((err) => {
                     console.warn(`[SW] Push ACK network error for ${messageId}:`, err);
@@ -356,27 +399,94 @@ self.addEventListener('notificationclick', (event: any) => {
 
     // 🧠 ENTERPRISE: Handle Reply Action (Inline)
     if (action === 'reply') {
-        const replyText = event.reply;
-        if (replyText) {
-            console.log(`[SW] 💬 Inline Reply received: "${replyText}"`);
-            // Note: Inline reply handling usually requires opening the client
-            // to process the message in a stateful way, but the ACK is already sent.
-        }
+        event.waitUntil(
+            (async () => {
+                const replyText = typeof event.reply === 'string' ? event.reply.trim() : '';
+                const conversationId = extractConversationId(data);
+                if (!replyText) {
+                    console.warn('[SW] Reply action without inline text support. No app open by design.');
+                    return;
+                }
+                if (!conversationId) {
+                    console.warn('[SW] Reply action missing conversationId');
+                    return;
+                }
+
+                const auth = await loadSwAuth();
+                if (!auth?.anonymousId || !auth?.signature) {
+                    console.warn('[SW] Reply skipped: missing auth context', {
+                        action: 'reply',
+                        conversationId,
+                        hasAnonymousId: !!auth?.anonymousId,
+                        hasSignature: !!auth?.signature
+                    });
+                    return;
+                }
+
+                await fetch(`${__API_BASE_URL__}/chats/rooms/${conversationId}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Anonymous-Id': auth.anonymousId,
+                        'X-Anonymous-Signature': auth.signature,
+                        ...(auth.jwt ? { Authorization: `Bearer ${auth.jwt}` } : {})
+                    },
+                    body: JSON.stringify({ content: replyText, type: 'text' })
+                }).then((response) => {
+                    console.log('[SW] Reply action result', {
+                        action: 'reply',
+                        conversationId,
+                        status: response.status
+                    });
+                }).catch((err) => {
+                    console.warn('[SW] Reply action failed', { action: 'reply', conversationId, err });
+                });
+            })()
+        );
+        return;
     }
 
     if (action === 'mark_read') {
-        const messageId = data.messageId || data.entityId || nestedData.messageId || nestedData.entityId;
-        try {
-            const deepLinkUrl = new URL(baseDeepLink, self.location.origin);
-            deepLinkUrl.searchParams.set('action', 'mark_read');
-            if (messageId) {
-                deepLinkUrl.searchParams.set('messageId', String(messageId));
-            }
-            urlToOpen = `${deepLinkUrl.pathname}${deepLinkUrl.search}${deepLinkUrl.hash}`;
-        } catch {
-            const messageQuery = messageId ? `&messageId=${encodeURIComponent(String(messageId))}` : '';
-            urlToOpen = `${baseDeepLink}${baseDeepLink.includes('?') ? '&' : '?'}action=mark_read${messageQuery}`;
-        }
+        event.waitUntil(
+            (async () => {
+                const conversationId = extractConversationId(data);
+                if (!conversationId) {
+                    console.warn('[SW] mark_read missing conversationId');
+                    return;
+                }
+
+                const auth = await loadSwAuth();
+                if (!auth?.anonymousId || !auth?.signature) {
+                    console.warn('[SW] mark_read skipped: missing auth context', {
+                        action: 'mark_read',
+                        conversationId,
+                        hasAnonymousId: !!auth?.anonymousId,
+                        hasSignature: !!auth?.signature
+                    });
+                    return;
+                }
+
+                await fetch(`${__API_BASE_URL__}/chats/rooms/${conversationId}/read`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Anonymous-Id': auth.anonymousId,
+                        'X-Anonymous-Signature': auth.signature,
+                        ...(auth.jwt ? { Authorization: `Bearer ${auth.jwt}` } : {})
+                    }
+                }).then((response) => {
+                    console.log('[SW] Action status', {
+                        action: 'mark_read',
+                        conversationId,
+                        status: response.status
+                    });
+                }).catch((err) => {
+                    console.warn('[SW] mark_read request failed', { action: 'mark_read', conversationId, err });
+                });
+            })()
+        );
+        notification.close();
+        return;
     }
 
     notification.close();

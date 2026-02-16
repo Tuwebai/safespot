@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import { getJwtSecret } from './env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-this';
+const JWT_SECRET = getJwtSecret();
 
 export const verifyAdminToken = (req, res, next) => {
     const authHeader = req.headers.authorization;

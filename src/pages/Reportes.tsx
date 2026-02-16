@@ -77,6 +77,7 @@ export function Reportes() {
   const [endDate, setEndDate] = useState('')
   const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'oldest'>('recent')
   const [followedOnly, setFollowedOnly] = useState(false)
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
 
   // Address Autocomplete State
   const [addressQuery, setAddressQuery] = useState('')
@@ -247,9 +248,10 @@ export function Reportes() {
     }
 
     if (followedOnly) f.followed_only = true
+    if (favoritesOnly) f.favorites_only = true
 
     return Object.keys(f).length > 0 ? f : undefined
-  }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly, currentZone, cityName])
+  }, [quickFilter, selectedCategory, selectedStatus, debouncedSearchTerm, startDate, endDate, sortBy, selectedLocation, followedOnly, favoritesOnly, currentZone, cityName])
 
   // ✅ MOTOR 5: Location Authority Engine
   const { requestLocation, position: enginePosition } = useLocationAuthority()
@@ -281,6 +283,13 @@ export function Reportes() {
 
   // React Query - cached, deduplicated, background refetch
   const { data: reports = [], isLoading, error: queryError, refetch } = useReportsQuery(filters)
+
+  // Guard UI: cuando se activa "Solo Favoritos", el feed se restringe explícitamente
+  // a reportes marcados por el usuario actual.
+  const visibleReports = useMemo(() => {
+    if (!favoritesOnly) return reports
+    return reports.filter((report) => report.is_favorite === true)
+  }, [reports, favoritesOnly])
 
   // ============================================
   // HANDLERS (memoized with useCallback)
@@ -385,14 +394,14 @@ export function Reportes() {
 
   // Algoritmo de selección de reporte destacado (nuevo)
   const highlightedReport = useMemo(() => {
-    if (reports.length === 0) return null
-    return reports[0]
-  }, [reports])
+    if (visibleReports.length === 0) return null
+    return visibleReports[0]
+  }, [visibleReports])
 
   const feedReports = useMemo(() => {
-    if (!highlightedReport) return reports
-    return reports.slice(1) // Excluir el destacado del feed
-  }, [reports, highlightedReport])
+    if (!highlightedReport) return visibleReports
+    return visibleReports.slice(1) // Excluir el destacado del feed
+  }, [visibleReports, highlightedReport])
 
 
   return (
@@ -415,6 +424,8 @@ export function Reportes() {
           setSortBy={setSortBy}
           followedOnly={followedOnly}
           setFollowedOnly={setFollowedOnly}
+          favoritesOnly={favoritesOnly}
+          setFavoritesOnly={setFavoritesOnly}
           startDate={startDate}
           setStartDate={setStartDate}
           endDate={endDate}
@@ -458,6 +469,8 @@ export function Reportes() {
                setSortBy={setSortBy}
                followedOnly={followedOnly}
                setFollowedOnly={setFollowedOnly}
+               favoritesOnly={favoritesOnly}
+               setFavoritesOnly={setFavoritesOnly}
                startDate={startDate}
                setStartDate={setStartDate}
                endDate={endDate}
@@ -489,7 +502,7 @@ export function Reportes() {
                 Feed de Reportes
               </h1>
               <p className="text-sm sm:text-base text-muted-foreground mt-1">
-                {reports.length} reportes activos en la comunidad
+                {visibleReports.length} {favoritesOnly ? 'favoritos en tu feed' : 'reportes activos en la comunidad'}
               </p>
             </div>
             {!isDesktop && (
@@ -518,7 +531,7 @@ export function Reportes() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pt-4">
           <h2 className="text-xl sm:text-2xl font-semibold text-foreground">
-            Reportes ({reports.length})
+            Reportes ({visibleReports.length})
           </h2>
           <Button onClick={handleCreateReport} variant="neon" className="w-full sm:w-auto">
             Crear Nuevo Reporte
@@ -537,7 +550,7 @@ export function Reportes() {
         )}
 
         {/* Separator similar to Footer (Exact Replica) */}
-        {highlightedReport && !isLoading && !error && reports.length > 1 && (
+        {highlightedReport && !isLoading && !error && visibleReports.length > 1 && (
           <div className="w-full border-t border-white/5 my-8" />
         )}
 
@@ -558,10 +571,10 @@ export function Reportes() {
                 </Button>
               </CardContent>
             </Card>
-          ) : reports.length === 0 ? (
+          ) : visibleReports.length === 0 ? (
             <div className="py-12">
               <EmptyState
-                variant={searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' || quickFilter !== 'all' ? "search" : "default"}
+                variant={searchTerm || selectedCategory !== 'all' || selectedStatus !== 'all' || quickFilter !== 'all' || favoritesOnly ? "search" : "default"}
                 title={searchTerm ? "No encontramos coincidencias" : "No hay reportes aquí"}
                 description={searchTerm || selectedCategory !== 'all' ? "No hay reportes que coincidan con tus filtros. Intenta búsquedas más generales." : "Parece que esta zona está tranquila por ahora. Si ves algo, repórtalo."}
                 action={{
@@ -571,6 +584,8 @@ export function Reportes() {
                     setSelectedCategory('all')
                     setSelectedStatus('all')
                     setSortBy('recent')
+                    setFollowedOnly(false)
+                    setFavoritesOnly(false)
                     setStartDate('')
                     setEndDate('')
                     setAddressQuery('')

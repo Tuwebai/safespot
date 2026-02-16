@@ -35,6 +35,56 @@ const CHATS_KEYS = {
     presence: (userId: string) => ['users', 'presence', userId] as const,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+export function messageLikeFromPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+    const nestedMessage = payload.message;
+    if (isRecord(nestedMessage)) return nestedMessage;
+    const partial = payload.partial;
+    if (isRecord(partial) && typeof partial.id === 'string' && typeof partial.conversation_id === 'string') return partial;
+    if (typeof payload.id === 'string' && typeof payload.conversation_id === 'string') return payload;
+    return null;
+}
+
+export function conversationIdFromPayload(payload: Record<string, unknown>): string | null {
+    const direct = payload.roomId || payload.conversationId || payload.conversation_id;
+    if (typeof direct === 'string' && direct.length > 0) return direct;
+    const msg = messageLikeFromPayload(payload);
+    if (!msg) return null;
+    const nested = msg.conversation_id || msg.conversationId || msg.roomId;
+    return typeof nested === 'string' && nested.length > 0 ? nested : null;
+}
+
+export function normalizeIncomingRealtimeMessage(payload: Record<string, unknown>): ChatMessage | null {
+    const msg = messageLikeFromPayload(payload);
+    if (!msg) return null;
+    const conversationId = conversationIdFromPayload(payload);
+    const messageId = (msg.id || payload.id) as string | undefined;
+    const senderId = (msg.sender_id || msg.senderId) as string | undefined;
+    if (!messageId || !conversationId || !senderId) return null;
+
+    const normalized: ChatMessage = {
+        ...(msg as unknown as ChatMessage),
+        id: messageId,
+        conversation_id: conversationId,
+        sender_id: senderId,
+        content: (msg.content as string) || '',
+        type: ((msg.type as ChatMessage['type']) || 'text'),
+        created_at: (msg.created_at as string) || new Date().toISOString(),
+        is_read: Boolean(msg.is_read),
+        is_delivered: Boolean(msg.is_delivered)
+    };
+    return normalized;
+}
+
+export function isConversationActiveAndVisible(conversationId: string): boolean {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+    const isActiveRoute = window.location.pathname.includes(`/mensajes/${conversationId}`);
+    return isActiveRoute && document.visibilityState === 'visible';
+}
+
 
 
 /**
@@ -87,7 +137,7 @@ export function useChatRooms() {
 
                 if (actualPayload.message) {
                     const message = actualPayload.message as ChatMessage;
-                    const isActiveRoom = window.location.pathname.endsWith(`/mensajes/${convId as string}`);
+                    const isActiveRoom = isConversationActiveAndVisible(convId as string);
                     chatCache.applyInboxUpdate(queryClient, message, anonymousId, isActiveRoom);
                 } else if (actualPayload.action === 'read') {
                     chatCache.markRoomAsRead(queryClient, convId as string, anonymousId);
@@ -263,10 +313,10 @@ export function useChatMessages(convId: string | undefined) {
         const unsubscribe = realtimeOrchestrator.onEvent((event) => {
             const { type, payload, originClientId } = event;
             // 🏛️ SAFE MODE: Type assertion para compatibilidad durante migración
-            const actualPayload = payload as Record<string, unknown>;
+            const actualPayload = isRecord(payload) ? payload : {};
 
             // Filter for THIS room
-            const roomId = (actualPayload.roomId || actualPayload.conversation_id || actualPayload.conversationId) as string;
+            const roomId = conversationIdFromPayload(actualPayload);
             if (roomId !== convId) return;
 
             // Echo suppression
@@ -274,8 +324,16 @@ export function useChatMessages(convId: string | undefined) {
 
             switch (type) {
                 case 'new-message':
-                    chatCache.upsertMessage(queryClient, actualPayload as unknown as ChatMessage, anonymousId);
-                    if ((actualPayload.sender_id as string) !== anonymousId) {
+                    const normalizedMessage = normalizeIncomingRealtimeMessage(actualPayload);
+                    if (!normalizedMessage) return;
+                    chatCache.upsertMessage(queryClient, normalizedMessage, anonymousId);
+                    if (normalizedMessage.sender_id !== anonymousId) {
+                        if (isConversationActiveAndVisible(convId)) {
+                            chatCache.markRoomAsRead(queryClient, convId, anonymousId);
+                            chatsApi.markAsRead(convId).catch(() => {
+                                // Silent: backend will reconcile on next focus/resync
+                            });
+                        }
                         playNotificationSound();
                     }
                     break;

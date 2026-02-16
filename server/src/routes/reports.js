@@ -210,6 +210,19 @@ router.get('/', async (req, res, next) => {
           idx++;
         }
 
+        // Filter by User Favorites ("Solo Favoritos")
+        const favoritesOnly = req.query.favorites_only === 'true';
+        if (favoritesOnly) {
+          if (anonymousId && isValidUuid(anonymousId)) {
+            conds.push(`EXISTS (SELECT 1 FROM favorites fav WHERE fav.report_id = r.id AND fav.anonymous_id = $${idx}::uuid)`);
+            vals.push(anonymousId);
+            idx++;
+          } else {
+            // Public/anonymous request cannot resolve per-user favorites.
+            conds.push(`1 = 0`);
+          }
+        }
+
         return { conds, vals, nextIdx: idx };
       };
 
@@ -480,6 +493,19 @@ router.get('/', async (req, res, next) => {
         conds.push(`r.anonymous_id IN (SELECT following_id FROM followers WHERE follower_id = $${idx}::uuid)`);
         vals.push(anonymousId);
         idx++;
+      }
+
+      // Filter by User Favorites ("Solo Favoritos")
+      const favoritesOnly = req.query.favorites_only === 'true';
+      if (favoritesOnly) {
+        if (anonymousId && isValidUuid(anonymousId)) {
+          conds.push(`EXISTS (SELECT 1 FROM favorites fav WHERE fav.report_id = r.id AND fav.anonymous_id = $${idx}::uuid)`);
+          vals.push(anonymousId);
+          idx++;
+        } else {
+          // Public/anonymous request cannot resolve per-user favorites.
+          conds.push(`1 = 0`);
+        }
       }
 
       return { conds, vals, nextIdx: idx, searchIdx };

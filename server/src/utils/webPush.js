@@ -7,6 +7,7 @@
 
 import webpush from 'web-push';
 import { logError, logSuccess } from './logger.js';
+import { getVapidSubject, isPushFeatureEnabled } from './env.js';
 
 // ============================================
 // VAPID CONFIGURATION
@@ -16,14 +17,17 @@ import { logError, logSuccess } from './logger.js';
 // Generate with: npx web-push generate-vapid-keys
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
-const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:soporte@safespot.app';
+const VAPID_SUBJECT = getVapidSubject();
+const PUSH_ENABLED = isPushFeatureEnabled();
 
 // Configure web-push
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-    webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+if (!PUSH_ENABLED) {
+    console.info('[WebPush] Push disabled by ENABLE_PUSH_NOTIFICATIONS=false');
+} else if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT) {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
     logSuccess('Web Push configured with VAPID keys');
 } else {
-    console.warn('⚠️ VAPID keys not configured - push notifications disabled');
+    console.warn('⚠️ VAPID keys/subject not configured - push notifications disabled');
 }
 
 // ============================================
@@ -60,7 +64,7 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
  * @returns {Promise<{success: boolean, statusCode?: number, error?: string}>}
  */
 export async function sendPushNotification(subscription, payload) {
-    if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    if (!PUSH_ENABLED || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
         return { success: false, error: 'VAPID not configured' };
     }
 
@@ -313,5 +317,5 @@ export function getVapidPublicKey() {
  * Check if push notifications are configured
  */
 export function isPushConfigured() {
-    return !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+    return !!(PUSH_ENABLED && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT);
 }

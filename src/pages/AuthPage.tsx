@@ -17,7 +17,7 @@ export default function AuthPage() {
     // Redirect if already authenticated
     useEffect(() => {
         if (isAuthenticated) {
-            navigate('/register');
+            navigate('/perfil');
         }
     }, [isAuthenticated, navigate]);
 

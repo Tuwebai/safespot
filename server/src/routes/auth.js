@@ -14,9 +14,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { signAnonymousId } from '../utils/crypto.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 import { attachOpsRequestTelemetry } from '../utils/opsTelemetry.js';
+import { getJwtSecret } from '../utils/env.js';
 
 const router = express.Router();
 router.use(attachOpsRequestTelemetry('auth'));
+const JWT_SECRET = getJwtSecret();
 
 /**
  * POST /api/auth/bootstrap
@@ -55,7 +57,7 @@ router.post('/bootstrap', async (req, res, next) => {
             anonymous_id: anonymousId,
             session_id: sessionId,
             type: 'anonymous'
-        }, process.env.JWT_SECRET || 'safespot-secret-key-change-me', { expiresIn });
+        }, JWT_SECRET, { expiresIn });
 
         logSuccess('Identity Bootstrap', { anonymousId, sessionId });
 
@@ -543,7 +545,7 @@ router.post('/google', authLimiter, async (req, res, next) => {
             avatar_url: user.avatar_url
         };
 
-        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '30d' });
+        const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '30d' });
 
         res.json({
             message: 'Autenticación con Google exitosa',

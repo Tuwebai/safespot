@@ -1,8 +1,9 @@
 
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from './db.js';
+import { getJwtSecret } from './env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-this';
+const JWT_SECRET = getJwtSecret();
 
 /**
  * strictAdminGateway
