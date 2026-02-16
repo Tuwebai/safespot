@@ -174,6 +174,22 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(res.json).toHaveBeenCalledWith({ success: true });
     });
 
+    it('deleteRoom falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await deleteRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
+
     it('deleteRoomMessage ejecuta tx unica y emite side-effects post-commit', async () => {
         const req = {
             anonymousId: 'user-1',
