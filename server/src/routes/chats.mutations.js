@@ -819,24 +819,37 @@ export async function deleteRoomMessage(req, res) {
     const { roomId, messageId } = req.params;
 
     try {
-        const msgResult = await queryWithRLS(anonymousId,
-            'SELECT sender_id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
-            [messageId, roomId]
-        );
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const msgResult = await client.query(
+                'SELECT sender_id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+                [messageId, roomId]
+            );
 
-        if (msgResult.rows.length === 0) {
+            if (msgResult.rows.length === 0) {
+                return { notFound: true };
+            }
+
+            if (msgResult.rows[0].sender_id !== anonymousId) {
+                return { forbidden: true };
+            }
+
+            await client.query('DELETE FROM chat_messages WHERE id = $1', [messageId]);
+            const memberResult = await client.query(
+                'SELECT user_id FROM conversation_members WHERE conversation_id = $1',
+                [roomId]
+            );
+            return { members: memberResult.rows };
+        });
+
+        if (txResult?.notFound) {
             return res.status(404).json({ error: 'Message not found' });
         }
 
-        if (msgResult.rows[0].sender_id !== anonymousId) {
+        if (txResult?.forbidden) {
             return res.status(403).json({ error: 'Forbidden: You can only delete your own messages' });
         }
 
-        await queryWithRLS(anonymousId, 'DELETE FROM chat_messages WHERE id = $1', [messageId]);
-
-        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);
-
-        memberResult.rows.forEach(member => {
+        txResult.members.forEach(member => {
             realtimeEvents.emitUserChatUpdate(member.user_id, {
                 eventId: `deleted:${roomId}:${messageId}`,
                 conversationId: roomId,
@@ -873,42 +886,61 @@ export async function editRoomMessage(req, res) {
     }
 
     try {
-        const msgCheck = await queryWithRLS(anonymousId,
-            'SELECT sender_id, type, created_at FROM chat_messages WHERE id = $1 AND conversation_id = $2',
-            [messageId, roomId]
-        );
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const msgCheck = await client.query(
+                'SELECT sender_id, type, created_at FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+                [messageId, roomId]
+            );
 
-        if (msgCheck.rows.length === 0) {
+            if (msgCheck.rows.length === 0) {
+                return { notFound: true };
+            }
+
+            const message = msgCheck.rows[0];
+
+            if (message.sender_id !== anonymousId) {
+                return { forbidden: true };
+            }
+
+            if (message.type !== 'text') {
+                return { invalidType: true };
+            }
+
+            const createdAt = new Date(message.created_at);
+            const now = new Date();
+            const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+            if (hoursDiff > 24) {
+                return { expired: true };
+            }
+
+            const sanitizedContent = sanitizeContent(content.trim());
+            const result = await client.query(
+                `UPDATE chat_messages 
+                 SET content = $1, is_edited = true, edited_at = NOW()
+                 WHERE id = $2
+                 RETURNING *`,
+                [sanitizedContent, messageId]
+            );
+            return { updatedMessage: result.rows[0] };
+        });
+
+        if (txResult?.notFound) {
             return res.status(404).json({ error: 'Message not found' });
         }
 
-        const message = msgCheck.rows[0];
-
-        if (message.sender_id !== anonymousId) {
+        if (txResult?.forbidden) {
             return res.status(403).json({ error: 'You can only edit your own messages' });
         }
 
-        if (message.type !== 'text') {
+        if (txResult?.invalidType) {
             return res.status(400).json({ error: 'Only text messages can be edited' });
         }
 
-        const createdAt = new Date(message.created_at);
-        const now = new Date();
-        const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
-        if (hoursDiff > 24) {
+        if (txResult?.expired) {
             return res.status(400).json({ error: 'Message can only be edited within 24 hours' });
         }
 
-        const sanitizedContent = sanitizeContent(content.trim());
-        const result = await queryWithRLS(anonymousId,
-            `UPDATE chat_messages 
-             SET content = $1, is_edited = true, edited_at = NOW()
-             WHERE id = $2
-             RETURNING *`,
-            [sanitizedContent, messageId]
-        );
-
-        const updatedMessage = result.rows[0];
+        const updatedMessage = txResult.updatedMessage;
 
         realtimeEvents.broadcast(`room:${roomId}`, {
             eventId: `message-edited:${roomId}:${updatedMessage.id}`,

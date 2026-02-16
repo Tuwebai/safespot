@@ -1353,6 +1353,43 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **7/7 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (DELETE MESSAGE transaccional + side-effects post-commit) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - validación de ownership + delete + readback de miembros bajo `transactionWithRLS`,
+  - side-effects realtime ejecutados exclusivamente post-commit.
+- Contrato preservado:
+  - `404` -> `{ error: 'Message not found' }`
+  - `403` -> `{ error: 'Forbidden: You can only delete your own messages' }`
+  - `200` -> `{ success: true }`
+  - mismo payload realtime (`action: 'message-deleted'` + `eventId` determinístico).
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **9/9 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (EDIT MESSAGE transaccional + broadcast post-commit) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `PATCH /api/chats/rooms/:roomId/messages/:messageId`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - ownership/type/window check + update bajo `transactionWithRLS`,
+  - `realtimeEvents.broadcast` ejecutado exclusivamente post-commit.
+- Contrato preservado:
+  - `401` -> `{ error: 'Anonymous ID required' }`
+  - `400` -> `{ error: 'Content is required' }` / `{ error: 'Only text messages can be edited' }` / `{ error: 'Message can only be edited within 24 hours' }`
+  - `403` -> `{ error: 'You can only edit your own messages' }`
+  - `404` -> `{ error: 'Message not found' }`
+  - `200` -> `{ success: true, message: <updatedMessage> }`
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
