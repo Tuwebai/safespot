@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useQueries, useIsMutating } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 
 import { queryKeys } from '@/lib/queryKeys'
 import { reportsApi, type CreateReportData } from '@/lib/api'
@@ -42,6 +43,13 @@ import { reportsCache } from '@/lib/cache-helpers'
  */
 
 import { type NormalizedReport, normalizeReportForUI } from '@/lib/normalizeReport'
+
+export function prefetchReportsList(queryClient: QueryClient) {
+    return queryClient.prefetchQuery({
+        queryKey: ['reports', 'list'],
+        queryFn: () => reportsApi.getAll()
+    })
+}
 
 /**
  * Get a single report by ID from cache (SSOT)

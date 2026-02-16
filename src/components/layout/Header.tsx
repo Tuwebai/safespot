@@ -7,6 +7,8 @@ import { NotificationBell } from '@/components/NotificationBell'
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
+import { prefetchReportsList } from '@/hooks/queries/useReportsQuery'
+import { prefetchGamificationSummary } from '@/hooks/queries/useGamificationQuery'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar"
 import { getAnonymousIdSafe } from '@/lib/identity'
 import { resolveAvatarUrl } from '@/lib/avatar'
@@ -47,16 +49,8 @@ export function Header() {
   // Mobile Perf: Prefetch data when menu opens (user intent signal)
   useEffect(() => {
     if (mobileMenuOpen) {
-      // Prefetch Reports
-      queryClient.prefetchQuery({
-        queryKey: ['reports', 'list'],
-        queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
-      })
-      // Prefetch Gamification
-      queryClient.prefetchQuery({
-        queryKey: ['gamification', 'summary'],
-        queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
-      })
+      void prefetchReportsList(queryClient)
+      void prefetchGamificationSummary(queryClient)
     }
   }, [mobileMenuOpen, queryClient])
 
@@ -96,15 +90,9 @@ export function Header() {
                     onMouseEnter={() => {
                       // Prefetch data for "instant" feel
                       if (item.path === '/reportes' || item.path === '/explorar') {
-                        queryClient.prefetchQuery({
-                          queryKey: ['reports', 'list'],
-                          queryFn: () => import('@/lib/api').then(m => m.reportsApi.getAll())
-                        })
+                        void prefetchReportsList(queryClient)
                       } else if (item.path === '/gamificacion') {
-                        queryClient.prefetchQuery({
-                          queryKey: ['gamification', 'summary'],
-                          queryFn: () => import('@/lib/api').then(m => m.gamificationApi.getSummary())
-                        })
+                        void prefetchGamificationSummary(queryClient)
                       }
                     }}
                   >

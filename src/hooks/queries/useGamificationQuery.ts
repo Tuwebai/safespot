@@ -3,8 +3,16 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { gamificationApi } from '@/lib/api'
+
+export function prefetchGamificationSummary(queryClient: QueryClient) {
+    return queryClient.prefetchQuery({
+        queryKey: ['gamification', 'summary'],
+        queryFn: () => gamificationApi.getSummary()
+    })
+}
 
 /**
  * Fetch complete gamification summary (profile + badges)
