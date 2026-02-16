@@ -4,6 +4,8 @@ import request from 'supertest';
 
 const txMock = vi.hoisted(() => vi.fn());
 const ensureAnonymousUserMock = vi.hoisted(() => vi.fn(async () => true));
+const queryWithRLSMock = vi.hoisted(() => vi.fn(async () => ({ rows: [], rowCount: 0 })));
+const poolQueryMock = vi.hoisted(() => vi.fn(async () => ({ rows: [], rowCount: 0 })));
 
 vi.mock('../../src/utils/rateLimiter.js', () => ({
     flagRateLimiter: (_req, _res, next) => next(),
@@ -43,7 +45,7 @@ vi.mock('../../src/config/supabase.js', () => ({
 }));
 
 vi.mock('../../src/config/database.js', () => ({
-    default: { query: vi.fn() },
+    default: { query: poolQueryMock },
 }));
 
 vi.mock('../../src/utils/anonymousUser.js', () => ({
@@ -59,11 +61,17 @@ vi.mock('../../src/utils/gamificationCore.js', () => ({
 }));
 
 vi.mock('../../src/utils/appNotificationService.js', () => ({
-    NotificationService: {},
+    NotificationService: {
+        notifyBadgeEarned: vi.fn(() => Promise.resolve()),
+        notifyNearbyNewReport: vi.fn(() => Promise.resolve()),
+        notifySimilarReports: vi.fn(() => Promise.resolve()),
+    },
 }));
 
 vi.mock('../../src/utils/notificationService.js', () => ({
-    NotificationService: {},
+    NotificationService: {
+        sendEvent: vi.fn(() => Promise.resolve()),
+    },
 }));
 
 vi.mock('../../src/utils/governance.js', () => ({
@@ -71,7 +79,7 @@ vi.mock('../../src/utils/governance.js', () => ({
 }));
 
 vi.mock('../../src/services/auditService.js', () => ({
-    auditLog: vi.fn(),
+    auditLog: vi.fn(() => Promise.resolve()),
     AuditAction: {},
     ActorType: {},
 }));
@@ -82,11 +90,12 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
         emitReportUpdate: vi.fn(),
         emitReportCreated: vi.fn(),
         emitReportDeleted: vi.fn(),
+        emitNewReport: vi.fn(() => Promise.resolve()),
     },
 }));
 
 vi.mock('../../src/utils/rls.js', () => ({
-    queryWithRLS: vi.fn(async () => ({ rows: [], rowCount: 0 })),
+    queryWithRLS: queryWithRLSMock,
     transactionWithRLS: txMock,
 }));
 
@@ -135,6 +144,90 @@ describe('Reports Contract Shape', () => {
         expect(res.body).toHaveProperty('success', true);
         expect(res.body).toHaveProperty('data');
         expect(res.body).toHaveProperty('message', 'Report updated successfully');
+    });
+
+    it('POST /api/reports idempotency -> primera 201 created, segunda 200 idempotent', async () => {
+        txMock.mockImplementationOnce(async (_anonymousId, callback) => {
+            const client = {
+                query: vi.fn(async (sql) => {
+                    if (sql.includes('SELECT id FROM reports') && sql.includes('created_at >= $5')) {
+                        return { rows: [] };
+                    }
+                    if (sql.includes('INSERT INTO reports')) {
+                        return { rowCount: 1, rows: [] };
+                    }
+                    if (sql.includes('FROM reports r') && sql.includes('WHERE r.id = $1')) {
+                        return {
+                            rows: [{
+                                id: 'r-idem-1',
+                                anonymous_id: 'owner-1',
+                                title: 'titulo',
+                                description: 'desc',
+                                category: 'Robo',
+                                zone: 'Comuna 1',
+                                address: null,
+                                latitude: null,
+                                longitude: null,
+                                status: 'abierto',
+                                incident_date: new Date().toISOString(),
+                                created_at: new Date().toISOString(),
+                                is_hidden: false,
+                                province: null,
+                                locality: null,
+                                department: null,
+                                alias: null,
+                                avatar_url: null,
+                            }],
+                        };
+                    }
+                    return { rows: [] };
+                }),
+            };
+            return callback(client, { emit: vi.fn() });
+        });
+
+        poolQueryMock
+            .mockResolvedValueOnce({ rows: [] }) // primera request: sin idempotencia previa
+            .mockResolvedValueOnce({ rows: [{ id: 'r-idem-1', title: 'titulo', created_at: new Date().toISOString() }] }); // segunda request: ya existe
+
+        queryWithRLSMock.mockResolvedValueOnce({
+            rows: [{
+                id: 'r-idem-1',
+                title: 'titulo',
+                description: 'desc',
+            }],
+            rowCount: 1
+        });
+
+        const app = buildApp();
+
+        const first = await request(app)
+            .post('/api/reports')
+            .set('x-anonymous-id', 'owner-1')
+            .field('title', 'titulo')
+            .field('description', 'desc')
+            .field('category', 'Robo')
+            .field('zone', 'Comuna 1')
+            .field('idempotency_key', 'idem-key-1');
+
+        expect(first.status).toBe(201);
+        expect(first.body).toHaveProperty('success', true);
+        expect(first.body).toHaveProperty('data');
+        expect(first.body).toHaveProperty('message', 'Report created successfully');
+
+        const second = await request(app)
+            .post('/api/reports')
+            .set('x-anonymous-id', 'owner-1')
+            .field('title', 'titulo')
+            .field('description', 'desc')
+            .field('category', 'Robo')
+            .field('zone', 'Comuna 1')
+            .field('idempotency_key', 'idem-key-1');
+
+        expect(second.status).toBe(200);
+        expect(second.body).toHaveProperty('success', true);
+        expect(second.body).toHaveProperty('data');
+        expect(second.body).toHaveProperty('idempotent', true);
     });
 
     it('PATCH /api/reports/:id forbidden -> status 403 + shape {error}', async () => {
@@ -208,5 +301,14 @@ describe('Reports Contract Shape', () => {
         expect(res.status).toBe(404);
         expect(res.body).toHaveProperty('error', 'Report not found');
     });
-});
 
+    it('POST /api/reports/:id/images sin archivos -> status 400 + shape {error}', async () => {
+        const app = buildApp();
+        const res = await request(app)
+            .post('/api/reports/r1/images')
+            .set('x-anonymous-id', 'owner-1');
+
+        expect(res.status).toBe(400);
+        expect(res.body).toHaveProperty('error', 'No images provided');
+    });
+});
