@@ -6,12 +6,12 @@
 El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise valiosas (RLS helper, SSE, audit service, React Query, chunking manual), pero todavía mantiene riesgos de **seguridad crítica**, **acoplamiento alto** y **consistencia incompleta** entre capas.
 
 ### Score por categoría
-- Arquitectura: **6.0/10**
+- Arquitectura: **7.0/10**
 - Performance: **6.5/10**
 - Seguridad: **4.0/10**
 - Escalabilidad: **5.5/10**
 - UX Técnica: **6.5/10**
-- Mantenibilidad: **5.0/10**
+- Mantenibilidad: **6.8/10**
 
 ### Nivel real
 **Scale-Ready (no Enterprise-Grade)**.
@@ -20,7 +20,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
 2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
 3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
-4. **Rutas monolíticas con alto acoplamiento** (`server/src/routes/reports.js`, `server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales.
+4. **Rutas monolíticas con alto acoplamiento en dominios no cerrados** (`server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales. En `reports` el riesgo bajo tras extracción de mutaciones.
 5. **Drift de capas y contratos** (mix de `queryWithRLS`, `supabase.from`, `pool.query` en mismas rutas, p.ej. `server/src/routes/comments.js:283`, `server/src/routes/comments.js:1123`, `server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`): rompe predictibilidad transaccional y aumenta bugs de concurrencia.
 
 ### Estado de hallazgos reportados (actualizado)
@@ -34,6 +34,8 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 | Bug `/reportes` favoritos (mostraba no favoritos) | **CORREGIDO** | `server/src/routes/reports.js` (`favorites_only` con `EXISTS` + `1=0` sin identidad), `src/lib/cache-helpers.ts` (`matchesFilters`) |
 | Drift de identidad en `is_liked/is_favorite` de reports | **CORREGIDO** | `server/tests/security/reports-identity-source.test.js` (**2/2 PASS**) |
 | Flicker de like en reports por patch parcial | **CORREGIDO (defensa cache)** | `src/lib/cache-helpers.ts` + `src/lib/cache-helpers.report-like.test.ts` (**1/1 PASS**) |
+| Acoplamiento de write-paths en `reports.js` | **CORREGIDO** | Extracción por lotes a `server/src/routes/reports.mutations.js` + suite de contrato verde |
+| Acoplamiento de mutaciones en `chats.js` | **CORREGIDO PARCIAL** | Lote 1 extraído a `server/src/routes/chats.mutations.js` (`pin/unpin/archive/unarchive/unread`) |
 
 ---
 
@@ -42,10 +44,12 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 ### Análisis de separación de responsabilidades
 - **Fortaleza**: existe intención de capas (routes/services/utils + hooks/query client).
 - **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
-  - `server/src/routes/reports.js` (1825 líneas)
-  - `server/src/routes/chats.js` (1530 líneas)
-  - `server/src/routes/comments.js` (1149 líneas)
-  - `src/lib/api.ts` (1400 líneas)
+  - `server/src/routes/reports.js` (971 líneas, router/wiring)
+  - `server/src/routes/reports.mutations.js` (991 líneas, mutaciones de dominio)
+  - `server/src/routes/chats.js` (1485 líneas, router + handlers pendientes)
+  - `server/src/routes/chats.mutations.js` (275 líneas, lote 1/2 extraído)
+  - `server/src/routes/comments.js` (1226 líneas)
+  - `src/lib/api.ts` (1402 líneas)
 - **Riesgo real**: cambios locales generan efectos laterales sistémicos y regresiones silenciosas.
 
 ### Acoplamientos peligrosos
@@ -517,6 +521,18 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - Fire-drill manual documentado: `docs/observability/fire-drill-manual-week3.md`.
   - Runbook operativo ajustado a logs: `docs/observability/runbook-incidentes-metricas.md`.
 
+#### Cierre formal Punto 4 (Operacion enterprise)
+- Gobierno operativo documentado:
+  - RACI minimo para rotacion de secretos (`owner tecnico`, `on-call`, `security owner`).
+  - Politica de evidencia obligatoria por cambio/incidente (ticket, timestamp, requestId, decision GO/ROLLBACK).
+- Criterios de operacion estandarizados:
+  - SLO de respuesta inicial y mitigacion por severidad.
+  - Regla de congelamiento de deploys ante multiples umbrales cruzados.
+  - Cierre de incidente condicionado a evidencia trazable (sin evidencia = no cierre).
+- Fire-drill y queries con gate operativo:
+  - Plantillas de evidencia con owner/fecha/decision.
+  - Umbrales y acciones GO/NO-GO definidos para auth/realtime/ack/catchup.
+
 #### Estado PENDING (scope tecnico)
 - No hay pendientes tecnicos de Semana 3 en DB hardening.
 
@@ -669,7 +685,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 #### Estado
 - **DONE (scope acotado)** para `edit` de comments.
 
-### Post Semana 3 - P1 Reports (Favoritos + Identidad + Like Flicker) (DONE PARCIAL)
+### Post Semana 3 - P1 Reports (Favoritos + Identidad + Like Flicker) (DONE)
 
 #### Scope cerrado
 - Filtro `favorites_only` en `GET /api/reports`:
@@ -702,8 +718,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - **DONE (scope acotado)** para `POST /api/reports/:id/favorite` con transaccion unica en toggle.
 - **DONE (scope acotado)** para `PATCH /api/reports/:id` con side-effects realtime post-commit.
 - **DONE (scope acotado)** para suite de contrato `reports` (status/shape) en rutas criticas.
-- **PENDIENTE (siguiente bloque P1 de reports, sin regresiones):**
-  - extraer modulo de mutaciones `reports` para reducir acoplamiento sin cambiar contratos.
+- **DONE (scope acotado)** para extraccion de mutaciones `reports` a modulo dedicado sin cambios de contrato.
 
 #### Reports - Fase A Read-Only (matriz de continuidad sin regresiones)
 | Endpoint | Como escribe hoy | Riesgo real | Fix minimo sugerido |
@@ -860,26 +875,129 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - **DONE**: write-paths de `reports` extraidos a `reports.mutations.js` con contratos preservados.
 - `reports.js` queda como router/wiring para mutaciones de dominio.
 
+### Estado Actual Consolidado (Post cierre bloque reports)
+
+#### Verificacion operativa (sin push, gate local)
+- `server/tests/security/reports-contract-shape.test.js` -> **PASS**
+- `server/tests/security/report-favorite-transaction.test.js` -> **PASS**
+- `server/tests/security/report-like-transaction.test.js` -> **PASS**
+- `server`: `npx tsc --noEmit` -> **PASS**
+
+#### Estado real de la app hoy
+- `reports` queda en estado **estable y cerrable** para este ciclo: contratos preservados, mutaciones modularizadas y regresiones criticas cubiertas.
+- `comments` en estado **cerrado P1** para flujos sensibles (`create/edit/like/flag/pin`).
+- Pendientes de mayor riesgo fuera de `reports`: consolidacion operativa de secretos y reduccion de acoplamiento en `chats`.
+
+### Post Semana 3 - P1 Chats (SEND pipeline determinista) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/chats/rooms/:roomId/messages`:
+  - todos los writes se ejecutan en una unica `transactionWithRLS`.
+  - respuesta HTTP (`201`) se mantiene sin cambios de contrato.
+  - fan-out (`emitUserChatUpdate`, `emitChatMessage`, `emitMessageDelivered`, `NotificationQueue.enqueue`) se ejecuta solo en post-commit.
+
+#### Beneficio tecnico concreto
+- Se blinda el write-path critico de chat contra side-effects antes de commit.
+- Se mantiene latencia/contrato actual sin introducir cambios de schema.
+- Se mejora trazabilidad del pipeline (`SEND_HTTP -> DB_INSERT -> EVENT_EMIT/OUTBOX_QUEUE_ENQUEUE`).
+
+#### Evidencia de validacion
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (READ tx unica + side-effects post-commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/chats/rooms/:roomId/read`:
+  - `SELECT DISTINCT sender_id` + `UPDATE is_read/is_delivered` unificados en `transactionWithRLS`.
+  - side-effects realtime ejecutados solo despues del commit.
+  - contrato HTTP preservado (`200 { success, count }` / `500`).
+
+#### Beneficio tecnico concreto
+- Elimina drift de consistencia por uso de `queryWithRLS` separado en un flujo de ack critico.
+- Reduce riesgo de efectos colaterales sobre estado no confirmado.
+- Mantiene idempotencia del endpoint sin cambios funcionales visibles.
+
+#### Evidencia de validacion
+- Test dedicado nuevo:
+  - `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+  - cobertura: exito con side-effects + falla intermedia con rollback y cero side-effects.
+- Revalidacion del bloque chat:
+  - `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+  - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+  - `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+#### Gate funcional pendiente (manual 2 usuarios)
+- Pendiente ejecutar smoke humano A/B en entorno de integracion:
+  - B online: A envia mensaje y B recibe en tiempo real.
+  - B offline: A envia mensaje, se encola push y A no pierde `201`.
+
+### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 1) (DONE)
+
+#### Scope cerrado
+- Se extrajeron a `server/src/routes/chats.mutations.js` (sin cambios funcionales):
+  - `POST /api/chats/rooms/:roomId/pin`
+  - `DELETE /api/chats/rooms/:roomId/pin`
+  - `POST /api/chats/rooms/:roomId/archive`
+  - `DELETE /api/chats/rooms/:roomId/archive`
+  - `PATCH /api/chats/rooms/:roomId/unread`
+- `server/src/routes/chats.js` mantiene el mismo wiring/middleware para esas rutas y delega ejecución al módulo extraído.
+
+#### Contrato preservado
+- Mismos status codes y shape (`{ success: true }` / `500 { error: 'Internal server error' }`).
+- Mismo orden funcional por endpoint: update DB -> `emitUserChatUpdate` -> response.
+- Sin cambios de schema ni de contrato API.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Hotfixes de Contrato y UX no leidos) (DONE)
+
+#### Scope cerrado
+- `DELETE /api/chats/rooms/:roomId/pin` y `DELETE /api/chats/rooms/:roomId/archive`:
+  - correccion de placeholders SQL en mutaciones extraidas (sin parametro fantasma `$1`).
+- `PATCH /api/chats/rooms/:roomId/unread`:
+  - compatibilidad de contrato `unread` (canónico frontend) + `isUnread` (legacy).
+  - normalizacion para evitar `undefined` en RLS.
+- Flujo WhatsApp de no leidos:
+  - al abrir chat y ejecutar `POST /api/chats/rooms/:roomId/read`, backend limpia `is_manually_unread`.
+  - cache frontend limpia `is_manually_unread` junto con `unread_count`.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+- `frontend`: `npx tsc --noEmit` -> **PASS**.
+
 ---
 
 ## 🔟 Score Final
 
 ### Score 1–10 por categoría
-- Arquitectura: **6.0**
+- Arquitectura: **7.0**
 - Performance: **6.5**
 - Seguridad: **4.0**
 - Escalabilidad: **5.5**
 - UX Técnica: **6.5**
-- Mantenibilidad: **5.0**
+- Mantenibilidad: **6.8**
 
 ### Nivel real del proyecto
 **Scale-Ready parcial**.
 
 ### Recomendación estratégica
 - **Tocar primero**:
-  1. Consolidar tests de contrato `reports` (status + shape) para blindaje anti-regresión.
-  2. Normalización de capa de datos frontend para evitar drift residual en reconciliaciones realtime.
-  3. Reducir acoplamiento en rutas monolíticas (extracción incremental por dominio).
+  1. Cerrar hardening operativo de secretos (rotación continua, evidencia periódica y drill de recuperación).
+  2. Reducir acoplamiento en `chats/comments` con la misma receta aplicada en `reports` (tx única + side-effects post-commit + tests de contrato).
+  3. Normalizar reconciliación realtime/frontend en dominios no cerrados para evitar drift de estado en cache.
 - **No tocar ahora**:
   1. Rewrites cosméticos de UI.
   2. Sobreingeniería de microservicios antes de cerrar seguridad/consistencia.

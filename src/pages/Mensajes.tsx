@@ -109,16 +109,11 @@ const ChatRoomItem: React.FC<ChatRoomItemProps> = ({ room, isActive, onClick }) 
             </div>
 
             {/* Badge de no leído tipo WhatsApp */}
-            {room.unread_count > 0 && (
+            {(room.unread_count > 0 || room.is_manually_unread) && (
                 <div className="absolute right-10 top-1/2 -translate-y-1/2 pointer-events-none">
                     <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-primary-foreground bg-primary">
-                        {room.unread_count > 99 ? '99+' : room.unread_count}
+                        {room.unread_count > 99 ? '99+' : (room.unread_count > 0 ? room.unread_count : 1)}
                     </span>
-                </div>
-            )}
-            {!room.unread_count && room.is_manually_unread && (
-                <div className="absolute right-10 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <span className="w-2.5 h-2.5 rounded-full bg-primary" />
                 </div>
             )}
             

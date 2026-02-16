@@ -12,6 +12,7 @@ import { requireRoomMembership, verifyMembership } from '../middleware/requireRo
 import { imageUploadLimiter } from '../utils/rateLimiter.js';
 import { NotificationQueue } from '../engine/NotificationQueue.js';
 import { logChatAckFailure } from '../utils/opsTelemetry.js';
+import { pinRoom, unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoomMessage, editRoomMessage } from './chats.mutations.js';
 
 const router = express.Router();
 
@@ -497,7 +498,10 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
 
         res.status(201).json(newMessage);
 
-        (async () => {
+        // Deterministic post-commit fan-out:
+        // All writes are already committed in the tx above.
+        // SSE/push side-effects run only here, never before commit.
+        const runPostCommitFanout = async () => {
             try {
                 const members = txResult.members;
                 const broadcastMessage = { ...newMessage, is_optimistic: false };
@@ -595,7 +599,10 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
             } catch (deferredErr) {
                 console.error('[Deferred] Background operations failed:', deferredErr);
             }
-        })();
+        };
+
+        // Fire-and-forget to keep HTTP contract and latency unchanged.
+        void runPostCommitFanout();
 
     } catch (err) {
         logError(err, req);
@@ -608,51 +615,7 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
  * Elimina un mensaje para todos (Solo el remitente)
  */
 router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId, messageId } = req.params;
-
-    try {
-        // 1. Verificar propiedad del mensaje
-        const msgResult = await queryWithRLS(anonymousId,
-            'SELECT sender_id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
-            [messageId, roomId]
-        );
-
-        if (msgResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Message not found' });
-        }
-
-        if (msgResult.rows[0].sender_id !== anonymousId) {
-            return res.status(403).json({ error: 'Forbidden: You can only delete your own messages' });
-        }
-
-        // 2. Eliminar mensaje
-        await queryWithRLS(anonymousId, 'DELETE FROM chat_messages WHERE id = $1', [messageId]);
-
-        // 3. Notificar a todos los miembros
-        const memberResult = await queryWithRLS(anonymousId, 'SELECT user_id FROM conversation_members WHERE conversation_id = $1', [roomId]);
-
-        memberResult.rows.forEach(member => {
-            realtimeEvents.emitUserChatUpdate(member.user_id, {
-                eventId: `deleted:${roomId}:${messageId}`, // âœ… Enterprise: ID determinÃ­stico
-                conversationId: roomId,
-                roomId,
-                action: 'message-deleted',
-                messageId
-            });
-        });
-
-        realtimeEvents.emitChatStatus('update', roomId, {
-            action: 'message-deleted',
-            messageId
-        });
-
-        res.json({ success: true });
-
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return deleteRoomMessage(req, res);
 });
 
 /**
@@ -664,24 +627,35 @@ router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
     const { roomId } = req.params;
 
     try {
-        // 1. Get senders BEFORE marking as read (to notify them)
-        const sendersResult = await queryWithRLS(anonymousId,
-            `SELECT DISTINCT sender_id FROM chat_messages 
-             WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)`,
-            [roomId, anonymousId]
-        );
-        const senderIds = sendersResult.rows.map(r => r.sender_id);
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const sendersResult = await client.query(
+                `SELECT DISTINCT sender_id FROM chat_messages 
+                 WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)`,
+                [roomId, anonymousId]
+            );
+            const senderIds = sendersResult.rows.map((r) => r.sender_id);
 
-        // 2. Mark as read
-        const result = await queryWithRLS(anonymousId,
-            'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
-            [roomId, anonymousId]
-        );
+            const result = await client.query(
+                'UPDATE chat_messages SET is_read = true, is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)',
+                [roomId, anonymousId]
+            );
 
-        // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
-        if (result.rowCount > 0) {
+            const manualUnreadResult = await client.query(
+                'UPDATE conversation_members SET is_manually_unread = false WHERE conversation_id = $1 AND user_id = $2 AND is_manually_unread = true',
+                [roomId, anonymousId]
+            );
+
+            return {
+                senderIds,
+                affectedRows: result.rowCount,
+                manualUnreadCleared: manualUnreadResult.rowCount
+            };
+        });
+
+        // Post-commit side-effects only.
+        if (txResult.affectedRows > 0 || txResult.manualUnreadCleared > 0) {
             // 3. Notify senders (Blue Tick Sync)
-            senderIds.forEach(senderId => {
+            txResult.senderIds.forEach((senderId) => {
                 realtimeEvents.emitMessageRead(senderId, {
                     conversationId: roomId,
                     roomId,
@@ -710,10 +684,10 @@ router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
             actorId: anonymousId,
             conversationId: roomId,
             ackType: 'read',
-            affectedRows: result.rowCount
+            affectedRows: txResult.affectedRows
         });
 
-        res.json({ success: true, count: result.rowCount });
+        res.json({ success: true, count: txResult.affectedRows });
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -1016,55 +990,11 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, requireRo
  * Toggle pinned status
  */
 router.post('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId } = req.params;
-    const { isPinned } = req.body;
-
-    try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_pinned = $1 WHERE conversation_id = $2 AND user_id = $3',
-            [isPinned !== undefined ? isPinned : true, roomId, anonymousId]
-        );
-
-        // Notify user's other devices
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `pin:${roomId}:${anonymousId}:${isPinned !== undefined ? isPinned : true}`, // âœ… Enterprise: ID determinÃ­stico
-            conversationId: roomId,
-            roomId,
-            action: 'pin',
-            isPinned: isPinned !== undefined ? isPinned : true
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return pinRoom(req, res);
 });
 
 router.delete('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId } = req.params;
-
-    try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_pinned = false WHERE conversation_id = $2 AND user_id = $3',
-            [false, roomId, anonymousId]
-        );
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `pin:${roomId}:${anonymousId}:false`, // âœ… Enterprise: ID determinÃ­stico
-            conversationId: roomId,
-            roomId,
-            action: 'pin',
-            isPinned: false
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return unpinRoom(req, res);
 });
 
 /**
@@ -1072,54 +1002,11 @@ router.delete('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
  * Toggle archived status
  */
 router.post('/rooms/:roomId/archive', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId } = req.params;
-    const { isArchived } = req.body;
-
-    try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_archived = $1 WHERE conversation_id = $2 AND user_id = $3',
-            [isArchived !== undefined ? isArchived : true, roomId, anonymousId]
-        );
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `archive:${roomId}:${anonymousId}:${isArchived !== undefined ? isArchived : true}`, // âœ… Enterprise: ID determinÃ­stico
-            conversationId: roomId,
-            roomId,
-            action: 'archive',
-            isArchived: isArchived !== undefined ? isArchived : true
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return archiveRoom(req, res);
 });
 
 router.delete('/rooms/:roomId/archive', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId } = req.params;
-
-    try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_archived = false WHERE conversation_id = $2 AND user_id = $3',
-            [false, roomId, anonymousId]
-        );
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `archive:${roomId}:${anonymousId}:false`, // âœ… Enterprise: ID determinÃ­stico
-            conversationId: roomId,
-            roomId,
-            action: 'archive',
-            isArchived: false
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return unarchiveRoom(req, res);
 });
 
 /**
@@ -1127,29 +1014,7 @@ router.delete('/rooms/:roomId/archive', requireRoomMembership, async (req, res) 
  * Toggle manually unread status
  */
 router.patch('/rooms/:roomId/unread', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId } = req.params;
-    const { isUnread } = req.body;
-
-    try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_manually_unread = $1 WHERE conversation_id = $2 AND user_id = $3',
-            [isUnread, roomId, anonymousId]
-        );
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `unread:${roomId}:${anonymousId}:${!!isUnread}`, // âœ… Enterprise: ID determinÃ­stico
-            conversationId: roomId,
-            roomId,
-            action: 'unread',
-            isUnread
-        });
-
-        res.json({ success: true });
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return setUnreadRoom(req, res);
 });
 
 /**
@@ -1435,82 +1300,7 @@ router.get('/starred', async (req, res) => {
  * Edit a message (WhatsApp-style: only own messages, within time limit)
  */
 router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, async (req, res) => {
-    const anonymousId = req.anonymousId;
-    const { roomId, messageId } = req.params;
-    const { content } = req.body;
-
-    if (!anonymousId) { return res.status(401).json({ error: 'Anonymous ID required' }); }
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
-        return res.status(400).json({ error: 'Content is required' });
-    }
-
-    try {
-        // 1. Verify message exists, belongs to user, and is within edit window (15 min like WhatsApp)
-        const msgCheck = await queryWithRLS(anonymousId,
-            `SELECT id, sender_id, created_at, type FROM chat_messages 
-             WHERE id = $1 AND conversation_id = $2`,
-            [messageId, roomId]
-        );
-
-        if (msgCheck.rows.length === 0) {
-            return res.status(404).json({ error: 'Message not found' });
-        }
-
-        const message = msgCheck.rows[0];
-
-        // Only owner can edit
-        if (message.sender_id !== anonymousId) {
-            return res.status(403).json({ error: 'You can only edit your own messages' });
-        }
-
-        // Only text messages can be edited
-        if (message.type !== 'text') {
-            return res.status(400).json({ error: 'Only text messages can be edited' });
-        }
-
-        // WhatsApp allows editing within 15 minutes (we'll be generous: 24 hours)
-        const createdAt = new Date(message.created_at);
-        const now = new Date();
-        const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
-        if (hoursDiff > 24) {
-            return res.status(400).json({ error: 'Message can only be edited within 24 hours' });
-        }
-
-        // 2. Update message
-        const sanitizedContent = sanitizeContent(content.trim());
-        const result = await queryWithRLS(anonymousId,
-            `UPDATE chat_messages 
-             SET content = $1, is_edited = true, edited_at = NOW()
-             WHERE id = $2
-             RETURNING *`,
-            [sanitizedContent, messageId]
-        );
-
-        const updatedMessage = result.rows[0];
-
-        // 3. Emit SSE event with deterministic contract envelope
-        realtimeEvents.broadcast(`room:${roomId}`, {
-            eventId: `message-edited:${roomId}:${updatedMessage.id}`,
-            conversationId: roomId,
-            roomId, // Backward compatibility temporal
-            serverTimestamp: updatedMessage.edited_at ? new Date(updatedMessage.edited_at).getTime() : Date.now(),
-            originClientId: 'backend',
-            type: 'message-edited',
-            data: {
-                id: updatedMessage.id,
-                content: updatedMessage.content,
-                is_edited: true,
-                edited_at: updatedMessage.edited_at
-            }
-        });
-
-        logSuccess('Message edited', { messageId, anonymousId });
-        res.json({ success: true, message: updatedMessage });
-
-    } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    return editRoomMessage(req, res);
 });
 
 /**
@@ -1688,5 +1478,7 @@ router.post('/messages/reconcile-status', async (req, res) => {
 });
 
 export default router;
+
+
 
 

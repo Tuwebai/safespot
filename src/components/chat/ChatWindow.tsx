@@ -713,7 +713,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
         const performInitialMarking = async () => {
             if (markAsReadMutation.isPending) return;
 
-            if (room.unread_count > 0) {
+            if (room.unread_count > 0 || room.is_manually_unread) {
                 markAsReadMutation.mutate(room.id);
             }
             hasMarkedRead.current = true;

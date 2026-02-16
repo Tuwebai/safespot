@@ -275,13 +275,13 @@ export const chatCache = {
         // Patch Inbox
         queryClient.setQueryData(KEYS.rooms(anonymousId), (oldData: ChatRoom[] | undefined) => {
             if (!oldData) return oldData;
-            return oldData.map(r => r.id === roomId ? { ...r, unread_count: 0 } : r);
+            return oldData.map(r => r.id === roomId ? { ...r, unread_count: 0, is_manually_unread: false } : r);
         });
 
         // Patch Detail
         queryClient.setQueryData(KEYS.conversation(roomId, anonymousId), (old: ChatRoom | undefined) => {
             if (!old) return old;
-            return { ...old, unread_count: 0 };
+            return { ...old, unread_count: 0, is_manually_unread: false };
         });
     },
 
