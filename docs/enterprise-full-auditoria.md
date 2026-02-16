@@ -1390,6 +1390,24 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **11/11 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (PIN/UNPIN MESSAGE transaccional + side-effects post-commit) (DONE)
+
+- Endpoints estabilizados sin cambio de contrato:
+  - `PATCH /api/chats/rooms/:roomId/messages/:messageId/pin`
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId/pin`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - validación + update bajo `transactionWithRLS`,
+  - `emitChatStatus('message-pinned', ...)` mantenido y ejecutado post-commit.
+- Contrato preservado:
+  - `404` pin -> `{ error: 'Message not found in this conversation' }`
+  - `200` pin -> `{ success: true, pinnedMessageId: <id> }`
+  - `200` unpin -> `{ success: true, pinnedMessageId: null }`
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **14/14 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---

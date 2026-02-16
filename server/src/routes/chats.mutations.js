@@ -1003,20 +1003,28 @@ export async function pinRoomMessage(req, res) {
     const { roomId, messageId } = req.params;
 
     try {
-        if (messageId) {
-            const msgCheck = await queryWithRLS(anonymousId,
-                'SELECT id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            if (messageId) {
+                const msgCheck = await client.query(
+                    'SELECT id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+                    [messageId, roomId]
+                );
+                if (msgCheck.rows.length === 0) {
+                    return { notFound: true };
+                }
+            }
+
+            await client.query(
+                'UPDATE conversations SET pinned_message_id = $1 WHERE id = $2',
                 [messageId, roomId]
             );
-            if (msgCheck.rows.length === 0) {
-                return res.status(404).json({ error: 'Message not found in this conversation' });
-            }
-        }
 
-        await queryWithRLS(anonymousId,
-            'UPDATE conversations SET pinned_message_id = $1 WHERE id = $2',
-            [messageId, roomId]
-        );
+            return { notFound: false };
+        });
+
+        if (txResult?.notFound) {
+            return res.status(404).json({ error: 'Message not found in this conversation' });
+        }
 
         realtimeEvents.emitChatStatus('message-pinned', roomId, {
             pinnedMessageId: messageId
@@ -1037,10 +1045,12 @@ export async function unpinRoomMessage(req, res) {
     const { roomId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversations SET pinned_message_id = NULL WHERE id = $1',
-            [roomId]
-        );
+        await transactionWithRLS(anonymousId, async (client) => {
+            await client.query(
+                'UPDATE conversations SET pinned_message_id = NULL WHERE id = $1',
+                [roomId]
+            );
+        });
 
         realtimeEvents.emitChatStatus('message-pinned', roomId, {
             pinnedMessageId: null

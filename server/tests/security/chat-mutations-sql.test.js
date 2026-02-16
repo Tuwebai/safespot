@@ -20,7 +20,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -247,5 +247,66 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(broadcastMock).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith({ error: 'You can only edit your own messages' });
+    });
+
+    it('pinRoomMessage valida mensaje y actualiza pin en tx, luego emite estado', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' }
+        };
+        const res = createRes();
+
+        txQueryMock
+            .mockResolvedValueOnce({ rows: [{ id: 'msg-1' }] })
+            .mockResolvedValueOnce({ rowCount: 1 });
+
+        await pinRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(2);
+        expect(txQueryMock.mock.calls[0][0]).toContain('SELECT id FROM chat_messages');
+        expect(txQueryMock.mock.calls[1][0]).toContain('UPDATE conversations SET pinned_message_id = $1');
+        expect(emitChatStatusMock).toHaveBeenCalledWith('message-pinned', 'room-1', {
+            pinnedMessageId: 'msg-1'
+        });
+        expect(res.json).toHaveBeenCalledWith({ success: true, pinnedMessageId: 'msg-1' });
+    });
+
+    it('pinRoomMessage devuelve 404 y no emite estado si mensaje no existe', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-404' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rows: [] });
+
+        await pinRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Message not found in this conversation' });
+    });
+
+    it('unpinRoomMessage limpia pin en tx y emite estado post-commit', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rowCount: 1 });
+
+        await unpinRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock.mock.calls[0][0]).toContain('UPDATE conversations SET pinned_message_id = NULL');
+        expect(emitChatStatusMock).toHaveBeenCalledWith('message-pinned', 'room-1', {
+            pinnedMessageId: null
+        });
+        expect(res.json).toHaveBeenCalledWith({ success: true, pinnedMessageId: null });
     });
 });
