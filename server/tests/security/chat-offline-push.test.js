@@ -41,6 +41,45 @@ vi.mock('../../src/utils/rls.js', () => ({
         }
 
         return { rows: [] };
+    }),
+    transactionWithRLS: vi.fn(async (_anonymousId, callback) => {
+        const client = {
+            query: vi.fn(async (sql, params) => {
+                if (sql.includes('INSERT INTO chat_messages')) {
+                    return {
+                        rows: [{
+                            id: messageId,
+                            conversation_id: roomId,
+                            sender_id: senderId,
+                            content: 'hola offline',
+                            type: 'text',
+                            sender_alias: 'sender',
+                            sender_avatar: null
+                        }]
+                    };
+                }
+
+                if (sql.includes('SELECT user_id FROM conversation_members WHERE conversation_id = $1')) {
+                    return { rows: [{ user_id: senderId }, { user_id: receiverId }] };
+                }
+
+                if (sql.includes('UPDATE conversations SET last_message_at = NOW()')) {
+                    return { rows: [] };
+                }
+
+                if (sql.includes('UPDATE chat_messages SET is_delivered = true')) {
+                    return { rowCount: 0, rows: [] };
+                }
+
+                if (sql.includes('SELECT m.content, m.type, u.alias, m.sender_id')) {
+                    return { rows: [] };
+                }
+
+                return { rows: [] };
+            })
+        };
+
+        return callback(client);
     })
 }));
 

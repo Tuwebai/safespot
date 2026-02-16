@@ -1,5 +1,5 @@
 import express from 'express';
-import { queryWithRLS } from '../utils/rls.js';
+import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { logError, logSuccess, logInfo } from '../utils/logger.js';
 import { sanitizeContent } from '../utils/sanitize.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
@@ -407,34 +407,83 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
         const sanitizedArr = sanitizeContent(content, 'chat.message', { anonymousId });
         const sanitized = Array.isArray(sanitizedArr) ? sanitizedArr[0] : sanitizedArr;
 
-        // Client-Generated ID for idempotency (Support both 'id' and 'temp_id')
         let newMessageId = providedId || req.body.temp_id;
-        
         if (!newMessageId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newMessageId)) {
             newMessageId = crypto.randomUUID();
         }
 
-        // âœ… CRITICAL PATH: Only INSERT is blocking
-        const insertQuery = `
-          INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption, reply_to_id)
-          VALUES($1, $2, $3, $4, $5, $6, $7)
-          RETURNING *, 
-            (SELECT alias FROM anonymous_users WHERE anonymous_id = $3) as sender_alias,
-            (SELECT avatar_url FROM anonymous_users WHERE anonymous_id = $3) as sender_avatar
-        `;
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const insertQuery = `
+              INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption, reply_to_id)
+              VALUES($1, $2, $3, $4, $5, $6, $7)
+              RETURNING *,
+                (SELECT alias FROM anonymous_users WHERE anonymous_id = $3) as sender_alias,
+                (SELECT avatar_url FROM anonymous_users WHERE anonymous_id = $3) as sender_avatar
+            `;
 
-        const result = await queryWithRLS(anonymousId, insertQuery, [
-            newMessageId,
-            roomId,
-            anonymousId,
-            sanitized,
-            type || 'text',
-            caption || null,
-            reply_to_id || null
-        ]);
+            const result = await client.query(insertQuery, [
+                newMessageId,
+                roomId,
+                anonymousId,
+                sanitized,
+                type || 'text',
+                caption || null,
+                reply_to_id || null
+            ]);
 
-        const newMessage = result.rows[0];
+            const newMessage = result.rows[0];
+            const memberResult = await client.query(
+                'SELECT user_id FROM conversation_members WHERE conversation_id = $1',
+                [roomId]
+            );
+            const members = memberResult.rows;
 
+            const fullMessage = { ...newMessage };
+            if (reply_to_id) {
+                const replyResult = await client.query(
+                    `SELECT m.content, m.type, u.alias, m.sender_id
+                     FROM chat_messages m
+                     JOIN anonymous_users u ON m.sender_id = u.anonymous_id
+                     WHERE m.id = $1`,
+                    [reply_to_id]
+                );
+                if (replyResult.rows.length > 0) {
+                    const r = replyResult.rows[0];
+                    fullMessage.reply_to_content = r.content;
+                    fullMessage.reply_to_type = r.type;
+                    fullMessage.reply_to_sender_alias = r.alias;
+                    fullMessage.reply_to_sender_id = r.sender_id;
+                }
+            }
+
+            await client.query(
+                'UPDATE conversations SET last_message_at = NOW() WHERE id = $1',
+                [roomId]
+            );
+
+            const onlineRecipients = [];
+            for (const member of members) {
+                if (member.user_id === anonymousId) continue;
+                if (await presenceTracker.isOnline(member.user_id)) {
+                    onlineRecipients.push(member.user_id);
+                }
+            }
+
+            let deliveredAt = null;
+            if (onlineRecipients.length > 0) {
+                deliveredAt = new Date();
+                await client.query(
+                    'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1 AND is_delivered = false',
+                    [newMessage.id, deliveredAt]
+                );
+                fullMessage.is_delivered = true;
+                fullMessage.delivered_at = deliveredAt;
+            }
+
+            return { newMessage: fullMessage, members, onlineRecipients, deliveredAt };
+        });
+
+        const newMessage = txResult.newMessage;
         logInfo('CHAT_PIPELINE', {
             stage: 'DB_INSERT',
             result: 'ok',
@@ -446,60 +495,15 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
             durationMs: Date.now() - pipelineStart
         });
 
-        // âœ… RESPOND IMMEDIATELY (0ms perceived latency)
         res.status(201).json(newMessage);
 
-        // ============================================
-        // DEFERRED OPERATIONS (Fire-and-Forget)
-        // ============================================
         (async () => {
             try {
-                // 1. Get members for SSE broadcast
-                const memberResult = await queryWithRLS(anonymousId,
-                    'SELECT user_id FROM conversation_members WHERE conversation_id = $1',
-                    [roomId]
-                );
-                const members = memberResult.rows;
+                const members = txResult.members;
+                const broadcastMessage = { ...newMessage, is_optimistic: false };
 
-                // 2. Fetch reply context if needed
-                const fullMessage = { ...newMessage };
-                if (reply_to_id) {
-                    try {
-                        const replyResult = await queryWithRLS(anonymousId,
-                            `SELECT m.content, m.type, u.alias, m.sender_id 
-                             FROM chat_messages m 
-                             JOIN anonymous_users u ON m.sender_id = u.anonymous_id 
-                             WHERE m.id = $1`,
-                            [reply_to_id]
-                        );
-                        if (replyResult.rows.length > 0) {
-                            const r = replyResult.rows[0];
-                            fullMessage.reply_to_content = r.content;
-                            fullMessage.reply_to_type = r.type;
-                            fullMessage.reply_to_sender_alias = r.alias;
-                            fullMessage.reply_to_sender_id = r.sender_id;
-                        }
-                    } catch (e) {
-                        console.error('[Deferred] Reply context error:', e);
-                    }
-                }
-
-                // 3. Update conversation metadata (fire-and-forget)
-                queryWithRLS(anonymousId,
-                    'UPDATE conversations SET last_message_at = NOW() WHERE id = $1',
-                    [roomId]
-                ).catch(e => console.error('[Deferred] Conversation update error:', e));
-
-                // 4. SSE Broadcast & Auto-Delivery (WhatsApp-Grade)
-                const broadcastMessage = { ...fullMessage, is_optimistic: false };
-                const { default: pool } = await import('../config/database.js');
-
-                // âœ… REDUNDANCY REDUCTION + DELIVERY TRACKING
-                // Only send individual update to OTHER members for their inbox.
-                // Room update will handle active tabs for everyone.
                 for (const member of members) {
                     if (member.user_id !== anonymousId) {
-                        // Emit message to recipient
                         realtimeEvents.emitUserChatUpdate(member.user_id, {
                             eventId: broadcastMessage.id,
                             conversationId: roomId,
@@ -520,52 +524,44 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
                             eventId: broadcastMessage.id,
                             originClientId: clientId || null
                         });
-
-                        // ðŸ›ï¸ WHATSAPP-GRADE: Auto-mark delivered if recipient is online
-                        // Presence indicates active SSE connection
-                        const isOnline = await presenceTracker.isOnline(member.user_id);
-                        if (isOnline) {
-                            // Mark as delivered immediately (backend-authoritative)
-                            await pool.query(
-                                'UPDATE chat_messages SET is_delivered = true, delivered_at = NOW() WHERE id = $1 AND is_delivered = false',
-                                [newMessage.id]
-                            );
-                            
-                            // Notify sender of delivery
-                            realtimeEvents.emitMessageDelivered(anonymousId, {
-                                messageId: newMessage.id,
-                                id: newMessage.id,
-                                conversationId: roomId,
-                                deliveredAt: new Date(),
-                                receiverId: member.user_id,
-                                traceId: `auto_online_${Date.now()}`
-                            });
-                        }
                     }
                 }
+
                 realtimeEvents.emitChatMessage(roomId, broadcastMessage, clientId);
 
-                // 5. Enqueue Push Notifications (Enterprise Engine)
-                const otherMembers = members.filter(m => m.user_id !== anonymousId);
+                if (txResult.onlineRecipients.length > 0 && txResult.deliveredAt) {
+                    txResult.onlineRecipients.forEach((receiverId) => {
+                        realtimeEvents.emitMessageDelivered(anonymousId, {
+                            messageId: newMessage.id,
+                            id: newMessage.id,
+                            conversationId: roomId,
+                            deliveredAt: txResult.deliveredAt,
+                            receiverId,
+                            traceId: `auto_online_${Date.now()}`
+                        });
+                    });
+                }
+
+                const otherMembers = members.filter((m) => m.user_id !== anonymousId);
                 const enqueueResults = await Promise.allSettled(otherMembers.map((member) => NotificationQueue.enqueue({
-                        type: 'CHAT_MESSAGE',
-                        id: newMessage.id,
-                        traceId,
-                        target: { anonymousId: member.user_id },
-                        delivery: { priority: 'high', ttlSeconds: 7200 },
-                        payload: {
-                            title: `ðŸ’¬ Nuevo mensaje de @${newMessage.sender_alias || 'Alguien'}`,
-                            message: type === 'image' ? 'ðŸ“· Foto enviada' : content,
-                            reportId: newMessage.report_id,
-                            entityId: newMessage.id,
-                            data: {
-                                conversationId: roomId,
-                                roomId,
-                                senderAlias: newMessage.sender_alias,
-                                type: 'chat'
-                            }
+                    type: 'CHAT_MESSAGE',
+                    id: newMessage.id,
+                    traceId,
+                    target: { anonymousId: member.user_id },
+                    delivery: { priority: 'high', ttlSeconds: 7200 },
+                    payload: {
+                        title: `Nuevo mensaje de @${newMessage.sender_alias || 'Alguien'}`,
+                        message: type === 'image' ? 'Foto enviada' : content,
+                        reportId: newMessage.report_id,
+                        entityId: newMessage.id,
+                        data: {
+                            conversationId: roomId,
+                            roomId,
+                            senderAlias: newMessage.sender_alias,
+                            type: 'chat'
                         }
-                    })));
+                    }
+                })));
 
                 enqueueResults.forEach((outcome, index) => {
                     const targetId = otherMembers[index]?.user_id || null;
@@ -606,7 +602,6 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
         res.status(500).json({ error: 'Internal server error' });
     }
 });
-
 
 /**
  * DELETE /api/chats/:roomId/messages/:messageId
@@ -734,37 +729,31 @@ router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) 
     const { roomId } = req.params;
 
     try {
-        // ðŸ”’ SECURITY FIX: Verify user is member of this conversation
-        if (!await verifyMembership(anonymousId, roomId)) {
-            return res.status(403).json({ error: 'Access denied: Not a member of this conversation' });
-        }
-        // âœ… WhatsApp-Grade: Get senders BEFORE marking as delivered
-        const sendersResult = await queryWithRLS(anonymousId,
-            `SELECT DISTINCT sender_id FROM chat_messages 
-             WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
-            [roomId, anonymousId]
-        );
-        const senderIds = sendersResult.rows.map(r => r.sender_id);
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const sendersResult = await client.query(
+                `SELECT DISTINCT sender_id FROM chat_messages 
+                 WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
+                [roomId, anonymousId]
+            );
+            const senderIds = sendersResult.rows.map(r => r.sender_id);
 
-        // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous query, but RLS might block UPDATE if user isn't the sender)
-        const { default: pool } = await import('../config/database.js');
+            const result = await client.query(
+                'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
+                [roomId, anonymousId]
+            );
 
-        const result = await pool.query(
-            'UPDATE chat_messages SET is_delivered = true WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false',
-            [roomId, anonymousId]
-        );
+            return { senderIds, affectedRows: result.rowCount };
+        });
 
         // SOLO emitir eventos si realmente se actualizaron filas (Idempotencia)
-        if (result.rowCount > 0 || senderIds.length > 0) {
-            // 1. Room SSE (for clients with chat open)
+        if (txResult.affectedRows > 0 || txResult.senderIds.length > 0) {
             // 1. Room SSE (for clients with chat open)
             realtimeEvents.emitChatStatus('delivered', roomId, {
                 receiverId: anonymousId
             });
 
             // 2. âœ… WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
-            // console.log(`[Delivered] Notifying ${senderIds.length} senders:`, senderIds); // Original line, commented out or removed based on the instruction's snippet
-            senderIds.forEach(senderId => {
+            txResult.senderIds.forEach(senderId => {
                 realtimeEvents.emitMessageDelivered(senderId, {
                     conversationId: roomId,
                     receiverId: anonymousId,
@@ -780,10 +769,10 @@ router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) 
             actorId: anonymousId,
             conversationId: roomId,
             ackType: 'delivered',
-            affectedRows: result.rowCount
+            affectedRows: txResult.affectedRows
         });
 
-        res.json({ success: true, count: result.rowCount });
+        res.json({ success: true, count: txResult.affectedRows });
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
@@ -810,16 +799,39 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
     }
 
     try {
-        // 1. Get message and room info BEFORE update (to calculate latency and identify sender)
-        const msgCheck = await queryWithRLS(anonymousId,
-            `SELECT m.sender_id, m.conversation_id, m.created_at, m.is_delivered 
-             FROM chat_messages m 
-             JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
-             WHERE m.id = $1 AND cm.user_id = $2`,
-            [messageId, anonymousId]
-        );
-        
-        if (msgCheck.rows.length === 0) {
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const msgCheck = await client.query(
+                `SELECT m.sender_id, m.conversation_id, m.created_at, m.is_delivered 
+                 FROM chat_messages m 
+                 JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                 WHERE m.id = $1 AND cm.user_id = $2`,
+                [messageId, anonymousId]
+            );
+
+            if (msgCheck.rows.length === 0) {
+                return { notFound: true };
+            }
+
+            const message = msgCheck.rows[0];
+            if (message.is_delivered) {
+                return { notFound: false, alreadyDelivered: true, message };
+            }
+
+            const deliveredAt = new Date();
+            await client.query(
+                'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
+                [messageId, deliveredAt]
+            );
+
+            return {
+                notFound: false,
+                alreadyDelivered: false,
+                message,
+                deliveredAt
+            };
+        });
+
+        if (txResult.notFound) {
             logChatAckFailure(req, {
                 flow: 'ack_delivered',
                 statusCode: 404,
@@ -828,34 +840,19 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
             return res.status(404).json({ error: 'Message not found or access denied' });
         }
 
-        const message = msgCheck.rows[0];
-
-        // 2. Only update if not already delivered (Idempotency)
-        if (!message.is_delivered) {
-            const deliveredAt = new Date();
-            const _latencyMs = deliveredAt - new Date(message.created_at);
-
-            // 2. Perform UPDATE bypassing RLS (The user is validated as a member by the previous Selective query)
-            const { default: pool } = await import('../config/database.js');
-            await pool.query(
-                'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
-                [messageId, deliveredAt]
-            );
-
-            // 3. Notify Sender via SSE (Real-time sync)
-            // Enterprise Contract: { messageId, conversationId, deliveredAt, traceId }
+        if (!txResult.alreadyDelivered) {
             const traceId = `tr_${Math.random().toString(36).substring(2, 15)}`;
+            const message = txResult.message;
 
             realtimeEvents.emitMessageDelivered(message.sender_id, {
                 messageId: messageId,
                 id: messageId,
                 conversationId: message.conversation_id,
-                deliveredAt: deliveredAt,
+                deliveredAt: txResult.deliveredAt,
                 receiverId: anonymousId,
                 traceId: traceId
             });
 
-            // 4. Notify active ChatWindow (Room channel fallback/sync)
             realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
                 messageId: messageId,
                 receiverId: anonymousId
@@ -871,7 +868,6 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
                 messageId,
                 ackType: 'delivered'
             });
-
         }
 
         res.json({ success: true });
