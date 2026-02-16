@@ -61,7 +61,14 @@ describe('Chat Read Transactional Consistency', () => {
                     return { rows: [], rowCount: 0 };
                 })
             };
-            return callback(client);
+            const sse = {
+                emit: vi.fn((method, ...args) => {
+                    if (method === 'emitMessageRead') emitMessageReadMock(...args);
+                    if (method === 'emitUserChatUpdate') emitUserChatUpdateMock(...args);
+                    if (method === 'emitChatStatus') emitChatStatusMock(...args);
+                })
+            };
+            return callback(client, sse);
         });
 
         const app = createApp();
@@ -94,4 +101,3 @@ describe('Chat Read Transactional Consistency', () => {
         expect(emitChatStatusMock).not.toHaveBeenCalled();
     });
 });
-

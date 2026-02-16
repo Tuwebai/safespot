@@ -44,7 +44,10 @@ vi.mock('../../src/utils/rls.js', () => ({
                 return { rows: [] };
             })
         };
-        return callback(client);
+        const sse = {
+            emit: vi.fn()
+        };
+        return callback(client, sse);
     })
 }));
 

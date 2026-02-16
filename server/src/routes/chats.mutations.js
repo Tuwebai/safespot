@@ -392,7 +392,7 @@ export async function markRoomRead(req, res) {
     const { roomId } = req.params;
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const sendersResult = await client.query(
                 `SELECT DISTINCT sender_id FROM chat_messages 
                  WHERE conversation_id = $1 AND sender_id != $2 AND (is_read = false OR is_delivered = false)`,
@@ -410,33 +410,33 @@ export async function markRoomRead(req, res) {
                 [roomId, anonymousId]
             );
 
+            if (result.rowCount > 0 || manualUnreadResult.rowCount > 0) {
+                senderIds.forEach((senderId) => {
+                    sse.emit('emitMessageRead', senderId, {
+                        conversationId: roomId,
+                        roomId,
+                        readerId: anonymousId
+                    });
+                });
+
+                sse.emit('emitUserChatUpdate', anonymousId, {
+                    eventId: `read:${roomId}:${anonymousId}`,
+                    conversationId: roomId,
+                    roomId,
+                    action: 'read'
+                });
+
+                sse.emit('emitChatStatus', 'read', roomId, {
+                    readerId: anonymousId
+                });
+            }
+
             return {
                 senderIds,
                 affectedRows: result.rowCount,
                 manualUnreadCleared: manualUnreadResult.rowCount
             };
         });
-
-        if (txResult.affectedRows > 0 || txResult.manualUnreadCleared > 0) {
-            txResult.senderIds.forEach((senderId) => {
-                realtimeEvents.emitMessageRead(senderId, {
-                    conversationId: roomId,
-                    roomId,
-                    readerId: anonymousId
-                });
-            });
-
-            realtimeEvents.emitUserChatUpdate(anonymousId, {
-                eventId: `read:${roomId}:${anonymousId}`,
-                conversationId: roomId,
-                roomId,
-                action: 'read'
-            });
-
-            realtimeEvents.emitChatStatus('read', roomId, {
-                readerId: anonymousId
-            });
-        }
 
         logInfo('CHAT_PIPELINE', {
             stage: 'ACK_UPDATE_DB',
@@ -466,7 +466,7 @@ export async function markRoomDelivered(req, res) {
     const { roomId } = req.params;
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const sendersResult = await client.query(
                 `SELECT DISTINCT sender_id FROM chat_messages 
                  WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
@@ -479,22 +479,22 @@ export async function markRoomDelivered(req, res) {
                 [roomId, anonymousId]
             );
 
+            if (result.rowCount > 0 || senderIds.length > 0) {
+                sse.emit('emitChatStatus', 'delivered', roomId, {
+                    receiverId: anonymousId
+                });
+
+                senderIds.forEach((senderId) => {
+                    sse.emit('emitMessageDelivered', senderId, {
+                        conversationId: roomId,
+                        receiverId: anonymousId,
+                        traceId: `bulk_read_${Date.now()}`
+                    });
+                });
+            }
+
             return { senderIds, affectedRows: result.rowCount };
         });
-
-        if (txResult.affectedRows > 0 || txResult.senderIds.length > 0) {
-            realtimeEvents.emitChatStatus('delivered', roomId, {
-                receiverId: anonymousId
-            });
-
-            txResult.senderIds.forEach(senderId => {
-                realtimeEvents.emitMessageDelivered(senderId, {
-                    conversationId: roomId,
-                    receiverId: anonymousId,
-                    traceId: `bulk_read_${Date.now()}`
-                });
-            });
-        }
 
         logInfo('CHAT_PIPELINE', {
             stage: 'ACK_UPDATE_DB',
@@ -533,7 +533,7 @@ export async function ackDeliveredMessage(req, res) {
     }
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const msgCheck = await client.query(
                 `SELECT m.sender_id, m.conversation_id, m.created_at, m.is_delivered 
                  FROM chat_messages m 
@@ -557,6 +557,21 @@ export async function ackDeliveredMessage(req, res) {
                 [messageId, deliveredAt]
             );
 
+            const traceId = `tr_${Math.random().toString(36).substring(2, 15)}`;
+            sse.emit('emitMessageDelivered', message.sender_id, {
+                messageId: messageId,
+                id: messageId,
+                conversationId: message.conversation_id,
+                deliveredAt,
+                receiverId: anonymousId,
+                traceId: traceId
+            });
+
+            sse.emit('emitChatStatus', 'delivered', message.conversation_id, {
+                messageId: messageId,
+                receiverId: anonymousId
+            });
+
             return {
                 notFound: false,
                 alreadyDelivered: false,
@@ -575,23 +590,7 @@ export async function ackDeliveredMessage(req, res) {
         }
 
         if (!txResult.alreadyDelivered) {
-            const traceId = `tr_${Math.random().toString(36).substring(2, 15)}`;
             const message = txResult.message;
-
-            realtimeEvents.emitMessageDelivered(message.sender_id, {
-                messageId: messageId,
-                id: messageId,
-                conversationId: message.conversation_id,
-                deliveredAt: txResult.deliveredAt,
-                receiverId: anonymousId,
-                traceId: traceId
-            });
-
-            realtimeEvents.emitChatStatus('delivered', message.conversation_id, {
-                messageId: messageId,
-                receiverId: anonymousId
-            });
-
             logInfo('CHAT_PIPELINE', {
                 stage: 'ACK_UPDATE_DB',
                 result: 'ok',

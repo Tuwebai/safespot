@@ -912,7 +912,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 #### Scope cerrado
 - Endpoint `POST /api/chats/rooms/:roomId/read`:
   - `SELECT DISTINCT sender_id` + `UPDATE is_read/is_delivered` unificados en `transactionWithRLS`.
-  - side-effects realtime ejecutados solo despues del commit.
+  - side-effects realtime encolados con `sse.emit` dentro de la tx (flush post-commit).
   - contrato HTTP preservado (`200 { success, count }` / `500`).
 
 #### Beneficio tecnico concreto
@@ -925,16 +925,15 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
   - cobertura: exito con side-effects + falla intermedia con rollback y cero side-effects.
 - Revalidacion del bloque chat:
-  - `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+  - `server/tests/security/chat-offline-push.test.js` -> **3/3 PASS**.
   - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
   - `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
 - Tipado:
   - `server`: `npx tsc --noEmit` -> **PASS**.
 
-#### Gate funcional pendiente (manual 2 usuarios)
-- Pendiente ejecutar smoke humano A/B en entorno de integracion:
-  - B online: A envia mensaje y B recibe en tiempo real.
-  - B offline: A envia mensaje, se encola push y A no pierde `201`.
+#### Smoke funcional manual (2 usuarios)
+- B online: A envia mensaje y B recibe en tiempo real.
+- B offline: A envia mensaje, se encola push y A mantiene `201`.
 
 ### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 1) (DONE)
 
