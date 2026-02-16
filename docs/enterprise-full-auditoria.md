@@ -3,33 +3,33 @@
 ## 1️⃣ Executive Summary
 
 ### Estado real del proyecto
-El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise valiosas (RLS helper, SSE, audit service, React Query, chunking manual), pero todavía mantiene riesgos de **seguridad crítica**, **acoplamiento alto** y **consistencia incompleta** entre capas.
+El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccionales en flujos críticos, contratos realtime endurecidos y operación de secretos formalizada. Queda deuda de mantenibilidad por tamaño de módulos y boundaries frontend.
 
 ### Score por categoría
-- Arquitectura: **7.0/10**
-- Performance: **6.5/10**
-- Seguridad: **4.0/10**
-- Escalabilidad: **5.5/10**
-- UX Técnica: **6.5/10**
-- Mantenibilidad: **6.8/10**
+- Arquitectura: **8.0/10**
+- Performance: **7.2/10**
+- Seguridad: **7.6/10**
+- Escalabilidad: **7.0/10**
+- UX Técnica: **7.4/10**
+- Mantenibilidad: **7.8/10**
 
 ### Nivel real
-**Scale-Ready (no Enterprise-Grade)**.
+**Scale-Ready alto (cercano a Enterprise-Grade en backend crítico)**.
 
 ### Top 5 riesgos críticos
 1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
 2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
 3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
-4. **Rutas monolíticas con alto acoplamiento en dominios no cerrados** (`server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales. En `reports` el riesgo bajo tras extracción de mutaciones.
-5. **Drift de capas y contratos** (mix de `queryWithRLS`, `supabase.from`, `pool.query` en mismas rutas, p.ej. `server/src/routes/comments.js:283`, `server/src/routes/comments.js:1123`, `server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`): rompe predictibilidad transaccional y aumenta bugs de concurrencia.
+4. **Módulos de dominio aún grandes con alto acoplamiento** (`server/src/routes/chats.mutations.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales. En `reports` el riesgo bajo tras extracción de mutaciones.
+5. **Drift de capas y contratos (residual)** en rutas legacy puntuales: el riesgo P0 de mezcla transaccional en `chats/reports/comments` fue cerrado, pero persiste deuda estructural por tamaño de módulos y acoplamiento de dominio.
 
 ### Estado de hallazgos reportados (actualizado)
 | Hallazgo original | Estado | Evidencia |
 |---|---|---|
 | AuthZ incompleto en `/api/realtime/user/:id`, `/api/realtime/chats/:roomId`, `/api/realtime/catchup` | **CORREGIDO** | `server/src/routes/realtime.js` + `tests/security/realtime-authz.test.js` en verde |
 | Catchup con fuga de metadatos globales | **CORREGIDO** | Filtros de visibilidad/membresía en `catchup` (`server/src/routes/realtime.js`) + suite seguridad |
-| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/realtime-authz.test.js` |
-| Hardening de secretos (arranque inseguro) | **CORREGIDO PARCIAL** | `server/src/utils/env.js` + `tests/security/env-validation.test.js` (pendiente: operación continua de rotación) |
+| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/realtime-authz.test.js` + `tests/security/auth-error-contract.test.js` |
+| Hardening de secretos (arranque inseguro) | **CORREGIDO (tecnico + operativo)** | `server/src/utils/env.js` + `tests/security/env-validation.test.js` + `docs/observability/secrets-rotation-policy.md` + `docs/observability/secrets-rotation-evidence-log.md` |
 | Deriva transaccional en comments (like/flag/pin/create/edit) | **CORREGIDO** | Secciones `Post Semana 3 - P1 Consistencia Transaccional Comments (...) (DONE)` |
 | Bug `/reportes` favoritos (mostraba no favoritos) | **CORREGIDO** | `server/src/routes/reports.js` (`favorites_only` con `EXISTS` + `1=0` sin identidad), `src/lib/cache-helpers.ts` (`matchesFilters`) |
 | Drift de identidad en `is_liked/is_favorite` de reports | **CORREGIDO** | `server/tests/security/reports-identity-source.test.js` (**2/2 PASS**) |
@@ -44,20 +44,17 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 ### Análisis de separación de responsabilidades
 - **Fortaleza**: existe intención de capas (routes/services/utils + hooks/query client).
 - **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
-  - `server/src/routes/reports.js` (971 líneas, router/wiring)
-  - `server/src/routes/reports.mutations.js` (991 líneas, mutaciones de dominio)
-  - `server/src/routes/chats.js` (250 líneas, router puro / wiring)
-  - `server/src/routes/chats.mutations.js` (1570 líneas, lógica de mutaciones y lecturas extraídas)
-  - `server/src/routes/comments.js` (1226 líneas)
-  - `src/lib/api.ts` (1402 líneas)
+  - `server/src/routes/reports.js` (857 líneas, router/wiring)
+  - `server/src/routes/reports.mutations.js` (855 líneas, mutaciones de dominio)
+  - `server/src/routes/chats.js` (201 líneas, router puro / wiring)
+  - `server/src/routes/chats.mutations.js` (1459 líneas, lógica de mutaciones y lecturas extraídas)
+  - `server/src/routes/comments.js` (311 líneas, router/wiring reducido tras extracción incremental de mutaciones)
+  - `server/src/routes/comments.mutations.js` (980 líneas, mutaciones extraídas: create + update + delete + like/unlike + flag + pin/unpin)
+  - `src/lib/api.ts` (1251 líneas)
 - **Riesgo real**: cambios locales generan efectos laterales sistémicos y regresiones silenciosas.
 
 ### Acoplamientos peligrosos
-- UI consumiendo API runtime desde componentes/páginas:
-  - `src/components/layout/Header.tsx:53`
-  - `src/pages/NotificationsPage.tsx:111`
-  - `src/components/chat/ChatWindow.tsx:729`
-  - `src/pages/Mensajes.tsx:239`
+- Boundary UI -> API runtime en `pages/components`: **CORREGIDO** (solo `import type` permitido; acceso runtime centralizado en hooks/mutations).
 - Duplicación de rutas/registro ambiguo:
   - `app.use('/api/diagnostics', ...)` duplicado en `server/src/index.js:374` y `server/src/index.js:437`.
 
@@ -89,7 +86,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 ### Análisis de rutas
 - Cobertura funcional alta y endpoints ricos.
 - Problema: heterogeneidad de estilos y contratos de error.
-- En `auth`, errores de validación/autorización terminan como 500 genérico (`server/src/routes/auth.js:228`, `server/src/routes/auth.js:274`, `server/src/routes/auth.js:328`, `server/src/routes/auth.js:361`).
+- En `auth/realtime`, el contrato 4xx/5xx crítico ya está estandarizado y validado con tests de seguridad.
 
 ### Validación
 - Hay middleware y Zod/Joi en partes.
@@ -97,7 +94,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 
 ### Manejo de errores
 - Existe `AppError` y middleware global.
-- Varios handlers saltan ese estándar y devuelven 500 genérico aunque el error es 4xx.
+- Riesgo residual: mantener disciplina de `next(err)` y `AppError` en nuevas rutas para evitar regresiones de contrato.
 
 ### Idempotencia
 - Bien implementada en varios puntos (`ON CONFLICT DO NOTHING` y manejo de `23505`).
@@ -105,10 +102,10 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 
 ### Concurrencia
 - `transactionWithRLS` es buen paso.
-- Se degrada al mezclar con `pool.query` fuera del mismo contexto transaccional (`server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`, `server/src/routes/chats.js:1442`).
+- El riesgo de mezcla transaccional en flujos críticos de chat/reportes/comments fue mitigado con `transactionWithRLS` y side-effects post-commit.
 
 ### Transacciones
-- Patrón transaccional existe, pero no es el camino único.
+- Patrón transaccional ya es dominante en flujos críticos; pendiente mantenerlo como regla para todo endpoint nuevo.
 - Resultado: posibilidad de estado parcial (DB ok + SSE fallido o viceversa) en algunos paths.
 
 ### Versionado de API
@@ -503,12 +500,16 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Estandarizacion de errores `4xx/5xx` en `auth + realtime` con contrato uniforme y `requestId`.
   - Evidencia: `docs/observability/auth-realtime-error-matrix.md`.
   - Tests de contrato en verde:
+    - `tests/security/auth-error-contract.test.js`
     - `tests/security/realtime-authz.test.js`
 - Hardening de secretos y arranque seguro:
   - Validador centralizado: `server/src/utils/env.js`.
   - Hard-fail de secretos críticos en API + Worker.
   - `JWT_SECRET` sin fallback inseguro fuera de `test`.
   - Push condicionado por feature flag (`ENABLE_PUSH_NOTIFICATIONS`).
+  - Política operativa de rotación con gate GO/NO-GO y evidencia trazable:
+    - `docs/observability/secrets-rotation-policy.md`
+    - `docs/observability/secrets-rotation-evidence-log.md`
   - Evidencia de pruebas:
     - `tests/security/env-validation.test.js` (2/2 verde).
     - `npx tsc --noEmit` (server) en verde.
@@ -532,8 +533,8 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - Plantillas de evidencia con owner/fecha/decision.
   - Umbrales y acciones GO/NO-GO definidos para auth/realtime/ack/catchup.
 
-#### Estado PENDING (scope tecnico)
-- No hay pendientes tecnicos de Semana 3 en DB hardening.
+#### Estado DONE (scope tecnico)
+- No hay pendientes tecnicos abiertos de Semana 3 en DB hardening.
 
 #### Update Fase B (`votes`) - 2026-02-16
 - Gate de pruebas backend: **PASS**.
@@ -570,7 +571,6 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 #### Estado
 - **DONE (scope acotado)** para `like/unlike`.
-- Siguiente objetivo de consistencia: endpoints `comments` restantes + `reports` (fuera de este cambio).
 
 ### Post Semana 3 - P1 Consistencia Transaccional Comments (FLAG) (DONE)
 
@@ -1583,15 +1583,15 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 ## 🔟 Score Final
 
 ### Score 1–10 por categoría
-- Arquitectura: **7.0**
-- Performance: **6.5**
-- Seguridad: **4.0**
-- Escalabilidad: **5.5**
-- UX Técnica: **6.5**
-- Mantenibilidad: **6.8**
+- Arquitectura: **8.0**
+- Performance: **7.2**
+- Seguridad: **7.6**
+- Escalabilidad: **7.0**
+- UX Técnica: **7.4**
+- Mantenibilidad: **7.8**
 
 ### Nivel real del proyecto
-**Scale-Ready parcial**.
+**Scale-Ready alto**.
 
 ### Recomendación estratégica
 - **Tocar primero**:
@@ -1609,27 +1609,21 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/src/index.js:219`
 - `server/src/index.js:374`
 - `server/src/index.js:437`
-- `server/src/routes/realtime.js:36`
-- `server/src/routes/realtime.js:88`
-- `server/src/routes/realtime.js:312`
-- `server/src/routes/realtime.js:470`
-- `server/src/routes/realtime.js:608`
-- `server/src/middleware/auth.js:4`
-- `server/src/routes/auth.js:56`
-- `server/src/routes/auth.js:228`
-- `server/src/routes/comments.js:283`
-- `server/src/routes/comments.js:576`
-- `server/src/routes/comments.js:1123`
-- `server/src/routes/chats.js:326`
-- `server/src/routes/chats.js:1419`
-- `src/components/layout/Header.tsx:53`
-- `src/components/chat/ChatWindow.tsx:729`
-- `src/pages/NotificationsPage.tsx:111`
-- `src/pages/Mensajes.tsx:239`
-- `src/App.tsx:63`
-- `src/App.tsx:198`
-- `src/main.tsx:70`
-- `src/main.tsx:90`
-- `src/hooks/useGlobalRealtime.ts:60`
+- `server/src/routes/realtime.js`
+- `server/tests/security/realtime-authz.test.js`
+- `server/tests/security/realtime-catchup-delivery-consistency.test.js`
+- `server/src/routes/auth.js`
+- `server/tests/security/env-validation.test.js`
+- `server/src/routes/comments.js`
+- `server/src/routes/comments.mutations.js`
+- `server/src/routes/reports.js`
+- `server/src/routes/reports.mutations.js`
+- `server/src/routes/chats.js`
+- `server/src/routes/chats.mutations.js`
+- `src/components/layout/Header.tsx`
+- `src/components/chat/ChatWindow.tsx`
+- `src/pages/NotificationsPage.tsx`
+- `src/pages/Mensajes.tsx`
+- `src/hooks/useGlobalRealtime.ts`
 
 
