@@ -204,7 +204,7 @@ export async function sendRoomMessage(req, res) {
             newMessageId = crypto.randomUUID();
         }
 
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const insertQuery = `
               INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption, reply_to_id)
               VALUES($1, $2, $3, $4, $5, $6, $7)
@@ -272,7 +272,36 @@ export async function sendRoomMessage(req, res) {
                 fullMessage.delivered_at = deliveredAt;
             }
 
-            return { newMessage: fullMessage, members, onlineRecipients, deliveredAt };
+            const broadcastMessage = { ...fullMessage, is_optimistic: false };
+            const otherMembers = members.filter((member) => member.user_id !== anonymousId);
+
+            // Realtime fan-out estrictamente post-commit via cola transaccional
+            for (const member of otherMembers) {
+                sse.emit('emitUserChatUpdate', member.user_id, {
+                    eventId: broadcastMessage.id,
+                    conversationId: roomId,
+                    roomId,
+                    message: broadcastMessage,
+                    originClientId: clientId
+                });
+            }
+
+            sse.emit('emitChatMessage', roomId, broadcastMessage, clientId);
+
+            if (onlineRecipients.length > 0 && deliveredAt) {
+                onlineRecipients.forEach((receiverId) => {
+                    sse.emit('emitMessageDelivered', anonymousId, {
+                        messageId: fullMessage.id,
+                        id: fullMessage.id,
+                        conversationId: roomId,
+                        deliveredAt,
+                        receiverId,
+                        traceId: `auto_online_${Date.now()}`
+                    });
+                });
+            }
+
+            return { newMessage: fullMessage, members, otherMembers, onlineRecipients, deliveredAt };
         });
 
         const newMessage = txResult.newMessage;
@@ -291,51 +320,7 @@ export async function sendRoomMessage(req, res) {
 
         const runPostCommitFanout = async () => {
             try {
-                const members = txResult.members;
-                const broadcastMessage = { ...newMessage, is_optimistic: false };
-
-                for (const member of members) {
-                    if (member.user_id !== anonymousId) {
-                        realtimeEvents.emitUserChatUpdate(member.user_id, {
-                            eventId: broadcastMessage.id,
-                            conversationId: roomId,
-                            roomId,
-                            message: broadcastMessage,
-                            originClientId: clientId
-                        });
-
-                        logInfo('CHAT_PIPELINE', {
-                            stage: 'EVENT_EMIT',
-                            result: 'ok',
-                            requestId,
-                            traceId,
-                            actorId: anonymousId,
-                            targetId: member.user_id,
-                            conversationId: roomId,
-                            messageId: newMessage.id,
-                            eventId: broadcastMessage.id,
-                            originClientId: clientId || null
-                        });
-                    }
-                }
-
-                realtimeEvents.emitChatMessage(roomId, broadcastMessage, clientId);
-
-                if (txResult.onlineRecipients.length > 0 && txResult.deliveredAt) {
-                    txResult.onlineRecipients.forEach((receiverId) => {
-                        realtimeEvents.emitMessageDelivered(anonymousId, {
-                            messageId: newMessage.id,
-                            id: newMessage.id,
-                            conversationId: roomId,
-                            deliveredAt: txResult.deliveredAt,
-                            receiverId,
-                            traceId: `auto_online_${Date.now()}`
-                        });
-                    });
-                }
-
-                const otherMembers = members.filter((m) => m.user_id !== anonymousId);
-                const enqueueResults = await Promise.allSettled(otherMembers.map((member) => NotificationQueue.enqueue({
+                const enqueueResults = await Promise.allSettled(txResult.otherMembers.map((member) => NotificationQueue.enqueue({
                     type: 'CHAT_MESSAGE',
                     id: newMessage.id,
                     traceId,
@@ -356,7 +341,7 @@ export async function sendRoomMessage(req, res) {
                 })));
 
                 enqueueResults.forEach((outcome, index) => {
-                    const targetId = otherMembers[index]?.user_id || null;
+                    const targetId = txResult.otherMembers[index]?.user_id || null;
                     if (outcome.status === 'fulfilled') {
                         logInfo('CHAT_PIPELINE', {
                             stage: 'OUTBOX_QUEUE_ENQUEUE',

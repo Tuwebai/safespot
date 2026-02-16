@@ -11,6 +11,54 @@ const enqueueMock = vi.hoisted(() => vi.fn());
 const emitUserChatUpdateMock = vi.hoisted(() => vi.fn());
 const emitChatMessageMock = vi.hoisted(() => vi.fn());
 const emitMessageDeliveredMock = vi.hoisted(() => vi.fn());
+const transactionWithRLSMock = vi.hoisted(() => vi.fn());
+
+const createTxMock = () => async (_anonymousId, callback) => {
+    const client = {
+        query: vi.fn(async (sql, params) => {
+            if (sql.includes('INSERT INTO chat_messages')) {
+                return {
+                    rows: [{
+                        id: messageId,
+                        conversation_id: roomId,
+                        sender_id: senderId,
+                        content: 'hola offline',
+                        type: 'text',
+                        sender_alias: 'sender',
+                        sender_avatar: null
+                    }]
+                };
+            }
+
+            if (sql.includes('SELECT user_id FROM conversation_members WHERE conversation_id = $1')) {
+                return { rows: [{ user_id: senderId }, { user_id: receiverId }] };
+            }
+
+            if (sql.includes('UPDATE conversations SET last_message_at = NOW()')) {
+                return { rows: [] };
+            }
+
+            if (sql.includes('UPDATE chat_messages SET is_delivered = true')) {
+                return { rowCount: 0, rows: [] };
+            }
+
+            if (sql.includes('SELECT m.content, m.type, u.alias, m.sender_id')) {
+                return { rows: [] };
+            }
+
+            return { rows: [] };
+        })
+    };
+    const sse = {
+        emit: vi.fn((method, ...args) => {
+            if (method === 'emitUserChatUpdate') emitUserChatUpdateMock(...args);
+            if (method === 'emitChatMessage') emitChatMessageMock(...args);
+            if (method === 'emitMessageDelivered') emitMessageDeliveredMock(...args);
+        })
+    };
+
+    return callback(client, sse);
+};
 
 vi.mock('../../src/utils/rls.js', () => ({
     queryWithRLS: vi.fn(async (_userId, sql, params) => {
@@ -42,46 +90,10 @@ vi.mock('../../src/utils/rls.js', () => ({
 
         return { rows: [] };
     }),
-    transactionWithRLS: vi.fn(async (_anonymousId, callback) => {
-        const client = {
-            query: vi.fn(async (sql, params) => {
-                if (sql.includes('INSERT INTO chat_messages')) {
-                    return {
-                        rows: [{
-                            id: messageId,
-                            conversation_id: roomId,
-                            sender_id: senderId,
-                            content: 'hola offline',
-                            type: 'text',
-                            sender_alias: 'sender',
-                            sender_avatar: null
-                        }]
-                    };
-                }
-
-                if (sql.includes('SELECT user_id FROM conversation_members WHERE conversation_id = $1')) {
-                    return { rows: [{ user_id: senderId }, { user_id: receiverId }] };
-                }
-
-                if (sql.includes('UPDATE conversations SET last_message_at = NOW()')) {
-                    return { rows: [] };
-                }
-
-                if (sql.includes('UPDATE chat_messages SET is_delivered = true')) {
-                    return { rowCount: 0, rows: [] };
-                }
-
-                if (sql.includes('SELECT m.content, m.type, u.alias, m.sender_id')) {
-                    return { rows: [] };
-                }
-
-                return { rows: [] };
-            })
-        };
-
-        return callback(client);
-    })
+    transactionWithRLS: transactionWithRLSMock
 }));
+
+transactionWithRLSMock.mockImplementation(createTxMock());
 
 vi.mock('../../src/utils/presenceTracker.js', () => ({
     presenceTracker: {
@@ -118,6 +130,7 @@ describe('Chat Offline Push Pipeline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         enqueueMock.mockResolvedValue({ id: 'job-1' });
+        transactionWithRLSMock.mockImplementation(createTxMock());
     });
 
     it('encola push cuando el destinatario no tiene SSE y responde 201', async () => {
@@ -151,5 +164,21 @@ describe('Chat Offline Push Pipeline', () => {
 
         expect(res.status).toBe(201);
         expect(res.body.id).toBe(messageId);
+    });
+
+    it('falla intermedia en tx: 500 y cero side-effects (sin realtime ni push)', async () => {
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+        const app = createApp();
+
+        const res = await request(app)
+            .post(`/api/chats/rooms/${roomId}/messages`)
+            .set('x-anonymous-id', senderId)
+            .send({ content: 'hola offline', type: 'text' });
+
+        expect(res.status).toBe(500);
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(emitChatMessageMock).not.toHaveBeenCalled();
+        expect(emitMessageDeliveredMock).not.toHaveBeenCalled();
+        expect(enqueueMock).not.toHaveBeenCalled();
     });
 });

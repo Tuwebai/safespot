@@ -20,7 +20,7 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
 1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
 2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
 3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
-4. **Módulos de dominio aún grandes con alto acoplamiento** (`server/src/routes/chats.mutations.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales. En `reports` el riesgo bajo tras extracción de mutaciones.
+4. **Módulos de dominio aún grandes con alto acoplamiento** (`server/src/routes/chats.mutations.js`, `server/src/routes/comments.mutations.js`): eleva riesgo de regresiones por cambios locales. En `reports` y `comments` el riesgo bajó tras extracción de mutaciones.
 5. **Drift de capas y contratos (residual)** en rutas legacy puntuales: el riesgo P0 de mezcla transaccional en `chats/reports/comments` fue cerrado, pero persiste deuda estructural por tamaño de módulos y acoplamiento de dominio.
 
 ### Estado de hallazgos reportados (actualizado)
@@ -51,7 +51,7 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
   - `server/src/routes/comments.js` (311 líneas, router/wiring reducido tras extracción incremental de mutaciones)
   - `server/src/routes/comments.mutations.js` (980 líneas, mutaciones extraídas: create + update + delete + like/unlike + flag + pin/unpin)
   - `src/lib/api.ts` (1251 líneas)
-- **Riesgo real**: cambios locales generan efectos laterales sistémicos y regresiones silenciosas.
+- **Riesgo real**: cambios locales siguen pudiendo generar efectos laterales sistémicos, especialmente en módulos >800 líneas.
 
 ### Acoplamientos peligrosos
 - Boundary UI -> API runtime en `pages/components`: **CORREGIDO** (solo `import type` permitido; acceso runtime centralizado en hooks/mutations).
@@ -893,15 +893,16 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Endpoint `POST /api/chats/rooms/:roomId/messages`:
   - todos los writes se ejecutan en una unica `transactionWithRLS`.
   - respuesta HTTP (`201`) se mantiene sin cambios de contrato.
-  - fan-out (`emitUserChatUpdate`, `emitChatMessage`, `emitMessageDelivered`, `NotificationQueue.enqueue`) se ejecuta solo en post-commit.
+  - fan-out realtime (`emitUserChatUpdate`, `emitChatMessage`, `emitMessageDelivered`) se encola via `TransactionalSSE` dentro de la tx y se flushea solo post-commit.
+  - push queue (`NotificationQueue.enqueue`) queda diferida fuera de tx y no bloquea el HTTP.
 
 #### Beneficio tecnico concreto
-- Se blinda el write-path critico de chat contra side-effects antes de commit.
+- Se blinda el write-path critico de chat contra side-effects realtime antes de commit.
 - Se mantiene latencia/contrato actual sin introducir cambios de schema.
-- Se mejora trazabilidad del pipeline (`SEND_HTTP -> DB_INSERT -> EVENT_EMIT/OUTBOX_QUEUE_ENQUEUE`).
+- Se mejora trazabilidad del pipeline (`SEND_HTTP -> DB_INSERT -> OUTBOX_QUEUE_ENQUEUE`) y se agrega cobertura explicita de rollback sin efectos colaterales.
 
 #### Evidencia de validacion
-- `server/tests/security/chat-offline-push.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **3/3 PASS** (incluye rollback sin side-effects).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
@@ -1544,6 +1545,15 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
+### Post Semana 3 - Cierre Operativo Comments (DONE)
+
+- Estado final del dominio `comments`:
+  - router reducido y mutaciones extraidas a `server/src/routes/comments.mutations.js`,
+  - write-paths sensibles cerrados bajo transaccion y side-effects post-commit,
+  - contratos API preservados (`status`, `shape`, mensajes) sin cambios breaking.
+- Checklist formal de deploy/smoke consolidado:
+  - `docs/observability/deploy-checklist-comments-p1-cierre.md`
+
 ### Post Semana 3 - P1 Realtime (Catchup dedupe por eventId) (DONE)
 
 - Endpoint estabilizado sin cambio de contrato:
@@ -1595,8 +1605,8 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 ### Recomendación estratégica
 - **Tocar primero**:
-  1. Cerrar hardening operativo de secretos (rotación continua, evidencia periódica y drill de recuperación).
-  2. Reducir acoplamiento en `chats/comments` con la misma receta aplicada en `reports` (tx única + side-effects post-commit + tests de contrato).
+  1. Reducir acoplamiento en `chats` (modularización interna de `chats.mutations.js`) manteniendo contratos actuales.
+  2. Mantener hardening operativo de secretos (rotación continua, evidencia periódica y drill de recuperación).
   3. Normalizar reconciliación realtime/frontend en dominios no cerrados para evitar drift de estado en cache.
 - **No tocar ahora**:
   1. Rewrites cosméticos de UI.
