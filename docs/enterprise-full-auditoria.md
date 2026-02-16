@@ -1320,6 +1320,23 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (ARCHIVE/UNARCHIVE transaccional homogéneo) (DONE)
+
+- Endpoints estabilizados sin cambio de contrato:
+  - `POST /api/chats/rooms/:roomId/archive`
+  - `DELETE /api/chats/rooms/:roomId/archive`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - write path normalizado a `transactionWithRLS`,
+  - emisión realtime preservada y ejecutada post-commit.
+- Contrato preservado:
+  - mismos status codes y mismas respuestas JSON (`{ success: true }`),
+  - mismo payload de `emitUserChatUpdate` (`action: 'archive'`).
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **6/6 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---

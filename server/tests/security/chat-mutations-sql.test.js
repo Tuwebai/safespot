@@ -16,7 +16,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, unarchiveRoom, setUnreadRoom } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -59,11 +59,32 @@ describe('Chats Mutations SQL Contracts', () => {
 
         await unarchiveRoom(req, res);
 
-        expect(queryWithRLSMock).toHaveBeenCalledTimes(1);
-        const [, sql, params] = queryWithRLSMock.mock.calls[0];
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        const [sql, params] = txQueryMock.mock.calls[0];
         expect(sql).toContain('conversation_id = $1');
         expect(sql).toContain('user_id = $2');
         expect(params).toEqual(['room-1', 'user-1']);
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('archive usa placeholders correctos ($1,$2,$3) en tx', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            body: { isArchived: true }
+        };
+        const res = createRes();
+
+        await archiveRoom(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        const [sql, params] = txQueryMock.mock.calls[0];
+        expect(sql).toContain('SET is_archived = $1');
+        expect(sql).toContain('conversation_id = $2');
+        expect(sql).toContain('user_id = $3');
+        expect(params).toEqual([true, 'room-1', 'user-1']);
         expect(res.json).toHaveBeenCalledWith({ success: true });
     });
 

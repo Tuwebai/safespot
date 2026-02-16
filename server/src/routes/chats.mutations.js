@@ -79,10 +79,12 @@ export async function archiveRoom(req, res) {
     const { isArchived } = req.body;
 
     try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_archived = $1 WHERE conversation_id = $2 AND user_id = $3',
-            [isArchived !== undefined ? isArchived : true, roomId, anonymousId]
-        );
+        await transactionWithRLS(anonymousId, async (client) => {
+            await client.query(
+                'UPDATE conversation_members SET is_archived = $1 WHERE conversation_id = $2 AND user_id = $3',
+                [isArchived !== undefined ? isArchived : true, roomId, anonymousId]
+            );
+        });
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
             eventId: `archive:${roomId}:${anonymousId}:${isArchived !== undefined ? isArchived : true}`, // deterministic id
@@ -104,10 +106,12 @@ export async function unarchiveRoom(req, res) {
     const { roomId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'UPDATE conversation_members SET is_archived = false WHERE conversation_id = $1 AND user_id = $2',
-            [roomId, anonymousId]
-        );
+        await transactionWithRLS(anonymousId, async (client) => {
+            await client.query(
+                'UPDATE conversation_members SET is_archived = false WHERE conversation_id = $1 AND user_id = $2',
+                [roomId, anonymousId]
+            );
+        });
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
             eventId: `archive:${roomId}:${anonymousId}:false`, // deterministic id
