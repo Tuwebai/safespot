@@ -20,7 +20,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
 2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros.
 3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad.
-4. **Gobernanza de secretos parcialmente cerrada** (`server/src/utils/env.js:27`, `docs/observability/secrets-rotation-policy.md:1`): hard-fail ya aplicado para secretos críticos, pero falta completar operación de dashboard/alertas para cierre integral de Semana 3.
+4. **Rutas monolíticas con alto acoplamiento** (`server/src/routes/reports.js`, `server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales.
 5. **Drift de capas y contratos** (mix de `queryWithRLS`, `supabase.from`, `pool.query` en mismas rutas, p.ej. `server/src/routes/comments.js:283`, `server/src/routes/comments.js:1123`, `server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`): rompe predictibilidad transaccional y aumenta bugs de concurrencia.
 
 ---
@@ -105,7 +105,6 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 - Integración de auditoría estructurada (`server/src/services/auditService.js`).
 
 ### Qué está mal
-- Pendiente operativo: completar dashboard + alertas para cierre total de Semana 3.
 - Endpoints realtime con AuthZ insuficiente.
 - Mezcla de drivers/patrones de persistencia.
 - Contrato de errores inconsistente en auth.
@@ -515,6 +514,36 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Ejecucion en ventana controlada: **COMPLETADA**.
 - Evidencia consolidada:
   - `docs/observability/votes-phase-b-gate.md`.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (LIKE/UNLIKE) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/like`:
+  - write + readback unificados en `transactionWithRLS`.
+  - `emitCommentLike` y `emitVoteUpdate` emitidos via cola transaccional (`sse.emit`) post-commit.
+- Endpoint `DELETE /api/comments/:id/like`:
+  - delete + readback unificados en `transactionWithRLS`.
+  - side-effects realtime emitidos solo post-commit.
+
+#### Beneficio tecnico concreto
+- Se elimina estado parcial por mezcla `supabase + queryWithRLS` en el mismo flujo.
+- Se elimina riesgo de emitir eventos realtime cuando la transaccion falla (rollback).
+- Se asegura idempotencia operacional en unlike (`Like not found` sin side-effects).
+
+#### Evidencia de validacion
+- Test transaccional dedicado:
+  - `tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - Cobertura:
+    - exito like (count correcto + evento).
+    - rollback like (cero side-effects).
+    - idempotencia unlike (sin eventos).
+    - rollback unlike (cero side-effects).
+- Tipado backend:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `like/unlike`.
+- Siguiente objetivo de consistencia: endpoints `comments` restantes + `reports` (fuera de este cambio).
 
 ---
 
