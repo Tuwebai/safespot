@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -206,6 +206,22 @@ const Mensajes: React.FC = () => {
     const [searchParams] = useSearchParams();
     const startChatUserId = searchParams.get('userId');
     const isHandlingStartChat = React.useRef(false);
+
+    useEffect(() => {
+        const handleChatDeleted = (event: Event) => {
+            const customEvent = event as CustomEvent<{ roomId?: string }>;
+            const deletedRoomId = customEvent.detail?.roomId;
+            if (!deletedRoomId || !urlRoomId) return;
+            if (deletedRoomId === urlRoomId) {
+                navigate('/mensajes', { replace: true });
+            }
+        };
+
+        window.addEventListener('chat:deleted', handleChatDeleted as EventListener);
+        return () => {
+            window.removeEventListener('chat:deleted', handleChatDeleted as EventListener);
+        };
+    }, [navigate, urlRoomId]);
 
     React.useEffect(() => {
         if (!startChatUserId || isLoading || !rooms || isHandlingStartChat.current) return;

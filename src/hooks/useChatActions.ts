@@ -133,8 +133,10 @@ export function useChatActions() {
                 queryClient.invalidateQueries({ queryKey: ['chats', 'rooms', anonymousId] });
             }
         },
-        onSuccess: () => {
+        onSuccess: (_data, roomId) => {
             toast.success('Chat eliminado');
+            // Notify chat surfaces (e.g. Mensajes route) to close the active thread if needed.
+            window.dispatchEvent(new CustomEvent('chat:deleted', { detail: { roomId } }));
         }
     });
 
