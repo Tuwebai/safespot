@@ -47,9 +47,14 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
   - `server/src/routes/reports.js` (857 líneas, router/wiring)
   - `server/src/routes/reports.mutations.js` (855 líneas, mutaciones de dominio)
   - `server/src/routes/chats.js` (201 líneas, router puro / wiring)
-  - `server/src/routes/chats.mutations.js` (1459 líneas, lógica de mutaciones y lecturas extraídas)
+  - `server/src/routes/chats.mutations.js` (1134 líneas, lógica de mutaciones)
+  - `server/src/routes/chats.reads.js` (228 líneas, lecturas de chat extraídas)
+  - `server/src/routes/chats.realtime.js` (96 líneas, handlers realtime/media extraídos)
   - `server/src/routes/comments.js` (311 líneas, router/wiring reducido tras extracción incremental de mutaciones)
-  - `server/src/routes/comments.mutations.js` (980 líneas, mutaciones extraídas: create + update + delete + like/unlike + flag + pin/unpin)
+  - `server/src/routes/comments.mutations.js` (3 líneas, fachada de exports)
+  - `server/src/routes/comments.engagement.js` (453 líneas, pin/unpin/like/unlike/flag extraídos)
+  - `server/src/routes/comments.create.js` (257 líneas, create extraído)
+  - `server/src/routes/comments.lifecycle.js` (146 líneas, update/delete extraídos)
   - `src/lib/api.ts` (1251 líneas)
 - **Riesgo real**: cambios locales siguen pudiendo generar efectos laterales sistémicos, especialmente en módulos >800 líneas.
 
@@ -1295,7 +1300,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 #### Contrato preservado
 - Sin cambios de rutas, middlewares, status codes ni shape de respuesta.
-- Sin cambios de lógica de negocio (toda lógica permanece en `chats.mutations.js`).
+- Sin cambios de lógica de negocio (lógica en `chats.mutations.js` + `chats.reads.js`).
 
 #### Evidencia de validacion
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
@@ -1525,14 +1530,45 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - se elimina `pool.query` directo para marcado automático `is_delivered`,
   - el update pasa a `transactionWithRLS` (mismo comportamiento funcional),
-  - emisión `emitMessageDelivered` preservada.
+  - fan-out `emitMessageDelivered` pasa a `sse.emit(...)` dentro de la misma tx (post-commit real),
+  - se evita side-effect realtime en rollback de la tx.
 - Contrato preservado:
   - mismo shape de lista de mensajes,
   - misma semántica de gap-recovery (`410 REF_GONE` cuando aplica),
   - mismo auto-mark delivered para mensajes recibidos.
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **25/25 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **39/39 PASS** (incluye rollback sin `emitMessageDelivered` en `getRoomMessages`).
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Lecturas Lote 16) (DONE)
+
+- Scope cerrado (sin cambio funcional):
+  - se extraen `getStarredMessages`, `getRooms`, `getRoomMessages` a `server/src/routes/chats.reads.js`.
+  - `server/src/routes/chats.mutations.js` mantiene contrato exportando esos handlers por re-export.
+  - `server/src/routes/chats.js` no cambia rutas ni middlewares.
+- Contrato preservado:
+  - mismos status codes y shape JSON en endpoints de lectura.
+  - misma semántica de auto-delivered + gap recovery en `getRoomMessages`.
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **39/39 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (Extraccion Realtime/Media Lote 17) (DONE)
+
+- Scope cerrado (sin cambio funcional):
+  - se extraen `emitTypingStatus` y `uploadRoomImage` a `server/src/routes/chats.realtime.js`.
+  - `server/src/routes/chats.mutations.js` mantiene contrato exportando ambos handlers por re-export.
+  - `server/src/routes/chats.js` no cambia rutas ni middlewares.
+- Contrato preservado:
+  - `POST /api/chats/rooms/:roomId/typing` responde igual (`{ success: true }`) y mantiene fan-out asíncrono.
+  - `POST /api/chats/:roomId/images` conserva status/shape (`400` sin archivo, `403` no miembro, `500` storage, `200` success + `url`).
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **39/39 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
@@ -1544,7 +1580,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - sin cambios de contrato público en rutas/shape/status.
 - Verificación de drift de driver:
   - no quedan writes críticos en `chats.mutations.js` usando `pool.query` directo,
-  - `queryWithRLS` restante en chat corresponde a lecturas/membership (`typing`, `upload image`, `getStarred`, `getRooms`, `getRoomMessages`).
+  - `queryWithRLS` restante en chat corresponde a lecturas/membership (`getStarred`, `getRooms`, `getRoomMessages`) y realtime/media (`typing`, `upload image`) en módulos separados.
 
 **Resultado**
 - Riesgo de estados parciales y race conditions en mutaciones chat reducido a nivel operativo.
@@ -1584,10 +1620,51 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
+### Post Semana 3 - P1 Comments (Extraccion Engagement Lote C1) (DONE)
+
+- Scope cerrado (sin cambio funcional):
+  - se extraen `pinComment`, `unpinComment`, `likeComment`, `unlikeComment`, `flagComment` a `server/src/routes/comments.engagement.js`.
+  - `server/src/routes/comments.mutations.js` mantiene contrato exportando esos handlers por re-export.
+  - `server/src/routes/comments.js` no cambia rutas ni middlewares.
+- Contrato preservado:
+  - mismos status codes, mensajes y shape JSON en rutas de engagement.
+  - mismo orden de side-effects (tx + cola SSE post-commit + efectos async post-commit).
+
+**Gate**
+- `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+- `server/tests/security/comment-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-edit-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-delete-idempotency.test.js` -> **2/2 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Comments (Extraccion Lifecycle/Create Lote C2) (DONE)
+
+- Scope cerrado (sin cambio funcional):
+  - se extraen `createComment` a `server/src/routes/comments.create.js`.
+  - se extraen `updateComment` y `deleteComment` a `server/src/routes/comments.lifecycle.js`.
+  - `server/src/routes/comments.mutations.js` queda como fachada de exports (contrato público estable).
+  - `server/src/routes/comments.js` no cambia rutas ni middlewares.
+- Contrato preservado:
+  - mismos status codes, mensajes y shape JSON en create/update/delete.
+  - mismo orden de side-effects (tx + SSE post-commit + efectos async post-commit).
+
+**Gate**
+- `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+- `server/tests/security/comment-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-edit-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-delete-idempotency.test.js` -> **2/2 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
 ### Post Semana 3 - Cierre Operativo Comments (DONE)
 
 - Estado final del dominio `comments`:
-  - router reducido y mutaciones extraidas a `server/src/routes/comments.mutations.js`,
+  - router reducido y mutaciones/lifecycle divididos en:
+    - `server/src/routes/comments.mutations.js` (fachada),
+    - `server/src/routes/comments.engagement.js`,
+    - `server/src/routes/comments.create.js`,
+    - `server/src/routes/comments.lifecycle.js`,
   - write-paths sensibles cerrados bajo transaccion y side-effects post-commit,
   - contratos API preservados (`status`, `shape`, mensajes) sin cambios breaking.
 - Checklist formal de deploy/smoke consolidado:
@@ -1665,10 +1742,15 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/env-validation.test.js`
 - `server/src/routes/comments.js`
 - `server/src/routes/comments.mutations.js`
+- `server/src/routes/comments.engagement.js`
+- `server/src/routes/comments.create.js`
+- `server/src/routes/comments.lifecycle.js`
 - `server/src/routes/reports.js`
 - `server/src/routes/reports.mutations.js`
 - `server/src/routes/chats.js`
 - `server/src/routes/chats.mutations.js`
+- `server/src/routes/chats.reads.js`
+- `server/src/routes/chats.realtime.js`
 - `src/components/layout/Header.tsx`
 - `src/components/chat/ChatWindow.tsx`
 - `src/pages/NotificationsPage.tsx`

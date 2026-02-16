@@ -813,4 +813,27 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(queryWithRLSMock).toHaveBeenCalledTimes(2);
         expect(res.json).toHaveBeenCalled();
     });
+
+    it('getRoomMessages rollback en tx no emite delivered y mantiene contrato 500', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            query: {}
+        };
+        const res = createRes();
+
+        queryWithRLSMock
+            .mockResolvedValueOnce({ rows: [{ id: 'membership-ok' }] })
+            .mockResolvedValueOnce({
+                rows: [{ id: 'm1', sender_id: 'user-2', is_delivered: false }]
+            });
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await getRoomMessages(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(emitMessageDeliveredMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
 });
