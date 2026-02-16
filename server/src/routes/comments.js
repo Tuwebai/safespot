@@ -1075,44 +1075,67 @@ router.post('/:id/pin', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    // 1. Get Comment & Report Info
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, report_id')
-      .eq('id', id)
-      .maybeSingle();
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const commentResult = await client.query(
+        `SELECT id, report_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
 
-    if (commentError || !comment) {
+      if (commentResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+
+      const reportResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM reports
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [comment.report_id]
+      );
+
+      if (reportResult.rows.length === 0) {
+        return { status: 'report_not_found' };
+      }
+
+      const report = reportResult.rows[0];
+
+      if (report.anonymous_id !== anonymousId) {
+        return { status: 'forbidden' };
+      }
+
+      const pinResult = await client.query(
+        `UPDATE comments
+         SET is_pinned = true, updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      if (pinResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      // Emitir sólo post-commit
+      sse.emit('emitCommentUpdate', comment.report_id, pinResult.rows[0], clientId);
+
+      return { status: 'ok' };
+    });
+
+    if (txResult.status === 'comment_not_found') {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    // 2. Verify Report Owner
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('anonymous_id')
-      .eq('id', comment.report_id)
-      .maybeSingle();
-
-    if (reportError || !report) {
+    if (txResult.status === 'report_not_found') {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    if (report.anonymous_id !== anonymousId) {
+    if (txResult.status === 'forbidden') {
       return res.status(403).json({ error: 'Only the report owner can pin comments' });
-    }
-
-    // 3. Pin the comment
-    const pinResult = await queryWithRLS(
-      anonymousId,
-      `UPDATE comments SET is_pinned = true, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id]
-    );
-
-    // 4. Broadcast Realtime Update
-    if (pinResult.rows.length > 0) {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentUpdate(comment.report_id, pinResult.rows[0], clientId);
     }
 
     res.json({ success: true, message: 'Comment pinned' });
@@ -1130,23 +1153,65 @@ router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    const { data: comment } = await supabase.from('comments').select('id, report_id').eq('id', id).maybeSingle();
-    if (!comment) {
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const commentResult = await client.query(
+        `SELECT id, report_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
+
+      if (commentResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+
+      const reportResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM reports
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [comment.report_id]
+      );
+
+      if (reportResult.rows.length === 0) {
+        return { status: 'report_not_found' };
+      }
+
+      const report = reportResult.rows[0];
+
+      if (report.anonymous_id !== anonymousId) {
+        return { status: 'forbidden' };
+      }
+
+      const unpinResult = await client.query(
+        `UPDATE comments
+         SET is_pinned = false
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      if (unpinResult.rows.length > 0) {
+        // Emitir sólo post-commit
+        sse.emit('emitCommentUpdate', comment.report_id, unpinResult.rows[0], clientId);
+      }
+
+      return { status: 'ok' };
+    });
+
+    if (txResult.status === 'comment_not_found') {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    const { data: report } = await supabase.from('reports').select('anonymous_id').eq('id', comment.report_id).maybeSingle();
-    if (report.anonymous_id !== anonymousId) {
-      return res.status(403).json({ error: 'Only the report owner can unpin comments' });
+    if (txResult.status === 'report_not_found') {
+      return res.status(404).json({ error: 'Report not found' });
     }
 
-    const unpinResult = await queryWithRLS(anonymousId, `UPDATE comments SET is_pinned = false WHERE id = $1 RETURNING *`, [id]);
-
-    // Broadcast Realtime Update
-    if (unpinResult.rows.length > 0) {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentUpdate(report.id || comment.report_id, unpinResult.rows[0], clientId);
+    if (txResult.status === 'forbidden') {
+      return res.status(403).json({ error: 'Only the report owner can unpin comments' });
     }
 
     res.json({ success: true, message: 'Comment unpinned' });
