@@ -1423,14 +1423,14 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `DELETE /api/chats/rooms/:roomId/messages/:messageId/pin`
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - validación + update bajo `transactionWithRLS`,
-  - `emitChatStatus('message-pinned', ...)` mantenido y ejecutado post-commit.
+  - `emitChatStatus('message-pinned', ...)` encolado con `sse.emit` dentro de la tx y flush post-commit.
 - Contrato preservado:
   - `404` pin -> `{ error: 'Message not found in this conversation' }`
   - `200` pin -> `{ success: true, pinnedMessageId: <id> }`
   - `200` unpin -> `{ success: true, pinnedMessageId: null }`
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **14/14 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **31/31 PASS** (incluye rollback sin side-effects en `pinRoomMessage` y `unpinRoomMessage`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 

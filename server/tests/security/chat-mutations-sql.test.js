@@ -355,6 +355,22 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'Message not found in this conversation' });
     });
 
+    it('pinRoomMessage falla en tx y no emite estado', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await pinRoomMessage(req, res);
+
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
+
     it('unpinRoomMessage limpia pin en tx y emite estado post-commit', async () => {
         const req = {
             anonymousId: 'user-1',
@@ -373,6 +389,22 @@ describe('Chats Mutations SQL Contracts', () => {
             pinnedMessageId: null
         });
         expect(res.json).toHaveBeenCalledWith({ success: true, pinnedMessageId: null });
+    });
+
+    it('unpinRoomMessage falla en tx y no emite estado', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await unpinRoomMessage(req, res);
+
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('starRoomMessage valida acceso e inserta en starred_messages dentro de tx', async () => {

@@ -997,7 +997,7 @@ export async function pinRoomMessage(req, res) {
     const { roomId, messageId } = req.params;
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             if (messageId) {
                 const msgCheck = await client.query(
                     'SELECT id FROM chat_messages WHERE id = $1 AND conversation_id = $2',
@@ -1013,16 +1013,16 @@ export async function pinRoomMessage(req, res) {
                 [messageId, roomId]
             );
 
+            sse.emit('emitChatStatus', 'message-pinned', roomId, {
+                pinnedMessageId: messageId
+            });
+
             return { notFound: false };
         });
 
         if (txResult?.notFound) {
             return res.status(404).json({ error: 'Message not found in this conversation' });
         }
-
-        realtimeEvents.emitChatStatus('message-pinned', roomId, {
-            pinnedMessageId: messageId
-        });
 
         res.json({ success: true, pinnedMessageId: messageId });
     } catch (err) {
@@ -1039,15 +1039,15 @@ export async function unpinRoomMessage(req, res) {
     const { roomId } = req.params;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversations SET pinned_message_id = NULL WHERE id = $1',
                 [roomId]
             );
-        });
 
-        realtimeEvents.emitChatStatus('message-pinned', roomId, {
-            pinnedMessageId: null
+            sse.emit('emitChatStatus', 'message-pinned', roomId, {
+                pinnedMessageId: null
+            });
         });
 
         res.json({ success: true, pinnedMessageId: null });
