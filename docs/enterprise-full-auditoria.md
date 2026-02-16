@@ -1408,6 +1408,24 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **14/14 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (STAR/UNSTAR MESSAGE transaccional) (DONE)
+
+- Endpoints estabilizados sin cambio de contrato:
+  - `POST /api/chats/rooms/:roomId/messages/:messageId/star`
+  - `DELETE /api/chats/rooms/:roomId/messages/:messageId/star`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - validación de acceso + insert/delete bajo `transactionWithRLS`,
+  - sin side-effects adicionales (comportamiento preservado).
+- Contrato preservado:
+  - `404` star -> `{ error: 'Message not found or access denied' }`
+  - `200` star -> `{ success: true, starred: true }`
+  - `200` unstar -> `{ success: true, starred: false }`
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **17/17 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---

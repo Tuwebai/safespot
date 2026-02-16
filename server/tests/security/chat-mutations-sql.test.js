@@ -20,7 +20,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -308,5 +308,59 @@ describe('Chats Mutations SQL Contracts', () => {
             pinnedMessageId: null
         });
         expect(res.json).toHaveBeenCalledWith({ success: true, pinnedMessageId: null });
+    });
+
+    it('starRoomMessage valida acceso e inserta en starred_messages dentro de tx', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' }
+        };
+        const res = createRes();
+
+        txQueryMock
+            .mockResolvedValueOnce({ rows: [{ id: 'msg-1' }] })
+            .mockResolvedValueOnce({ rowCount: 1 });
+
+        await starRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(2);
+        expect(txQueryMock.mock.calls[0][0]).toContain('SELECT cm.id FROM chat_messages');
+        expect(txQueryMock.mock.calls[1][0]).toContain('INSERT INTO starred_messages');
+        expect(res.json).toHaveBeenCalledWith({ success: true, starred: true });
+    });
+
+    it('starRoomMessage devuelve 404 cuando no hay acceso al mensaje', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-404' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rows: [] });
+
+        await starRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Message not found or access denied' });
+    });
+
+    it('unstarRoomMessage elimina registro en tx y responde contrato estable', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rowCount: 1 });
+
+        await unstarRoomMessage(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock.mock.calls[0][0]).toContain('DELETE FROM starred_messages');
+        expect(res.json).toHaveBeenCalledWith({ success: true, starred: false });
     });
 });

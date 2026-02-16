@@ -1071,23 +1071,31 @@ export async function starRoomMessage(req, res) {
     const { messageId } = req.params;
 
     try {
-        const msgCheck = await queryWithRLS(anonymousId,
-            `SELECT cm.id FROM chat_messages cm
-             JOIN conversation_members mem ON cm.conversation_id = mem.conversation_id
-             WHERE cm.id = $1 AND mem.user_id = $2`,
-            [messageId, anonymousId]
-        );
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const msgCheck = await client.query(
+                `SELECT cm.id FROM chat_messages cm
+                 JOIN conversation_members mem ON cm.conversation_id = mem.conversation_id
+                 WHERE cm.id = $1 AND mem.user_id = $2`,
+                [messageId, anonymousId]
+            );
 
-        if (msgCheck.rows.length === 0) {
+            if (msgCheck.rows.length === 0) {
+                return { notFound: true };
+            }
+
+            await client.query(
+                `INSERT INTO starred_messages (user_id, message_id)
+                 VALUES ($1, $2)
+                 ON CONFLICT (user_id, message_id) DO NOTHING`,
+                [anonymousId, messageId]
+            );
+
+            return { notFound: false };
+        });
+
+        if (txResult?.notFound) {
             return res.status(404).json({ error: 'Message not found or access denied' });
         }
-
-        await queryWithRLS(anonymousId,
-            `INSERT INTO starred_messages (user_id, message_id)
-             VALUES ($1, $2)
-             ON CONFLICT (user_id, message_id) DO NOTHING`,
-            [anonymousId, messageId]
-        );
 
         res.json({ success: true, starred: true });
     } catch (err) {
@@ -1104,10 +1112,12 @@ export async function unstarRoomMessage(req, res) {
     const { messageId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'DELETE FROM starred_messages WHERE user_id = $1 AND message_id = $2',
-            [anonymousId, messageId]
-        );
+        await transactionWithRLS(anonymousId, async (client) => {
+            await client.query(
+                'DELETE FROM starred_messages WHERE user_id = $1 AND message_id = $2',
+                [anonymousId, messageId]
+            );
+        });
 
         res.json({ success: true, starred: false });
     } catch (err) {
