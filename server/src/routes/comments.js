@@ -9,7 +9,6 @@ import { likeLimiter, createCommentLimiter } from '../utils/rateLimiter.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
-import supabase from '../config/supabase.js';
 import { sanitizeText, sanitizeCommentContent } from '../utils/sanitize.js';
 import { NotificationService } from '../utils/appNotificationService.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
@@ -271,65 +270,14 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
   try {
     const anonymousId = req.anonymousId;
     let isHidden = false; // Shadow ban status
+    let moderationAction = null;
 
     // Ensure anonymous user exists in anonymous_users table (idempotent)
-    // 0. Parallel Verification: Run all initial checks at once to save round-trips
     const isThread = req.body.is_thread === true;
     const hasParentId = req.body.parent_id !== undefined && req.body.parent_id !== null;
 
     try {
-      const verificationPromises = [
-        ensureAnonymousUser(anonymousId),
-        supabase.from('reports').select('id').eq('id', req.body.report_id).maybeSingle()
-      ];
-
-      if (hasParentId) {
-        verificationPromises.push(
-          supabase.from('comments')
-            .select('id, report_id')
-            .eq('id', req.body.parent_id)
-            .is('deleted_at', null)
-            .maybeSingle()
-        );
-      }
-
-      // Add Trust Score check to the parallel batch (since we moved it from being a separate await later)
-      verificationPromises.push(checkContentVisibility(anonymousId));
-
-      const results = await Promise.all(verificationPromises);
-
-      // Extract results based on position
-      const reportResult = results[1];
-      const parentResult = hasParentId ? results[2] : null;
-      const visibilityResult = hasParentId ? results[3] : results[2];
-
-      // Handle Report Check Result
-      if (reportResult.error) {
-         throw reportResult.error;
-      }
-      if (!reportResult.data) {
-        return res.status(404).json({ error: 'Report not found' });
-      }
-
-      // Handle Parent Check Result
-      if (hasParentId) {
-        if (parentResult.error) {
-          throw parentResult.error;
-        }
-        if (!parentResult.data) {
-          throw new NotFoundError('Parent comment not found');
-        }
-        if (parentResult.data.report_id !== req.body.report_id) {
-          throw new AppError('Parent comment must belong to the same report', 400, ErrorCodes.BAD_REQUEST, true);
-        }
-      }
-
-      // Handle Visibility (Shadow Ban) Result
-      if (visibilityResult.isHidden) {
-        isHidden = true;
-        logSuccess('Shadow ban applied to comment', { anonymousId, action: visibilityResult.moderationAction });
-      }
-
+      await ensureAnonymousUser(anonymousId);
     } catch (error) {
       logError(error, req);
       return res.status(500).json({
@@ -444,9 +392,61 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
     const transactionStartTime = Date.now();
     // console.log(`[CREATE COMMENT] 🔵 TRANSACTION START: ${clientGeneratedId || 'DB-generated'} at ${new Date().toISOString()}`);
 
-    const data = await transactionWithRLS(anonymousId, async (client, sse) => {
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      // 4.a PRECHECKS dentro de la misma transacción/cliente
+      const reportResult = await client.query(
+        `SELECT id
+         FROM reports
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [req.body.report_id]
+      );
+
+      if (reportResult.rows.length === 0) {
+        return { status: 'report_not_found' };
+      }
+
+      if (hasParentId) {
+        const parentResult = await client.query(
+          `SELECT id, report_id
+           FROM comments
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [req.body.parent_id]
+        );
+
+        if (parentResult.rows.length === 0) {
+          return { status: 'parent_not_found' };
+        }
+
+        if (parentResult.rows[0].report_id !== req.body.report_id) {
+          return { status: 'parent_mismatch' };
+        }
+      }
+
+      // 4.b VISIBILIDAD dentro del mismo cliente/tx (sin driver drift)
+      const trustResult = await client.query(
+        `SELECT trust_score, moderation_status
+         FROM anonymous_trust_scores
+         WHERE anonymous_id = $1`,
+        [anonymousId]
+      );
+
+      const trustScore = trustResult.rows[0]?.trust_score;
+      const trustStatus = trustResult.rows[0]?.moderation_status;
+      const computedIsHidden =
+        trustStatus === 'shadow_banned' ||
+        trustStatus === 'banned' ||
+        (trustScore !== undefined && trustScore !== null && Number(trustScore) < 30);
+      const computedModerationAction =
+        trustStatus === 'shadow_banned' || trustStatus === 'banned'
+          ? 'shadow_ban_status'
+          : (trustScore !== undefined && trustScore !== null && Number(trustScore) < 30)
+            ? 'shadow_ban_low_score'
+            : null;
+
       // a. Insert Comment
-      const insertResult = await client.query(insertQuery, insertParams);
+      const transactionalInsertParams = [...insertParams];
+      transactionalInsertParams[6] = computedIsHidden;
+      const insertResult = await client.query(insertQuery, transactionalInsertParams);
       if (insertResult.rows.length === 0) {
         throw new AppError('Insert operation returned no data', 500, ErrorCodes.INSERT_FAILED);
       }
@@ -465,11 +465,35 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
       const clientId = req.headers['x-client-id'];
       sse.emit('emitNewComment', req.body.report_id, comment, clientId);
 
-      return comment;
+      return {
+        status: 'created',
+        comment,
+        isHidden: computedIsHidden,
+        moderationAction: computedModerationAction
+      };
     });
+
+    if (txResult.status === 'report_not_found') {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    if (txResult.status === 'parent_not_found') {
+      return res.status(404).json({ error: 'Parent comment not found' });
+    }
+
+    if (txResult.status === 'parent_mismatch') {
+      return res.status(400).json({ error: 'Parent comment must belong to the same report' });
+    }
+
+    const data = txResult.comment;
+    isHidden = txResult.isHidden;
+    moderationAction = txResult.moderationAction;
 
     const transactionDuration = Date.now() - transactionStartTime;
     logSuccess(`Comment created: ${data.id}`, { transactionDuration });
+    if (isHidden) {
+      logSuccess('Shadow ban applied to comment', { anonymousId, action: moderationAction });
+    }
 
     // 5. SIDE EFFECTS (Post-Commit)PROCESSING (Non-blocking)
     // ============================================
@@ -552,58 +576,73 @@ router.post('/', requireAnonymousId, verifyUserStatus, createCommentLimiter, val
 router.patch('/:id', requireAnonymousId, validate(commentUpdateSchema), async (req, res, next) => {
   const patchStartTime = Date.now();
   const { id } = req.params;
-  // console.log(`[PATCH COMMENT] 🟡 PATCH RECEIVED: ${id} at ${new Date().toISOString()}`);
+  // console.log(`[PATCH COMMENT] PATCH RECEIVED: ${id} at ${new Date().toISOString()}`);
 
   try {
     const anonymousId = req.anonymousId;
+    const content = req.body.content;
+    const clientId = req.headers['x-client-id'];
 
-    // [CMT-001] Precise ownership check (403 vs 404)
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id, anonymous_id FROM comments 
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [id]
-    );
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const checkResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
 
-    if (checkResult.rows.length === 0) {
-      // console.log(`[PATCH COMMENT] ❌ COMMENT NOT FOUND: ${id} - Possible race condition with POST`);
+      if (checkResult.rows.length === 0) {
+        return { status: 'not_found' };
+      }
+
+      if (checkResult.rows[0].anonymous_id !== anonymousId) {
+        return {
+          status: 'forbidden',
+          ownerId: checkResult.rows[0].anonymous_id
+        };
+      }
+
+      const updateResult = await client.query(
+        `WITH updated AS (
+           UPDATE comments
+           SET content = $1, last_edited_at = NOW()
+           WHERE id = $2 AND anonymous_id = $3
+           RETURNING *
+         )
+         SELECT
+           c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count,
+           c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
+           u.alias,
+           u.avatar_url
+         FROM updated c
+         LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id`,
+        [content, id, anonymousId]
+      );
+
+      const updatedComment = updateResult.rows[0];
+      sse.emit('emitCommentUpdate', updatedComment.report_id, updatedComment, clientId);
+
+      return {
+        status: 'ok',
+        updatedComment
+      };
+    });
+
+    if (txResult.status === 'not_found') {
       logInfo('Comment PATCH failed: Not Found', { commentId: id, actorId: anonymousId });
       throw new NotFoundError('Comment not found');
     }
 
-    if (checkResult.rows[0].anonymous_id !== anonymousId) {
+    if (txResult.status === 'forbidden') {
       logInfo('Comment PATCH failed: Forbidden (Ownership Mismatch)', {
         commentId: id,
         actorId: anonymousId,
-        ownerId: checkResult.rows[0].anonymous_id
+        ownerId: txResult.ownerId
       });
       throw new ForbiddenError('You do not have permission to edit this comment');
     }
 
-    // const comment = checkResult.rows[0]; // Unused variable removed
-    const content = req.body.content;
-
-    // UPDATE query with JOIN to return full identity (SSOT)
-    // Using CTE to update and join in one atomic operation
-    const updateResult = await queryWithRLS(
-      anonymousId,
-      `WITH updated AS (
-         UPDATE comments 
-         SET content = $1, last_edited_at = NOW()
-         WHERE id = $2 AND anonymous_id = $3
-         RETURNING *
-       )
-       SELECT 
-         c.id, c.report_id, c.anonymous_id, c.content, c.upvotes_count, 
-         c.created_at, c.updated_at, c.last_edited_at, c.parent_id, c.is_thread, c.is_pinned,
-         u.alias, 
-         u.avatar_url
-       FROM updated c
-       LEFT JOIN anonymous_users u ON c.anonymous_id = u.anonymous_id`,
-      [content, id, anonymousId]
-    );
-
-    const updatedComment = updateResult.rows[0];
+    const updatedComment = txResult.updatedComment;
 
     const patchDuration = Date.now() - patchStartTime;
     logSuccess(`Comment patched: ${id}`, { patchDuration });

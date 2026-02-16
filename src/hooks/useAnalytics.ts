@@ -39,6 +39,10 @@ interface AnalyticsContext {
 
 // Buffer de eventos pendientes (hasta que la sesión se confirme)
 const pendingEvents: Array<{ eventId: string; payload: object }> = [];
+let sharedContext: AnalyticsContext | null = null;
+let sessionInitPromise: Promise<void> | null = null;
+let unloadHandlerRegistered = false;
+let activeSubscribers = 0;
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -88,57 +92,66 @@ export function useAnalytics() {
 
   // Inicializar contexto una sola vez
   useEffect(() => {
-    const rawAnonymousId = localStorage.getItem('safespot_anonymous_id');
-    
-    // El anonymous_id puede ser un objeto JSON complejo (v2) o un UUID simple
-    // Si es v2, extraer el campo .data que contiene el UUID real
-    let anonymousId: string | null = null;
-    if (rawAnonymousId) {
-      try {
-        const parsed = JSON.parse(rawAnonymousId);
-        // Si tiene versión v2, usar el campo data
-        if (parsed && parsed.version === 'v2' && parsed.data) {
-          anonymousId = parsed.data;
-        } else {
+    if (!sharedContext) {
+      const rawAnonymousId = localStorage.getItem('safespot_anonymous_id');
+
+      // El anonymous_id puede ser un objeto JSON complejo (v2) o un UUID simple
+      // Si es v2, extraer el campo .data que contiene el UUID real
+      let anonymousId: string | null = null;
+      if (rawAnonymousId) {
+        try {
+          const parsed = JSON.parse(rawAnonymousId);
+          // Si tiene versión v2, usar el campo data
+          if (parsed && parsed.version === 'v2' && parsed.data) {
+            anonymousId = parsed.data;
+          } else {
+            anonymousId = rawAnonymousId;
+          }
+        } catch {
+          // Si no es JSON válido, usar el valor directo
           anonymousId = rawAnonymousId;
         }
-      } catch {
-        // Si no es JSON válido, usar el valor directo
-        anonymousId = rawAnonymousId;
       }
+
+      const sessionId = uuidv4(); // Nueva sesión por pestaña
+      sharedContext = {
+        anonymousId,
+        sessionId,
+        deviceType: detectDeviceType(),
+        os: detectOS(),
+        browser: detectBrowser(),
+        sessionReady: false
+      };
     }
-    
-    const sessionId = uuidv4(); // Nueva sesión por cada visita
 
-    contextRef.current = {
-      anonymousId,
-      sessionId,
-      deviceType: detectDeviceType(),
-      os: detectOS(),
-      browser: detectBrowser(),
-      sessionReady: false
-    };
+    contextRef.current = sharedContext;
+    activeSubscribers += 1;
 
-    // Iniciar sesión en backend, luego enviar eventos pendientes
-    startSession(contextRef.current)
-      .then(() => {
-        if (contextRef.current) {
-          contextRef.current.sessionReady = true;
+    // Iniciar sesión una sola vez por pestaña, luego enviar eventos pendientes
+    if (!sessionInitPromise && sharedContext) {
+      sessionInitPromise = startSession(sharedContext)
+        .catch(() => {})
+        .finally(() => {
+          if (sharedContext) {
+            sharedContext.sessionReady = true;
+          }
+          flushPendingEvents();
+        });
+    }
+
+    // Cerrar sesión una sola vez al salir de la pestaña
+    if (!unloadHandlerRegistered) {
+      const handleBeforeUnload = () => {
+        if (sharedContext) {
+          endSession(sharedContext).catch(() => {});
         }
-        // Enviar eventos pendientes
-        flushPendingEvents();
-      })
-      .catch(() => {});
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      unloadHandlerRegistered = true;
+    }
 
-    // Cerrar sesión al salir
-    const handleBeforeUnload = () => {
-      endSession(contextRef.current!).catch(() => {});
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      endSession(contextRef.current!).catch(() => {});
+      activeSubscribers = Math.max(0, activeSubscribers - 1);
     };
   }, []);
 
