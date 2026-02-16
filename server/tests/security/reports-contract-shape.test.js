@@ -65,6 +65,7 @@ vi.mock('../../src/utils/appNotificationService.js', () => ({
         notifyBadgeEarned: vi.fn(() => Promise.resolve()),
         notifyNearbyNewReport: vi.fn(() => Promise.resolve()),
         notifySimilarReports: vi.fn(() => Promise.resolve()),
+        notifyActivity: vi.fn(() => Promise.resolve()),
     },
 }));
 
@@ -310,5 +311,16 @@ describe('Reports Contract Shape', () => {
 
         expect(res.status).toBe(400);
         expect(res.body).toHaveProperty('error', 'No images provided');
+    });
+
+    it('POST /api/reports/:id/share -> status 200 + shape {success,message}', async () => {
+        const app = buildApp();
+        const res = await request(app)
+            .post('/api/reports/r1/share')
+            .set('x-anonymous-id', 'owner-1');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('success', true);
+        expect(res.body).toHaveProperty('message', 'Share registered');
     });
 });

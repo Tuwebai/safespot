@@ -1093,7 +1093,7 @@ router.post('/:id/share', requireAnonymousId, async (req, res) => {
 
     // Trigger notification for the owner
     // We don't need to await this as it's non-critical for the response
-    NotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
+    AppNotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
       logError(err, { context: 'notifyActivity.share', reportId: id });
     });
 
