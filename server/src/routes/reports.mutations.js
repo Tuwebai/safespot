@@ -10,6 +10,7 @@ import { AppError } from '../utils/AppError.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 import { executeUserAction } from '../utils/governance.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
+import { NotificationService } from '../utils/notificationService.js';
 
 export async function toggleFavorite(req, res) {
   try {
@@ -580,5 +581,23 @@ export async function deleteReport(req, res) {
       error: 'Failed to delete report',
       message: error.message
     });
+  }
+}
+
+export async function shareReport(req, res) {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+
+    // Trigger notification for the owner
+    // We don't need to await this as it's non-critical for the response
+    NotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
+      logError(err, { context: 'notifyActivity.share', reportId: id });
+    });
+
+    res.json({ success: true, message: 'Share registered' });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({ error: 'Failed to register share' });
   }
 }
