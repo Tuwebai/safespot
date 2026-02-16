@@ -10,6 +10,22 @@ import { resolveMutationIdentity } from '@/lib/auth/identityResolver'
 import { getAvatarUrl } from '@/lib/avatar'
 import { guardIdentityReady, IdentityNotReadyError } from '@/lib/guards/identityGuard'
 import { useToast } from '@/components/ui/toast'
+import type { Report } from '@/lib/schemas'
+
+export function resolveOptimisticIsAuthor(reportSnapshot: unknown, actorAnonymousId: string): boolean {
+    if (!reportSnapshot || typeof reportSnapshot !== 'object' || !actorAnonymousId) {
+        return false
+    }
+
+    const report = reportSnapshot as Partial<Report> & {
+        anonymous_id?: string
+        author?: { id?: string }
+    }
+
+    // Prefer nested SSOT author, keep legacy fallback for transitional payloads.
+    const ownerId = report.author?.id || report.anonymous_id
+    return ownerId === actorAnonymousId
+}
 
 /**
  * Fetch a single comment from the canonical cache
@@ -155,7 +171,10 @@ export function useCreateCommentMutation() {
                     id: identity.id,
                     alias: identity.alias,
                     avatarUrl: identity.avatarUrl || getAvatarUrl(identity.id),
-                    isAuthor: true
+                    isAuthor: resolveOptimisticIsAuthor(
+                        queryClient.getQueryData(queryKeys.reports.detail(newCommentData.report_id)),
+                        identity.id
+                    )
                 },
 
                 // Interaction state defaults

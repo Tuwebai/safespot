@@ -243,6 +243,7 @@ export interface ReportFilters {
     startDate?: string
     endDate?: string
     followed_only?: boolean
+    favorites_only?: boolean
     limit?: number
     offset?: number
 }

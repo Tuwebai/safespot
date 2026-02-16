@@ -22,13 +22,30 @@ vi.mock('../../src/utils/rls.js', () => ({
             };
         }
         return { rows: [] };
-    })
-}));
+    }),
+    transactionWithRLS: vi.fn(async (_anonymousId, callback) => {
+        const client = {
+            query: vi.fn(async (sql) => {
+                if (sql.includes('SELECT m.sender_id')) {
+                    return {
+                        rows: [{
+                            sender_id: senderId,
+                            conversation_id: conversationId,
+                            created_at: '2026-02-16T00:00:00.000Z',
+                            is_delivered: false
+                        }]
+                    };
+                }
 
-vi.mock('../../src/config/database.js', () => ({
-    default: {
-        query: vi.fn(async () => ({ rowCount: 1 }))
-    }
+                if (sql.includes('UPDATE chat_messages SET is_delivered = true')) {
+                    return { rowCount: 1 };
+                }
+
+                return { rows: [] };
+            })
+        };
+        return callback(client);
+    })
 }));
 
 vi.mock('../../src/utils/eventEmitter.js', () => ({

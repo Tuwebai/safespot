@@ -1,119 +1,130 @@
-﻿# ðŸ›ï¸ AUDITORÃA ENTERPRISE COMPLETA
+﻿# 🏛️ AUDITORÍA ENTERPRISE COMPLETA
 
-## 1ï¸âƒ£ Executive Summary
+## 1️⃣ Executive Summary
 
 ### Estado real del proyecto
-El proyecto estÃ¡ en estado **Scale-Ready parcial**: tiene bases enterprise valiosas (RLS helper, SSE, audit service, React Query, chunking manual), pero todavÃ­a mantiene riesgos de **seguridad crÃ­tica**, **acoplamiento alto** y **consistencia incompleta** entre capas.
+El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise valiosas (RLS helper, SSE, audit service, React Query, chunking manual), pero todavía mantiene riesgos de **seguridad crítica**, **acoplamiento alto** y **consistencia incompleta** entre capas.
 
-### Score por categorÃ­a
+### Score por categoría
 - Arquitectura: **6.0/10**
 - Performance: **6.5/10**
 - Seguridad: **4.0/10**
 - Escalabilidad: **5.5/10**
-- UX TÃ©cnica: **6.5/10**
+- UX Técnica: **6.5/10**
 - Mantenibilidad: **5.0/10**
 
 ### Nivel real
 **Scale-Ready (no Enterprise-Grade)**.
 
-### Top 5 riesgos crÃ­ticos
-1. **GestiÃ³n de secretos sin evidencia de vault/rotaciÃ³n** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
-2. **Canales realtime con autorizaciÃ³n incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros.
-3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresÃ­a/visibilidad.
-4. **Fallback inseguro de JWT secret** (`server/src/middleware/auth.js:4`, `server/src/routes/auth.js:56`): permite tokens vÃ¡lidos con secreto por defecto si hay mala configuraciÃ³n.
+### Top 5 riesgos críticos
+1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
+2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
+3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
+4. **Rutas monolíticas con alto acoplamiento** (`server/src/routes/reports.js`, `server/src/routes/chats.js`, `server/src/routes/comments.js`): eleva riesgo de regresiones por cambios locales.
 5. **Drift de capas y contratos** (mix de `queryWithRLS`, `supabase.from`, `pool.query` en mismas rutas, p.ej. `server/src/routes/comments.js:283`, `server/src/routes/comments.js:1123`, `server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`): rompe predictibilidad transaccional y aumenta bugs de concurrencia.
+
+### Estado de hallazgos reportados (actualizado)
+| Hallazgo original | Estado | Evidencia |
+|---|---|---|
+| AuthZ incompleto en `/api/realtime/user/:id`, `/api/realtime/chats/:roomId`, `/api/realtime/catchup` | **CORREGIDO** | `server/src/routes/realtime.js` + `tests/security/realtime-authz.test.js` en verde |
+| Catchup con fuga de metadatos globales | **CORREGIDO** | Filtros de visibilidad/membresía en `catchup` (`server/src/routes/realtime.js`) + suite seguridad |
+| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/auth-realtime-error-contract.test.js` |
+| Hardening de secretos (arranque inseguro) | **CORREGIDO PARCIAL** | `server/src/utils/env.js` + `tests/security/env-validation.test.js` (pendiente: operación continua de rotación) |
+| Deriva transaccional en comments (like/flag/pin/create/edit) | **CORREGIDO** | Secciones `Post Semana 3 - P1 Consistencia Transaccional Comments (...) (DONE)` |
+| Bug `/reportes` favoritos (mostraba no favoritos) | **CORREGIDO** | `server/src/routes/reports.js` (`favorites_only` con `EXISTS` + `1=0` sin identidad), `src/lib/cache-helpers.ts` (`matchesFilters`) |
+| Drift de identidad en `is_liked/is_favorite` de reports | **CORREGIDO** | `server/tests/security/reports-identity-source.test.js` (**2/2 PASS**) |
+| Flicker de like en reports por patch parcial | **CORREGIDO (defensa cache)** | `src/lib/cache-helpers.ts` + `src/lib/cache-helpers.report-like.test.ts` (**1/1 PASS**) |
 
 ---
 
-## 2ï¸âƒ£ Arquitectura
+## 2️⃣ Arquitectura
 
-### AnÃ¡lisis de separaciÃ³n de responsabilidades
-- **Fortaleza**: existe intenciÃ³n de capas (routes/services/utils + hooks/query client).
-- **Debilidad**: capa de transporte, dominio y persistencia estÃ¡n mezcladas en archivos gigantes:
-  - `server/src/routes/reports.js` (1825 lÃ­neas)
-  - `server/src/routes/chats.js` (1530 lÃ­neas)
-  - `server/src/routes/comments.js` (1149 lÃ­neas)
-  - `src/lib/api.ts` (1400 lÃ­neas)
-- **Riesgo real**: cambios locales generan efectos laterales sistÃ©micos y regresiones silenciosas.
+### Análisis de separación de responsabilidades
+- **Fortaleza**: existe intención de capas (routes/services/utils + hooks/query client).
+- **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
+  - `server/src/routes/reports.js` (1825 líneas)
+  - `server/src/routes/chats.js` (1530 líneas)
+  - `server/src/routes/comments.js` (1149 líneas)
+  - `src/lib/api.ts` (1400 líneas)
+- **Riesgo real**: cambios locales generan efectos laterales sistémicos y regresiones silenciosas.
 
 ### Acoplamientos peligrosos
-- UI consumiendo API runtime desde componentes/pÃ¡ginas:
+- UI consumiendo API runtime desde componentes/páginas:
   - `src/components/layout/Header.tsx:53`
   - `src/pages/NotificationsPage.tsx:111`
   - `src/components/chat/ChatWindow.tsx:729`
   - `src/pages/Mensajes.tsx:239`
-- DuplicaciÃ³n de rutas/registro ambiguo:
+- Duplicación de rutas/registro ambiguo:
   - `app.use('/api/diagnostics', ...)` duplicado en `server/src/index.js:374` y `server/src/index.js:437`.
 
 ### Violaciones SOLID
-- **SRP**: rutas con mÃºltiples responsabilidades (validaciÃ³n, lÃ³gica negocio, persistencia, realtime, notificaciones, audit).
+- **SRP**: rutas con múltiples responsabilidades (validación, lógica negocio, persistencia, realtime, notificaciones, audit).
 - **OCP**: cambios de feature obligan tocar bloques centrales masivos.
 - **DIP**: handlers dependen de implementaciones concretas (`pool`, `supabase`, `queryWithRLS`) en lugar de puertos de dominio.
 
 ### Problemas de modularidad
 - Ausencia de bounded contexts claros en backend (reporting/chat/auth/realtime cruzados por utilidades globales).
-- `src/App.tsx` mantiene imports eager de mÃºltiples pÃ¡ginas de contenido (`src/App.tsx:63` a `src/App.tsx:74`), afectando modularidad de carga.
+- `src/App.tsx` mantiene imports eager de múltiples páginas de contenido (`src/App.tsx:63` a `src/App.tsx:74`), afectando modularidad de carga.
 
-### CÃ³mo deberÃ­a verse en versiÃ³n enterprise
+### Cómo debería verse en versión enterprise
 - `Presentation` -> `Application Services` -> `Domain` -> `Infrastructure`.
-- Handlers HTTP finos (parse/validate/map), servicios de dominio con transacciones explÃ­citas y repositorios por agregado.
-- Realtime como proyecciÃ³n de eventos autorizados, no como bypass de autorizaciÃ³n.
+- Handlers HTTP finos (parse/validate/map), servicios de dominio con transacciones explícitas y repositorios por agregado.
+- Realtime como proyección de eventos autorizados, no como bypass de autorización.
 
-### Diagrama textual antes / despuÃ©s
+### Diagrama textual antes / después
 **Antes**
 `Route gigante -> SQL directo + Supabase + RLS helper + SSE + notificaciones + logs + reglas de negocio`
 
-**DespuÃ©s**
+**Después**
 `Route -> Input DTO + AuthZ -> UseCase -> Repository (Tx) -> Domain Event -> Outbox -> SSE/Push Worker`
 
 ---
 
-## 3ï¸âƒ£ Backend
+## 3️⃣ Backend
 
-### AnÃ¡lisis de rutas
+### Análisis de rutas
 - Cobertura funcional alta y endpoints ricos.
 - Problema: heterogeneidad de estilos y contratos de error.
-- En `auth`, errores de validaciÃ³n/autorizaciÃ³n terminan como 500 genÃ©rico (`server/src/routes/auth.js:228`, `server/src/routes/auth.js:274`, `server/src/routes/auth.js:328`, `server/src/routes/auth.js:361`).
+- En `auth`, errores de validación/autorización terminan como 500 genérico (`server/src/routes/auth.js:228`, `server/src/routes/auth.js:274`, `server/src/routes/auth.js:328`, `server/src/routes/auth.js:361`).
 
-### ValidaciÃ³n
+### Validación
 - Hay middleware y Zod/Joi en partes.
-- Inconsistencia: validaciÃ³n manual + supabase checks + validadores custom mezclados dentro de handlers.
+- Inconsistencia: validación manual + supabase checks + validadores custom mezclados dentro de handlers.
 
 ### Manejo de errores
 - Existe `AppError` y middleware global.
-- Varios handlers saltan ese estÃ¡ndar y devuelven 500 genÃ©rico aunque el error es 4xx.
+- Varios handlers saltan ese estándar y devuelven 500 genérico aunque el error es 4xx.
 
 ### Idempotencia
 - Bien implementada en varios puntos (`ON CONFLICT DO NOTHING` y manejo de `23505`).
-- Incompleta en flujos chat/realtime con updates separados fuera de transacciÃ³n.
+- Incompleta en flujos chat/realtime con updates separados fuera de transacción.
 
 ### Concurrencia
 - `transactionWithRLS` es buen paso.
 - Se degrada al mezclar con `pool.query` fuera del mismo contexto transaccional (`server/src/routes/chats.js:326`, `server/src/routes/chats.js:1419`, `server/src/routes/chats.js:1442`).
 
 ### Transacciones
-- PatrÃ³n transaccional existe, pero no es el camino Ãºnico.
+- Patrón transaccional existe, pero no es el camino único.
 - Resultado: posibilidad de estado parcial (DB ok + SSE fallido o viceversa) en algunos paths.
 
 ### Versionado de API
-- Hay headers de versiÃ³n (`X-API-Version`, `X-Min-Client-Version`) en `server/src/index.js`.
+- Hay headers de versión (`X-API-Version`, `X-Min-Client-Version`) en `server/src/index.js`.
 - Falta versionado formal (`/v1`, `/v2`) para contratos breaking.
 
-### QuÃ© estÃ¡ bien
+### Qué está bien
 - `transactionWithRLS` y cola de SSE post-commit (`server/src/utils/rls.js`).
 - Estrategia de realtime enriquecida y dedupe.
-- IntegraciÃ³n de auditorÃ­a estructurada (`server/src/services/auditService.js`).
+- Integración de auditoría estructurada (`server/src/services/auditService.js`).
 
-### QuÃ© estÃ¡ mal
-- Secreto JWT por defecto.
+### Qué está mal
 - Endpoints realtime con AuthZ insuficiente.
 - Mezcla de drivers/patrones de persistencia.
 - Contrato de errores inconsistente en auth.
 
-### Refactor propuesto con ejemplos de cÃ³digo
+### Refactor propuesto con ejemplos de código
 
 ```js
-// âŒ CÃ³digo actual
+// ❌ Código actual
 // server/src/routes/realtime.js
 router.get('/user/:anonymousId', (req, res) => {
   const { anonymousId } = req.params;
@@ -122,7 +133,7 @@ router.get('/user/:anonymousId', (req, res) => {
 ```
 
 ```js
-// âœ… VersiÃ³n Enterprise propuesta
+// ✅ Versión Enterprise propuesta
 router.get('/user/:anonymousId', requireAuthenticatedUser, async (req, res, next) => {
   const { anonymousId } = req.params;
   if (req.user.anonymous_id !== anonymousId && req.user.role !== 'admin') {
@@ -133,7 +144,7 @@ router.get('/user/:anonymousId', requireAuthenticatedUser, async (req, res, next
 ```
 
 ```js
-// âŒ CÃ³digo actual
+// ❌ Código actual
 // server/src/routes/auth.js
 } catch (err) {
   logError(err, req);
@@ -142,20 +153,20 @@ router.get('/user/:anonymousId', requireAuthenticatedUser, async (req, res, next
 ```
 
 ```js
-// âœ… VersiÃ³n Enterprise propuesta
+// ✅ Versión Enterprise propuesta
 } catch (err) {
-  return next(err); // delega a AppError middleware y conserva status/cÃ³digo
+  return next(err); // delega a AppError middleware y conserva status/código
 }
 ```
 
 ```js
-// âŒ CÃ³digo actual
+// ❌ Código actual
 // server/src/middleware/auth.js
 const JWT_SECRET = process.env.JWT_SECRET || 'safespot-secret-key-change-me';
 ```
 
 ```js
-// âœ… VersiÃ³n Enterprise propuesta
+// ✅ Versión Enterprise propuesta
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
 }
@@ -164,40 +175,40 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 ---
 
-## 4ï¸âƒ£ Base de Datos
+## 4️⃣ Base de Datos
 
-### Estado de auditorÃ­a SSOT (DB real)
-- **AuditorÃ­a ejecutada en vivo el 2026-02-15** conectando con `server/.env` (`DATABASE_URL`).
+### Estado de auditoría SSOT (DB real)
+- **Auditoría ejecutada en vivo el 2026-02-15** conectando con `server/.env` (`DATABASE_URL`).
 - Resultado real:
   - Tablas `public`: **41**
-  - Ãndices: **207**
+  - Índices: **207**
   - Constraints: **281**
-  - PolÃ­ticas RLS: **91**
+  - Políticas RLS: **91**
   - Columnas: **449**
 - RLS:
   - Activo en todas las tablas de negocio revisadas.
   - `relrowsecurity = false` solo en `spatial_ref_sys` (esperable, tabla de sistema GIS).
 
-### Ãndices faltantes (por patrÃ³n de consulta observado)
+### Índices faltantes (por patrón de consulta observado)
 - `notifications (anonymous_id, is_read, created_at DESC)` para bandeja/contador.
 - `chat_messages (conversation_id, created_at DESC)` si no existe compuesto completo.
 - `comments (report_id, deleted_at, created_at DESC)` para listados paginados por reporte.
 
-### Ãndices innecesarios / riesgo potencial
+### Índices innecesarios / riesgo potencial
 - **Redundancias reales detectadas** en DB viva:
   - `badges_code_key` y `idx_badges_code` (misma firma en `code`).
   - `idx_user_auth_email` y `user_auth_email_key` (misma firma en `email`).
   - `idx_user_auth_anonymous_id` y `unique_anonymous_id` (misma firma en `anonymous_id`).
   - `idx_votes_user_polymorphic`, `unique_vote_per_target`, `unique_vote_per_user_target` (misma firma en `anonymous_id,target_type,target_id`).
-  - MÃºltiples duplicados en `moderation_actions` (`created_at` y `target_id,target_type`).
-- Ãndices con `idx_scan = 0` (potencial sobreindexing): aparecen varios en `reports`, `notifications`, `comments`, `chat_rooms`, `votes` y `rate_limits`. Requiere pruning controlado por ventana de observaciÃ³n.
+  - Múltiples duplicados en `moderation_actions` (`created_at` y `target_id,target_type`).
+- Índices con `idx_scan = 0` (potencial sobreindexing): aparecen varios en `reports`, `notifications`, `comments`, `chat_rooms`, `votes` y `rate_limits`. Requiere pruning controlado por ventana de observación.
 
 ### Riesgos de locking
-- Updates masivos potenciales en arranque/scripts y mantenimiento pueden competir con trÃ¡fico en tablas calientes (`reports`, `comments`, `chat_messages`).
+- Updates masivos potenciales en arranque/scripts y mantenimiento pueden competir con tráfico en tablas calientes (`reports`, `comments`, `chat_messages`).
 - Falta evidencia de estrategia uniforme `CREATE INDEX CONCURRENTLY` en todas las evoluciones.
 
 ### Riesgos de race condition
-- Flujos chat y delivery con actualizaciones fuera de transacciÃ³n Ãºnica.
+- Flujos chat y delivery con actualizaciones fuera de transacción única.
 - Mezcla de `queryWithRLS` y `pool.query` en mismo request rompe atomicidad de negocio.
 
 ### Soft delete correcto vs incorrecto
@@ -206,31 +217,31 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 ### Integridad referencial
 - PK: **sin tablas sin PK** en `public`.
-- FK: hay cobertura, pero no homogÃ©nea; varias tablas crÃ­ticas no dependen de FK (ej. `audit_logs`, `rate_limits`, `global_stats`, `domain_events_log`) por diseÃ±o operativo.
-- **Drift crÃ­tico detectado en chat**:
+- FK: hay cobertura, pero no homogénea; varias tablas críticas no dependen de FK (ej. `audit_logs`, `rate_limits`, `global_stats`, `domain_events_log`) por diseño operativo.
+- **Drift crítico detectado en chat**:
   - `chat_messages` tiene `room_id` y `conversation_id`.
   - En vivo: `total=589`, `room_id_nulls=589`, `conversation_id_nulls=0`.
-  - ConclusiÃ³n: `room_id` estÃ¡ legacy/obsoleto en datos actuales; mantener ambas columnas incrementa riesgo de inconsistencias y bugs de joins.
+  - Conclusión: `room_id` está legacy/obsoleto en datos actuales; mantener ambas columnas incrementa riesgo de inconsistencias y bugs de joins.
 
 ### Estrategia para 1M usuarios
 - Particionar `chat_messages` por tiempo o hash de `conversation_id`.
 - Separar lectura caliente de notificaciones en tabla/materialized view de inbox.
-- Cola de eventos/outbox para desacoplar mutaciÃ³n transaccional de fan-out realtime/push.
+- Cola de eventos/outbox para desacoplar mutación transaccional de fan-out realtime/push.
 
-### Plan de migraciÃ³n sin downtime
+### Plan de migración sin downtime
 1. Agregar columnas/indexes de forma backward-compatible.
 2. Backfill por lotes con job idempotente.
 3. Dual-read o read-fallback temporal.
-4. Dual-write acotado con mÃ©tricas de divergencia.
+4. Dual-write acotado con métricas de divergencia.
 5. Cutover con feature flag.
-6. Retiro de legado despuÃ©s de ventana de observaciÃ³n.
+6. Retiro de legado después de ventana de observación.
 
 ---
 
-## 5ï¸âƒ£ Performance
+## 5️⃣ Performance
 
 ### Problemas de queries
-- Catchup realtime arma mÃºltiples consultas por request con lÃ­mites fijos y sin estrategia incremental robusta por actor.
+- Catchup realtime arma múltiples consultas por request con límites fijos y sin estrategia incremental robusta por actor.
 - En comentarios y chats hay consultas complejas + subconsultas + operaciones post-query no siempre consolidadas.
 
 ### Problemas frontend (re-renders, hooks, cache)
@@ -240,29 +251,29 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 ### Bundle size
 - Buen trabajo de manualChunks en `vite.config.ts`.
-- PenalizaciÃ³n: imports eager en `src/App.tsx:63-74` para pÃ¡ginas de contenido que podrÃ­an lazy-load.
+- Penalización: imports eager en `src/App.tsx:63-74` para páginas de contenido que podrían lazy-load.
 
 ### Carga inicial
-- Riesgo por inicializaciÃ³n pesada en bootstrap (`src/main.tsx:70`, `src/main.tsx:90`) cuando hay schema mismatch.
+- Riesgo por inicialización pesada en bootstrap (`src/main.tsx:70`, `src/main.tsx:90`) cuando hay schema mismatch.
 
-### Tiempo de interacciÃ³n
+### Tiempo de interacción
 - En dispositivos limitados, recarga forzada + limpieza agresiva puede afectar TTI y estabilidad percibida.
 
-### Estrategia de optimizaciÃ³n real
-- Mover pÃ¡ginas de contenido a lazy imports.
-- Reducir refetch agresivo y usar invalidaciÃ³n/event-driven por dominio.
+### Estrategia de optimización real
+- Mover páginas de contenido a lazy imports.
+- Reducir refetch agresivo y usar invalidación/event-driven por dominio.
 - Consolidar pipelines de query por caso de uso (sin `fetch` directo en UI).
 - Perf budgets obligatorios por chunk y endpoint p95.
 
 ---
 
-## 6ï¸âƒ£ Seguridad
+## 6️⃣ Seguridad
 
 ### Riesgos reales
-- Secretos sensibles en `.env` local/servidor sin evidencia en este repo de gestiÃ³n centralizada (vault/KMS) ni polÃ­tica explÃ­cita de rotaciÃ³n.
-- Endpoints realtime con control de autorizaciÃ³n incompleto.
-- Secret fallback en JWT.
-- Endpoint de `message-status` sin verificaciÃ³n de membresÃ­a.
+- Secretos sensibles en `.env` local/servidor sin evidencia en este repo de gestión centralizada (vault/KMS) ni política explícita de rotación.
+- Endpoints realtime con control de autorización incompleto.
+- Hardening de `JWT_SECRET` aplicado (sin fallback inseguro fuera de `test`); pendiente consolidar rotación operativa continua.
+- Endpoint de `message-status` sin verificación de membresía.
 
 ### Superficie de ataque
 - Realtime (`/api/realtime/*`) + auth + admin gateway + rutas de chat.
@@ -273,74 +284,74 @@ const JWT_SECRET = process.env.JWT_SECRET;
 - Riesgo: varios flujos sensibles dependen de identidad no unificada en todo el stack realtime.
 
 ### Validaciones insuficientes
-- ValidaciÃ³n heterogÃ©nea por ruta.
+- Validación heterogénea por ruta.
 - Inconsistencia de estados HTTP en auth degrada respuesta de seguridad.
 
 ### JWT mal implementado (si aplica)
-- No estÃ¡ â€œmal implementadoâ€ criptogrÃ¡ficamente, pero sÃ­ **mal protegido operativamente** por fallback de secreto y controles de canal incompletos.
+- No está “mal implementado” criptográficamente, pero sí **mal protegido operativamente** por fallback de secreto y controles de canal incompletos.
 
-### QuÃ© faltarÃ­a para cumplir estÃ¡ndar enterprise real
-- Secret management fuera de repo + rotaciÃ³n inmediata.
+### Qué faltaría para cumplir estándar enterprise real
+- Secret management fuera de repo + rotación inmediata.
 - AuthZ obligatorio por canal realtime (owner/member/admin).
-- Reglas unificadas de autorizaciÃ³n en catchup/replay/sse.
-- Hard fail de configuraciÃ³n insegura en boot.
+- Reglas unificadas de autorización en catchup/replay/sse.
+- Hard fail de configuración insegura en boot.
 
 ---
 
-## 7ï¸âƒ£ Escalabilidad 10x / 100x / 1M usuarios
+## 7️⃣ Escalabilidad 10x / 100x / 1M usuarios
 
-### QuÃ© rompe primero
+### Qué rompe primero
 1. Fan-out realtime en Node + EventEmitter sin capa de backpressure por canal.
-2. Endpoints chat/catchup con consultas crecientes y lÃ³gica post-procesamiento.
-3. CohesiÃ³n dÃ©bil de cachÃ©/invalidaciones en frontend bajo alta concurrencia.
+2. Endpoints chat/catchup con consultas crecientes y lógica post-procesamiento.
+3. Cohesión débil de caché/invalidaciones en frontend bajo alta concurrencia.
 
-### QuÃ© sistema colapsa primero
+### Qué sistema colapsa primero
 - **Primero**: realtime/chat.
-- **Segundo**: rutas monolÃ­ticas de reportes/comentarios por complejidad y acoplamiento.
+- **Segundo**: rutas monolíticas de reportes/comentarios por complejidad y acoplamiento.
 
-### CÃ³mo deberÃ­a evolucionar la arquitectura
-- Pasar de â€œrequest handler inteligenteâ€ a â€œuse cases + outbox + workersâ€.
-- Aislar canales realtime por Ã¡mbito (feed global, user-private, room-private) con auth central.
-- Formalizar event-driven para notificaciones y reconciliaciÃ³n.
+### Cómo debería evolucionar la arquitectura
+- Pasar de “request handler inteligente” a “use cases + outbox + workers”.
+- Aislar canales realtime por ámbito (feed global, user-private, room-private) con auth central.
+- Formalizar event-driven para notificaciones y reconciliación.
 
 ### Redis cluster / replicas / CDN / queues / event-driven
-- Redis: migrar a cluster con particiÃ³n por dominio (`presence`, `dedupe`, `rate`).
-- Postgres: rÃ©plicas de lectura para listados intensivos.
-- CDN: estÃ¡ticos + media + hints de cachÃ© por versiÃ³n de app.
+- Redis: migrar a cluster con partición por dominio (`presence`, `dedupe`, `rate`).
+- Postgres: réplicas de lectura para listados intensivos.
+- CDN: estáticos + media + hints de caché por versión de app.
 - Queues: BullMQ para push/notifications/reconciliation.
 - Event-driven: outbox transaccional + consumidores idempotentes.
 
 ---
 
-## 8ï¸âƒ£ UX TÃ©cnica (Engineering + Producto)
+## 8️⃣ UX Técnica (Engineering + Producto)
 
-### Flujos que rompen conversiÃ³n
-- Respuestas 500 genÃ©ricas en auth ante errores de usuario generan abandono.
-- RehidrataciÃ³n/reload agresivo en boot puede percibirse como app inestable.
+### Flujos que rompen conversión
+- Respuestas 500 genéricas en auth ante errores de usuario generan abandono.
+- Rehidratación/reload agresivo en boot puede percibirse como app inestable.
 
-### Inconsistencias tÃ©cnicas que afectan UX
+### Inconsistencias técnicas que afectan UX
 - Rutas duplicadas (`/usuario/:alias/sugerencias`) en `src/App.tsx:198-199`.
 - Estrategias mixtas de data fetching (hooks + fetch directo + imports runtime) producen comportamiento no uniforme.
 
-### Problemas estructurales que impactan percepciÃ³n
+### Problemas estructurales que impactan percepción
 - Estados realtime potencialmente desincronizados entre tabs/sesiones en escenarios de reconnect.
-- Errores de red y seguridad no siempre se traducen en feedback Ãºtil.
+- Errores de red y seguridad no siempre se traducen en feedback útil.
 
 ---
 
-## 9ï¸âƒ£ Refactor Roadmap Priorizado
+## 9️⃣ Refactor Roadmap Priorizado
 
 | Tarea | Impacto | Esfuerzo | Riesgo | Prioridad real |
 |---|---|---|---|---|
-| Formalizar gestiÃ³n de secretos (vault/KMS) y rotaciÃ³n; evitar secretos estÃ¡ticos de larga vida en `.env` de servidor | Muy Alto | Medio | Alto | P0 |
+| Formalizar gestión de secretos (vault/KMS) y rotación; evitar secretos estáticos de larga vida en `.env` de servidor | Muy Alto | Medio | Alto | P0 |
 | Cerrar AuthZ de realtime (`/user/:id`, `/chats/:roomId`, `/message-status`, `/catchup`) | Muy Alto | Medio | Alto | P0 |
 | Eliminar fallback de `JWT_SECRET` y endurecer startup checks | Alto | Bajo | Medio | P0 |
 | Unificar persistencia por caso de uso (sin mezclar `supabase` + `pool` + `queryWithRLS`) | Alto | Alto | Medio | P1 |
-| Reducir tamaÃ±o de handlers (extraer servicios de dominio) | Alto | Alto | Medio | P1 |
-| Estandarizar manejo de errores (4xx/5xx) en auth y rutas crÃ­ticas | Alto | Medio | Bajo | P1 |
-| Reestructurar `src/lib/api.ts` en mÃ³dulos de dominio + hooks exclusivos | Medio | Medio | Bajo | P1 |
+| Reducir tamaño de handlers (extraer servicios de dominio) | Alto | Alto | Medio | P1 |
+| Estandarizar manejo de errores (4xx/5xx) en auth y rutas críticas | Alto | Medio | Bajo | P1 |
+| Reestructurar `src/lib/api.ts` en módulos de dominio + hooks exclusivos | Medio | Medio | Bajo | P1 |
 | Mover imports eager de contenido a lazy chunks | Medio | Bajo | Bajo | P2 |
-| Eliminar acceso API directo en componentes/pÃ¡ginas; dejar solo hooks/services | Medio | Medio | Bajo | P2 |
+| Eliminar acceso API directo en componentes/páginas; dejar solo hooks/services | Medio | Medio | Bajo | P2 |
 | Implementar outbox para eventos post-commit (SSE/push/notificaciones) | Muy Alto | Alto | Medio | P2 |
 
 ### Estado Semana 1 (DONE)
@@ -348,19 +359,19 @@ const JWT_SECRET = process.env.JWT_SECRET;
 - Cross-user stream access prevented.
 - Security tests validated.
 
-### Semana 2 â€” Chat Persistence Alignment (DONE)
+### Semana 2 — Chat Persistence Alignment (DONE)
 - `conversation_id` confirmado como SSOT en persistencia de chat.
 - `room_id` declarado legacy; no se usa en writes actuales de `chat_messages`.
-- Payloads de push/SSE normalizados a `conversationId` como identificador canÃ³nico.
+- Payloads de push/SSE normalizados a `conversationId` como identificador canónico.
 - `roomId` mantenido como alias temporal de backward compatibility.
-- Tests de contrato agregados para validar el estÃ¡ndar:
+- Tests de contrato agregados para validar el estándar:
   - `server/tests/security/chat-payload-contract.test.js`
   - `server/tests/security/orchestrator-chat-contract.test.js`
-- VerificaciÃ³n ejecutada:
+- Verificación ejecutada:
   - Tests: `realtime-authz`, `chat-membership`, `chat-payload-contract`, `orchestrator-chat-contract` en verde.
   - Type check: `npx tsc --noEmit` en verde.
-- Nota de deprecaciÃ³n controlada:
-  - `roomId serÃ¡ eliminado en una futura Fase 4 cuando no existan consumidores legacy.`
+- Nota de deprecación controlada:
+  - `roomId será eliminado en una futura Fase 4 cuando no existan consumidores legacy.`
 
 ### Semana 3 - Matriz Final Contrato Realtime Chat (DONE)
 
@@ -445,7 +456,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidores legacy.
 
-### Semana 3 - Hardening DB (Fase A DONE / Fase B PENDING)
+### Semana 3 - Hardening DB (Fase A DONE / Fase B DONE)
 
 #### Fase A (DONE) - Evidencia de ejecucion real
 - Fecha de ejecucion: **2026-02-15** (ventana controlada, 1 drop por comando, `DROP INDEX CONCURRENTLY`, espera de 5 min entre drops).
@@ -471,46 +482,376 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Health DB/autovacuum/IO:
   - Sin evidencia de degradacion operativa anomala posterior a drops.
 
-#### Fase B (`votes`) - PENDING (bloqueado por gate)
-- Estado: **PENDING**.
-- Razon:
-  - Existen 2 constraints UNIQUE con misma semantica en `votes`:
-    - `unique_vote_per_target`
-    - `unique_vote_per_user_target`
-  - No se ejecuta drop de indice directo; corresponde dedupe por `ALTER TABLE ... DROP CONSTRAINT ...`.
-- Gate obligatorio antes de ejecutar:
-  1. Suite de tests de aplicacion en verde (no solo seguridad).
-  2. Verificacion final de constraints equivalentes (`pg_get_constraintdef`) y ausencia de duplicados en datos.
-  3. Ventana de ejecucion controlada + rollback definido.
+#### Fase B (`votes`) - DONE (2026-02-16)
+- Estado: **DONE**.
+- Ejecucion aplicada:
+  - `ALTER TABLE public.votes DROP CONSTRAINT unique_vote_per_user_target;`
+- Resultado post-ejecucion:
+  - Se conserva `unique_vote_per_target` como constraint canonica.
+  - Constraint duplicada removida.
+  - Prueba funcional de unicidad valida (`23505` esperado en insercion duplicada).
+- Evidencia:
+  - `docs/observability/votes-phase-b-gate.md`.
+
+### Semana 3 - Operacion (DONE)
+
+#### Estado DONE (cerrado)
+- Estandarizacion de errores `4xx/5xx` en `auth + realtime` con contrato uniforme y `requestId`.
+  - Evidencia: `docs/observability/auth-realtime-error-matrix.md`.
+  - Tests de contrato en verde:
+    - `tests/security/auth-realtime-error-contract.test.js`
+    - `tests/security/realtime-authz.test.js`
+- Hardening de secretos y arranque seguro:
+  - Validador centralizado: `server/src/utils/env.js`.
+  - Hard-fail de secretos críticos en API + Worker.
+  - `JWT_SECRET` sin fallback inseguro fuera de `test`.
+  - Push condicionado por feature flag (`ENABLE_PUSH_NOTIFICATIONS`).
+  - Evidencia de pruebas:
+    - `tests/security/env-validation.test.js` (2/2 verde).
+    - `npx tsc --noEmit` (server) en verde.
+- Runbook operativo enterprise:
+  - `docs/observability/runbook-incidentes-metricas.md`.
+  - `docs/observability/secrets-rotation-policy.md`.
+- Observabilidad minima basada en logs (sin Grafana):
+  - 4 queries guardadas: `docs/observability/log-queries-week3.md`.
+  - Fire-drill manual documentado: `docs/observability/fire-drill-manual-week3.md`.
+  - Runbook operativo ajustado a logs: `docs/observability/runbook-incidentes-metricas.md`.
+
+#### Estado PENDING (scope tecnico)
+- No hay pendientes tecnicos de Semana 3 en DB hardening.
+
+#### Update Fase B (`votes`) - 2026-02-16
+- Gate de pruebas backend: **PASS**.
+- Equivalencia de constraints en DB real: **CONFIRMADA**.
+- Ejecucion en ventana controlada: **COMPLETADA**.
+- Evidencia consolidada:
+  - `docs/observability/votes-phase-b-gate.md`.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (LIKE/UNLIKE) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/like`:
+  - write + readback unificados en `transactionWithRLS`.
+  - `emitCommentLike` y `emitVoteUpdate` emitidos via cola transaccional (`sse.emit`) post-commit.
+- Endpoint `DELETE /api/comments/:id/like`:
+  - delete + readback unificados en `transactionWithRLS`.
+  - side-effects realtime emitidos solo post-commit.
+
+#### Beneficio tecnico concreto
+- Se elimina estado parcial por mezcla `supabase + queryWithRLS` en el mismo flujo.
+- Se elimina riesgo de emitir eventos realtime cuando la transaccion falla (rollback).
+- Se asegura idempotencia operacional en unlike (`Like not found` sin side-effects).
+
+#### Evidencia de validacion
+- Test transaccional dedicado:
+  - `tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - Cobertura:
+    - exito like (count correcto + evento).
+    - rollback like (cero side-effects).
+    - idempotencia unlike (sin eventos).
+    - rollback unlike (cero side-effects).
+- Tipado backend:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `like/unlike`.
+- Siguiente objetivo de consistencia: endpoints `comments` restantes + `reports` (fuera de este cambio).
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (FLAG) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/flag`:
+  - verificacion de comentario + validaciones de negocio + insert de `comment_flags` unificados en `transactionWithRLS`.
+  - se elimina mezcla de write-path entre `supabase` y `queryWithRLS`.
+  - `auditLog` queda como side-effect post-commit (no se dispara si falla la transaccion).
+
+#### Beneficio tecnico concreto
+- El flujo deja de tener puntos de estado parcial en validacion/insert.
+- Se evita auditoria inconsistente ante fallas intermedias (sin commit -> sin audit log).
+- Se mejora trazabilidad y reproducibilidad de incidentes.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `tests/security/comment-flag-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + `flag_id` + `auditLog`).
+    - falla intermedia de insert (500 + cero side-effects: sin `auditLog`, sin notificaciones/realtime).
+- Tipado backend:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `flag`.
+- `pin/unpin` y `create` se cierran en bloques P1 posteriores (ver secciones siguientes).
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (PIN/UNPIN) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/pin`:
+  - verificacion `comment/report owner` + `UPDATE` unificados en `transactionWithRLS`.
+  - `emitCommentUpdate` emitido via cola transaccional (`sse.emit`) post-commit.
+- Endpoint `DELETE /api/comments/:id/pin`:
+  - verificacion `comment/report owner` + `UPDATE` unificados en `transactionWithRLS`.
+  - side-effects realtime emitidos solo post-commit.
+
+#### Beneficio tecnico concreto
+- Se elimina mezcla de drivers (`supabase + queryWithRLS`) en write-path de pin/unpin.
+- Se elimina riesgo de emitir realtime cuando la transaccion falla (rollback).
+- Se vuelve determinista el comportamiento ante errores intermedios.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito pin (evento emitido post-commit).
+    - falla intermedia unpin (500 + cero side-effects realtime).
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `pin/unpin`.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (CREATE) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments`:
+  - prechecks de `report` y `parent` movidos al mismo `transactionWithRLS` (sin drift de driver).
+  - validacion de visibilidad/moderacion (`trust_score`, `moderation_status`) ejecutada con el mismo `client` transaccional.
+  - `emitNewComment` se mantiene via cola transaccional (`sse.emit`) post-commit.
+  - notificaciones/auditoria/gamification se mantienen post-commit (no bloqueantes).
+
+#### Beneficio tecnico concreto
+- Se elimina race entre prechecks fuera de tx y write dentro de tx.
+- Se reduce riesgo de estados parciales en alta concurrencia.
+- Se preserva contrato API sin cambios de schema.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-create-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + `emitNewComment` + side-effects post-commit).
+    - falla intermedia de insert (500 + rollback + cero side-effects).
+- Revalidacion de flujos relacionados:
+  - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `create` de comments.
+
+### Post Semana 3 - P1 Consistencia Transaccional Comments (EDIT) (DONE)
+
+#### Scope cerrado
+- Endpoint `PATCH /api/comments/:id`:
+  - ownership check + `UPDATE` + readback unificados en `transactionWithRLS`.
+  - realtime de edicion (`emitCommentUpdate`) emitido via cola transaccional (`sse.emit`) post-commit.
+  - contrato HTTP preservado (`404` no existe, `403` no owner, `200` exito, `500` error real).
+
+#### Beneficio tecnico concreto
+- Se elimina drift entre check y write por ejecutarse con un mismo `client` transaccional.
+- Se evita emitir eventos de edicion en escenarios de rollback.
+- Se endurece una ruta sensible de ownership sin cambiar schema ni contrato.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/comment-edit-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito (200 + `emitCommentUpdate` post-commit).
+    - falla intermedia (500 + rollback + cero side-effects realtime).
+    - seguridad (403 cuando el actor no es owner).
+- Gate del bloque comments:
+  - `server/tests/security/comment-create-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+  - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `edit` de comments.
+
+### Post Semana 3 - P1 Reports (Favoritos + Identidad + Like Flicker) (DONE PARCIAL)
+
+#### Scope cerrado
+- Filtro `favorites_only` en `GET /api/reports`:
+  - backend aplica `EXISTS (favorites...)` por usuario en feeds geografico y cronologico.
+  - si no hay identidad valida, responde vacio funcional (`1 = 0`) y evita fuga global.
+- Fuente de identidad para personalizacion (`is_liked`, `is_favorite`) normalizada a `req.anonymousId`/`resolveRequestAnonymousId`:
+  - lista (`GET /api/reports`)
+  - detalle (`GET /api/reports/:id`)
+- Reconciliacion de cache para like:
+  - `reportsCache.patch` preserva `is_liked` cuando llega patch parcial sin ese campo.
+  - evita rebote visual por payload parcial en reconciliacion.
+
+#### Beneficio tecnico concreto
+- El filtro de favoritos deja de devolver reportes fuera del usuario actual.
+- Se elimina drift de identidad entre lectura de feed y mutaciones like/unlike.
+- Se reduce flicker de estado personal de like sin cambiar contrato API.
+
+#### Evidencia de validacion
+- Backend:
+  - `tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Frontend:
+  - `src/lib/cache-helpers.report-like.test.ts` -> **1/1 PASS**.
+- Gate de tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+  - `frontend`: `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para favoritos + identidad + anti-flicker en cache.
+- **DONE (scope acotado)** para `POST/DELETE /api/reports/:id/like` con side-effects post-commit.
+- **DONE (scope acotado)** para `POST /api/reports/:id/favorite` con transaccion unica en toggle.
+- **DONE (scope acotado)** para `PATCH /api/reports/:id` con side-effects realtime post-commit.
+- **DONE (scope acotado)** para suite de contrato `reports` (status/shape) en rutas criticas.
+- **PENDIENTE (siguiente bloque P1 de reports, sin regresiones):**
+  - extraer modulo de mutaciones `reports` para reducir acoplamiento sin cambiar contratos.
+
+#### Reports - Fase A Read-Only (matriz de continuidad sin regresiones)
+| Endpoint | Como escribe hoy | Riesgo real | Fix minimo sugerido |
+|---|---|---|---|
+| `POST /api/reports/:id/like` | `transactionWithRLS` (check + insert voto + readback) + SSE via cola transaccional | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
+| `DELETE /api/reports/:id/like` | `transactionWithRLS` (check + delete voto + readback) + SSE via cola transaccional | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
+| `POST /api/reports/:id/favorite` | Toggle en `transactionWithRLS` (check + insert/delete atomico) | Riesgo de carrera mitigado; contrato estable | **DONE** |
+| `PATCH /api/reports/:id` | Ownership check + update + readback en `transactionWithRLS`; `emitReportUpdate` en cola post-commit | Evita side-effects en rollback | **DONE** |
+| `POST /api/reports/:id/flag` | `transactionWithRLS` (check + dedupe + insert + status check) + SSE/audit post-commit | Riesgo residual bajo (acoplamiento de ruta, no de consistencia) | **DONE** |
+
+**Endpoint elegido para siguiente bloque P1:** `POST /api/reports/:id/flag` (normalizado y cerrado en este ciclo).
+
+### Post Semana 3 - P1 Reports (Favorite Toggle Transaccional) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/reports/:id/favorite`:
+  - verificacion de reporte + check existente + insert/delete de favorito unificados en `transactionWithRLS`.
+  - se mantiene idempotencia (`already_exists`) sin cambiar contrato API.
+  - se conserva respuesta original (`added/removed/already_exists/404/500`).
+
+#### Beneficio tecnico concreto
+- Menor riesgo de estado parcial en toggle concurrente.
+- Camino de datos mas predecible (una sola tx para el write-path).
+- Cero impacto de contrato para frontend (sin regresiones de integración).
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito add favorite.
+    - falla intermedia (500 sin romper contrato).
+    - `404` no encontrado.
+- Revalidacion relacionada:
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (PATCH Transaccional + Realtime Post-Commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `PATCH /api/reports/:id`:
+  - ownership check + `UPDATE` + readback unificados en `transactionWithRLS`.
+  - `emitReportUpdate` migrado a cola transaccional (`sse.emit`) para emitir solo post-commit.
+  - contrato HTTP preservado (`400` no fields/strict lifecycle, `403` no owner, `404` not found, `500` error real).
+
+#### Beneficio tecnico concreto
+- Elimina riesgo de emitir `report-update` cuando la transaccion falla.
+- Reduce drift entre precheck y write path al ejecutarse en un solo client transaccional.
+- Mantiene contrato API estable para frontend.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - Cobertura:
+    - exito (200 + evento post-commit).
+    - falla intermedia (500 + cero side-effects realtime).
+    - seguridad (403 no owner).
+- Revalidacion bloque reports:
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (Contrato Status/Shape) (DONE)
+
+#### Scope cerrado
+- Se agrego suite de contrato para rutas criticas de `reports` enfocada en:
+  - status codes esperados.
+  - shape de respuesta estable (`success/data/message` o `error` segun caso).
+- Cobertura incluida:
+  - `PATCH /api/reports/:id` success + forbidden.
+  - `POST /api/reports/:id/favorite` `already_exists`.
+  - `POST /api/reports/:id/like` not found.
+
+#### Beneficio tecnico concreto
+- Previene regresiones silenciosas de contrato al endurecer internamente la capa transaccional.
+- Reduce riesgo de rotura en frontend por cambios involuntarios de shape/estado HTTP.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/reports-contract-shape.test.js` -> **4/4 PASS**.
+- Revalidacion bloque reports:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (FLAG Transaccional + Side-Effects Post-Commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/reports/:id/flag`:
+  - verificacion de reporte + ownership guard + dedupe + insert de `report_flags` en `transactionWithRLS`.
+  - verificacion de auto-hide (`reports.is_hidden`) dentro de la misma tx.
+  - `emitReportDelete` en cola transaccional (`sse.emit`) para emitir solo post-commit.
+  - `auditLog` ejecutado post-commit (no bloqueante).
+  - contrato HTTP preservado (`400`, `403`, `404`, `200 already_exists`, `201`, `500`).
+
+#### Beneficio tecnico concreto
+- Elimina riesgo de side-effects (realtime/audit) si falla la transaccion de flag.
+- Reduce estados parciales en flujo de moderacion por flag.
+- Mantiene compatibilidad de contrato para clientes existentes.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + side-effects post-commit).
+    - falla intermedia (500 + cero side-effects).
+- Revalidacion bloque reports:
+  - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+  - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+  - `server/tests/security/reports-contract-shape.test.js` -> **4/4 PASS**.
+- Tipado:
+  - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
 
 ## 🔟 Score Final
 
-### Score 1â€“10 por categorÃ­a
+### Score 1–10 por categoría
 - Arquitectura: **6.0**
 - Performance: **6.5**
 - Seguridad: **4.0**
 - Escalabilidad: **5.5**
-- UX TÃ©cnica: **6.5**
+- UX Técnica: **6.5**
 - Mantenibilidad: **5.0**
 
 ### Nivel real del proyecto
 **Scale-Ready parcial**.
 
-### RecomendaciÃ³n estratÃ©gica
+### Recomendación estratégica
 - **Tocar primero**:
-  1. Seguridad operativa (secretos + realtime AuthZ + JWT hardening).
-  2. Consistencia transaccional/persistencia en chat/comments/reports.
-  3. NormalizaciÃ³n de capa de datos frontend para evitar drift.
+  1. Consolidar tests de contrato `reports` (status + shape) para blindaje anti-regresión.
+  2. Normalización de capa de datos frontend para evitar drift residual en reconciliaciones realtime.
+  3. Reducir acoplamiento en rutas monolíticas (extracción incremental por dominio).
 - **No tocar ahora**:
-  1. Rewrites cosmÃ©ticos de UI.
-  2. SobreingenierÃ­a de microservicios antes de cerrar seguridad/consistencia.
-  3. Refactors masivos sin mÃ©tricas de regresiÃ³n.
+  1. Rewrites cosméticos de UI.
+  2. Sobreingeniería de microservicios antes de cerrar seguridad/consistencia.
+  3. Refactors masivos sin métricas de regresión.
 
 ---
 
-## Evidencia tÃ©cnica mÃ­nima usada
+## Evidencia técnica mínima usada
 - `server/src/index.js:219`
 - `server/src/index.js:374`
 - `server/src/index.js:437`
@@ -523,6 +864,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/src/routes/auth.js:56`
 - `server/src/routes/auth.js:228`
 - `server/src/routes/comments.js:283`
+- `server/src/routes/comments.js:576`
 - `server/src/routes/comments.js:1123`
 - `server/src/routes/chats.js:326`
 - `server/src/routes/chats.js:1419`
@@ -535,3 +877,5 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `src/main.tsx:70`
 - `src/main.tsx:90`
 - `src/hooks/useGlobalRealtime.ts:60`
+
+

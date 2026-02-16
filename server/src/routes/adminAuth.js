@@ -15,13 +15,11 @@ import {
     has2FAEnabled,
     get2FAStatus
 } from '../services/admin2FAService.js';
+import { getJwtSecret } from '../utils/env.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-this';
+const JWT_SECRET = getJwtSecret();
 
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-    console.warn('⚠️ WARNING: Using default JWT_SECRET in production. Please set JWT_SECRET env var.');
-}
 
 // ============================================================================
 // LOGIN CON 2FA SUPPORT

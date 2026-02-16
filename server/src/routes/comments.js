@@ -703,26 +703,7 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, asyn
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
-
-    // Verify comment exists
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, upvotes_count, report_id')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (commentError) {
-      logError(commentError, req);
-      return res.status(500).json({
-        error: 'Failed to verify comment'
-      });
-    }
-
-    if (!comment) {
-      return res.status(404).json({
-        error: 'Comment not found'
-      });
-    }
+    const clientId = req.headers['x-client-id'];
 
     // Ensure anonymous user exists
     try {
@@ -747,84 +728,111 @@ router.post('/:id/like', requireAnonymousId, verifyUserStatus, likeLimiter, asyn
       // Fail open
     }
 
-      // Try to insert like into unified votes table
-      try {
-        await queryWithRLS(
-        anonymousId,
-        `INSERT INTO votes (target_type, target_id, anonymous_id, is_hidden)
-         VALUES ('comment', $1, $2, $3)
-         RETURNING id`,
-        [id, anonymousId, isHidden]
-      );
+    // Write + readback unificados en una sola transacción RLS.
+    let txResult;
+    try {
+      txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+        const commentResult = await client.query(
+          `SELECT id, upvotes_count, report_id
+           FROM comments
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
 
-      // Evaluate badges (await to include in response for real-time notification)
-      let newBadges = [];
-      try {
-        const gamification = await syncGamification(anonymousId);
-        if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
-          newBadges = gamification.profile.newlyAwarded;
+        if (commentResult.rows.length === 0) {
+          return { notFound: true };
         }
-      } catch (err) {
-        logError(err, req);
-      }
 
-      // Get updated count (trigger should have updated it)
-      const { data: updatedComment } = await supabase
-        .from('comments')
-        .select('upvotes_count')
-        .eq('id', id)
-        .single();
+        const comment = commentResult.rows[0];
 
-      // Trigger Notification for Like (Async)
-      NotificationService.notifyLike('comment', id, anonymousId).catch(err => {
-        logError(err, { context: 'notifyLike.comment', commentId: id });
-      });
+        try {
+          await client.query(
+            `INSERT INTO votes (target_type, target_id, anonymous_id, is_hidden)
+             VALUES ('comment', $1, $2, $3)
+             RETURNING id`,
+            [id, anonymousId, isHidden]
+          );
+        } catch (likeError) {
+          if (likeError.code === '23505' || likeError.message?.includes('unique')) {
+            const readback = await client.query(
+              'SELECT upvotes_count FROM comments WHERE id = $1',
+              [id]
+            );
+            return {
+              notFound: false,
+              alreadyLiked: true,
+              upvotes_count: readback.rows[0]?.upvotes_count ?? comment.upvotes_count
+            };
+          }
+          throw likeError;
+        }
 
-      // REALTIME: Broadcast comment like update (Atomic Delta)
-      try {
-        const clientId = req.headers['x-client-id'];
-        realtimeEvents.emitCommentLike(comment.report_id, id, 1, clientId);
+        const readback = await client.query(
+          'SELECT upvotes_count FROM comments WHERE id = $1',
+          [id]
+        );
+        const finalCount = readback.rows[0]?.upvotes_count ?? (comment.upvotes_count + 1);
 
-        // Backward compatibility for generic listeners
-        realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1 }, clientId, comment.report_id);
-      } catch (err) {
-        logError(err, { context: 'realtimeEvents.emitCommentLike.commentLike', commentId: id });
-      }
+        // SSE solo post-commit (cola transaccional).
+        sse.emit('emitCommentLike', comment.report_id, id, 1, clientId);
+        sse.emit('emitVoteUpdate', 'comment', id, { upvotes_count: finalCount }, clientId, comment.report_id);
 
-      return res.json({
-        success: true,
-        data: {
-          liked: true,
-          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count + 1,
-          newBadges
-        },
-        message: 'Comment liked successfully'
+        return {
+          notFound: false,
+          alreadyLiked: false,
+          report_id: comment.report_id,
+          upvotes_count: finalCount
+        };
       });
     } catch (likeError) {
-        if (likeError.code === '23505' || likeError.message?.includes('unique')) {
-        // Already liked, return current count
-        const { data: updatedComment } = await supabase
-          .from('comments')
-          .select('upvotes_count')
-          .eq('id', id)
-          .single();
-
-        return res.json({
-          success: true,
-          data: {
-            liked: true,
-            upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count,
-            newBadges: []
-          },
-          message: 'Comment already liked'
-        });
-      }
-
       logError(likeError, req);
       return res.status(500).json({
         error: 'Failed to like comment'
       });
     }
+
+    if (txResult.notFound) {
+      return res.status(404).json({
+        error: 'Comment not found'
+      });
+    }
+
+    if (txResult.alreadyLiked) {
+      return res.json({
+        success: true,
+        data: {
+          liked: true,
+          upvotes_count: txResult.upvotes_count,
+          newBadges: []
+        },
+        message: 'Comment already liked'
+      });
+    }
+
+    // Efectos no transaccionales solo después de commit.
+    let newBadges = [];
+    try {
+      const gamification = await syncGamification(anonymousId);
+      if (gamification && gamification.profile && gamification.profile.newlyAwarded) {
+        newBadges = gamification.profile.newlyAwarded;
+      }
+    } catch (err) {
+      logError(err, req);
+    }
+
+    NotificationService.notifyLike('comment', id, anonymousId).catch(err => {
+      logError(err, { context: 'notifyLike.comment', commentId: id });
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        liked: true,
+        upvotes_count: txResult.upvotes_count,
+        newBadges
+      },
+      message: 'Comment liked successfully'
+    });
   } catch (error) {
     logError(error, req);
     res.status(500).json({
@@ -843,78 +851,75 @@ router.delete('/:id/like', requireAnonymousId, likeLimiter, async (req, res) => 
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    // Verify comment exists
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, upvotes_count, report_id')
-      .eq('id', id)
-      .maybeSingle();
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const commentResult = await client.query(
+        `SELECT id, upvotes_count, report_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
 
-    if (commentError) {
-      logError(commentError, req);
-      return res.status(500).json({
-        error: 'Failed to verify comment'
-      });
-    }
+      if (commentResult.rows.length === 0) {
+        return { notFound: true };
+      }
 
-    if (!comment) {
+      const comment = commentResult.rows[0];
+
+      const deleteResult = await client.query(
+        `DELETE FROM votes
+         WHERE target_type = 'comment' AND target_id = $1 AND anonymous_id = $2`,
+        [id, anonymousId]
+      );
+
+      const readback = await client.query(
+        'SELECT upvotes_count FROM comments WHERE id = $1',
+        [id]
+      );
+      const finalCount = readback.rows[0]?.upvotes_count ?? Math.max(0, comment.upvotes_count - 1);
+
+      if (deleteResult.rowCount === 0) {
+        return {
+          notFound: false,
+          notLiked: true,
+          upvotes_count: finalCount
+        };
+      }
+
+      // SSE solo post-commit.
+      sse.emit('emitCommentLike', comment.report_id, id, -1, clientId);
+      sse.emit('emitVoteUpdate', 'comment', id, { upvotes_count: finalCount }, clientId, comment.report_id);
+
+      return {
+        notFound: false,
+        notLiked: false,
+        upvotes_count: finalCount
+      };
+    });
+
+    if (txResult.notFound) {
       return res.status(404).json({
         error: 'Comment not found'
       });
     }
 
-    // Delete the like using unified votes table
-    const deleteResult = await queryWithRLS(
-      anonymousId,
-      `DELETE FROM votes 
-       WHERE target_type = 'comment' AND target_id = $1 AND anonymous_id = $2`,
-      [id, anonymousId]
-    );
-
-    if (deleteResult.rowCount === 0) {
-      // Like not found, but don't fail - just return current state
-      const { data: updatedComment } = await supabase
-        .from('comments')
-        .select('upvotes_count')
-        .eq('id', id)
-        .single();
-
+    if (txResult.notLiked) {
       return res.json({
         success: true,
         data: {
           liked: false,
-          upvotes_count: updatedComment?.upvotes_count || comment.upvotes_count
+          upvotes_count: txResult.upvotes_count
         },
         message: 'Like not found'
       });
-    }
-
-    // Get updated count (trigger should have updated it)
-    const { data: updatedComment } = await supabase
-      .from('comments')
-      .select('upvotes_count')
-      .eq('id', id)
-      .single();
-
-    const finalCount = updatedComment?.upvotes_count || Math.max(0, comment.upvotes_count - 1);
-
-    // REALTIME: Broadcast comment unlike update (Atomic Delta)
-    try {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentLike(comment.report_id, id, -1, clientId);
-
-      // Backward compatibility
-      realtimeEvents.emitVoteUpdate('comment', id, { upvotes_count: finalCount }, clientId, comment.report_id);
-    } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitCommentLike.commentUnlike', commentId: id });
     }
 
     res.json({
       success: true,
       data: {
         liked: false,
-        upvotes_count: finalCount
+        upvotes_count: txResult.upvotes_count
       },
       message: 'Comment unliked successfully'
     });
@@ -952,33 +957,6 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       throw error;
     }
 
-    // Verify comment exists and get owner
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, anonymous_id')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (commentError) {
-      logError(commentError, req);
-      return res.status(500).json({
-        error: 'Failed to verify comment'
-      });
-    }
-
-    if (!comment) {
-      return res.status(404).json({
-        error: 'Comment not found'
-      });
-    }
-
-    // Check if user is trying to flag their own comment
-    if (comment.anonymous_id === anonymousId) {
-      return res.status(403).json({
-        error: 'You cannot flag your own comment'
-      });
-    }
-
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
@@ -989,44 +967,77 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       });
     }
 
-    // Check if already flagged using queryWithRLS for RLS enforcement
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id FROM comment_flags 
-       WHERE anonymous_id = $1 AND comment_id = $2`,
-      [anonymousId, id]
-    );
+    const flagComment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
 
-    if (checkResult.rows.length > 0) {
+    const txResult = await transactionWithRLS(anonymousId, async (client) => {
+      const commentResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
+
+      if (commentResult.rows.length === 0) {
+        return { status: 'not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+      if (comment.anonymous_id === anonymousId) {
+        return { status: 'own_comment' };
+      }
+
+      const checkResult = await client.query(
+        `SELECT id FROM comment_flags
+         WHERE anonymous_id = $1 AND comment_id = $2`,
+        [anonymousId, id]
+      );
+
+      if (checkResult.rows.length > 0) {
+        return { status: 'already_flagged' };
+      }
+
+      const insertResult = await client.query(
+        `INSERT INTO comment_flags (anonymous_id, comment_id, reason, comment)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, anonymous_id, comment_id, reason, created_at`,
+        [anonymousId, id, reason, flagComment]
+      );
+
+      if (insertResult.rows.length === 0) {
+        throw new Error('Insert flag returned no rows');
+      }
+
+      return {
+        status: 'created',
+        newFlag: insertResult.rows[0],
+        commentOwnerId: comment.anonymous_id
+      };
+    });
+
+    if (txResult.status === 'not_found') {
+      return res.status(404).json({
+        error: 'Comment not found'
+      });
+    }
+
+    if (txResult.status === 'own_comment') {
+      return res.status(403).json({
+        error: 'You cannot flag your own comment'
+      });
+    }
+
+    if (txResult.status === 'already_flagged') {
       return res.status(409).json({
         error: 'Comment already flagged by this user',
         message: 'You have already flagged this comment'
       });
     }
 
-    const flagComment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
-
-    // Create flag using queryWithRLS for RLS enforcement
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      `INSERT INTO comment_flags (anonymous_id, comment_id, reason, comment)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, anonymous_id, comment_id, reason, created_at`,
-      [anonymousId, id, reason, flagComment]
-    );
-
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert flag returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to flag comment'
-      });
-    }
-
-    const newFlag = insertResult.rows[0];
+    const newFlag = txResult.newFlag;
 
     logSuccess(`Comment ${id} flagged by ${anonymousId}`, req);
 
-    // AUDIT LOG
+    // AUDIT LOG post-commit
     auditLog({
       action: AuditAction.COMMENT_FLAG,
       actorType: ActorType.ANONYMOUS,
@@ -1034,7 +1045,7 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       req,
       targetType: 'comment',
       targetId: id,
-      targetOwnerId: comment.anonymous_id,
+      targetOwnerId: txResult.commentOwnerId,
       metadata: { reason, flagId: newFlag.id },
       success: true
     }).catch(() => { });
@@ -1064,44 +1075,67 @@ router.post('/:id/pin', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    // 1. Get Comment & Report Info
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, report_id')
-      .eq('id', id)
-      .maybeSingle();
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const commentResult = await client.query(
+        `SELECT id, report_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
 
-    if (commentError || !comment) {
+      if (commentResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+
+      const reportResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM reports
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [comment.report_id]
+      );
+
+      if (reportResult.rows.length === 0) {
+        return { status: 'report_not_found' };
+      }
+
+      const report = reportResult.rows[0];
+
+      if (report.anonymous_id !== anonymousId) {
+        return { status: 'forbidden' };
+      }
+
+      const pinResult = await client.query(
+        `UPDATE comments
+         SET is_pinned = true, updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      if (pinResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      // Emitir sólo post-commit
+      sse.emit('emitCommentUpdate', comment.report_id, pinResult.rows[0], clientId);
+
+      return { status: 'ok' };
+    });
+
+    if (txResult.status === 'comment_not_found') {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    // 2. Verify Report Owner
-    const { data: report, error: reportError } = await supabase
-      .from('reports')
-      .select('anonymous_id')
-      .eq('id', comment.report_id)
-      .maybeSingle();
-
-    if (reportError || !report) {
+    if (txResult.status === 'report_not_found') {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    if (report.anonymous_id !== anonymousId) {
+    if (txResult.status === 'forbidden') {
       return res.status(403).json({ error: 'Only the report owner can pin comments' });
-    }
-
-    // 3. Pin the comment
-    const pinResult = await queryWithRLS(
-      anonymousId,
-      `UPDATE comments SET is_pinned = true, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id]
-    );
-
-    // 4. Broadcast Realtime Update
-    if (pinResult.rows.length > 0) {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentUpdate(comment.report_id, pinResult.rows[0], clientId);
     }
 
     res.json({ success: true, message: 'Comment pinned' });
@@ -1119,23 +1153,65 @@ router.delete('/:id/pin', requireAnonymousId, async (req, res) => {
   try {
     const { id } = req.params;
     const anonymousId = req.anonymousId;
+    const clientId = req.headers['x-client-id'];
 
-    const { data: comment } = await supabase.from('comments').select('id, report_id').eq('id', id).maybeSingle();
-    if (!comment) {
+    const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
+      const commentResult = await client.query(
+        `SELECT id, report_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
+
+      if (commentResult.rows.length === 0) {
+        return { status: 'comment_not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+
+      const reportResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM reports
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [comment.report_id]
+      );
+
+      if (reportResult.rows.length === 0) {
+        return { status: 'report_not_found' };
+      }
+
+      const report = reportResult.rows[0];
+
+      if (report.anonymous_id !== anonymousId) {
+        return { status: 'forbidden' };
+      }
+
+      const unpinResult = await client.query(
+        `UPDATE comments
+         SET is_pinned = false
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+
+      if (unpinResult.rows.length > 0) {
+        // Emitir sólo post-commit
+        sse.emit('emitCommentUpdate', comment.report_id, unpinResult.rows[0], clientId);
+      }
+
+      return { status: 'ok' };
+    });
+
+    if (txResult.status === 'comment_not_found') {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    const { data: report } = await supabase.from('reports').select('anonymous_id').eq('id', comment.report_id).maybeSingle();
-    if (report.anonymous_id !== anonymousId) {
-      return res.status(403).json({ error: 'Only the report owner can unpin comments' });
+    if (txResult.status === 'report_not_found') {
+      return res.status(404).json({ error: 'Report not found' });
     }
 
-    const unpinResult = await queryWithRLS(anonymousId, `UPDATE comments SET is_pinned = false WHERE id = $1 RETURNING *`, [id]);
-
-    // Broadcast Realtime Update
-    if (unpinResult.rows.length > 0) {
-      const clientId = req.headers['x-client-id'];
-      realtimeEvents.emitCommentUpdate(report.id || comment.report_id, unpinResult.rows[0], clientId);
+    if (txResult.status === 'forbidden') {
+      return res.status(403).json({ error: 'Only the report owner can unpin comments' });
     }
 
     res.json({ success: true, message: 'Comment unpinned' });

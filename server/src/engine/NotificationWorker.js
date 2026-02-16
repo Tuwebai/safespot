@@ -2,6 +2,7 @@ import { QueueFactory } from './QueueFactory.js';
 import { NotificationDispatcher, DispatchResult } from './NotificationDispatcher.js';
 import { logError } from '../utils/logger.js';
 import logger from '../utils/logger.js';
+import { validateRequiredEnv } from '../utils/env.js';
 
 /**
  * NotificationWorker
@@ -12,6 +13,19 @@ import logger from '../utils/logger.js';
 const isTest = process.env.NODE_ENV === 'test';
 
 let worker = null;
+
+if (!isTest) {
+    try {
+        validateRequiredEnv();
+    } catch (envError) {
+        logger.error('ENV_VALIDATION_FAILED', {
+            context: 'worker',
+            missingKeys: Array.isArray(envError?.missingKeys) ? envError.missingKeys : [],
+            code: envError?.code || 'ENV_VALIDATION_FAILED'
+        });
+        throw envError;
+    }
+}
 
 if (!isTest) {
     worker = QueueFactory.createWorker('notifications-queue', async (job) => {

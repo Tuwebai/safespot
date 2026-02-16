@@ -1,6 +1,7 @@
 import crypto from 'crypto';
+import { getJwtSecret } from './env.js';
 
-const SECRET = process.env.JWT_SECRET || 'safespot-core-secret-2024-change-me';
+const SECRET = getJwtSecret();
 
 /**
  * Sign an anonymous ID using HMAC-SHA256

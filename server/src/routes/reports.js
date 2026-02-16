@@ -23,8 +23,23 @@ import { reportsListResponseSchema, singleReportResponseSchema } from '../schema
 import { executeUserAction } from '../utils/governance.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
+import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport } from './reports.mutations.js';
 
 const router = express.Router();
+
+function resolveRequestAnonymousId(req) {
+  if (req.anonymousId && isValidUuid(req.anonymousId)) {
+    return req.anonymousId;
+  }
+  if (req.user?.anonymous_id && isValidUuid(req.user.anonymous_id)) {
+    return req.user.anonymous_id;
+  }
+  const headerId = req.headers['x-anonymous-id'];
+  if (typeof headerId === 'string' && isValidUuid(headerId)) {
+    return headerId;
+  }
+  return null;
+}
 
 // Configure multer for memory storage
 const upload = multer({
@@ -61,8 +76,8 @@ import logger from '../utils/logger.js';
  */
 router.get('/', async (req, res, next) => {
   try {
-    // 🔒 SECURITY FIX: Use verified identity from JWT if available
-    const anonymousId = req.user?.anonymous_id || null;
+    // 🔒 IDENTITY SSOT: Prioritize req.anonymousId (same identity path as like/unlike)
+    const anonymousId = resolveRequestAnonymousId(req);
     const userRole = req.user?.role || 'citizen';
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
@@ -208,6 +223,19 @@ router.get('/', async (req, res, next) => {
           conds.push(`r.status = $${idx}`);
           vals.push(status.trim());
           idx++;
+        }
+
+        // Filter by User Favorites ("Solo Favoritos")
+        const favoritesOnly = req.query.favorites_only === 'true';
+        if (favoritesOnly) {
+          if (anonymousId && isValidUuid(anonymousId)) {
+            conds.push(`EXISTS (SELECT 1 FROM favorites fav WHERE fav.report_id = r.id AND fav.anonymous_id = $${idx}::uuid)`);
+            vals.push(anonymousId);
+            idx++;
+          } else {
+            // Public/anonymous request cannot resolve per-user favorites.
+            conds.push(`1 = 0`);
+          }
         }
 
         return { conds, vals, nextIdx: idx };
@@ -482,6 +510,19 @@ router.get('/', async (req, res, next) => {
         idx++;
       }
 
+      // Filter by User Favorites ("Solo Favoritos")
+      const favoritesOnly = req.query.favorites_only === 'true';
+      if (favoritesOnly) {
+        if (anonymousId && isValidUuid(anonymousId)) {
+          conds.push(`EXISTS (SELECT 1 FROM favorites fav WHERE fav.report_id = r.id AND fav.anonymous_id = $${idx}::uuid)`);
+          vals.push(anonymousId);
+          idx++;
+        } else {
+          // Public/anonymous request cannot resolve per-user favorites.
+          conds.push(`1 = 0`);
+        }
+      }
+
       return { conds, vals, nextIdx: idx, searchIdx };
     };
 
@@ -701,8 +742,8 @@ router.get('/:id/pdf', exportReportPDF);
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    // 🔒 SECURITY FIX: Use verified identity from JWT if available
-    const anonymousId = req.user?.anonymous_id || null;
+    // 🔒 IDENTITY SSOT: Prioritize req.anonymousId (same identity path as like/unlike)
+    const anonymousId = resolveRequestAnonymousId(req);
     const sanitizedId = sanitizeUuidParam(anonymousId);
 
     // Graceful handling for temp IDs
@@ -1123,335 +1164,27 @@ router.get('/:id/related', async (req, res) => {
  * Update a report (only by creator)
  * Requires: X-Anonymous-Id header
  */
-router.patch('/:id', requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // Check if report exists and belongs to user
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT anonymous_id, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    const report = checkResult.rows[0];
-
-    if (report.anonymous_id !== anonymousId) {
-      return res.status(403).json({
-        error: 'Forbidden: You can only update your own reports'
-      });
-    }
-
-    // Build update SET clause dynamically
-    const updates = [];
-    const params = [id, anonymousId];
-    let paramIndex = 3;
-
-    // Context for logging suspicious content
-    const sanitizeContext = { anonymousId, ip: req.ip };
-
-    if (req.body.title !== undefined) {
-      updates.push(`title = $${paramIndex}`);
-      // SECURITY: Sanitize before database update
-      params.push(sanitizeText(req.body.title, 'report.title', sanitizeContext));
-      paramIndex++;
-    }
-
-    if (req.body.description !== undefined) {
-      updates.push(`description = $${paramIndex}`);
-      // SECURITY: Sanitize before database update
-      params.push(sanitizeContent(req.body.description, 'report.description', sanitizeContext));
-      paramIndex++;
-    }
-
-    if (req.body.status !== undefined) {
-      if (process.env.ENABLE_STRICT_REPORT_LIFECYCLE === 'true') {
-        return res.status(400).json({
-          error: 'Semantics Enforcement: Direct status update is forbidden. Use semantic endpoints (resolve, reject, close).'
-        });
-      }
-      updates.push(`status = $${paramIndex}`);
-      // FIX: Serialize legacy status to new enum values
-      params.push(normalizeStatus(req.body.status));
-      paramIndex++;
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({
-        error: 'No fields to update'
-      });
-    }
-
-    // Add updated_at timestamp
-    updates.push(`updated_at = $${paramIndex}`);
-    params.push(new Date().toISOString());
-
-    // Update report using queryWithRLS for RLS consistency
-    // CTE: Update and Retrieve enriched data in one go
-    // ⚠️ CONTRACT ENFORCEMENT: Explicit projection to exclude legacy fields (likes_count)
-    const CANONICAL_REPORT_FIELDS = `
-      r.id, r.anonymous_id, r.title, r.description, r.category, r.zone, r.address,
-      r.latitude, r.longitude, r.status, r.upvotes_count, r.comments_count,
-      r.created_at, r.updated_at, r.last_edited_at, r.incident_date, r.image_urls,
-      r.province, r.locality, r.department, r.threads_count, r.is_hidden, r.deleted_at
-    `;
-
-    const updateResult = await queryWithRLS(anonymousId, `
-      WITH updated_report AS (
-        UPDATE reports SET ${updates.join(', ')}
-        WHERE id = $1 AND anonymous_id = $2
-        RETURNING *
-      )
-      SELECT 
-        ${CANONICAL_REPORT_FIELDS},
-        u.alias,
-        u.avatar_url
-      FROM updated_report r
-      LEFT JOIN anonymous_users u ON r.anonymous_id = u.anonymous_id
-    `, params);
-
-    if (updateResult.rows.length === 0) {
-      return res.status(403).json({
-        error: 'Forbidden: You can only update your own reports'
-      });
-    }
-
-    const updatedReport = updateResult.rows[0];
-
-    // 🔍 AUDIT LOG: Confirmar datos antes de emitir SSE
-    logger.info('[AUDIT PATCH REPORT] Updated data from DB:', {
-      id: updatedReport.id,
-      title: updatedReport.title,
-      description: updatedReport.description?.substring(0, 50),
-      updated_at: updatedReport.updated_at,
-      timestamp: Date.now()
-    });
-
-    // REALTIME: Broadcast report update using local enriched data (CTE)
-    try {
-      realtimeEvents.emitReportUpdate(updatedReport);
-
-      // If status changed and we have prevStatus available from scope, handled here or client side.
-      // For now, emit Update covers the data change.
-    } catch (err) {
-      logError(err, { context: 'realtimeEvents.emitReportUpdate', reportId: id });
-    }
-
-    logSuccess('Report updated', { id, anonymousId });
-
-    res.json({
-      success: true,
-      data: updatedReport,
-      message: 'Report updated successfully'
-    });
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({
-      error: 'Failed to update report'
-    });
-  }
-});
-
+router.patch('/:id', requireAnonymousId, patchReport);
 /**
  * POST /api/reports/:id/favorite
  * Toggle favorite status for a report
  * Requires: X-Anonymous-Id header
  * Rate limited: 20 per minute, 100 per hour
  */
-router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // Verify report exists
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    // Ensure anonymous user exists
-    try {
-      await ensureAnonymousUser(anonymousId);
-    } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user'
-      });
-    }
-
-    // Check if favorite already exists
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM favorites WHERE anonymous_id = $1 AND report_id = $2
-    `, [anonymousId, id]);
-
-    if (checkResult.rows.length > 0) {
-      // Remove favorite (toggle off)
-      await queryWithRLS(anonymousId, `
-        DELETE FROM favorites WHERE id = $1 AND anonymous_id = $2
-      `, [checkResult.rows[0].id, anonymousId]);
-
-      res.json({
-        success: true,
-        data: {
-          is_favorite: false
-        },
-        message: 'Favorite removed successfully'
-      });
-    } else {
-      // Add favorite (toggle on)
-      try {
-        await queryWithRLS(anonymousId, `
-          INSERT INTO favorites (anonymous_id, report_id) VALUES ($1, $2)
-        `, [anonymousId, id]);
-
-        res.json({
-          success: true,
-          data: {
-            is_favorite: true
-          },
-          message: 'Favorite added successfully'
-        });
-      } catch (insertError) {
-        // Check if it's a unique constraint violation (race condition)
-        // Return 200 OK with status field so frontend knows it's idempotent
-        if (insertError.code === '23505' || insertError.message?.includes('unique') || insertError.message?.includes('duplicate')) {
-          return res.status(200).json({
-            success: true,
-            data: {
-              is_favorite: true
-            },
-            status: 'already_exists',
-            message: 'Already favorited'
-          });
-        } else {
-          throw insertError;
-        }
-      }
-    }
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({
-      error: 'Failed to toggle favorite'
-    });
-  }
-});
+router.post('/:id/favorite', favoriteLimiter, requireAnonymousId, toggleFavorite);
 
 /**
  * POST /api/reports/:id/like
  * Add a like to a report
  * Requires: X-Anonymous-Id header
  */
-router.post('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // Verify report exists
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, category, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-    const report = reportResult.rows[0];
-
-    // Atomic Like with SSOT (DB trigger handles counter)
-    await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'LIKE_REPORT',
-      updateQuery: `
-        INSERT INTO votes (anonymous_id, target_type, target_id)
-        VALUES ($1::uuid, 'report'::vote_target_type, $2)
-        ON CONFLICT (anonymous_id, target_type, target_id) DO NOTHING;
-      `,
-      updateParams: [anonymousId, id]
-    });
-
-    // Get updated count from SSOT
-    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
-    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
-
-    // Realtime broadcast
-    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
-
-    res.json({
-      success: true,
-      data: {
-        is_liked: true,
-        upvotes_count: upvotesCount
-      },
-      message: 'Like added'
-    });
-  } catch (error) {
-    // Handle unique constraint manually if needed, though DO NOTHING handles it
-    logError(error, req);
-    res.status(500).json({ error: 'Failed to like report' });
-  }
-});
+router.post('/:id/like', favoriteLimiter, requireAnonymousId, likeReport);
 
 /**
  * DELETE /api/reports/:id/like
  * Remove a like from a report
  */
-router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, category, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-    const report = reportResult.rows[0];
-
-    await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'UNLIKE_REPORT',
-      updateQuery: `
-        DELETE FROM votes 
-        WHERE anonymous_id = $1::uuid AND target_type = 'report' AND target_id = $2;
-      `,
-      updateParams: [anonymousId, id]
-    });
-
-    const countResult = await queryWithRLS('', 'SELECT upvotes_count FROM reports WHERE id = $1', [id]);
-    const upvotesCount = countResult.rows[0]?.upvotes_count || 0;
-
-    realtimeEvents.emitLikeUpdate(id, upvotesCount, report.category, report.status, req.headers['x-client-id']);
-
-    res.json({
-      success: true,
-      data: {
-        is_liked: false,
-        upvotes_count: upvotesCount
-      },
-      message: 'Like removed'
-    });
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({ error: 'Failed to unlike report' });
-  }
-});
+router.delete('/:id/like', favoriteLimiter, requireAnonymousId, unlikeReport);
 
 /**
  * POST /api/reports/:id/flag
@@ -1459,211 +1192,13 @@ router.delete('/:id/like', favoriteLimiter, requireAnonymousId, async (req, res)
  * Requires: X-Anonymous-Id header
  * Rate limited: 5 flags per minute per anonymous ID
  */
-router.post('/:id/flag', flagRateLimiter, requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-    const reason = req.body.reason || null;
-
-    // Validate reason if provided
-    try {
-      validateFlagReason(reason);
-    } catch (error) {
-      if (error.message.startsWith('VALIDATION_ERROR')) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          message: error.message.replace('VALIDATION_ERROR: ', ''),
-          code: 'VALIDATION_ERROR'
-        });
-      }
-      throw error;
-    }
-
-    // Verify report exists and get owner
-    const reportResult = await queryWithRLS(anonymousId, `
-      SELECT id, anonymous_id FROM reports WHERE id = $1
-    `, [id]);
-
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Report not found'
-      });
-    }
-
-    const report = reportResult.rows[0];
-
-    // Check if user is trying to flag their own report
-    if (report.anonymous_id === anonymousId) {
-      return res.status(403).json({
-        error: 'You cannot flag your own report'
-      });
-    }
-
-    // Ensure anonymous user exists
-    try {
-      await ensureAnonymousUser(anonymousId);
-    } catch (error) {
-      logError(error, req);
-      return res.status(500).json({
-        error: 'Failed to ensure anonymous user'
-      });
-    }
-
-    const comment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
-
-    // Check if already flagged
-    // Return 200 OK instead of 409 - user's intent is satisfied (report is flagged)
-    const checkResult = await queryWithRLS(anonymousId, `
-      SELECT id FROM report_flags WHERE anonymous_id = $1 AND report_id = $2
-    `, [anonymousId, id]);
-
-    if (checkResult.rows.length > 0) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          is_flagged: true,
-          flag_id: checkResult.rows[0].id
-        },
-        status: 'already_exists',
-        message: 'Already flagged'
-      });
-    }
-
-    // Create flag using queryWithRLS for RLS consistency
-    const insertResult = await queryWithRLS(anonymousId, `
-      INSERT INTO report_flags (anonymous_id, report_id, reason, comment)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, report_id, reason
-    `, [anonymousId, id, reason, comment]);
-
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert returned no data'), req);
-      return res.status(500).json({
-        error: 'Failed to flag report',
-        message: 'Insert operation returned no data'
-      });
-    }
-
-    const newFlag = insertResult.rows[0];
-
-    // SYSTEMIC FIX: Check for Auto-Hide (Realtime Consistency)
-    // If threshold met, trigger will set is_hidden = true. We must notify SSE clients.
-    const statusCheck = await queryWithRLS(anonymousId, `
-      SELECT is_hidden, category, status FROM reports WHERE id = $1
-    `, [id]);
-
-    if (statusCheck.rows.length > 0 && statusCheck.rows[0].is_hidden) {
-      const r = statusCheck.rows[0];
-      realtimeEvents.emitReportDelete(id, r.category, r.status);
-      logger.info(`[Moderation] 🛡️ Auto-hide triggered by flags for report ${id}. Event broadcasted.`);
-    }
-
-    // AUDIT LOG
-    auditLog({
-      action: AuditAction.REPORT_FLAG,
-      actorType: ActorType.ANONYMOUS,
-      actorId: anonymousId,
-      req,
-      targetType: 'report',
-      targetId: id,
-      targetOwnerId: report.anonymous_id,
-      metadata: { reason, flagId: newFlag.id },
-      success: true
-    }).catch(() => { });
-
-    res.status(201).json({
-      success: true,
-      data: {
-        is_flagged: true,
-        flag_id: newFlag.id
-      },
-      message: 'Report flagged successfully'
-    });
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({
-      error: 'Failed to flag report'
-    });
-  }
-});
-
+router.post('/:id/flag', flagRateLimiter, requireAnonymousId, flagReport);
 /**
  * DELETE /api/reports/:id
  * Delete a report (only by creator)
  * Requires: X-Anonymous-Id header
  */
-router.delete('/:id', requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // [M12 REFINEMENT] Use executeUserAction for Willpower Audit + Mutation
-    const result = await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'USER_DELETE_SELF_REPORT',
-      updateQuery: `UPDATE reports SET deleted_at = NOW() WHERE id = $1 AND anonymous_id = $2 AND deleted_at IS NULL`,
-      updateParams: [id, anonymousId]
-    });
-
-    if (result.rowCount === 0) {
-      // If snapshot existed but UPDATE affected 0 rows, it's either already deleted or ownership mismatch
-      // executeUserAction throws 'Target not found' if it doesn't exist at all, so here it's definitely mismatch or already deleted.
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'No tienes permiso para eliminar este reporte o ya fue eliminado'
-      });
-    }
-
-    const currentItem = result.snapshot;
-    logSuccess('Report deleted with Willpower Audit', { id, anonymousId });
-
-    // REALTIME: Broadcast soft delete
-    realtimeEvents.emitReportDelete(
-      id,
-      currentItem.category,
-      currentItem.status,
-      req.headers['x-client-id']
-    );
-
-    // AUDIT LOG
-    auditLog({
-      action: AuditAction.REPORT_DELETE,
-      actorType: ActorType.ANONYMOUS,
-      actorId: anonymousId,
-      req,
-      targetType: 'report',
-      targetId: id,
-      oldValues: {
-        title: currentItem.title,
-        category: currentItem.category,
-        status: currentItem.status
-      },
-      success: true
-    }).catch(() => { });
-
-    res.json({
-      success: true,
-      message: 'Report deleted successfully'
-    });
-  } catch (error) {
-    logError(error, req);
-
-    // M12 Governance Errors
-    if (error.message === 'Target not found') {
-      return res.status(404).json({
-        error: 'Report not found',
-        message: 'El reporte no existe o ya fue eliminado'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to delete report',
-      message: error.message
-    });
-  }
-});
+router.delete('/:id', requireAnonymousId, deleteReport);
 
 /**
  * POST /api/reports/:id/images
@@ -1822,4 +1357,7 @@ router.post('/:id/share', requireAnonymousId, async (req, res) => {
 });
 
 export default router;
+
+
+
 

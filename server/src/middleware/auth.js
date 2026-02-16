@@ -1,7 +1,10 @@
 
 import jwt from 'jsonwebtoken';
+import { AppError } from '../utils/AppError.js';
+import { ErrorCodes } from '../utils/errorCodes.js';
+import { getJwtSecret } from '../utils/env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'safespot-secret-key-change-me';
+const JWT_SECRET = getJwtSecret();
 
 /**
  * Auth Middleware
@@ -44,7 +47,7 @@ export function validateAuth(req, res, next) {
             // STRICT SECURITY: If a token is provided, it MUST be valid.
             // We do NOT allow falling back to x-anonymous-id if the user attempted auth and failed.
             // DANGER: Falling back would allow an attacker to send a bad token + a victim's anon_id.
-            return res.status(401).json({ error: 'Sesión inválida o expirada', code: 'INVALID_TOKEN' });
+            return next(new AppError('Sesion invalida o expirada', 401, ErrorCodes.INVALID_TOKEN, true));
         }
     }
 
@@ -57,3 +60,4 @@ export function validateAuth(req, res, next) {
 export function signToken(payload) {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
+

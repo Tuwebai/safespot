@@ -34,6 +34,8 @@ interface ReportsSidebarProps {
   setSortBy: (val: 'recent' | 'popular' | 'oldest') => void
   followedOnly: boolean
   setFollowedOnly: (val: boolean) => void
+  favoritesOnly: boolean
+  setFavoritesOnly: (val: boolean) => void
   
   // Advanced Filter States
   startDate: string
@@ -68,7 +70,7 @@ const QUICK_FILTERS = [
   { id: 'urgent' as const, label: 'Urgentes', icon: Flame, color: 'text-red-400' },
   { id: 'robos' as const, label: 'Robos', icon: AlertTriangle, color: 'text-orange-400' },
   { id: 'motos' as const, label: 'Motos', icon: Bike, color: 'text-yellow-400' },
-  { id: 'mi_zona' as const, label: 'Mi Zona', icon: Star, color: 'text-neon-green' },
+  { id: 'mi_zona' as const, label: 'En mi zona', icon: MapPin, color: 'text-neon-green' },
   { id: 'all' as const, label: 'Todos', icon: List, color: 'text-muted-foreground' },
 ]
 
@@ -83,6 +85,8 @@ export function ReportsSidebar({
   setSortBy,
   followedOnly,
   setFollowedOnly,
+  favoritesOnly,
+  setFavoritesOnly,
   startDate,
   setStartDate,
   endDate,
@@ -114,6 +118,8 @@ export function ReportsSidebar({
     setSelectedCategory('all')
     setSelectedStatus('all')
     setSortBy('recent')
+    setFollowedOnly(false)
+    setFavoritesOnly(false)
     setStartDate('')
     setEndDate('')
     setAddressQuery('')
@@ -142,6 +148,8 @@ export function ReportsSidebar({
                 variant="ghost"
                 size="icon"
                 onClick={() => setQuickFilter(f.id)}
+                aria-label={f.id === 'mi_zona' ? 'Filtrar por mi zona' : `Filtrar por ${f.label.toLowerCase()}`}
+                title={f.id === 'mi_zona' ? 'Mostrar reportes cerca de tu ubicación' : f.label}
                 className={`relative group ${isActive ? 'text-neon-green bg-neon-green/10' : 'text-muted-foreground'}`}
               >
                 <Icon className="h-5 w-5" />
@@ -200,6 +208,8 @@ export function ReportsSidebar({
                   key={f.id}
                   variant={isActive ? 'default' : 'ghost'}
                   onClick={() => setQuickFilter(f.id)}
+                  aria-label={f.id === 'mi_zona' ? 'Filtrar por mi zona' : `Filtrar por ${f.label.toLowerCase()}`}
+                  title={f.id === 'mi_zona' ? 'Mostrar reportes cerca de tu ubicación' : f.label}
                   className={`
                     justify-start gap-3 h-11 transition-all duration-200
                     ${isActive 
@@ -275,6 +285,22 @@ export function ReportsSidebar({
             </div>
             <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${followedOnly ? 'bg-neon-green/30' : 'bg-muted'}`}>
               <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${followedOnly ? 'right-0.5 bg-neon-green' : 'left-0.5 bg-muted-foreground'}`} />
+            </div>
+          </div>
+        </section>
+
+        {/* Favoritos */}
+        <section className="pt-2">
+          <div
+            className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${favoritesOnly ? 'bg-yellow-500/5 border-yellow-500/30' : 'bg-transparent border-border/50 hover:border-border'}`}
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+          >
+            <div className="flex items-center gap-2">
+              <Star className={`h-4 w-4 ${favoritesOnly ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+              <span className={`text-sm font-medium ${favoritesOnly ? 'text-foreground' : 'text-muted-foreground'}`}>Solo Favoritos</span>
+            </div>
+            <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${favoritesOnly ? 'bg-yellow-400/30' : 'bg-muted'}`}>
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all duration-300 ${favoritesOnly ? 'right-0.5 bg-yellow-400' : 'left-0.5 bg-muted-foreground'}`} />
             </div>
           </div>
         </section>
