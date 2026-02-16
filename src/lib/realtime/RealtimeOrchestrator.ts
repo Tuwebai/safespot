@@ -8,6 +8,8 @@ import { dataIntegrityEngine } from '@/engine/integrity';
 import { telemetry, TelemetrySeverity } from '@/lib/telemetry/TelemetryEngine';
 import { reportsCache, statsCache, commentsCache } from '../cache-helpers';
 import { reportSchema, Comment } from '../schemas';
+import { transformComment, type RawComment } from '../adapters';
+import { getAvatarUrl } from '../avatar';
 import { upsertInList } from '@/lib/realtime-utils';
 // NOTIFICATIONS_QUERY_KEY dinámico - debe incluir anonymousId para consistencia
 const getNotificationsQueryKey = (anonymousId: string | null): string[] => 
@@ -288,6 +290,7 @@ class RealtimeOrchestrator {
         const eventId = data.eventId as string;
         const serverTimestamp = data.serverTimestamp as number;
         const originClientId = data.originClientId as string | undefined;
+        const isSocialChannel = channel.startsWith('social');
         
         // 🏛️ ENTERPRISE: Circuit breaker check
         if (this.isCircuitOpen()) {
@@ -351,27 +354,36 @@ class RealtimeOrchestrator {
         }
 
         // 2.5 Secondary check (IndexedDB) - Rare but safe for cold boot
-        const alreadyInIDB = await localProcessedLog.isEventProcessed(eventId);
-        if (alreadyInIDB) {
-            this.stats.dropped++;
-            eventAuthorityLog.record({
-                eventId,
-                type,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            domain: (channel.startsWith('social') ? 'social' : channel) as 'feed' | 'user' | 'system' | 'social',
-                serverTimestamp,
-                processedAt: Date.now(),
-                originClientId: originClientId || 'unknown'
-            });
-            return;
+        if (!isSocialChannel) {
+            const alreadyInIDB = await localProcessedLog.isEventProcessed(eventId);
+            if (alreadyInIDB) {
+                this.stats.dropped++;
+                eventAuthorityLog.record({
+                    eventId,
+                    type,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    domain: (channel.startsWith('social') ? 'social' : channel) as 'feed' | 'user' | 'system' | 'social',
+                    serverTimestamp,
+                    processedAt: Date.now(),
+                    originClientId: originClientId || 'unknown'
+                });
+                return;
+            }
         }
 
         // 3. Persist (INVARIANTE 1) - ONLY LEADERS PERSIST TO DB
         if (leaderElection.isLeader()) {
             try {
-                await localProcessedLog.markEventAsProcessed(eventId, serverTimestamp);
-                if (this.userId) {
-                    await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
+                if (isSocialChannel) {
+                    void localProcessedLog.markEventAsProcessed(eventId, serverTimestamp);
+                    if (this.userId) {
+                        void localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
+                    }
+                } else {
+                    await localProcessedLog.markEventAsProcessed(eventId, serverTimestamp);
+                    if (this.userId) {
+                        await localProcessedLog.updateCursor(this.userId, channel, serverTimestamp);
+                    }
                 }
                 console.debug(`[Orchestrator] ✅ Persisted event: ${eventId}`);
 
@@ -512,10 +524,38 @@ class RealtimeOrchestrator {
         try {
             switch (type) {
                 case 'new-comment': {
-                    const comment = payload.comment || payload;
-                    const commentId = (comment as LegacyPayload).id as string;
-                    const reportIdComment = (comment as LegacyPayload).report_id as string;
-                    if (!comment || !commentId) return;
+                    const commentPayload = payload.comment || payload;
+                    if (!commentPayload) return;
+
+                    let normalizedComment: Comment;
+                    try {
+                        normalizedComment = ('author' in (commentPayload as Record<string, unknown>))
+                            ? (commentPayload as unknown as Comment)
+                            : transformComment(commentPayload as unknown as RawComment);
+                    } catch {
+                        // Fallback defensivo para payloads legacy parciales.
+                        normalizedComment = commentPayload as unknown as Comment;
+                    }
+
+                    // Hardening de contrato UI: asegurar author completo para render inmediato.
+                    const authorId =
+                        normalizedComment?.author?.id ||
+                        (commentPayload as { anonymous_id?: string })?.anonymous_id;
+                    if (authorId) {
+                        normalizedComment = {
+                            ...normalizedComment,
+                            author: {
+                                id: authorId,
+                                alias: normalizedComment.author?.alias || authorId.slice(0, 8),
+                                avatarUrl: normalizedComment.author?.avatarUrl || getAvatarUrl(authorId),
+                                isAuthor: normalizedComment.author?.isAuthor ?? false
+                            }
+                        };
+                    }
+
+                    const commentId = normalizedComment.id;
+                    const reportIdComment = normalizedComment.report_id;
+                    if (!commentId || !reportIdComment) return;
 
                     // ✅ ENTERPRISE FIX: Deduplicación determinística basada en LISTA
                     // Principio: La fuente de verdad es el estado de la lista, no solo el detail cache
@@ -542,14 +582,15 @@ class RealtimeOrchestrator {
 
                         if (existing?.is_optimistic) {
                             // Reconciliar optimista con datos reales (sin delta)
-                            commentsCache.store(queryClient, comment as Comment);
+                            commentsCache.store(queryClient, normalizedComment);
                         }
                         // Si no es optimista o no existe detail → skip (ya fue procesado)
                         return;
                     }
 
-                    // No existe en lista → es comentario realmente nuevo → aplicar delta
-                    commentsCache.append(queryClient, comment as Comment);
+                    // No existe en lista → es comentario realmente nuevo.
+                    // Mantener orden consistente con GET /comments (más reciente primero).
+                    commentsCache.prepend(queryClient, normalizedComment);
                     break;
                 }
                 case 'comment-update': {

@@ -14,7 +14,7 @@ import type { MentionParticipant } from '@/lib/tiptap/mention-suggestion'
 import { useConfirm } from '@/components/ui/useConfirm'
 // 🔴 CRITICAL FIX: Import mutation to replace direct API bypass
 import { useCreateCommentMutation } from '@/hooks/queries/useCommentsQuery'
-import { getCurrentUserId } from '@/lib/permissions'
+import { useAnonymousId } from '@/hooks/useAnonymousId'
 
 // ✅ PERFORMANCE FIX: Lazy load ReplyModal (193 KB) - only loads when user opens modal
 const ReplyModal = lazy(() => import('@/components/comments/ReplyModal').then(m => ({ default: m.ReplyModal })))
@@ -205,7 +205,7 @@ export function CommentsSection({
         }
     }
 
-    const currentUserId = getCurrentUserId()
+    const currentUserId = useAnonymousId()
 
 
     const { sightings, discussionComments } = useMemo(() => {

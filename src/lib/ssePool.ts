@@ -255,7 +255,7 @@ class SSEPool {
                 'presence', 'presence-update', 'chat-update', 'chat-rollback',
                 'message-reaction', 'message-pinned', 'connected', 'inbox-update',
                 'notification', 'mark-read', 'report-update', 'report-create',
-                'report-delete', 'comment-update', 'comment-delete'
+                'report-delete', 'new-comment', 'comment-update', 'comment-delete'
             ].forEach(evt => source.addEventListener(evt, dispatch));
 
         } catch (err) {
