@@ -1,0 +1,94 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: safespot-week3-alerts
+    folder: SafeSpot Ops
+    interval: 1m
+    rules:
+      - uid: realtime-auth-rejections-spike
+        title: ALERT_REALTIME_AUTH_REJECTIONS_SPIKE
+        condition: C
+        data:
+          - refId: A
+            queryType: range
+            datasourceUid: ${DS_LOKI}
+            model:
+              expr: sum(count_over_time({app="safespot-backend"} | json | message="METRIC_REALTIME_AUTHZ_DENIED" [5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: A > 40
+              type: math
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Spike de rechazos 401/403 en realtime
+        labels:
+          severity: warning
+
+      - uid: realtime-catchup-p95-high
+        title: ALERT_REALTIME_CATCHUP_P95_HIGH
+        condition: C
+        data:
+          - refId: A
+            queryType: range
+            datasourceUid: ${DS_LOKI}
+            model:
+              expr: quantile_over_time(0.95, {app="safespot-backend"} | json | message="METRIC_REALTIME_CATCHUP" | unwrap durationMs [5m])
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: A > 1000
+              type: math
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: p95 de catchup por encima de 1s
+        labels:
+          severity: critical
+
+      - uid: chat-ack-failures
+        title: ALERT_CHAT_ACK_FAILURES
+        condition: C
+        data:
+          - refId: A
+            queryType: range
+            datasourceUid: ${DS_LOKI}
+            model:
+              expr: sum(count_over_time({app="safespot-backend"} | json | message="METRIC_CHAT_ACK_FAILURE" [5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: A > 5
+              type: math
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Fallos de ACK por encima de umbral
+        labels:
+          severity: critical
+
+      - uid: auth-5xx-present
+        title: ALERT_AUTH_5XX_PRESENT
+        condition: C
+        data:
+          - refId: A
+            queryType: range
+            datasourceUid: ${DS_LOKI}
+            model:
+              expr: sum(count_over_time({app="safespot-backend"} | json | message="METRIC_AUTH_5XX" [5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              expression: A > 0
+              type: math
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Errores 5xx en auth detectados
+        labels:
+          severity: critical

@@ -257,6 +257,7 @@ export function createActivityNotificationPayload({ type, title, message, report
  */
 export function createChatNotificationPayload(message, room) {
     const senderAlias = message.senderAlias || message.sender_alias || 'Alguien';
+    const conversationId = message.conversation_id || message.conversationId || message.room_id || message.roomId || null;
     // 🧠 UX REFINEMENT (WhatsApp Style)
     // Removed "Consulta:" prefix. The body should be JUST the message content.
     // The title identifies the sender.
@@ -273,11 +274,12 @@ export function createChatNotificationPayload(message, room) {
         tag: `chat-msg-${message.id}`,
         renotify: true, // ✅ Force sound
         data: {
-            roomId: message.room_id,
+            conversationId: conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             entityId: message.id || null, // ⚡ Normalized (was messageId)
             recipientId: message.recipientAnonymousId || null, // ⚡ Needed for SW ACK
             type: 'chat', // ⚡ Match SW expectation (was chat-message)
-            url: `/mensajes/${message.room_id}`,
+            url: conversationId ? `/mensajes/${conversationId}` : '/mensajes',
             timestamp: Date.now()
         },
         actions: [

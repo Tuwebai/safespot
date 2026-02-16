@@ -20,6 +20,71 @@ self.__WB_DISABLE_DEV_LOGS = true;
 const SW_VERSION = 'v2.2-robust';
 console.log(`[SW] Initializing Version: ${SW_VERSION}`);
 
+interface SwAuthContext {
+    anonymousId: string;
+    signature: string;
+    jwt: string | null;
+    updatedAt: number;
+}
+
+const SW_AUTH_DB = 'safespot-sw-auth';
+const SW_AUTH_STORE = 'kv';
+const SW_AUTH_KEY = 'auth_context';
+let swAuthContext: SwAuthContext | null = null;
+
+function openSwAuthDb(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(SW_AUTH_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(SW_AUTH_STORE)) {
+                db.createObjectStore(SW_AUTH_STORE);
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function persistSwAuth(context: SwAuthContext): Promise<void> {
+    const db = await openSwAuthDb();
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(SW_AUTH_STORE, 'readwrite');
+        tx.objectStore(SW_AUTH_STORE).put(context, SW_AUTH_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+async function loadSwAuth(): Promise<SwAuthContext | null> {
+    if (swAuthContext) return swAuthContext;
+    const db = await openSwAuthDb();
+    return new Promise((resolve) => {
+        const tx = db.transaction(SW_AUTH_STORE, 'readonly');
+        const req = tx.objectStore(SW_AUTH_STORE).get(SW_AUTH_KEY);
+        req.onsuccess = () => {
+            swAuthContext = (req.result as SwAuthContext) || null;
+            resolve(swAuthContext);
+        };
+        req.onerror = () => resolve(null);
+    });
+}
+
+function parseAuthFromMessage(payload: unknown): SwAuthContext | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const token = payload as Record<string, unknown>;
+    const anonymousId = (token.anonymousId as string) || '';
+    const signature = (token.signature as string) || '';
+    const jwt = (token.jwt as string) || null;
+    if (!anonymousId || !signature) return null;
+    return {
+        anonymousId,
+        signature,
+        jwt,
+        updatedAt: Date.now()
+    };
+}
+
 // ============================================
 // 1. LIFECYCLE
 // ============================================
@@ -49,8 +114,23 @@ self.addEventListener('activate', (event) => {
             );
 
             cleanupOutdatedCaches();
+            await loadSwAuth();
         })()
     );
+});
+
+self.addEventListener('message', (event: any) => {
+    const msg = event?.data || {};
+    if (msg?.type === 'SYNC_AUTH') {
+        const parsed = parseAuthFromMessage(msg.token);
+        if (parsed) {
+            swAuthContext = parsed;
+            persistSwAuth(parsed).catch(() => { /* noop */ });
+            console.log('[SW] ✅ Auth context synced');
+        } else {
+            console.warn('[SW] ⚠️ Invalid SYNC_AUTH payload');
+        }
+    }
 });
 
 // ============================================
@@ -165,9 +245,20 @@ self.addEventListener('push', (event: any) => {
     // Single authority: PostgreSQL. No MessageChannel, no Redis, no heuristics.
     event.waitUntil(
         (async () => {
+            const auth = await loadSwAuth();
             const chatData = data.data || data;
             const messageId = chatData.messageId || chatData.entityId;
-            const recipientId = chatData.recipientId;
+            const recipientId = chatData.recipientId || auth?.anonymousId;
+            const authHeaders: Record<string, string> = {};
+            if (auth?.jwt) {
+                authHeaders.Authorization = `Bearer ${auth.jwt}`;
+            }
+            if (auth?.signature) {
+                authHeaders['X-Anonymous-Signature'] = auth.signature;
+            }
+            if (recipientId) {
+                authHeaders['X-Anonymous-Id'] = recipientId;
+            }
 
             // 🏛️ ENTERPRISE FIX: Suppress ONLY if READ (not delivered)
             // delivered = device received message (via SSE/Push)
@@ -176,6 +267,7 @@ self.addEventListener('push', (event: any) => {
             if (messageId) {
                 try {
                     const response = await fetch(`${__API_BASE_URL__}/realtime/message-status/${messageId}`, {
+                        headers: authHeaders,
                         cache: 'no-store' // Absolute truth from PostgreSQL
                     });
                     if (response.ok) {
@@ -205,7 +297,9 @@ self.addEventListener('push', (event: any) => {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Anonymous-Id': recipientId
+                        'X-Anonymous-Id': recipientId,
+                        ...(auth?.signature ? { 'X-Anonymous-Signature': auth.signature } : {}),
+                        ...(auth?.jwt ? { Authorization: `Bearer ${auth.jwt}` } : {})
                     }
                 }).then((response) => {
                     if (response.ok) {

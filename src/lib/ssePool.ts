@@ -290,6 +290,24 @@ class SSEPool {
     // Legacy compatibility
     sleep() { this.enterIdleMode(); }
     wakeExplicit() { this.wake(); }
+
+    /**
+     * Force closes all EventSource connections and clears subscriptions.
+     * Used during logout/session teardown to prevent reconnect loops.
+     */
+    clearAll(): void {
+        this.connections.forEach((entry) => {
+            if (entry.source) {
+                entry.source.close();
+                entry.source = null;
+            }
+            entry.listeners.clear();
+            entry.reconnectCallbacks.clear();
+            entry.refCount = 0;
+            entry.state = SSEState.DISCONNECTED;
+        });
+        this.connections.clear();
+    }
 }
 
 export const ssePool = new SSEPool();

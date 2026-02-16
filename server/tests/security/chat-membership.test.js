@@ -1,230 +1,209 @@
 /**
- * 🔒 SafeSpot Security Test Suite
- * 
- * Tests that chat endpoints properly reject non-members.
- * This prevents horizontal privilege escalation (HPE) attacks
- * where users could access conversations they don't belong to.
- * 
- * @security-critical
- * @test-type integration
+ * SafeSpot Security Test Suite
+ *
+ * Chat membership authorization tests aligned with current AuthN/AuthZ flow:
+ * - AuthN first (JWT -> req.user)
+ * - Identity projection (req.user.anonymous_id -> req.anonymousId)
+ * - Room membership check (403 for non-members)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
-import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 
-// Load test environment
-dotenv.config({ path: '.env.test' });
+const MEMBER_USER_ID = '11111111-1111-1111-1111-111111111111';
+const NON_MEMBER_USER_ID = '22222222-2222-2222-2222-222222222222';
+const MEMBER_ROOM_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const NON_MEMBER_ROOM_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
-// Mock pool for testing
-const mockPool = {
-  query: async (sql, params) => {
-    // Simulate: user_123 is member of room_456, but not room_789
-    if (sql.includes('conversation_members')) {
-      const [userId, roomId] = params;
-      if (userId === 'user_123' && roomId === 'room_456') {
-        return { rows: [{ 1: 1 }] };
-      }
-      return { rows: [] };
-    }
-    return { rows: [] };
-  }
-};
+vi.mock('../../src/utils/rls.js', () => ({
+    queryWithRLS: vi.fn(async (userId, sql, params) => {
+        if (sql.includes('conversation_members')) {
+            const [roomId, memberUserId] = params;
+            if (memberUserId === MEMBER_USER_ID && roomId === MEMBER_ROOM_ID) {
+                return { rows: [{ ok: 1 }] };
+            }
+            return { rows: [] };
+        }
+        return { rows: [] };
+    })
+}));
 
-// Import middleware with mocked database
-import { requireRoomMembership, verifyMembership } from '../../src/middleware/requireRoomMembership.js';
+import { requireRoomMembership } from '../../src/middleware/requireRoomMembership.js';
+import { validateAuth } from '../../src/middleware/auth.js';
 
-// Create test app
-const createTestApp = () => {
-  const app = express();
-  app.use(express.json());
-
-  // Mock requireAnonymousId middleware
-  app.use((req, res, next) => {
-    // Simulate authenticated user
-    req.anonymousId = req.headers['x-test-user-id'] || 'user_123';
-    req.user = { anonymous_id: req.anonymousId };
-    next();
-  });
-
-  // Protected routes
-  const router = express.Router();
-  
-  router.get('/rooms/:roomId/messages', requireRoomMembership, (req, res) => {
-    res.json({ messages: [] });
-  });
-
-  router.post('/rooms/:roomId/messages', requireRoomMembership, (req, res) => {
-    res.json({ id: 'msg_123' });
-  });
-
-  router.get('/rooms/:roomId/members', requireRoomMembership, (req, res) => {
-    res.json({ members: [] });
-  });
-
-  router.post('/rooms/:roomId/reactions/:messageId', requireRoomMembership, (req, res) => {
-    res.json({ success: true });
-  });
-
-  router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, (req, res) => {
-    res.json({ deleted: true });
-  });
-
-  router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, (req, res) => {
-    res.json({ updated: true });
-  });
-
-  app.use('/api/chats', router);
-
-  // Error handler
-  app.use((err, req, res, next) => {
-    res.status(err.status || 500).json({ error: err.message });
-  });
-
-  return app;
-};
-
-describe('🔒 Chat Membership Security', () => {
-  let app;
-
-  beforeAll(() => {
-    app = createTestApp();
-  });
-
-  describe('Access Control', () => {
-    it('should ALLOW member to access their room (GET /messages)', async () => {
-      const res = await request(app)
-        .get('/api/chats/rooms/room_456/messages')
-        .set('x-test-user-id', 'user_123');
-
-      expect(res.status).not.toBe(403);
-      expect(res.status).not.toBe(401);
-    });
-
-    it('should REJECT non-member from accessing room (GET /messages)', async () => {
-      const res = await request(app)
-        .get('/api/chats/rooms/room_789/messages')
-        .set('x-test-user-id', 'user_123');
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Access denied');
-    });
-
-    it('should REJECT non-member from posting messages', async () => {
-      const res = await request(app)
-        .post('/api/chats/rooms/room_789/messages')
-        .set('x-test-user-id', 'user_123')
-        .send({ content: 'test' });
-
-      expect(res.status).toBe(403);
-    });
-
-    it('should REJECT non-member from viewing members list', async () => {
-      const res = await request(app)
-        .get('/api/chats/rooms/room_789/members')
-        .set('x-test-user-id', 'user_123');
-
-      expect(res.status).toBe(403);
-    });
-
-    it('should REJECT non-member from adding reactions', async () => {
-      const res = await request(app)
-        .post('/api/chats/rooms/room_789/reactions/msg_123')
-        .set('x-test-user-id', 'user_123')
-        .send({ emoji: '👍' });
-
-      expect(res.status).toBe(403);
-    });
-
-    it('should REJECT non-member from deleting messages', async () => {
-      const res = await request(app)
-        .delete('/api/chats/rooms/room_789/messages/msg_123')
-        .set('x-test-user-id', 'user_123');
-
-      expect(res.status).toBe(403);
-    });
-
-    it('should REJECT non-member from editing messages', async () => {
-      const res = await request(app)
-        .patch('/api/chats/rooms/room_789/messages/msg_123')
-        .set('x-test-user-id', 'user_123')
-        .send({ content: 'edited' });
-
-      expect(res.status).toBe(403);
-    });
-  });
-
-  describe('Identity Validation', () => {
-    it('should use req.anonymousId, not header spoofing', async () => {
-      // This test verifies that the middleware uses validated identity
-      // from req.anonymousId, not direct header access
-      const res = await request(app)
-        .get('/api/chats/rooms/room_789/messages')
-        .set('x-anonymous-id', 'attacker_999')  // Try to spoof
-        .set('x-test-user-id', 'user_123');      // Actual validated identity
-
-      // Should reject based on validated identity, not spoofed header
-      expect(res.status).toBe(403);
-    });
-  });
-
-  describe('Edge Cases', () => {
-    it('should handle missing roomId parameter', async () => {
-      const res = await request(app)
-        .get('/api/chats/rooms//messages')
-        .set('x-test-user-id', 'user_123');
-
-      // Should return 400 or 404, not 500
-      expect(res.status).toBeGreaterThanOrEqual(400);
-      expect(res.status).toBeLessThan(500);
-    });
-
-    it('should handle missing user identity', async () => {
-      const appNoAuth = express();
-      appNoAuth.use(express.json());
-      // No auth middleware - simulates unauthenticated request
-
-      const router = express.Router();
-      router.get('/rooms/:roomId/messages', requireRoomMembership, (req, res) => {
-        res.json({ messages: [] });
-      });
-      appNoAuth.use('/api/chats', router);
-
-      const res = await request(appNoAuth)
-        .get('/api/chats/rooms/room_456/messages');
-
-      // Should return 400 for missing userId
-      expect(res.status).toBe(400);
-    });
-  });
-});
-
-describe('🔍 Direct Header Access Detection', () => {
-  it('should detect forbidden patterns in codebase', async () => {
-    // This test scans for direct header access patterns
-    // Run with: npm run security:test
-    
-    const forbiddenPatterns = [
-      /req\.headers\[['"]x-anonymous-id['"]\]/i,
-      /req\.headers\[['"]X-Anonymous-Id['"]\]/i,
-    ];
-
-    const allowedFiles = [
-      'middleware/requireAnonymousId.js',
-      'middleware/requireRoomMembership.js',
-      'utils/validation.js',
-      'tests/'
-    ];
-
-    // This is a compile-time check - in real CI, we'd scan actual files
-    // For now, document the patterns that must not appear in route files
-    expect(forbiddenPatterns.length).toBeGreaterThan(0);
-    expect(allowedFiles.length).toBeGreaterThan(0);
-  });
-});
-
-// Run tests
-if (import.meta.url === `file://${process.argv[1]}`) {
-  console.log('🔒 Running SafeSpot Security Tests...\n');
+function signTestToken(anonymousId, role = 'citizen') {
+    const secret = process.env.JWT_SECRET || 'safespot-secret-key-change-me';
+    return jwt.sign({ anonymous_id: anonymousId, role }, secret, { expiresIn: '1h' });
 }
+
+const createTestApp = () => {
+    const app = express();
+    app.use(express.json());
+    app.use(validateAuth);
+
+    // Identity projection used by requireRoomMembership (matches production chain behavior).
+    app.use((req, _res, next) => {
+        req.anonymousId = req.user?.anonymous_id || null;
+        next();
+    });
+
+    const router = express.Router();
+
+    router.get('/rooms/:roomId/messages', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ messages: [] });
+    });
+
+    router.post('/rooms/:roomId/messages', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ id: '33333333-3333-3333-3333-333333333333' });
+    });
+
+    router.get('/rooms/:roomId/members', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ members: [] });
+    });
+
+    router.post('/rooms/:roomId/reactions/:messageId', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ success: true });
+    });
+
+    router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ deleted: true });
+    });
+
+    router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, (_req, res) => {
+        res.status(200).json({ updated: true });
+    });
+
+    app.use('/api/chats', router);
+    return app;
+};
+
+describe('Chat Membership Security', () => {
+    let app;
+
+    beforeAll(() => {
+        app = createTestApp();
+    });
+
+    describe('Access Control', () => {
+        it('should ALLOW member to access their room (GET /messages)', async () => {
+            const token = signTestToken(MEMBER_USER_ID);
+            const res = await request(app)
+                .get(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages`)
+                .set('Authorization', `Bearer ${token}`);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('should REJECT non-member from accessing room (GET /messages)', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .get(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages`)
+                .set('Authorization', `Bearer ${token}`);
+
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('NOT_ROOM_MEMBER');
+        });
+
+        it('should REJECT non-member from posting messages', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .post(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages`)
+                .set('Authorization', `Bearer ${token}`)
+                .send({ content: 'test' });
+
+            expect(res.status).toBe(403);
+        });
+
+        it('should REJECT non-member from viewing members list', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .get(`/api/chats/rooms/${MEMBER_ROOM_ID}/members`)
+                .set('Authorization', `Bearer ${token}`);
+
+            expect(res.status).toBe(403);
+        });
+
+        it('should REJECT non-member from adding reactions', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .post(`/api/chats/rooms/${MEMBER_ROOM_ID}/reactions/44444444-4444-4444-4444-444444444444`)
+                .set('Authorization', `Bearer ${token}`)
+                .send({ emoji: ':thumbsup:' });
+
+            expect(res.status).toBe(403);
+        });
+
+        it('should REJECT non-member from deleting messages', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .delete(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages/55555555-5555-5555-5555-555555555555`)
+                .set('Authorization', `Bearer ${token}`);
+
+            expect(res.status).toBe(403);
+        });
+
+        it('should REJECT non-member from editing messages', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .patch(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages/66666666-6666-6666-6666-666666666666`)
+                .set('Authorization', `Bearer ${token}`)
+                .send({ content: 'edited' });
+
+            expect(res.status).toBe(403);
+        });
+    });
+
+    describe('Identity Validation', () => {
+        it('should use validated identity and ignore spoofed x-anonymous-id header', async () => {
+            const token = signTestToken(NON_MEMBER_USER_ID);
+            const res = await request(app)
+                .get(`/api/chats/rooms/${MEMBER_ROOM_ID}/messages`)
+                .set('Authorization', `Bearer ${token}`)
+                .set('x-anonymous-id', MEMBER_USER_ID);
+
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('NOT_ROOM_MEMBER');
+        });
+    });
+
+    describe('Edge Cases', () => {
+        it('should handle missing roomId parameter', async () => {
+            const token = signTestToken(MEMBER_USER_ID);
+            const res = await request(app)
+                .get('/api/chats/rooms//messages')
+                .set('Authorization', `Bearer ${token}`);
+
+            expect(res.status).toBeGreaterThanOrEqual(400);
+            expect(res.status).toBeLessThan(500);
+        });
+
+        it('should return 401 when user identity is missing', async () => {
+            const res = await request(app)
+                .get(`/api/chats/rooms/${NON_MEMBER_ROOM_ID}/messages`);
+
+            expect(res.status).toBe(401);
+            expect(res.body.code).toBe('AUTH_REQUIRED');
+        });
+    });
+});
+
+describe('Direct Header Access Detection', () => {
+    it('should detect forbidden patterns in codebase', async () => {
+        const forbiddenPatterns = [
+            /req\.headers\[['"]x-anonymous-id['"]\]/i,
+            /req\.headers\[['"]X-Anonymous-Id['"]\]/i
+        ];
+
+        const allowedFiles = [
+            'middleware/requireAnonymousId.js',
+            'middleware/requireRoomMembership.js',
+            'utils/validation.js',
+            'tests/'
+        ];
+
+        expect(forbiddenPatterns.length).toBeGreaterThan(0);
+        expect(allowedFiles.length).toBeGreaterThan(0);
+    });
+});

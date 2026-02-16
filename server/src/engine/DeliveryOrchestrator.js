@@ -5,6 +5,7 @@ import { sendPushNotification, createChatNotificationPayload, createActivityNoti
 import { eventDeduplicator } from './DeliveryLedger.js';
 import { DispatchResult } from './NotificationDispatcher.js';
 import { logError } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 
 /**
  * DeliveryOrchestrator
@@ -150,15 +151,17 @@ export const DeliveryOrchestrator = {
         // Map Job Type to SSE Channel/Event
         if (type === 'CHAT_MESSAGE') {
             await eventDeduplicator.markDispatched(jobData.id, 'sse');
+            const conversationId = payload.data?.conversationId || payload.data?.roomId;
 
             // ✅ ENTERPRISE CONTRACT: Send the full message object for frontend processing
             realtimeEvents.emitUserChatUpdate(target.anonymousId, {
                 eventId: jobData.id,
                 serverTimestamp,
-                roomId: payload.data?.roomId,
+                conversationId,
+                roomId: conversationId, // Backward compatibility temporal
                 message: {
                     id: payload.entityId, // The real message ID from DB
-                    conversation_id: payload.data?.roomId,
+                    conversation_id: conversationId,
                     sender_id: payload.data?.senderId || 'system',
                     content: payload.message,
                     type: 'text',
@@ -211,6 +214,7 @@ export const DeliveryOrchestrator = {
      */
     async _dispatchPush(jobData) {
         const { type, target, payload } = jobData;
+        const pushStartedAt = Date.now();
 
         // Resolve Subscriptions
         // We implement the DB query here to decouple.
@@ -224,6 +228,15 @@ export const DeliveryOrchestrator = {
         const subscriptions = result.rows;
 
         if (!subscriptions || subscriptions.length === 0) {
+            logger.info('CHAT_PIPELINE', {
+                stage: 'PUSH_PROVIDER_OK',
+                result: 'skipped_no_subscription',
+                traceId: jobData.traceId,
+                eventId: jobData.id,
+                targetId: target.anonymousId,
+                notificationType: type,
+                durationMs: Date.now() - pushStartedAt
+            });
             // No push sub -> Delivery 'succeeded' (nothing to do)
             return DispatchResult.SUCCESS;
         }
@@ -231,9 +244,11 @@ export const DeliveryOrchestrator = {
         // Prepare Payload
         let pushPayload;
         if (type === 'CHAT_MESSAGE') {
+            const conversationId = payload.data?.conversationId || payload.data?.roomId;
             pushPayload = createChatNotificationPayload({
                 id: payload.entityId,
-                room_id: payload.data?.roomId,
+                conversation_id: conversationId,
+                room_id: conversationId, // Backward compatibility temporal
                 senderAlias: payload.data?.senderAlias,
                 content: payload.message,
                 recipientAnonymousId: target.anonymousId
@@ -254,6 +269,23 @@ export const DeliveryOrchestrator = {
         const results = await Promise.allSettled(subscriptions.map(sub =>
             sendPushNotification({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, pushPayload)
         ));
+
+        const fulfilled = results.filter(r => r.status === 'fulfilled');
+        const sentOk = fulfilled.filter(r => r.value?.success).length;
+        const sentFail = fulfilled.filter(r => !r.value?.success).length + results.filter(r => r.status === 'rejected').length;
+
+        logger.info('CHAT_PIPELINE', {
+            stage: sentFail === 0 ? 'PUSH_PROVIDER_OK' : 'PUSH_PROVIDER_FAIL',
+            result: sentFail === 0 ? 'ok' : 'partial_or_fail',
+            traceId: jobData.traceId,
+            eventId: jobData.id,
+            targetId: target.anonymousId,
+            notificationType: type,
+            subscriptionCount: subscriptions.length,
+            successCount: sentOk,
+            failureCount: sentFail,
+            durationMs: Date.now() - pushStartedAt
+        });
 
         // Note: We track push_sent_at in routeAndDispatch now (Atomic Flow), 
         // so we don't strictly need to do it here, but keeping it for other flows might be safe.

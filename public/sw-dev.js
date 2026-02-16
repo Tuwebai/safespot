@@ -67,13 +67,4 @@ self.addEventListener('notificationclick', (event) => {
     );
 });
 
-// ============================================
-// FALLBACK: Fetch (Network only en dev)
-// ============================================
-
-self.addEventListener('fetch', (event) => {
-    // En dev, dejamos que todo pase al network
-    // El SW solo existe para recibir push notifications
-});
-
 console.log('[SW-DEV] ✅ Ready for push notifications');

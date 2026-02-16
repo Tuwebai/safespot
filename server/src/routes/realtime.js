@@ -8,15 +8,41 @@ import logger from '../utils/logger.js';
 
 import redis, { redisSubscriber } from '../config/redis.js';
 import { eventDeduplicator } from '../engine/DeliveryLedger.js';
+import { verifyMembership } from '../middleware/requireRoomMembership.js';
+import { AppError } from '../utils/AppError.js';
+import { attachOpsRequestTelemetry, logRealtimeAuthzDenied, logRealtimeCatchup } from '../utils/opsTelemetry.js';
 
 const router = express.Router();
+router.use(attachOpsRequestTelemetry('realtime'));
+
+function getAuthenticatedAnonymousId(req) {
+    return req.user?.anonymous_id || null;
+}
+
+function hasAdminRole(req) {
+    return req.user?.role === 'admin' || req.user?.role === 'super_admin';
+}
+
+function logRealtimeForbidden(req, target, reason, statusCode) {
+    logger.warn('REALTIME_FORBIDDEN', {
+        actor: req.user?.anonymous_id || null,
+        target,
+        reason,
+        requestId: req.id || req.headers['x-request-id'] || null
+    });
+    logRealtimeAuthzDenied(req, {
+        endpoint: req.originalUrl || req.url,
+        reason,
+        statusCode
+    });
+}
 
 /**
  * POST /api/realtime/ack/:eventId
  * Acknowledge receipt of an EVENT (technical deduplication)
  * ⚠️ This is NOT message delivery - that's handled by /chats/messages/:id/ack-delivered
  */
-router.post('/ack/:eventId', async (req, res) => {
+router.post('/ack/:eventId', async (req, res, next) => {
     const { eventId } = req.params;
     try {
         // 🏛️ SSOT: This marks the EVENT as processed (deduplication)
@@ -24,7 +50,7 @@ router.post('/ack/:eventId', async (req, res) => {
         await eventDeduplicator.markProcessed(eventId);
         res.json({ success: true, eventId });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        next(err);
     }
 });
 
@@ -33,15 +59,28 @@ router.post('/ack/:eventId', async (req, res) => {
  * 🚑 Gap Catchup API for Realtime Orchestrator
  * Returns missed domain events since a given serverTimestamp
  */
-router.get('/catchup', async (req, res) => {
+router.get('/catchup', async (req, res, next) => {
+    const catchupStart = Date.now();
     const { since } = req.query;
-    if (!since) return res.status(400).json({ error: 'Missing since timestamp' });
+    if (!since) {
+        logRealtimeCatchup(req, { statusCode: 400, durationMs: Date.now() - catchupStart, eventCount: 0 });
+        return res.status(400).json({ error: 'Missing since timestamp' });
+    }
 
     try {
-        const sinceTs = parseInt(since);
+        const sinceTs = parseInt(since, 10);
+        if (!Number.isFinite(sinceTs) || sinceTs < 0) {
+            logRealtimeCatchup(req, { statusCode: 400, durationMs: Date.now() - catchupStart, eventCount: 0 });
+            return res.status(400).json({ error: 'Invalid since timestamp' });
+        }
 
-        // 2. Get user ID from verified JWT (set by validateAuth middleware)
-        const anonymousId = req.user?.anonymous_id || '00000000-0000-0000-0000-000000000000';
+        // Security: Catchup is authenticated-only to prevent unauthorized replay.
+        const anonymousId = getAuthenticatedAnonymousId(req);
+        if (!anonymousId) {
+            logRealtimeForbidden(req, 'catchup', 'AUTH_REQUIRED', 401);
+            logRealtimeCatchup(req, { statusCode: 401, durationMs: Date.now() - catchupStart, eventCount: 0 });
+            return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        }
         
         // 1. Fetch missed Chat Messages (ONLY from user's conversations)
         // 🏛️ SECURITY FIX: Filter by conversation membership
@@ -86,9 +125,12 @@ router.get('/catchup', async (req, res) => {
         // 3. Fetch missed Comment deletions
         const commentTask = pool.query(
             `SELECT c.id, c.report_id, c.deleted_at FROM comments c
+             INNER JOIN reports r ON r.id = c.report_id
              WHERE (EXTRACT(EPOCH FROM c.deleted_at) * 1000 > $1)
+               AND (r.deleted_at IS NULL OR r.anonymous_id = $2 OR $3 = 'admin')
+               AND (r.is_hidden = false OR r.anonymous_id = $2 OR $3 = 'admin')
              ORDER BY c.deleted_at ASC LIMIT 50`,
-            [sinceTs]
+            [sinceTs, anonymousId, userRole]
         );
 
         const [messagesResult, reportsResult, commentsResult, deliveryResult] = await Promise.all([messageTask, reportTask, commentTask, deliveryTask]);
@@ -280,10 +322,12 @@ router.get('/catchup', async (req, res) => {
             });
         });
 
+        logRealtimeCatchup(req, { statusCode: 200, durationMs: Date.now() - catchupStart, eventCount: events.length });
         res.json(events);
     } catch (err) {
         console.error('[Catchup] Error:', err);
-        res.status(500).json({ error: 'Catchup failed', details: err.message });
+        logRealtimeCatchup(req, { statusCode: 500, durationMs: Date.now() - catchupStart, eventCount: 0 });
+        next(new AppError('Catchup failed', 500));
     }
 });
 
@@ -292,13 +336,13 @@ router.get('/catchup', async (req, res) => {
  * Check processing status of an event (technical deduplication)
  * ⚠️ DEPRECATED: For message delivery status use /message-status/:messageId (PostgreSQL SSOT)
  */
-router.get('/status/:eventId', async (req, res) => {
+router.get('/status/:eventId', async (req, res, next) => {
     const { eventId } = req.params;
     try {
         const status = await eventDeduplicator.getStatus(eventId);
         res.json(status || { status: 'not_found' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        next(err);
     }
 });
 
@@ -312,13 +356,26 @@ router.get('/status/:eventId', async (req, res) => {
 router.get('/message-status/:messageId', async (req, res) => {
     const { messageId } = req.params;
     try {
+        const anonymousId = getAuthenticatedAnonymousId(req);
+        if (!anonymousId) {
+            logRealtimeForbidden(req, messageId, 'AUTH_REQUIRED', 401);
+            return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        }
+
         const result = await pool.query(
-            'SELECT is_delivered, is_read FROM chat_messages WHERE id = $1',
-            [messageId]
+            `SELECT m.is_delivered, m.is_read
+             FROM chat_messages m
+             LEFT JOIN conversation_members cm
+               ON cm.conversation_id = m.conversation_id
+              AND cm.user_id = $2
+             WHERE m.id = $1
+               AND (m.sender_id = $2 OR cm.user_id IS NOT NULL)
+             LIMIT 1`,
+            [messageId, anonymousId]
         );
 
         if (result.rows.length === 0) {
-            // Message not found - allow Push (fail-open)
+            // Unauthorized or not found -> fail-open for push suppression, without leaking status.
             return res.json({ delivered: false, read: false });
         }
 
@@ -337,7 +394,7 @@ router.get('/message-status/:messageId', async (req, res) => {
  * GET /api/realtime/status
  * Health check for the real-time infrastructure (Redis + SSE Tracker)
  */
-router.get('/status', async (req, res) => {
+router.get('/status', async (req, res, next) => {
     try {
         const redisStatus = redis ? redis.status : 'disabled';
         const subStatus = redisSubscriber ? redisSubscriber.status : 'disabled';
@@ -363,11 +420,7 @@ router.get('/status', async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({
-            success: false,
-            status: 'unhealthy',
-            error: err.message
-        });
+        next(err);
     }
 });
 
@@ -467,9 +520,23 @@ router.get('/comments/:reportId', (req, res) => {
  * SSE endpoint for real-time chat messages
  * GET /api/realtime/chats/:roomId
  */
-router.get('/chats/:roomId', (req, res) => {
+router.get('/chats/:roomId', async (req, res) => {
     const { roomId } = req.params;
-    const { anonymousId } = req.query; // Recibimos el ID para saber quién está en línea
+    const anonymousId = getAuthenticatedAnonymousId(req);
+    const isAdmin = hasAdminRole(req);
+
+    if (!anonymousId) {
+        logRealtimeForbidden(req, roomId, 'AUTH_REQUIRED', 401);
+        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
+    if (!isAdmin) {
+        const isMember = await verifyMembership(anonymousId, roomId);
+        if (!isMember) {
+            logRealtimeForbidden(req, roomId, 'NOT_ROOM_MEMBER', 403);
+            return res.status(403).json({ error: 'Access denied: Not a member of this conversation', code: 'NOT_ROOM_MEMBER' });
+        }
+    }
 
     req.setTimeout(0);
 
@@ -482,18 +549,28 @@ router.get('/chats/:roomId', (req, res) => {
     // Event Handlers - UNIFIED CONTRACT
     const handleNewMessage = (data) => {
         const { message, originClientId, ...contract } = data;
+        const conversationId = message?.conversation_id || data?.conversationId || data?.roomId || roomId;
+        const eventId = contract.eventId || message?.id || `new-message:${conversationId}:${message?.id || 'unknown'}`;
+        const serverTimestamp = contract.serverTimestamp || (message?.created_at ? new Date(message.created_at).getTime() : Date.now());
         stream.send('new-message', {
             id: message.id,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
+            eventId,
+            serverTimestamp,
             partial: message,
-            originClientId,
+            originClientId: originClientId || contract.originClientId || 'backend',
             ...contract
         });
     };
 
     const handleTyping = (data) => {
         const { originClientId, eventId, serverTimestamp, ...payload } = data;
+        const conversationId = payload.conversationId || payload.roomId || roomId;
         stream.send('typing', {
             id: roomId,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId,
             eventId,
@@ -503,8 +580,11 @@ router.get('/chats/:roomId', (req, res) => {
 
     const handleRead = (data) => {
         const { originClientId, eventId, serverTimestamp, ...payload } = data;
+        const conversationId = payload.conversationId || payload.roomId || roomId;
         stream.send('message.read', {
             id: data.id || data.messageId,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId,
             eventId,
@@ -514,8 +594,11 @@ router.get('/chats/:roomId', (req, res) => {
 
     const handleMessageDelivered = (data) => {
         const { originClientId, eventId, serverTimestamp, ...payload } = data;
+        const conversationId = payload.conversationId || payload.roomId || roomId;
         stream.send('message.delivered', {
             id: data.id || data.messageId,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId,
             eventId,
@@ -606,7 +689,17 @@ router.get('/chats/:roomId', (req, res) => {
  * GET /api/realtime/user/:anonymousId
  */
 router.get('/user/:anonymousId', (req, res) => {
-    const { anonymousId } = req.params;
+    const targetAnonymousId = req.params.anonymousId;
+    const anonymousId = getAuthenticatedAnonymousId(req);
+    if (!anonymousId) {
+        logRealtimeForbidden(req, targetAnonymousId, 'AUTH_REQUIRED', 401);
+        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+    if (anonymousId !== targetAnonymousId) {
+        logRealtimeForbidden(req, targetAnonymousId, 'FORBIDDEN_STREAM', 403);
+        return res.status(403).json({ error: 'Access denied: Cannot subscribe to another user stream', code: 'FORBIDDEN_STREAM' });
+    }
+
     req.setTimeout(0);
 
     const stream = new SSEResponse(res);
@@ -620,7 +713,7 @@ router.get('/user/:anonymousId', (req, res) => {
 
     const handleChatUpdate = (data) => {
         // Enforce Enterprise Contract: eventId + serverTimestamp at ROOT level
-        const eventId = data.eventId || data.id || `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const eventId = data.eventId || data.id || `chat-update:${data.conversationId || data.roomId || 'unknown'}:${data.message?.id || 'state'}`;
         const serverTimestamp = data.serverTimestamp || Date.now();
 
         // 1. Prepare base payload
@@ -633,9 +726,12 @@ router.get('/user/:anonymousId', (req, res) => {
         // 2. Ensure critical fields are mapped for client
         // 'id' is used by frontend caches
         if (!payload.id && data.conversationId) payload.id = data.conversationId;
+        const conversationId = payload.conversationId || payload.roomId || data.conversationId || data.roomId || payload.id;
 
         stream.send('chat-update', {
             id: payload.id,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId: data.originClientId,
             // Explicit Contract Fields
@@ -646,8 +742,11 @@ router.get('/user/:anonymousId', (req, res) => {
 
     const handleMessageDelivered = (data) => {
         const { originClientId, eventId, serverTimestamp, ...payload } = data;
+        const conversationId = payload.conversationId || payload.roomId || data.conversationId || data.roomId || data.id;
         stream.send('message.delivered', {
             id: data.id || data.messageId,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId,
             eventId,
@@ -657,8 +756,11 @@ router.get('/user/:anonymousId', (req, res) => {
 
     const handleMessageRead = (data) => {
         const { originClientId, eventId, serverTimestamp, ...payload } = data;
+        const conversationId = payload.conversationId || payload.roomId || data.conversationId || data.roomId || data.id;
         stream.send('message.read', {
             id: data.id || data.messageId,
+            conversationId,
+            roomId: conversationId, // Backward compatibility temporal
             partial: payload,
             originClientId,
             eventId,
@@ -732,16 +834,19 @@ router.get('/user/:anonymousId', (req, res) => {
                 const deliveredAt = new Date();
                 
                 for (const msg of pendingMessages.rows) {
+                    const pendingServerTs = new Date(msg.created_at).getTime();
                     // Emitir mensaje al receptor
                     stream.send('new-message', {
                         id: msg.id,
+                        conversationId: msg.conversation_id,
+                        roomId: msg.conversation_id, // Backward compatibility temporal
                         partial: {
                             message: msg,
                             originClientId: 'system_pending'
                         },
                         originClientId: 'system_pending',
                         eventId: `pending_${msg.id}`,
-                        serverTimestamp: new Date(msg.created_at).getTime()
+                        serverTimestamp: pendingServerTs
                     });
 
                     // Marcar como delivered
@@ -749,6 +854,17 @@ router.get('/user/:anonymousId', (req, res) => {
                         'UPDATE chat_messages SET is_delivered = true, delivered_at = $1 WHERE id = $2',
                         [deliveredAt, msg.id]
                     );
+
+                    logger.info('CHAT_PIPELINE', {
+                        stage: 'ACK_UPDATE_DB',
+                        result: 'ok',
+                        requestId: req.requestId || req.id || req.headers['x-request-id'] || null,
+                        actorId: anonymousId,
+                        targetId: msg.sender_id,
+                        conversationId: msg.conversation_id,
+                        messageId: msg.id,
+                        ackType: 'delivered_reconnect'
+                    });
 
                     // Notificar al sender
                     realtimeEvents.emitMessageDelivered(msg.sender_id, {

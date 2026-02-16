@@ -201,13 +201,15 @@ class RealtimeOrchestrator {
      */
     async connect(userId: string): Promise<void> {
         this.userId = userId;
-        // 🔧 FIX: Include anonymousId in query param for SSE auth (EventSource can't send headers)
+        // EventSource cannot send Authorization headers, so JWT goes in query for realtime endpoints.
         const anonymousId = sessionAuthority.getAnonymousId() || userId;
-        const userUrl = `${API_BASE_URL}/realtime/user/${userId}?anonymousId=${anonymousId}`;
-        const feedUrl = `${API_BASE_URL}/realtime/feed?anonymousId=${anonymousId}`;
+        const jwt = sessionAuthority.getToken()?.jwt;
+        const authQuery = jwt ? `&token=${encodeURIComponent(jwt)}` : '';
+        const userUrl = `${API_BASE_URL}/realtime/user/${userId}?anonymousId=${anonymousId}${authQuery}`;
+        const feedUrl = `${API_BASE_URL}/realtime/feed?anonymousId=${anonymousId}${authQuery}`;
 
-        // 1. User Stream (Domain Events: Chats, Notifications, Presence)
-        if (!this.activeSubscriptions.includes(userUrl)) {
+        // 1. User Stream (Domain Events: Chats, Notifications, Presence) - requires JWT
+        if (jwt && !this.activeSubscriptions.includes(userUrl)) {
             ssePool.subscribe(userUrl, 'message', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'message.delivered', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'message.read', (event) => this.processRawEvent(event, 'user'));
@@ -739,15 +741,23 @@ class RealtimeOrchestrator {
      */
     private async acknowledgeMessageDelivered(messageId: string): Promise<void> {
         if (!this.userId) return;
+        const sessionToken = sessionAuthority.getToken();
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'X-Anonymous-Id': this.userId,
+            'X-Client-Id': this.myClientId
+        };
+        if (sessionToken?.signature) {
+            headers['X-Anonymous-Signature'] = sessionToken.signature;
+        }
+        if (sessionToken?.jwt) {
+            headers.Authorization = `Bearer ${sessionToken.jwt}`;
+        }
 
         try {
             await fetch(`${API_BASE_URL}/chats/messages/${messageId}/ack-delivered`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Anonymous-Id': this.userId,
-                    'X-Client-Id': this.myClientId
-                }
+                headers
             });
             console.debug(`[Orchestrator] 📬📬 Message DELIVERED ACK sent: ${messageId}`);
         } catch {
@@ -760,12 +770,18 @@ class RealtimeOrchestrator {
      */
     async resync(): Promise<void> {
         if (!this.userId) return;
+        const jwt = sessionAuthority.getToken()?.jwt;
+        if (!jwt) return;
 
         const lastAt = await localProcessedLog.getLastProcessedAt(this.userId, 'user');
         console.debug(`[Orchestrator] 🚑 Starting Resync from cursor: ${lastAt}`);
 
         try {
-            const resp = await fetch(`${API_BASE_URL}/realtime/catchup?since=${lastAt}`);
+            const anonymousId = sessionAuthority.getAnonymousId() || this.userId;
+            const authQuery = jwt ? `&token=${encodeURIComponent(jwt)}` : '';
+            const resp = await fetch(`${API_BASE_URL}/realtime/catchup?since=${lastAt}&anonymousId=${anonymousId}${authQuery}`, {
+                headers: jwt ? { Authorization: `Bearer ${jwt}` } : undefined
+            });
 
             if (!resp.ok) {
                 if (resp.status === 404) {
@@ -875,7 +891,10 @@ class RealtimeOrchestrator {
      * watchChatRoom() - Dynamic subscription for a chat room
      */
     watchChatRoom(roomId: string, anonymousId: string): void {
-        const url = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${roomId}?anonymousId=${anonymousId}`;
+        const jwt = sessionAuthority.getToken()?.jwt;
+        if (!jwt) return;
+        const authQuery = jwt ? `&token=${encodeURIComponent(jwt)}` : '';
+        const url = `${API_BASE_URL.replace('/api', '')}/api/realtime/chats/${roomId}?anonymousId=${anonymousId}${authQuery}`;
         const channelId = `social:chat:${roomId}`; // Use social prefix for dynamic routing
 
         if (this.dynamicSubscriptions.has(channelId)) return;
@@ -932,6 +951,10 @@ class RealtimeOrchestrator {
         this.listeners.clear();
         this.dynamicSubscriptions.forEach(unsub => unsub());
         this.dynamicSubscriptions.clear();
+        this.activeSubscriptions = [];
+        this.userId = null;
+        this.status = 'DISCONNECTED';
+        ssePool.clearAll();
         
         // 🧹 MEMORY FIX: Cerrar BroadcastChannel para liberar recursos del navegador
         // Evita acumulación de channels en HMR o múltiples instancias

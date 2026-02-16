@@ -1,6 +1,6 @@
 import express from 'express';
 import { queryWithRLS } from '../utils/rls.js';
-import { logError, logSuccess } from '../utils/logger.js';
+import { logError, logSuccess, logInfo } from '../utils/logger.js';
 import { sanitizeContent } from '../utils/sanitize.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { presenceTracker } from '../utils/presenceTracker.js';
@@ -11,13 +11,14 @@ import { validateImageBuffer, requireAnonymousId } from '../utils/validation.js'
 import { requireRoomMembership, verifyMembership } from '../middleware/requireRoomMembership.js';
 import { imageUploadLimiter } from '../utils/rateLimiter.js';
 import { NotificationQueue } from '../engine/NotificationQueue.js';
+import { logChatAckFailure } from '../utils/opsTelemetry.js';
 
 const router = express.Router();
 
-// 🔒 SECURITY FIX: Require authentication on ALL chat endpoints
+// ðŸ”’ SECURITY FIX: Require authentication on ALL chat endpoints
 router.use(requireAnonymousId);
 
-// Configuración de Multer para Chat
+// ConfiguraciÃ³n de Multer para Chat
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -28,7 +29,7 @@ const upload = multer({
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Archivo de imagen inválido'), false);
+            cb(new Error('Archivo de imagen invÃ¡lido'), false);
         }
     },
 });
@@ -42,7 +43,7 @@ router.get('/rooms', async (req, res) => {
     if (!anonymousId) { return res.status(401).json({ error: 'Anonymous ID required' }); }
 
     try {
-        // ✅ ENTERPRISE REFACTOR: Single Optimized Query (No N+1)
+        // âœ… ENTERPRISE REFACTOR: Single Optimized Query (No N+1)
         // Uses LATERAL JOINs for efficient retrieval of related data without loop overhead.
         // Handles DMs gracefully and prevents row explosion for Groups via LIMIT 1 on participants.
         
@@ -143,7 +144,7 @@ router.post('/rooms', async (req, res) => {
         let conversationId;
         let participantB = final_recipient_id;
 
-        // Si hay reporte, el destinatario es el dueño del reporte
+        // Si hay reporte, el destinatario es el dueÃ±o del reporte
         if (final_report_id) {
             const reportResult = await queryWithRLS(anonymousId, 'SELECT anonymous_id FROM reports WHERE id = $1', [final_report_id]);
             if (reportResult.rows.length === 0) { return res.status(404).json({ error: 'Report not found' }); }
@@ -152,7 +153,7 @@ router.post('/rooms', async (req, res) => {
 
         if (participantB === anonymousId) { return res.status(400).json({ error: 'Cannot start a chat with yourself' }); }
 
-        // Verificar si ya existe una conversación entre ambos miembros para este contexto
+        // Verificar si ya existe una conversaciÃ³n entre ambos miembros para este contexto
         let existingConvQuery;
         let existingConvParams;
 
@@ -179,7 +180,7 @@ router.post('/rooms', async (req, res) => {
         if (existingResult.rows.length > 0) {
             conversationId = existingResult.rows[0].id;
         } else {
-            // Iniciar Transacción (vía scripts de logic o queries directas)
+            // Iniciar TransacciÃ³n (vÃ­a scripts de logic o queries directas)
             const newConv = await queryWithRLS(anonymousId,
                 'INSERT INTO conversations (report_id, type) VALUES ($1, $2) RETURNING id',
                 [final_report_id || null, 'dm']
@@ -228,7 +229,7 @@ router.post('/rooms', async (req, res) => {
  * Query Params:
  * - since: (optional) Message ID to fetch messages AFTER (for gap recovery)
  * 
- * ✅ WhatsApp-Grade Gap Recovery Support
+ * âœ… WhatsApp-Grade Gap Recovery Support
  */
 router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) => {
     const anonymousId = req.anonymousId;
@@ -236,7 +237,7 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
     const { since } = req.query; // Gap recovery: last known message ID
 
     try {
-        // 🔒 SECURITY FIX: Verify user is member of this conversation
+        // ðŸ”’ SECURITY FIX: Verify user is member of this conversation
         if (!await verifyMembership(anonymousId, roomId)) {
             return res.status(403).json({ error: 'Access denied: Not a member of this conversation' });
         }
@@ -270,7 +271,7 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
             `;
             params = [roomId, since, anonymousId];
 
-            // ✅ Enterprise Hardening: "Phantom Reference Conflict"
+            // âœ… Enterprise Hardening: "Phantom Reference Conflict"
             // Before running the gap query, check if the reference message actually exists.
             // If it was deleted, the subquery returns NULL, resulting in an empty list (False Negative).
             // We must return 410 GONE to force a full client refetch.
@@ -311,8 +312,8 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
 
         const result = await queryWithRLS(anonymousId, messagesQuery, params);
 
-        // 🏛️ WHATSAPP-GRADE: Auto-mark delivered on fetch
-        // Cuando el receptor pide mensajes (tiene internet), marcar automáticamente como delivered
+        // ðŸ›ï¸ WHATSAPP-GRADE: Auto-mark delivered on fetch
+        // Cuando el receptor pide mensajes (tiene internet), marcar automÃ¡ticamente como delivered
         const messagesToMark = result.rows.filter(m => 
             m.sender_id !== anonymousId && !m.is_delivered
         );
@@ -322,7 +323,7 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
             const deliveredAt = new Date();
             const messageIds = messagesToMark.map(m => m.id);
             
-            // UPDATE automático sin esperar frontend
+            // UPDATE automÃ¡tico sin esperar frontend
             await pool.query(
                 `UPDATE chat_messages 
                  SET is_delivered = true, delivered_at = $1 
@@ -374,9 +375,9 @@ router.get('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =>
 
 /**
  * POST /api/chats/:roomId/messages
- * Envía un mensaje a una sala
+ * EnvÃ­a un mensaje a una sala
  * 
- * ✅ PERFORMANCE OPTIMIZED: Response sent after INSERT only
+ * âœ… PERFORMANCE OPTIMIZED: Response sent after INSERT only
  * All other operations (JOINs, updates, SSE, push) are deferred
  */
 router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) => {
@@ -384,12 +385,25 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
     const { roomId } = req.params;
     const clientId = req.headers['x-client-id'];
     const { content, type = 'text', caption, reply_to_id, id: providedId } = req.body;
+    const requestId = req.requestId || req.id || req.headers['x-request-id'] || null;
+    const pipelineStart = Date.now();
+    const traceId = `chat_send_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     if (!content) {
         return res.status(400).json({ error: 'Content is required' });
     }
 
     try {
+        logInfo('CHAT_PIPELINE', {
+            stage: 'SEND_HTTP',
+            result: 'start',
+            requestId,
+            traceId,
+            actorId: anonymousId,
+            conversationId: roomId,
+            originClientId: clientId || null
+        });
+
         const sanitizedArr = sanitizeContent(content, 'chat.message', { anonymousId });
         const sanitized = Array.isArray(sanitizedArr) ? sanitizedArr[0] : sanitizedArr;
 
@@ -400,7 +414,7 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
             newMessageId = crypto.randomUUID();
         }
 
-        // ✅ CRITICAL PATH: Only INSERT is blocking
+        // âœ… CRITICAL PATH: Only INSERT is blocking
         const insertQuery = `
           INSERT INTO chat_messages(id, conversation_id, sender_id, content, type, caption, reply_to_id)
           VALUES($1, $2, $3, $4, $5, $6, $7)
@@ -421,7 +435,18 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
 
         const newMessage = result.rows[0];
 
-        // ✅ RESPOND IMMEDIATELY (0ms perceived latency)
+        logInfo('CHAT_PIPELINE', {
+            stage: 'DB_INSERT',
+            result: 'ok',
+            requestId,
+            traceId,
+            actorId: anonymousId,
+            conversationId: roomId,
+            messageId: newMessage.id,
+            durationMs: Date.now() - pipelineStart
+        });
+
+        // âœ… RESPOND IMMEDIATELY (0ms perceived latency)
         res.status(201).json(newMessage);
 
         // ============================================
@@ -469,7 +494,7 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
                 const broadcastMessage = { ...fullMessage, is_optimistic: false };
                 const { default: pool } = await import('../config/database.js');
 
-                // ✅ REDUNDANCY REDUCTION + DELIVERY TRACKING
+                // âœ… REDUNDANCY REDUCTION + DELIVERY TRACKING
                 // Only send individual update to OTHER members for their inbox.
                 // Room update will handle active tabs for everyone.
                 for (const member of members) {
@@ -477,12 +502,26 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
                         // Emit message to recipient
                         realtimeEvents.emitUserChatUpdate(member.user_id, {
                             eventId: broadcastMessage.id,
+                            conversationId: roomId,
                             roomId,
                             message: broadcastMessage,
                             originClientId: clientId
                         });
 
-                        // 🏛️ WHATSAPP-GRADE: Auto-mark delivered if recipient is online
+                        logInfo('CHAT_PIPELINE', {
+                            stage: 'EVENT_EMIT',
+                            result: 'ok',
+                            requestId,
+                            traceId,
+                            actorId: anonymousId,
+                            targetId: member.user_id,
+                            conversationId: roomId,
+                            messageId: newMessage.id,
+                            eventId: broadcastMessage.id,
+                            originClientId: clientId || null
+                        });
+
+                        // ðŸ›ï¸ WHATSAPP-GRADE: Auto-mark delivered if recipient is online
                         // Presence indicates active SSE connection
                         const isOnline = await presenceTracker.isOnline(member.user_id);
                         if (isOnline) {
@@ -508,24 +547,55 @@ router.post('/rooms/:roomId/messages', requireRoomMembership, async (req, res) =
 
                 // 5. Enqueue Push Notifications (Enterprise Engine)
                 const otherMembers = members.filter(m => m.user_id !== anonymousId);
-                for (const member of otherMembers) {
-                    NotificationQueue.enqueue({
+                const enqueueResults = await Promise.allSettled(otherMembers.map((member) => NotificationQueue.enqueue({
                         type: 'CHAT_MESSAGE',
+                        id: newMessage.id,
+                        traceId,
                         target: { anonymousId: member.user_id },
                         delivery: { priority: 'high', ttlSeconds: 7200 },
                         payload: {
-                            title: `💬 Nuevo mensaje de @${newMessage.sender_alias || 'Alguien'}`,
-                            message: type === 'image' ? '📷 Foto enviada' : content,
+                            title: `ðŸ’¬ Nuevo mensaje de @${newMessage.sender_alias || 'Alguien'}`,
+                            message: type === 'image' ? 'ðŸ“· Foto enviada' : content,
                             reportId: newMessage.report_id,
                             entityId: newMessage.id,
                             data: {
+                                conversationId: roomId,
                                 roomId,
                                 senderAlias: newMessage.sender_alias,
                                 type: 'chat'
                             }
                         }
-                    });
-                }
+                    })));
+
+                enqueueResults.forEach((outcome, index) => {
+                    const targetId = otherMembers[index]?.user_id || null;
+                    if (outcome.status === 'fulfilled') {
+                        logInfo('CHAT_PIPELINE', {
+                            stage: 'OUTBOX_QUEUE_ENQUEUE',
+                            result: 'ok',
+                            requestId,
+                            traceId,
+                            actorId: anonymousId,
+                            targetId,
+                            conversationId: roomId,
+                            messageId: newMessage.id,
+                            eventId: newMessage.id
+                        });
+                    } else {
+                        logInfo('CHAT_PIPELINE', {
+                            stage: 'OUTBOX_QUEUE_ENQUEUE',
+                            result: 'fail',
+                            requestId,
+                            traceId,
+                            actorId: anonymousId,
+                            targetId,
+                            conversationId: roomId,
+                            messageId: newMessage.id,
+                            eventId: newMessage.id,
+                            errorCode: outcome.reason?.code || 'ENQUEUE_FAILED'
+                        });
+                    }
+                });
             } catch (deferredErr) {
                 console.error('[Deferred] Background operations failed:', deferredErr);
             }
@@ -569,7 +639,8 @@ router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, async
 
         memberResult.rows.forEach(member => {
             realtimeEvents.emitUserChatUpdate(member.user_id, {
-                eventId: `deleted-${messageId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+                eventId: `deleted:${roomId}:${messageId}`, // âœ… Enterprise: ID determinÃ­stico
+                conversationId: roomId,
                 roomId,
                 action: 'message-deleted',
                 messageId
@@ -591,7 +662,7 @@ router.delete('/rooms/:roomId/messages/:messageId', requireRoomMembership, async
 
 /**
  * PATCH /api/chats/:roomId/read
- * Marca todos los mensajes de una sala como leídos
+ * Marca todos los mensajes de una sala como leÃ­dos
  */
 router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
     const anonymousId = req.anonymousId;
@@ -617,6 +688,7 @@ router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
             // 3. Notify senders (Blue Tick Sync)
             senderIds.forEach(senderId => {
                 realtimeEvents.emitMessageRead(senderId, {
+                    conversationId: roomId,
                     roomId,
                     readerId: anonymousId
                 });
@@ -624,7 +696,8 @@ router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
 
             // 4. Notify current user tabs (clear unread count)
             realtimeEvents.emitUserChatUpdate(anonymousId, {
-                eventId: `read-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+                eventId: `read:${roomId}:${anonymousId}`, // âœ… Enterprise: ID determinÃ­stico
+                conversationId: roomId,
                 roomId,
                 action: 'read'
             });
@@ -634,6 +707,16 @@ router.post('/rooms/:roomId/read', requireRoomMembership, async (req, res) => {
                 readerId: anonymousId
             });
         }
+
+        logInfo('CHAT_PIPELINE', {
+            stage: 'ACK_UPDATE_DB',
+            result: 'ok',
+            requestId: req.requestId || req.id || req.headers['x-request-id'] || null,
+            actorId: anonymousId,
+            conversationId: roomId,
+            ackType: 'read',
+            affectedRows: result.rowCount
+        });
 
         res.json({ success: true, count: result.rowCount });
     } catch (err) {
@@ -651,11 +734,11 @@ router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) 
     const { roomId } = req.params;
 
     try {
-        // 🔒 SECURITY FIX: Verify user is member of this conversation
+        // ðŸ”’ SECURITY FIX: Verify user is member of this conversation
         if (!await verifyMembership(anonymousId, roomId)) {
             return res.status(403).json({ error: 'Access denied: Not a member of this conversation' });
         }
-        // ✅ WhatsApp-Grade: Get senders BEFORE marking as delivered
+        // âœ… WhatsApp-Grade: Get senders BEFORE marking as delivered
         const sendersResult = await queryWithRLS(anonymousId,
             `SELECT DISTINCT sender_id FROM chat_messages 
              WHERE conversation_id = $1 AND sender_id != $2 AND is_delivered = false`,
@@ -679,7 +762,7 @@ router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) 
                 receiverId: anonymousId
             });
 
-            // 2. ✅ WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
+            // 2. âœ… WhatsApp-Grade: Notify senders via their user SSE (for double-tick everywhere)
             // console.log(`[Delivered] Notifying ${senderIds.length} senders:`, senderIds); // Original line, commented out or removed based on the instruction's snippet
             senderIds.forEach(senderId => {
                 realtimeEvents.emitMessageDelivered(senderId, {
@@ -689,6 +772,16 @@ router.post('/rooms/:roomId/delivered', requireRoomMembership, async (req, res) 
                 });
             });
         }
+
+        logInfo('CHAT_PIPELINE', {
+            stage: 'ACK_UPDATE_DB',
+            result: 'ok',
+            requestId: req.requestId || req.id || req.headers['x-request-id'] || null,
+            actorId: anonymousId,
+            conversationId: roomId,
+            ackType: 'delivered',
+            affectedRows: result.rowCount
+        });
 
         res.json({ success: true, count: result.rowCount });
     } catch (err) {
@@ -708,6 +801,11 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
     const anonymousId = req.anonymousId;
 
     if (!messageId || !anonymousId) {
+        logChatAckFailure(req, {
+            flow: 'ack_delivered',
+            statusCode: 400,
+            reason: 'MISSING_REQUIRED_FIELDS'
+        });
         return res.status(400).json({ error: 'MessageId and X-Anonymous-Id are required' });
     }
 
@@ -722,6 +820,11 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
         );
         
         if (msgCheck.rows.length === 0) {
+            logChatAckFailure(req, {
+                flow: 'ack_delivered',
+                statusCode: 404,
+                reason: 'NOT_FOUND_OR_NO_ACCESS'
+            });
             return res.status(404).json({ error: 'Message not found or access denied' });
         }
 
@@ -758,10 +861,26 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
                 receiverId: anonymousId
             });
 
+            logInfo('CHAT_PIPELINE', {
+                stage: 'ACK_UPDATE_DB',
+                result: 'ok',
+                requestId: req.requestId || req.id || req.headers['x-request-id'] || null,
+                actorId: anonymousId,
+                targetId: message.sender_id,
+                conversationId: message.conversation_id,
+                messageId,
+                ackType: 'delivered'
+            });
+
         }
 
         res.json({ success: true });
     } catch (err) {
+        logChatAckFailure(req, {
+            flow: 'ack_delivered',
+            statusCode: 500,
+            reason: 'INTERNAL_ERROR'
+        });
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
     }
@@ -769,9 +888,9 @@ router.post('/messages/:messageId/ack-delivered', async (req, res) => {
 
 /**
  * POST /api/chats/:roomId/typing
- * Notifica que el usuario está escribiendo o dejó de escribir
+ * Notifica que el usuario estÃ¡ escribiendo o dejÃ³ de escribir
  * 
- * ✅ WhatsApp-Grade: 0ms latency
+ * âœ… WhatsApp-Grade: 0ms latency
  * - SSE room broadcast is immediate
  * - Member lookup for inbox is deferred (non-blocking)
  */
@@ -784,14 +903,14 @@ router.post('/rooms/:roomId/typing', requireRoomMembership, async (req, res) => 
     // CRITICAL PATH: 0ms - Immediate SSE Broadcast
     // ============================================
 
-    // 1. Notificar vía SSE a la sala específica (ChatWindow)
+    // 1. Notificar vÃ­a SSE a la sala especÃ­fica (ChatWindow)
     // This is the PRIMARY delivery mechanism - instant for users in the chat
     realtimeEvents.emitChatStatus('typing', roomId, {
         senderId: anonymousId,
         isTyping: !!isTyping
     });
 
-    // ✅ RESPOND IMMEDIATELY - 0ms perceived latency
+    // âœ… RESPOND IMMEDIATELY - 0ms perceived latency
     res.json({ success: true });
 
     // ============================================
@@ -800,8 +919,8 @@ router.post('/rooms/:roomId/typing', requireRoomMembership, async (req, res) => 
     // This runs in background - doesn't block the response
     (async () => {
         try {
-            // 2. Notificar vía Canal Global (Inbox/Sidebar)
-            // Buscamos a los otros miembros de la conversación
+            // 2. Notificar vÃ­a Canal Global (Inbox/Sidebar)
+            // Buscamos a los otros miembros de la conversaciÃ³n
             const memberResult = await queryWithRLS(anonymousId,
                 'SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id != $2',
                 [roomId, anonymousId]
@@ -809,7 +928,8 @@ router.post('/rooms/:roomId/typing', requireRoomMembership, async (req, res) => 
 
             memberResult.rows.forEach(member => {
                 realtimeEvents.emitUserChatUpdate(member.user_id, {
-                    eventId: `typing-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+                    eventId: `typing:${roomId}:${anonymousId}:${!!isTyping}`, // âœ… Enterprise: ID determinÃ­stico
+                    conversationId: roomId,
                     roomId,
                     action: 'typing',
                     isTyping: !!isTyping
@@ -870,7 +990,7 @@ router.post('/:roomId/images', imageUploadLimiter, requireAnonymousId, requireRo
             throw new Error(`Failed to upload: ${uploadError.message}`);
         }
 
-        // 4. Obtener URL pública
+        // 4. Obtener URL pÃºblica
         const { data: urlData } = supabaseAdmin.storage
             .from(bucketName)
             .getPublicUrl(fileName);
@@ -912,7 +1032,8 @@ router.post('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
 
         // Notify user's other devices
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `pin-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `pin:${roomId}:${anonymousId}:${isPinned !== undefined ? isPinned : true}`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'pin',
             isPinned: isPinned !== undefined ? isPinned : true
@@ -936,7 +1057,8 @@ router.delete('/rooms/:roomId/pin', requireRoomMembership, async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `unpin-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `pin:${roomId}:${anonymousId}:false`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'pin',
             isPinned: false
@@ -965,7 +1087,8 @@ router.post('/rooms/:roomId/archive', requireRoomMembership, async (req, res) =>
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `archive-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `archive:${roomId}:${anonymousId}:${isArchived !== undefined ? isArchived : true}`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'archive',
             isArchived: isArchived !== undefined ? isArchived : true
@@ -989,7 +1112,8 @@ router.delete('/rooms/:roomId/archive', requireRoomMembership, async (req, res) 
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `unarchive-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `archive:${roomId}:${anonymousId}:false`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'archive',
             isArchived: false
@@ -1018,7 +1142,8 @@ router.patch('/rooms/:roomId/unread', requireRoomMembership, async (req, res) =>
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `unread-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `unread:${roomId}:${anonymousId}:${!!isUnread}`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'unread',
             isUnread
@@ -1050,7 +1175,8 @@ router.delete('/rooms/:roomId', requireRoomMembership, async (req, res) => {
         );
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `delete-${roomId}-${anonymousId}-${Date.now()}`, // ✅ Enterprise: ID determinístico
+            eventId: `delete:${roomId}:${anonymousId}`, // âœ… Enterprise: ID determinÃ­stico
+            conversationId: roomId,
             roomId,
             action: 'delete'
         });
@@ -1070,9 +1196,9 @@ router.delete('/rooms/:roomId', requireRoomMembership, async (req, res) => {
  * POST /api/chats/:roomId/messages/:messageId/react
  * Toggle emoji reaction on a message
  * 
- * Body: { emoji: "👍" }
+ * Body: { emoji: "ðŸ‘" }
  * 
- * ✅ WhatsApp-Grade:
+ * âœ… WhatsApp-Grade:
  * - Toggle behavior: same user + same emoji = remove
  * - JSONB merge to prevent race conditions
  * - SSE broadcast to all room participants
@@ -1155,7 +1281,7 @@ router.post('/rooms/:roomId/messages/:messageId/react', requireRoomMembership, a
  * 
  * Body: { messageId: "..." } or { messageId: null } to unpin
  * 
- * ✅ WhatsApp-Grade:
+ * âœ… WhatsApp-Grade:
  * - Only 1 pinned message per conversation
  * - New pin replaces old
  * - SSE broadcast to all participants
@@ -1221,7 +1347,7 @@ router.delete('/rooms/:roomId/messages/:messageId/pin', requireRoomMembership, a
  * POST /api/chats/messages/:messageId/star
  * Star a message (per-user, private)
  * 
- * ✅ WhatsApp-Grade:
+ * âœ… WhatsApp-Grade:
  * - Per-user (other users don't see your stars)
  * - Idempotent (starring twice = no-op)
  * - NO SSE (private feature)
@@ -1366,8 +1492,13 @@ router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, async 
 
         const updatedMessage = result.rows[0];
 
-        // 3. Emit SSE event
-        realtimeEvents.emit(`room:${roomId}`, {
+        // 3. Emit SSE event with deterministic contract envelope
+        realtimeEvents.broadcast(`room:${roomId}`, {
+            eventId: `message-edited:${roomId}:${updatedMessage.id}`,
+            conversationId: roomId,
+            roomId, // Backward compatibility temporal
+            serverTimestamp: updatedMessage.edited_at ? new Date(updatedMessage.edited_at).getTime() : Date.now(),
+            originClientId: 'backend',
             type: 'message-edited',
             data: {
                 id: updatedMessage.id,
@@ -1388,19 +1519,24 @@ router.patch('/rooms/:roomId/messages/:messageId', requireRoomMembership, async 
 
 /**
  * POST /api/chats/messages/reconcile-status
- * Reconciliación de estados delivered/read para mensajes históricos
+ * ReconciliaciÃ³n de estados delivered/read para mensajes histÃ³ricos
  * 
- * ✅ WhatsApp-Grade:
+ * âœ… WhatsApp-Grade:
  * - El receptor confirma que tiene mensajes en su dispositivo
- * - Funciona para mensajes recibidos vía carga histórica (no solo SSE/Push)
- * - Idempotente (llamar múltiples veces no rompe)
- * - Batch (múltiples mensajes en una llamada)
+ * - Funciona para mensajes recibidos vÃ­a carga histÃ³rica (no solo SSE/Push)
+ * - Idempotente (llamar mÃºltiples veces no rompe)
+ * - Batch (mÃºltiples mensajes en una llamada)
  */
 router.post('/messages/reconcile-status', async (req, res) => {
     const anonymousId = req.anonymousId;
     const { delivered = [], read = [] } = req.body;
 
     if (!anonymousId) {
+        logChatAckFailure(req, {
+            flow: 'reconcile_status',
+            statusCode: 400,
+            reason: 'MISSING_ANONYMOUS_ID'
+        });
         return res.status(400).json({ error: 'X-Anonymous-Id required' });
     }
 
@@ -1431,7 +1567,7 @@ router.post('/messages/reconcile-status', async (req, res) => {
 
                 const message = accessCheck.rows[0];
 
-                // 2. Si ya está delivered, solo registrar
+                // 2. Si ya estÃ¡ delivered, solo registrar
                 if (message.is_delivered) {
                     results.delivered.alreadyDelivered.push(messageId);
                     continue;
@@ -1505,7 +1641,31 @@ router.post('/messages/reconcile-status', async (req, res) => {
             }
         }
 
-        res.json({ 
+        const deliveredFailedCount = results.delivered.failed.length;
+        const readFailedCount = results.read.failed.length;
+        if (deliveredFailedCount > 0 || readFailedCount > 0) {
+            logChatAckFailure(req, {
+                flow: 'reconcile_status',
+                statusCode: 207,
+                reason: 'PARTIAL_FAILURE',
+                deliveredFailed: deliveredFailedCount,
+                readFailed: readFailedCount
+            });
+        }
+
+        logInfo('CHAT_PIPELINE', {
+            stage: 'ACK_UPDATE_DB',
+            result: deliveredFailedCount > 0 || readFailedCount > 0 ? 'partial' : 'ok',
+            requestId: req.requestId || req.id || req.headers['x-request-id'] || null,
+            actorId: anonymousId,
+            ackType: 'reconcile',
+            deliveredProcessed: delivered.length,
+            readProcessed: read.length,
+            deliveredFailed: deliveredFailedCount,
+            readFailed: readFailedCount
+        });
+
+        res.json({
             success: true, 
             results,
             summary: {
@@ -1521,10 +1681,16 @@ router.post('/messages/reconcile-status', async (req, res) => {
         });
 
     } catch (err) {
+        logChatAckFailure(req, {
+            flow: 'reconcile_status',
+            statusCode: 500,
+            reason: 'INTERNAL_ERROR'
+        });
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 export default router;
+
 

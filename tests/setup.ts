@@ -45,10 +45,19 @@ vi.mock('bullmq', () => {
 // Usamos el nombre del módulo tal como se importa en el código para interceptarlo
 vi.mock('../server/src/engine/QueueFactory.js', () => ({
     QueueFactory: {
+        createQueue: vi.fn().mockImplementation(() => ({
+            add: vi.fn().mockResolvedValue({ id: 'mock-job-id' }),
+            on: vi.fn(),
+            close: vi.fn().mockResolvedValue(undefined),
+        })),
         getQueue: vi.fn().mockImplementation(() => ({
             add: vi.fn().mockResolvedValue({ id: 'mock-job-id' }),
         })),
         createWorker: vi.fn().mockImplementation(() => ({
+            on: vi.fn(),
+            close: vi.fn().mockResolvedValue(undefined),
+        })),
+        createQueueEvents: vi.fn().mockImplementation(() => ({
             on: vi.fn(),
             close: vi.fn().mockResolvedValue(undefined),
         })),

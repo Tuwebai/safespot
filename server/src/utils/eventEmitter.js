@@ -1,10 +1,33 @@
-import EventEmitter from 'events';
+﻿import EventEmitter from 'events';
 import redis, { redisSubscriber } from '../config/redis.js';
 import crypto from 'crypto';
 import { eventStore } from '../services/eventStore.js';
 import { logError } from './logger.js';
+import logger from './logger.js';
 
 const REALTIME_CHANNEL = 'SAFESPOT_REALTIME_BUS';
+
+function normalizeConversationId(payload = {}, fallback = null) {
+    return payload.conversationId || payload.roomId || payload.message?.conversation_id || fallback || null;
+}
+
+function deterministicEventId(prefix, keyParts = {}) {
+    const normalized = Object.keys(keyParts)
+        .sort()
+        .reduce((acc, key) => {
+            const value = keyParts[key];
+            acc[key] = value === undefined || value === null ? '' : String(value);
+            return acc;
+        }, {});
+
+    const hash = crypto
+        .createHash('sha1')
+        .update(`${prefix}:${JSON.stringify(normalized)}`)
+        .digest('hex')
+        .slice(0, 16);
+
+    return `${prefix}:${hash}`;
+}
 
 /**
  * Global Event Emitter for Real-time Updates
@@ -50,10 +73,10 @@ class RealtimeEvents extends EventEmitter {
                         if (origin !== this.instanceId) {
                             super.emit(eventName, payload);
                             if (process.env.DEBUG) {
-                                console.log(`[Realtime] 📥 Received from Redis: ${eventName} (ID: ${eventId}) from ${origin}`);
+                                console.log(`[Realtime] ðŸ“¥ Received from Redis: ${eventName} (ID: ${eventId}) from ${origin}`);
                             }
                         } else {
-                            // console.log(`[Realtime] 🔂 Ignored loopback: ${eventName} (ID: ${eventId})`);
+                            // console.log(`[Realtime] ðŸ”‚ Ignored loopback: ${eventName} (ID: ${eventId})`);
                         }
                     } catch (err) {
                         console.error('[Realtime] Error parsing Redis message:', err);
@@ -207,7 +230,32 @@ class RealtimeEvents extends EventEmitter {
      */
     emitChatMessage(roomId, message, originClientId) {
         // Broad message for all participants
-        this.broadcast(`chat:${roomId}`, { message, originClientId });
+        const conversationId = normalizeConversationId({ message }, roomId);
+        const eventId = message?.eventId || deterministicEventId('chat-message', {
+            conversationId,
+            messageId: message?.id,
+            senderId: message?.sender_id,
+            createdAt: message?.created_at
+        });
+
+        this.broadcast(`chat:${roomId}`, {
+            eventId,
+            serverTimestamp: message?.created_at ? new Date(message.created_at).getTime() : Date.now(),
+            conversationId,
+            roomId: conversationId,
+            message,
+            originClientId: originClientId || 'backend'
+        });
+
+        logger.info('CHAT_PIPELINE', {
+            stage: 'EVENT_EMIT',
+            result: 'ok',
+            eventId,
+            conversationId,
+            messageId: message?.id || null,
+            originClientId: originClientId || 'backend',
+            channel: `chat:${roomId}`
+        });
     }
 
     /**
@@ -217,7 +265,27 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload
      */
     emitChatStatus(type, roomId, payload) {
-        this.broadcast(`chat-${type}:${roomId}`, payload);
+        const conversationId = normalizeConversationId(payload, roomId);
+        const eventId = payload?.eventId || deterministicEventId(`chat-${type}`, {
+            conversationId,
+            messageId: payload?.messageId,
+            senderId: payload?.senderId,
+            readerId: payload?.readerId,
+            receiverId: payload?.receiverId,
+            status: payload?.status,
+            isTyping: payload?.isTyping,
+            action: payload?.action
+        });
+
+        this.broadcast(`chat-${type}:${roomId}`, {
+            ...payload,
+            eventId,
+            serverTimestamp: payload?.serverTimestamp || Date.now(),
+            originClientId: payload?.originClientId || 'backend',
+            conversationId,
+            roomId: conversationId,
+            type: payload?.type || `chat.${type}`
+        });
     }
 
     /**
@@ -225,20 +293,27 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} userId
      * @param {object} payload - { eventId, type, message, ... }
      * 
-     * 🔴 ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinístico.
+     * ðŸ”´ ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinÃ­stico.
      * - Para mensajes persistidos: usar message.id de la DB
      * - Para eventos de control (typing, etc.): usar formato `action-conversationId-userId-timestamp`
      */
     emitUserChatUpdate(userId, payload) {
-        if (!payload?.eventId) {
-            throw new Error(`[EnterpriseGuard] emitUserChatUpdate requires deterministic eventId. Received: ${JSON.stringify(payload)}`);
-        }
-        
+        const conversationId = normalizeConversationId(payload);
+        const eventId = payload?.eventId || deterministicEventId('user-chat-update', {
+            userId,
+            conversationId,
+            action: payload?.action || payload?.type || '',
+            messageId: payload?.message?.id || payload?.messageId || payload?.id || ''
+        });
+
         // Enrich with eventId and serverTimestamp for SSE contract
         const enrichedPayload = {
             ...payload,
-            eventId: payload.eventId,
-            serverTimestamp: payload.serverTimestamp || Date.now()
+            eventId,
+            conversationId,
+            roomId: payload?.roomId || conversationId,
+            serverTimestamp: payload?.serverTimestamp || Date.now(),
+            originClientId: payload?.originClientId || 'backend'
         };
         
         this.broadcast(`user-chat-update:${userId}`, enrichedPayload);
@@ -250,12 +325,21 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - { messageId, conversationId, deliveredAt, traceId }
      */
     emitMessageDelivered(userId, payload) {
-        // 🏛️ ENTERPRISE FIX: Enrich with required SSE contract fields
+        const conversationId = normalizeConversationId(payload);
+        const eventId = payload?.eventId || deterministicEventId('message-delivered', {
+            userId,
+            conversationId,
+            messageId: payload?.messageId || payload?.id || '',
+            receiverId: payload?.receiverId || ''
+        });
+
         const enrichedPayload = {
             ...payload,
-            eventId: payload.traceId || `ack_${Date.now()}`, // Use traceId as eventId
-            serverTimestamp: payload.deliveredAt || Date.now(),
-            originClientId: 'backend',
+            eventId,
+            conversationId,
+            roomId: payload?.roomId || conversationId,
+            serverTimestamp: payload?.serverTimestamp || payload?.deliveredAt || Date.now(),
+            originClientId: payload?.originClientId || 'backend',
             type: 'message.delivered'
         };
         this.broadcast(`user-message-delivered:${userId}`, enrichedPayload);
@@ -267,12 +351,20 @@ class RealtimeEvents extends EventEmitter {
      * @param {object} payload - { roomId, readerId }
      */
     emitMessageRead(userId, payload) {
-        // 🏛️ ENTERPRISE FIX: Enrich with required SSE contract fields
+        const conversationId = payload.conversationId || payload.roomId || null;
+        const eventId = payload?.eventId || deterministicEventId('message-read', {
+            userId,
+            conversationId,
+            messageId: payload?.messageId || payload?.id || '',
+            readerId: payload?.readerId || ''
+        });
         const enrichedPayload = {
             ...payload,
-            eventId: `read_${Date.now()}`,
-            serverTimestamp: Date.now(),
-            originClientId: 'backend',
+            conversationId,
+            roomId: payload.roomId || conversationId,
+            eventId,
+            serverTimestamp: payload?.serverTimestamp || Date.now(),
+            originClientId: payload?.originClientId || 'backend',
             type: 'message.read'
         };
         this.broadcast(`user-message-read:${userId}`, enrichedPayload);
@@ -415,8 +507,8 @@ class RealtimeEvents extends EventEmitter {
      * @param {string} anonymousId
      * @param {object} payload - { eventId, type, notification, ... }
      * 
-     * 🔴 ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinístico (DB ID).
-     * NUNCA usar crypto.randomUUID() aquí. El eventId debe venir de la entidad persistida.
+     * ðŸ”´ ENTERPRISE GUARD: eventId ES OBLIGATORIO y debe ser determinÃ­stico (DB ID).
+     * NUNCA usar crypto.randomUUID() aquÃ­. El eventId debe venir de la entidad persistida.
      */
     emitUserNotification(anonymousId, payload) {
         if (!payload?.eventId) {
@@ -464,3 +556,4 @@ class RealtimeEvents extends EventEmitter {
 
 // Export singleton instance
 export const realtimeEvents = new RealtimeEvents();
+

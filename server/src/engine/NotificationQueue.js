@@ -1,5 +1,6 @@
 import { QueueFactory } from './QueueFactory.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger.js';
 
 /**
  * NotificationQueue
@@ -46,18 +47,42 @@ export const NotificationQueue = {
         };
 
         // Enqueue with backoff strategy
-        const job = await queue.add(event.type, jobData, {
-            jobId, // Deterministic if set above, otherwise unique
-            attempts: 5,
-            backoff: {
-                type: 'exponential',
-                delay: 60000, // Start with 1 minute
-            }
-        });
+        let job;
+        try {
+            job = await queue.add(event.type, jobData, {
+                jobId, // Deterministic if set above, otherwise unique
+                attempts: 5,
+                backoff: {
+                    type: 'exponential',
+                    delay: 60000, // Start with 1 minute
+                }
+            });
+        } catch (error) {
+            logger.error('CHAT_PIPELINE', {
+                stage: 'OUTBOX_QUEUE_ENQUEUE',
+                result: 'fail',
+                traceId,
+                eventId,
+                notificationType: event.type,
+                targetId: event.target?.anonymousId || null,
+                errorCode: error.code || 'QUEUE_ADD_FAILED'
+            });
+            throw error;
+        }
 
         if (process.env.DEBUG) {
             console.log(`[NotificationEngine] [${traceId}] [v1] Enqueued. type=${event.type} jobId=${job.id}`);
         }
+
+        logger.info('CHAT_PIPELINE', {
+            stage: 'OUTBOX_QUEUE_ENQUEUE',
+            result: 'ok',
+            traceId,
+            eventId,
+            notificationType: event.type,
+            targetId: event.target?.anonymousId || null,
+            jobId: job.id
+        });
         return job;
     },
 

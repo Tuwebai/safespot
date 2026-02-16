@@ -1,6 +1,7 @@
 import { QueueFactory } from './QueueFactory.js';
 import { NotificationDispatcher, DispatchResult } from './NotificationDispatcher.js';
 import { logError } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 
 /**
  * NotificationWorker
@@ -15,11 +16,22 @@ let worker = null;
 if (!isTest) {
     worker = QueueFactory.createWorker('notifications-queue', async (job) => {
         const { id, type, traceId, version } = job.data;
+        const startedAt = Date.now();
 
         // Inject trace context into logs (Debug only)
         if (process.env.DEBUG) {
             console.log(`[NotificationEngine] [${traceId}] [${version || 'v0'}] Processing job ${job.id} (Attempt: ${job.attemptsMade + 1})`);
         }
+
+        logger.info('CHAT_PIPELINE', {
+            stage: 'WORKER_PROCESS',
+            result: 'start',
+            traceId,
+            eventId: id,
+            notificationType: type,
+            attempt: job.attemptsMade + 1,
+            jobId: job.id
+        });
 
         try {
             // Increment internal attempt counter
@@ -29,6 +41,15 @@ if (!isTest) {
 
             if (result === DispatchResult.PERMANENT_ERROR) {
                 console.warn(`[NotificationEngine] [${traceId}] Job ${job.id} encounterted PERMANENT_ERROR. Marking as COMPLETED (terminal).`);
+                logger.warn('CHAT_PIPELINE', {
+                    stage: 'WORKER_PROCESS',
+                    result: 'permanent_error',
+                    traceId,
+                    eventId: id,
+                    notificationType: type,
+                    attempt: job.attemptsMade + 1,
+                    durationMs: Date.now() - startedAt
+                });
                 return; // Exit normally to mark job as complete in BullMQ
             }
 
@@ -40,6 +61,16 @@ if (!isTest) {
                 console.log(`[NotificationEngine] [${traceId}] Job ${job.id} COMPLETED successfully.`);
             }
 
+            logger.info('CHAT_PIPELINE', {
+                stage: 'WORKER_PROCESS',
+                result: 'ok',
+                traceId,
+                eventId: id,
+                notificationType: type,
+                attempt: job.attemptsMade + 1,
+                durationMs: Date.now() - startedAt
+            });
+
         } catch (err) {
             // Logic for retrying or giving up
             const isLastAttempt = job.attemptsMade + 1 >= job.opts.attempts;
@@ -49,6 +80,17 @@ if (!isTest) {
             } else {
                 console.warn(`[NotificationEngine] [${traceId}] Job ${job.id} failed. Scheduling retry...`);
             }
+
+            logger.warn('CHAT_PIPELINE', {
+                stage: 'WORKER_PROCESS',
+                result: 'fail',
+                traceId,
+                eventId: id,
+                notificationType: type,
+                attempt: job.attemptsMade + 1,
+                durationMs: Date.now() - startedAt,
+                errorCode: err.code || 'WORKER_DISPATCH_FAILED'
+            });
 
             throw err; // Re-throwing tells BullMQ to use the backoff strategy
         }

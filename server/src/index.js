@@ -88,6 +88,8 @@ import syncRouter from './routes/sync.js';
 import { NotificationService } from './utils/notificationService.js';
 import { strictAdminGateway } from './utils/adminGateway.js';
 import weeklyStatsRouter from './routes/weeklyStats.js';
+import { logAuth5xx } from './utils/opsTelemetry.js';
+import { NotificationWorker } from './engine/NotificationWorker.js';
 
 // Load environment variables
 // dotenv.config(); (Redundant, already called at top)
@@ -214,9 +216,8 @@ app.use(cors({
 
 // 2. Real-time SSE (Must be before Helmet and Rate Limiters)
 // These connections are long-lived and Helmet/RateLimits can cause resets
-// 🔴 SECURITY FIX: Added validateAuth to prevent unauthorized access
-// 🔴 SECURITY: validateAuth is applied globally at line 301, no need for redundancy here
-app.use('/api/realtime', realtimeRouter);
+// Realtime is mounted before global auth middleware, so we must validate auth here.
+app.use('/api/realtime', validateAuth, realtimeRouter);
 
 // 3. Security Middleware (Helmet)
 // Helmet is applied AFTER realtime to avoid interfering with SSE headers
@@ -550,6 +551,7 @@ app.use('/api/*', (req, res) => {
 
 app.use((err, req, res, _next) => {
   const requestId = getCorrelationId();
+  const handlerStart = Date.now();
 
   // 1. Normalize Error to AppError
   let error = err;
@@ -630,6 +632,14 @@ app.use((err, req, res, _next) => {
   }
 
   // 5. Send
+  if (error.statusCode >= 500 && req.path.startsWith('/api/auth')) {
+    logAuth5xx(req, {
+      statusCode: error.statusCode,
+      durationMs: Date.now() - handlerStart,
+      code: error.code
+    });
+  }
+
   res.status(error.statusCode).json(response);
 });
 
@@ -656,6 +666,11 @@ const startServer = () => {
       console.log(`🚀 SafeSpot API Server | Port: ${PORT} | Env: ${process.env.NODE_ENV || 'development'}`);
     } else {
       console.log(`🚀 SafeSpot API Server ready on port ${PORT}`);
+    }
+
+    // Force worker side-effect initialization and report readiness in boot logs.
+    if (!isProduction || process.env.DEBUG) {
+      console.log(`[NotificationEngine] Worker state: ${NotificationWorker?.readyState || 'unknown'}`);
     }
 
     // INCREASE TIMEOUTS FOR SSE STABILITY

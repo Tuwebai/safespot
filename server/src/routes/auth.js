@@ -9,12 +9,14 @@ import { authLimiter } from '../utils/rateLimiter.js';
 import { verifyGoogleToken } from '../services/googleAuth.js';
 import { migrateGoogleAvatar } from '../services/avatarMigration.js';
 import jwt from 'jsonwebtoken';
-import { AppError, ValidationError, UnauthorizedError, ConflictError } from '../utils/AppError.js';
+import { AppError, ValidationError, UnauthorizedError, ConflictError, NotFoundError } from '../utils/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
 import { signAnonymousId } from '../utils/crypto.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
+import { attachOpsRequestTelemetry } from '../utils/opsTelemetry.js';
 
 const router = express.Router();
+router.use(attachOpsRequestTelemetry('auth'));
 
 /**
  * POST /api/auth/bootstrap
@@ -78,7 +80,7 @@ router.post('/bootstrap', async (req, res, next) => {
  * POST /api/auth/register
  * Links an existing anonymous_id to a new email/password account.
  */
-router.post('/register', authLimiter, async (req, res) => {
+router.post('/register', authLimiter, async (req, res, next) => {
     try {
         const { email, password, current_anonymous_id } = req.body;
 
@@ -166,7 +168,7 @@ router.post('/register', authLimiter, async (req, res) => {
  * POST /api/auth/login
  * Recovers the anonymous_id linked to the email.
  */
-router.post('/login', authLimiter, async (req, res) => {
+router.post('/login', authLimiter, async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
@@ -224,8 +226,7 @@ router.post('/login', authLimiter, async (req, res) => {
         });
 
     } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Error del servidor' });
+        next(err);
     }
 });
 
@@ -233,7 +234,7 @@ router.post('/login', authLimiter, async (req, res) => {
  * POST /api/auth/forgot-password
  * Initiates password reset flow.
  */
-router.post('/forgot-password', authLimiter, async (req, res) => {
+router.post('/forgot-password', authLimiter, async (req, res, next) => {
     try {
         const { email } = req.body;
         if (!email) throw new ValidationError('Email requerido');
@@ -270,8 +271,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
         res.json({ message: 'Si el email existe, recibirás instrucciones.' });
 
     } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Error del servidor' });
+        next(err);
     }
 });
 
@@ -279,7 +279,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
  * POST /api/auth/reset-password
  * Completes password reset flow.
  */
-router.post('/reset-password', authLimiter, async (req, res) => {
+router.post('/reset-password', authLimiter, async (req, res, next) => {
     try {
         const { email, token, newPassword } = req.body;
         if (!email || !token || !newPassword) {
@@ -324,8 +324,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
         res.json({ success: true, message: 'Contraseña actualizada con éxito' });
 
     } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Error del servidor' });
+        next(err);
     }
 });
 
@@ -333,7 +332,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
  * POST /api/auth/change-password
  * Authenticated user password change.
  */
-router.post('/change-password', validateAuth, authLimiter, async (req, res) => {
+router.post('/change-password', validateAuth, authLimiter, async (req, res, next) => {
     if (!req.user) throw new UnauthorizedError('No autenticado');
 
     try {
@@ -357,8 +356,7 @@ router.post('/change-password', validateAuth, authLimiter, async (req, res) => {
         res.json({ success: true, message: 'Contraseña actualizada' });
 
     } catch (err) {
-        logError(err, req);
-        res.status(500).json({ error: 'Error del servidor' });
+        next(err);
     }
 });
 
@@ -386,7 +384,7 @@ router.get('/me', validateAuth, (req, res) => {
  * POST /api/auth/google
  * Handles Google OAuth Login/Register with Identity Promotion.
  */
-router.post('/google', authLimiter, async (req, res) => {
+router.post('/google', authLimiter, async (req, res, next) => {
     try {
         const { google_id_token, google_access_token, current_anonymous_id } = req.body;
 

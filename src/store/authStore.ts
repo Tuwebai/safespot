@@ -1,6 +1,7 @@
 
 import { create } from 'zustand';
 import { sessionAuthority, SessionState, type UserMetadata } from '../engine/session/SessionAuthority';
+import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 
 /**
  * Auth Store v3 - UI State Only
@@ -65,6 +66,8 @@ export const useAuthStore = create<AuthState>()((set) => ({
     },
 
     logout: () => {
+        // Stop realtime channels before session state transition to avoid 401 reconnect loops.
+        realtimeOrchestrator.clear();
         sessionAuthority.logout();
         
         set({
