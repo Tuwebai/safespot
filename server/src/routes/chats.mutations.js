@@ -757,53 +757,61 @@ export async function toggleMessageReaction(req, res) {
     }
 
     try {
-        const current = await queryWithRLS(anonymousId,
-            'SELECT reactions FROM chat_messages WHERE id = $1 AND conversation_id = $2',
-            [messageId, roomId]
-        );
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            const current = await client.query(
+                'SELECT reactions FROM chat_messages WHERE id = $1 AND conversation_id = $2',
+                [messageId, roomId]
+            );
 
-        if (current.rows.length === 0) {
-            return res.status(404).json({ error: 'Message not found' });
-        }
-
-        const reactions = current.rows[0].reactions || {};
-        let action = 'add';
-        let alreadyHadThisEmoji = false;
-
-        Object.keys(reactions).forEach(key => {
-            const users = reactions[key] || [];
-            if (users.includes(anonymousId)) {
-                if (key === emoji) { alreadyHadThisEmoji = true; }
-
-                reactions[key] = users.filter(id => id !== anonymousId);
-
-                if (reactions[key].length === 0) {
-                    delete reactions[key];
-                }
+            if (current.rows.length === 0) {
+                return { notFound: true };
             }
+
+            const reactions = current.rows[0].reactions || {};
+            let action = 'add';
+            let alreadyHadThisEmoji = false;
+
+            Object.keys(reactions).forEach(key => {
+                const users = reactions[key] || [];
+                if (users.includes(anonymousId)) {
+                    if (key === emoji) { alreadyHadThisEmoji = true; }
+
+                    reactions[key] = users.filter(id => id !== anonymousId);
+
+                    if (reactions[key].length === 0) {
+                        delete reactions[key];
+                    }
+                }
+            });
+
+            if (!alreadyHadThisEmoji) {
+                reactions[emoji] = [...(reactions[emoji] || []), anonymousId];
+                action = 'add';
+            } else {
+                action = 'remove';
+            }
+
+            await client.query(
+                'UPDATE chat_messages SET reactions = $1 WHERE id = $2',
+                [JSON.stringify(reactions), messageId]
+            );
+
+            return { notFound: false, reactions, action };
         });
 
-        if (!alreadyHadThisEmoji) {
-            reactions[emoji] = [...(reactions[emoji] || []), anonymousId];
-            action = 'add';
-        } else {
-            action = 'remove';
+        if (txResult?.notFound) {
+            return res.status(404).json({ error: 'Message not found' });
         }
-
-        await queryWithRLS(anonymousId,
-            'UPDATE chat_messages SET reactions = $1 WHERE id = $2',
-            [JSON.stringify(reactions), messageId]
-        );
 
         realtimeEvents.emitChatStatus('message-reaction', roomId, {
             messageId,
             emoji,
             userId: anonymousId,
-            action,
-            reactions
+            action: txResult.action,
+            reactions: txResult.reactions
         });
 
-        res.json({ success: true, reactions, action });
+        res.json({ success: true, reactions: txResult.reactions, action: txResult.action });
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });

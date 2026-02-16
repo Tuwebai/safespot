@@ -20,7 +20,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -400,5 +400,56 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(txQueryMock).toHaveBeenCalledTimes(1);
         expect(res.status).toHaveBeenCalledWith(404);
         expect(res.json).toHaveBeenCalledWith({ error: 'Report not found' });
+    });
+
+    it('toggleMessageReaction actualiza reactions en tx y emite estado', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' },
+            body: { emoji: '👍' }
+        };
+        const res = createRes();
+
+        txQueryMock
+            .mockResolvedValueOnce({ rows: [{ reactions: {} }] })
+            .mockResolvedValueOnce({ rowCount: 1 });
+
+        await toggleMessageReaction(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(2);
+        expect(txQueryMock.mock.calls[0][0]).toContain('SELECT reactions FROM chat_messages');
+        expect(txQueryMock.mock.calls[1][0]).toContain('UPDATE chat_messages SET reactions = $1');
+        expect(emitChatStatusMock).toHaveBeenCalledWith('message-reaction', 'room-1', {
+            messageId: 'msg-1',
+            emoji: '👍',
+            userId: 'user-1',
+            action: 'add',
+            reactions: { '👍': ['user-1'] }
+        });
+        expect(res.json).toHaveBeenCalledWith({
+            success: true,
+            reactions: { '👍': ['user-1'] },
+            action: 'add'
+        });
+    });
+
+    it('toggleMessageReaction devuelve 404 cuando mensaje no existe', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-404' },
+            body: { emoji: '👍' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rows: [] });
+
+        await toggleMessageReaction(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Message not found' });
     });
 });

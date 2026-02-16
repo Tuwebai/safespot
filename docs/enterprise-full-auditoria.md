@@ -1443,6 +1443,23 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **19/19 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (TOGGLE REACTION transaccional + side-effects post-commit) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `POST /api/chats/:roomId/messages/:messageId/react`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - `SELECT reactions` + `UPDATE reactions` bajo `transactionWithRLS`,
+  - `emitChatStatus('message-reaction', ...)` preservado y ejecutado post-commit.
+- Contrato preservado:
+  - `400` -> `{ error: 'emoji is required' }`
+  - `404` -> `{ error: 'Message not found' }`
+  - `200` -> `{ success: true, reactions, action }`
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **21/21 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
