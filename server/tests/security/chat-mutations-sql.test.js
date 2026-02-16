@@ -16,7 +16,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -133,6 +133,25 @@ describe('Chats Mutations SQL Contracts', () => {
 
         const [, params] = txQueryMock.mock.calls[0];
         expect(params).toEqual([true, 'room-1', 'user-1']);
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('deleteRoom usa placeholders correctos ($1,$2) en tx', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        await deleteRoom(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        const [sql, params] = txQueryMock.mock.calls[0];
+        expect(sql).toContain('DELETE FROM conversation_members');
+        expect(sql).toContain('conversation_id = $1');
+        expect(sql).toContain('user_id = $2');
+        expect(params).toEqual(['room-1', 'user-1']);
         expect(res.json).toHaveBeenCalledWith({ success: true });
     });
 });

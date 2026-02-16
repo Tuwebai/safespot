@@ -942,10 +942,12 @@ export async function deleteRoom(req, res) {
     const { roomId } = req.params;
 
     try {
-        await queryWithRLS(anonymousId,
-            'DELETE FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
-            [roomId, anonymousId]
-        );
+        await transactionWithRLS(anonymousId, async (client) => {
+            await client.query(
+                'DELETE FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+                [roomId, anonymousId]
+            );
+        });
 
         realtimeEvents.emitUserChatUpdate(anonymousId, {
             eventId: `delete:${roomId}:${anonymousId}`,

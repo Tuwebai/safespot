@@ -1337,6 +1337,22 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **6/6 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (DELETE ROOM transaccional homogéneo) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `DELETE /api/chats/:roomId`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - write path migrado a `transactionWithRLS`,
+  - emisión realtime (`action: 'delete'`) preservada post-commit.
+- Contrato preservado:
+  - misma respuesta JSON (`{ success: true }`),
+  - mismo `eventId` determinístico (`delete:${roomId}:${anonymousId}`).
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **7/7 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
