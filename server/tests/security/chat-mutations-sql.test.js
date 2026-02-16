@@ -6,6 +6,8 @@ const transactionWithRLSMock = vi.hoisted(() => vi.fn(async (_anonymousId, callb
 const emitUserChatUpdateMock = vi.hoisted(() => vi.fn());
 const emitChatStatusMock = vi.hoisted(() => vi.fn());
 const broadcastMock = vi.hoisted(() => vi.fn());
+const emitMessageDeliveredMock = vi.hoisted(() => vi.fn());
+const emitMessageReadMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/utils/rls.js', () => ({
     queryWithRLS: queryWithRLSMock,
@@ -16,11 +18,13 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     realtimeEvents: {
         emitUserChatUpdate: emitUserChatUpdateMock,
         emitChatStatus: emitChatStatusMock,
-        broadcast: broadcastMock
+        broadcast: broadcastMock,
+        emitMessageDelivered: emitMessageDeliveredMock,
+        emitMessageRead: emitMessageReadMock
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction, reconcileMessageStatus } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -451,5 +455,71 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(emitChatStatusMock).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(404);
         expect(res.json).toHaveBeenCalledWith({ error: 'Message not found' });
+    });
+
+    it('reconcileMessageStatus procesa delivered/read en tx por mensaje y mantiene summary', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            body: {
+                delivered: ['m-delivered'],
+                read: ['m-read']
+            },
+            headers: {}
+        };
+        const res = createRes();
+
+        txQueryMock
+            // delivered access check
+            .mockResolvedValueOnce({
+                rows: [{ id: 'm-delivered', sender_id: 'user-2', conversation_id: 'room-1', is_delivered: false, is_read: false }]
+            })
+            // delivered update
+            .mockResolvedValueOnce({ rowCount: 1 })
+            // read access check
+            .mockResolvedValueOnce({
+                rows: [{ id: 'm-read', sender_id: 'user-2', conversation_id: 'room-1', is_delivered: true, is_read: false }]
+            })
+            // read update
+            .mockResolvedValueOnce({ rowCount: 1 });
+
+        await reconcileMessageStatus(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(2);
+        expect(emitMessageDeliveredMock).toHaveBeenCalledTimes(1);
+        expect(emitMessageReadMock).toHaveBeenCalledTimes(1);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            summary: {
+                delivered: { processed: 1, newlyReconciled: 1 },
+                read: { processed: 1, newlyReconciled: 1 }
+            }
+        }));
+    });
+
+    it('reconcileMessageStatus registra fail not_found_or_no_access sin romper contrato', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            body: {
+                delivered: ['m-404'],
+                read: []
+            },
+            headers: {}
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rows: [] });
+
+        await reconcileMessageStatus(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(emitMessageDeliveredMock).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            results: expect.objectContaining({
+                delivered: expect.objectContaining({
+                    failed: [{ messageId: 'm-404', reason: 'not_found_or_no_access' }]
+                })
+            })
+        }));
     });
 });

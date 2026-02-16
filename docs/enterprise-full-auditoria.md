@@ -1460,6 +1460,24 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **21/21 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (RECONCILE STATUS transaccional por mensaje) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `POST /api/chats/messages/reconcile-status`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - eliminación de `pool.query` directo,
+  - reconciliación `delivered/read` bajo `transactionWithRLS` por mensaje (mantiene semántica de éxito parcial),
+  - emisiones `emitMessageDelivered/emitMessageRead` preservadas post-commit por ítem reconciliado.
+- Contrato preservado:
+  - `400` -> `{ error: 'X-Anonymous-Id required' }`
+  - `200` -> `{ success: true, results, summary }` con estructura previa.
+  - logging parcial `207` (métrica) se mantiene cuando hay fallos por ítem.
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **23/23 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---

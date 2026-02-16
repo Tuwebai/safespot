@@ -1268,43 +1268,56 @@ export async function reconcileMessageStatus(req, res) {
     };
 
     try {
-        const { default: pool } = await import('../config/database.js');
-
         for (const messageId of delivered) {
             try {
-                const accessCheck = await pool.query(
-                    `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
-                     FROM chat_messages m
-                     JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
-                     WHERE m.id = $1 AND cm.user_id = $2`,
-                    [messageId, anonymousId]
-                );
+                const txResult = await transactionWithRLS(anonymousId, async (client) => {
+                    const accessCheck = await client.query(
+                        `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
+                         FROM chat_messages m
+                         JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                         WHERE m.id = $1 AND cm.user_id = $2`,
+                        [messageId, anonymousId]
+                    );
 
-                if (accessCheck.rows.length === 0) {
+                    if (accessCheck.rows.length === 0) {
+                        return { status: 'not_found_or_no_access' };
+                    }
+
+                    const message = accessCheck.rows[0];
+
+                    if (message.is_delivered) {
+                        return { status: 'already_delivered' };
+                    }
+
+                    const deliveredAt = new Date();
+                    await client.query(
+                        'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
+                        [messageId, deliveredAt]
+                    );
+
+                    return {
+                        status: 'reconciled',
+                        message,
+                        deliveredAt
+                    };
+                });
+
+                if (txResult.status === 'not_found_or_no_access') {
                     results.delivered.failed.push({ messageId, reason: 'not_found_or_no_access' });
                     continue;
                 }
 
-                const message = accessCheck.rows[0];
-
-                if (message.is_delivered) {
+                if (txResult.status === 'already_delivered') {
                     results.delivered.alreadyDelivered.push(messageId);
                     continue;
                 }
 
-                const deliveredAt = new Date();
-                await pool.query(
-                    'UPDATE chat_messages SET is_delivered = true, delivered_at = $2 WHERE id = $1',
-                    [messageId, deliveredAt]
-                );
-
                 results.delivered.reconciled.push(messageId);
-
-                realtimeEvents.emitMessageDelivered(message.sender_id, {
+                realtimeEvents.emitMessageDelivered(txResult.message.sender_id, {
                     messageId: messageId,
                     id: messageId,
-                    conversationId: message.conversation_id,
-                    deliveredAt: deliveredAt,
+                    conversationId: txResult.message.conversation_id,
+                    deliveredAt: txResult.deliveredAt,
                     receiverId: anonymousId,
                     traceId: `reconcile_${Date.now()}`
                 });
@@ -1316,39 +1329,54 @@ export async function reconcileMessageStatus(req, res) {
 
         for (const messageId of read) {
             try {
-                const accessCheck = await pool.query(
-                    `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
-                     FROM chat_messages m
-                     JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
-                     WHERE m.id = $1 AND cm.user_id = $2`,
-                    [messageId, anonymousId]
-                );
+                const txResult = await transactionWithRLS(anonymousId, async (client) => {
+                    const accessCheck = await client.query(
+                        `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
+                         FROM chat_messages m
+                         JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                         WHERE m.id = $1 AND cm.user_id = $2`,
+                        [messageId, anonymousId]
+                    );
 
-                if (accessCheck.rows.length === 0) {
+                    if (accessCheck.rows.length === 0) {
+                        return { status: 'not_found_or_no_access' };
+                    }
+
+                    const message = accessCheck.rows[0];
+
+                    if (message.is_read) {
+                        return { status: 'already_read' };
+                    }
+
+                    const readAt = new Date();
+                    await client.query(
+                        'UPDATE chat_messages SET is_read = true, read_at = $2 WHERE id = $1',
+                        [messageId, readAt]
+                    );
+
+                    return {
+                        status: 'reconciled',
+                        message,
+                        readAt
+                    };
+                });
+
+                if (txResult.status === 'not_found_or_no_access') {
                     results.read.failed.push({ messageId, reason: 'not_found_or_no_access' });
                     continue;
                 }
 
-                const message = accessCheck.rows[0];
-
-                if (message.is_read) {
+                if (txResult.status === 'already_read') {
                     results.read.alreadyRead.push(messageId);
                     continue;
                 }
 
-                const readAt = new Date();
-                await pool.query(
-                    'UPDATE chat_messages SET is_read = true, read_at = $2 WHERE id = $1',
-                    [messageId, readAt]
-                );
-
                 results.read.reconciled.push(messageId);
-
-                realtimeEvents.emitMessageRead(message.sender_id, {
+                realtimeEvents.emitMessageRead(txResult.message.sender_id, {
                     messageId: messageId,
                     id: messageId,
-                    conversationId: message.conversation_id,
-                    readAt: readAt,
+                    conversationId: txResult.message.conversation_id,
+                    readAt: txResult.readAt,
                     readerId: anonymousId
                 });
 
