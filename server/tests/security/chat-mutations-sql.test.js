@@ -35,7 +35,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction, reconcileMessageStatus, getRoomMessages } from '../../src/routes/chats.mutations.js';
+import { pinRoom, unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction, reconcileMessageStatus, getRoomMessages } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -49,6 +49,43 @@ describe('Chats Mutations SQL Contracts', () => {
         vi.clearAllMocks();
         queryWithRLSMock.mockResolvedValue({ rows: [], rowCount: 1 });
         txQueryMock.mockResolvedValue({ rows: [], rowCount: 1 });
+    });
+
+    it('pin usa placeholders correctos ($1,$2,$3) en tx', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            body: { isPinned: true }
+        };
+        const res = createRes();
+
+        await pinRoom(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        const [sql, params] = txQueryMock.mock.calls[0];
+        expect(sql).toContain('SET is_pinned = $1');
+        expect(sql).toContain('conversation_id = $2');
+        expect(sql).toContain('user_id = $3');
+        expect(params).toEqual([true, 'room-1', 'user-1']);
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('pin falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            body: { isPinned: true }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await pinRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('unpin usa placeholders correctos ($1,$2) sin parametro fantasma', async () => {
@@ -69,6 +106,22 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(res.json).toHaveBeenCalledWith({ success: true });
     });
 
+    it('unpin falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await unpinRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
+
     it('unarchive usa placeholders correctos ($1,$2) sin parametro fantasma', async () => {
         const req = {
             anonymousId: 'user-1',
@@ -85,6 +138,22 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(sql).toContain('user_id = $2');
         expect(params).toEqual(['room-1', 'user-1']);
         expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('unarchive falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await unarchiveRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('archive usa placeholders correctos ($1,$2,$3) en tx', async () => {
@@ -105,6 +174,23 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(sql).toContain('user_id = $3');
         expect(params).toEqual([true, 'room-1', 'user-1']);
         expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('archive falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            body: { isArchived: true }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await archiveRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('setUnread normaliza undefined a true para evitar params indefinidos', async () => {
@@ -153,6 +239,23 @@ describe('Chats Mutations SQL Contracts', () => {
         const [, params] = txQueryMock.mock.calls[0];
         expect(params).toEqual([true, 'room-1', 'user-1']);
         expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('setUnread falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            body: { unread: true }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await setUnreadRoom(req, res);
+
+        expect(emitUserChatUpdateMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('deleteRoom usa placeholders correctos ($1,$2) en tx', async () => {

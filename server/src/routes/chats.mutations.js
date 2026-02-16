@@ -19,20 +19,18 @@ export async function pinRoom(req, res) {
     const { isPinned } = req.body;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversation_members SET is_pinned = $1 WHERE conversation_id = $2 AND user_id = $3',
                 [isPinned !== undefined ? isPinned : true, roomId, anonymousId]
             );
-        });
-
-        // Notify user's other devices
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `pin:${roomId}:${anonymousId}:${isPinned !== undefined ? isPinned : true}`, // deterministic id
-            conversationId: roomId,
-            roomId,
-            action: 'pin',
-            isPinned: isPinned !== undefined ? isPinned : true
+            sse.emit('emitUserChatUpdate', anonymousId, {
+                eventId: `pin:${roomId}:${anonymousId}:${isPinned !== undefined ? isPinned : true}`, // deterministic id
+                conversationId: roomId,
+                roomId,
+                action: 'pin',
+                isPinned: isPinned !== undefined ? isPinned : true
+            });
         });
 
         res.json({ success: true });
@@ -47,19 +45,18 @@ export async function unpinRoom(req, res) {
     const { roomId } = req.params;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversation_members SET is_pinned = false WHERE conversation_id = $1 AND user_id = $2',
                 [roomId, anonymousId]
             );
-        });
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `pin:${roomId}:${anonymousId}:false`, // deterministic id
-            conversationId: roomId,
-            roomId,
-            action: 'pin',
-            isPinned: false
+            sse.emit('emitUserChatUpdate', anonymousId, {
+                eventId: `pin:${roomId}:${anonymousId}:false`, // deterministic id
+                conversationId: roomId,
+                roomId,
+                action: 'pin',
+                isPinned: false
+            });
         });
 
         res.json({ success: true });
@@ -79,19 +76,18 @@ export async function archiveRoom(req, res) {
     const { isArchived } = req.body;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversation_members SET is_archived = $1 WHERE conversation_id = $2 AND user_id = $3',
                 [isArchived !== undefined ? isArchived : true, roomId, anonymousId]
             );
-        });
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `archive:${roomId}:${anonymousId}:${isArchived !== undefined ? isArchived : true}`, // deterministic id
-            conversationId: roomId,
-            roomId,
-            action: 'archive',
-            isArchived: isArchived !== undefined ? isArchived : true
+            sse.emit('emitUserChatUpdate', anonymousId, {
+                eventId: `archive:${roomId}:${anonymousId}:${isArchived !== undefined ? isArchived : true}`, // deterministic id
+                conversationId: roomId,
+                roomId,
+                action: 'archive',
+                isArchived: isArchived !== undefined ? isArchived : true
+            });
         });
 
         res.json({ success: true });
@@ -106,19 +102,18 @@ export async function unarchiveRoom(req, res) {
     const { roomId } = req.params;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversation_members SET is_archived = false WHERE conversation_id = $1 AND user_id = $2',
                 [roomId, anonymousId]
             );
-        });
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `archive:${roomId}:${anonymousId}:false`, // deterministic id
-            conversationId: roomId,
-            roomId,
-            action: 'archive',
-            isArchived: false
+            sse.emit('emitUserChatUpdate', anonymousId, {
+                eventId: `archive:${roomId}:${anonymousId}:false`, // deterministic id
+                conversationId: roomId,
+                roomId,
+                action: 'archive',
+                isArchived: false
+            });
         });
 
         res.json({ success: true });
@@ -144,19 +139,18 @@ export async function setUnreadRoom(req, res) {
     const normalizedIsUnread = resolvedFlag === undefined ? true : !!resolvedFlag;
 
     try {
-        await transactionWithRLS(anonymousId, async (client) => {
+        await transactionWithRLS(anonymousId, async (client, sse) => {
             await client.query(
                 'UPDATE conversation_members SET is_manually_unread = $1 WHERE conversation_id = $2 AND user_id = $3',
                 [normalizedIsUnread, roomId, anonymousId]
             );
-        });
-
-        realtimeEvents.emitUserChatUpdate(anonymousId, {
-            eventId: `unread:${roomId}:${anonymousId}:${normalizedIsUnread}`, // deterministic id
-            conversationId: roomId,
-            roomId,
-            action: 'unread',
-            isUnread: normalizedIsUnread
+            sse.emit('emitUserChatUpdate', anonymousId, {
+                eventId: `unread:${roomId}:${anonymousId}:${normalizedIsUnread}`, // deterministic id
+                conversationId: roomId,
+                roomId,
+                action: 'unread',
+                isUnread: normalizedIsUnread
+            });
         });
 
         res.json({ success: true });

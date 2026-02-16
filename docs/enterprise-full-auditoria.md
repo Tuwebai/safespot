@@ -1329,14 +1329,14 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `PATCH /api/chats/rooms/:roomId/unread`
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - write path movido a `transactionWithRLS` (tx única por request),
-  - emisión realtime mantenida únicamente después del commit exitoso.
+  - `emitUserChatUpdate` encolado con `sse.emit` dentro de la tx (flush post-commit).
 - Contrato preservado:
   - mismos `status codes`,
   - mismo shape de respuesta (`{ success: true }`),
   - mismo payload/eventId determinístico en `emitUserChatUpdate`.
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **5/5 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **37/37 PASS** (incluye rollback sin side-effects para `pin`, `unpin` y `unread`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
@@ -1347,13 +1347,13 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `DELETE /api/chats/rooms/:roomId/archive`
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - write path normalizado a `transactionWithRLS`,
-  - emisión realtime preservada y ejecutada post-commit.
+  - `emitUserChatUpdate(action: 'archive')` encolado con `sse.emit` dentro de la tx y flush post-commit.
 - Contrato preservado:
   - mismos status codes y mismas respuestas JSON (`{ success: true }`),
   - mismo payload de `emitUserChatUpdate` (`action: 'archive'`).
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **6/6 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **37/37 PASS** (incluye rollback sin side-effects para `archive` y `unarchive`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
