@@ -24,7 +24,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction, reconcileMessageStatus } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom, toggleMessageReaction, reconcileMessageStatus, getRoomMessages } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -521,5 +521,56 @@ describe('Chats Mutations SQL Contracts', () => {
                 })
             })
         }));
+    });
+
+    it('getRoomMessages marca delivered en tx cuando hay mensajes pendientes de otro usuario', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            query: {}
+        };
+        const res = createRes();
+
+        const rows = [
+            { id: 'm1', sender_id: 'user-2', is_delivered: false },
+            { id: 'm2', sender_id: 'user-1', is_delivered: false }
+        ];
+        queryWithRLSMock
+            .mockResolvedValueOnce({ rows: [{ id: 'membership-ok' }] })
+            .mockResolvedValueOnce({ rows });
+        txQueryMock.mockResolvedValueOnce({ rowCount: 1 });
+
+        await getRoomMessages(req, res);
+
+        expect(queryWithRLSMock).toHaveBeenCalledTimes(2);
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock.mock.calls[0][0]).toContain('UPDATE chat_messages');
+        expect(emitMessageDeliveredMock).toHaveBeenCalledTimes(1);
+        expect(res.json).toHaveBeenCalledWith(expect.arrayContaining([
+            expect.objectContaining({ id: 'm1', is_delivered: true })
+        ]));
+    });
+
+    it('getRoomMessages no abre tx si no hay mensajes pendientes para delivered', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1' },
+            query: {}
+        };
+        const res = createRes();
+
+        queryWithRLSMock
+            .mockResolvedValueOnce({ rows: [{ id: 'membership-ok' }] })
+            .mockResolvedValueOnce({
+                rows: [{ id: 'm1', sender_id: 'user-1', is_delivered: false }]
+            });
+
+        await getRoomMessages(req, res);
+
+        expect(transactionWithRLSMock).not.toHaveBeenCalled();
+        expect(emitMessageDeliveredMock).not.toHaveBeenCalled();
+        expect(queryWithRLSMock).toHaveBeenCalledTimes(2);
+        expect(res.json).toHaveBeenCalled();
     });
 });

@@ -1478,6 +1478,24 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **23/23 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (GET ROOM MESSAGES sin mezcla de driver en auto-delivered) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `GET /api/chats/:roomId/messages`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - se elimina `pool.query` directo para marcado automático `is_delivered`,
+  - el update pasa a `transactionWithRLS` (mismo comportamiento funcional),
+  - emisión `emitMessageDelivered` preservada.
+- Contrato preservado:
+  - mismo shape de lista de mensajes,
+  - misma semántica de gap-recovery (`410 REF_GONE` cuando aplica),
+  - mismo auto-mark delivered para mensajes recibidos.
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **25/25 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---

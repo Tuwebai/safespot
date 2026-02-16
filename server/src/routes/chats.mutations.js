@@ -1636,16 +1636,17 @@ export async function getRoomMessages(req, res) {
         );
 
         if (messagesToMark.length > 0) {
-            const { default: pool } = await import('../config/database.js');
             const deliveredAt = new Date();
             const messageIds = messagesToMark.map(m => m.id);
 
-            await pool.query(
-                `UPDATE chat_messages 
-                 SET is_delivered = true, delivered_at = $1 
-                 WHERE id = ANY($2) AND is_delivered = false`,
-                [deliveredAt, messageIds]
-            );
+            await transactionWithRLS(anonymousId, async (client) => {
+                await client.query(
+                    `UPDATE chat_messages 
+                     SET is_delivered = true, delivered_at = $1 
+                     WHERE id = ANY($2) AND is_delivered = false`,
+                    [deliveredAt, messageIds]
+                );
+            });
 
             const senderNotifications = {};
             messagesToMark.forEach(m => {
