@@ -736,6 +736,33 @@ describe('Chats Mutations SQL Contracts', () => {
         }));
     });
 
+    it('reconcileMessageStatus rollback en delivered no emite side-effects y mantiene contrato', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            body: {
+                delivered: ['m-delivered'],
+                read: []
+            },
+            headers: {}
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await reconcileMessageStatus(req, res);
+
+        expect(emitMessageDeliveredMock).not.toHaveBeenCalled();
+        expect(emitMessageReadMock).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            results: expect.objectContaining({
+                delivered: expect.objectContaining({
+                    failed: [{ messageId: 'm-delivered', reason: 'FORCED_ROLLBACK' }]
+                })
+            })
+        }));
+    });
+
     it('getRoomMessages marca delivered en tx cuando hay mensajes pendientes de otro usuario', async () => {
         const req = {
             anonymousId: 'user-1',

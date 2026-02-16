@@ -1250,7 +1250,7 @@ export async function reconcileMessageStatus(req, res) {
     try {
         for (const messageId of delivered) {
             try {
-                const txResult = await transactionWithRLS(anonymousId, async (client) => {
+                const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
                     const accessCheck = await client.query(
                         `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
                          FROM chat_messages m
@@ -1275,6 +1275,15 @@ export async function reconcileMessageStatus(req, res) {
                         [messageId, deliveredAt]
                     );
 
+                    sse.emit('emitMessageDelivered', message.sender_id, {
+                        messageId: messageId,
+                        id: messageId,
+                        conversationId: message.conversation_id,
+                        deliveredAt,
+                        receiverId: anonymousId,
+                        traceId: `reconcile_${Date.now()}`
+                    });
+
                     return {
                         status: 'reconciled',
                         message,
@@ -1293,14 +1302,6 @@ export async function reconcileMessageStatus(req, res) {
                 }
 
                 results.delivered.reconciled.push(messageId);
-                realtimeEvents.emitMessageDelivered(txResult.message.sender_id, {
-                    messageId: messageId,
-                    id: messageId,
-                    conversationId: txResult.message.conversation_id,
-                    deliveredAt: txResult.deliveredAt,
-                    receiverId: anonymousId,
-                    traceId: `reconcile_${Date.now()}`
-                });
 
             } catch (err) {
                 results.delivered.failed.push({ messageId, reason: err.message });
@@ -1309,7 +1310,7 @@ export async function reconcileMessageStatus(req, res) {
 
         for (const messageId of read) {
             try {
-                const txResult = await transactionWithRLS(anonymousId, async (client) => {
+                const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
                     const accessCheck = await client.query(
                         `SELECT m.id, m.sender_id, m.conversation_id, m.is_delivered, m.is_read
                          FROM chat_messages m
@@ -1334,6 +1335,14 @@ export async function reconcileMessageStatus(req, res) {
                         [messageId, readAt]
                     );
 
+                    sse.emit('emitMessageRead', message.sender_id, {
+                        messageId: messageId,
+                        id: messageId,
+                        conversationId: message.conversation_id,
+                        readAt,
+                        readerId: anonymousId
+                    });
+
                     return {
                         status: 'reconciled',
                         message,
@@ -1352,13 +1361,6 @@ export async function reconcileMessageStatus(req, res) {
                 }
 
                 results.read.reconciled.push(messageId);
-                realtimeEvents.emitMessageRead(txResult.message.sender_id, {
-                    messageId: messageId,
-                    id: messageId,
-                    conversationId: txResult.message.conversation_id,
-                    readAt: txResult.readAt,
-                    readerId: anonymousId
-                });
 
             } catch (err) {
                 results.read.failed.push({ messageId, reason: err.message });

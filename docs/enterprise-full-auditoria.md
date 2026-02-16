@@ -1336,7 +1336,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - mismo payload/eventId determinístico en `emitUserChatUpdate`.
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **37/37 PASS** (incluye rollback sin side-effects para `pin`, `unpin` y `unread`).
+- `server/tests/security/chat-mutations-sql.test.js` -> **38/38 PASS** (incluye rollback sin side-effects para `pin`, `unpin` y `unread`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
@@ -1353,7 +1353,21 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - mismo payload de `emitUserChatUpdate` (`action: 'archive'`).
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **37/37 PASS** (incluye rollback sin side-effects para `archive` y `unarchive`).
+- `server/tests/security/chat-mutations-sql.test.js` -> **38/38 PASS** (incluye rollback sin side-effects para `archive` y `unarchive`).
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (RECONCILE STATUS con side-effects post-commit) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `POST /api/chats/messages/reconcile-status`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - updates delivered/read se mantienen en `transactionWithRLS` por mensaje,
+  - emits (`emitMessageDelivered`, `emitMessageRead`) encolados con `sse.emit` dentro de la tx (flush post-commit),
+  - contrato `success/results/summary` preservado, incluyendo `207` lógico con fallos parciales.
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **38/38 PASS** (incluye rollback en reconcile sin side-effects).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
