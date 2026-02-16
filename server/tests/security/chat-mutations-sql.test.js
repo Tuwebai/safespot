@@ -2,12 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryWithRLSMock = vi.hoisted(() => vi.fn());
 const txQueryMock = vi.hoisted(() => vi.fn());
-const transactionWithRLSMock = vi.hoisted(() => vi.fn(async (_anonymousId, callback) => callback({ query: txQueryMock })));
 const emitUserChatUpdateMock = vi.hoisted(() => vi.fn());
 const emitChatStatusMock = vi.hoisted(() => vi.fn());
 const broadcastMock = vi.hoisted(() => vi.fn());
 const emitMessageDeliveredMock = vi.hoisted(() => vi.fn());
 const emitMessageReadMock = vi.hoisted(() => vi.fn());
+const transactionWithRLSMock = vi.hoisted(() => vi.fn(async (_anonymousId, callback) => {
+    const sse = {
+        emit: vi.fn((method, ...args) => {
+            if (method === 'emitChatStatus') emitChatStatusMock(...args);
+            if (method === 'emitUserChatUpdate') emitUserChatUpdateMock(...args);
+            if (method === 'emitMessageDelivered') emitMessageDeliveredMock(...args);
+            if (method === 'emitMessageRead') emitMessageReadMock(...args);
+        })
+    };
+    return callback({ query: txQueryMock }, sse);
+}));
 
 vi.mock('../../src/utils/rls.js', () => ({
     queryWithRLS: queryWithRLSMock,
@@ -455,6 +465,23 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(emitChatStatusMock).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(404);
         expect(res.json).toHaveBeenCalledWith({ error: 'Message not found' });
+    });
+
+    it('toggleMessageReaction falla en tx y no emite side-effects', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' },
+            body: { emoji: '👍' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await toggleMessageReaction(req, res);
+
+        expect(emitChatStatusMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('reconcileMessageStatus procesa delivered/read en tx por mensaje y mantiene summary', async () => {

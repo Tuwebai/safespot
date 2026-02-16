@@ -935,6 +935,26 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - B online: A envia mensaje y B recibe en tiempo real.
 - B offline: A envia mensaje, se encola push y A mantiene `201`.
 
+### Post Semana 3 - P1 Chats (REACTION con side-effects post-commit) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/chats/rooms/:roomId/messages/:messageId/react`:
+  - read + write de `reactions` en `transactionWithRLS`.
+  - evento realtime `message-reaction` encolado con `sse.emit` dentro de la tx.
+  - contrato HTTP preservado (`200 { success, reactions, action }`, `404`, `500`).
+
+#### Beneficio tecnico concreto
+- Evita emitir `message-reaction` si la transaccion hace rollback.
+- Mantiene consistencia entre estado persistido y estado realtime.
+
+#### Evidencia de validacion
+- `server/tests/security/chat-mutations-sql.test.js` -> **26/26 PASS** (incluye rollback sin side-effects para reaction).
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **3/3 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
 ### Post Semana 3 - P1 Chats (Extraccion Mutaciones Lote 1) (DONE)
 
 #### Scope cerrado

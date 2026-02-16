@@ -741,7 +741,7 @@ export async function toggleMessageReaction(req, res) {
     }
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const current = await client.query(
                 'SELECT reactions FROM chat_messages WHERE id = $1 AND conversation_id = $2',
                 [messageId, roomId]
@@ -780,20 +780,20 @@ export async function toggleMessageReaction(req, res) {
                 [JSON.stringify(reactions), messageId]
             );
 
+            sse.emit('emitChatStatus', 'message-reaction', roomId, {
+                messageId,
+                emoji,
+                userId: anonymousId,
+                action,
+                reactions
+            });
+
             return { notFound: false, reactions, action };
         });
 
         if (txResult?.notFound) {
             return res.status(404).json({ error: 'Message not found' });
         }
-
-        realtimeEvents.emitChatStatus('message-reaction', roomId, {
-            messageId,
-            emoji,
-            userId: anonymousId,
-            action: txResult.action,
-            reactions: txResult.reactions
-        });
 
         res.json({ success: true, reactions: txResult.reactions, action: txResult.action });
     } catch (err) {
