@@ -23,7 +23,7 @@ import { reportsListResponseSchema, singleReportResponseSchema } from '../schema
 import { executeUserAction } from '../utils/governance.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
-import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport } from './reports.mutations.js';
+import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport } from './reports.mutations.js';
 
 const router = express.Router();
 
@@ -1198,78 +1198,7 @@ router.post('/:id/flag', flagRateLimiter, requireAnonymousId, flagReport);
  * Delete a report (only by creator)
  * Requires: X-Anonymous-Id header
  */
-router.delete('/:id', requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // [M12 REFINEMENT] Use executeUserAction for Willpower Audit + Mutation
-    const result = await executeUserAction({
-      actorId: anonymousId,
-      targetType: 'report',
-      targetId: id,
-      actionType: 'USER_DELETE_SELF_REPORT',
-      updateQuery: `UPDATE reports SET deleted_at = NOW() WHERE id = $1 AND anonymous_id = $2 AND deleted_at IS NULL`,
-      updateParams: [id, anonymousId]
-    });
-
-    if (result.rowCount === 0) {
-      // If snapshot existed but UPDATE affected 0 rows, it's either already deleted or ownership mismatch
-      // executeUserAction throws 'Target not found' if it doesn't exist at all, so here it's definitely mismatch or already deleted.
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'No tienes permiso para eliminar este reporte o ya fue eliminado'
-      });
-    }
-
-    const currentItem = result.snapshot;
-    logSuccess('Report deleted with Willpower Audit', { id, anonymousId });
-
-    // REALTIME: Broadcast soft delete
-    realtimeEvents.emitReportDelete(
-      id,
-      currentItem.category,
-      currentItem.status,
-      req.headers['x-client-id']
-    );
-
-    // AUDIT LOG
-    auditLog({
-      action: AuditAction.REPORT_DELETE,
-      actorType: ActorType.ANONYMOUS,
-      actorId: anonymousId,
-      req,
-      targetType: 'report',
-      targetId: id,
-      oldValues: {
-        title: currentItem.title,
-        category: currentItem.category,
-        status: currentItem.status
-      },
-      success: true
-    }).catch(() => { });
-
-    res.json({
-      success: true,
-      message: 'Report deleted successfully'
-    });
-  } catch (error) {
-    logError(error, req);
-
-    // M12 Governance Errors
-    if (error.message === 'Target not found') {
-      return res.status(404).json({
-        error: 'Report not found',
-        message: 'El reporte no existe o ya fue eliminado'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to delete report',
-      message: error.message
-    });
-  }
-});
+router.delete('/:id', requireAnonymousId, deleteReport);
 
 /**
  * POST /api/reports/:id/images
