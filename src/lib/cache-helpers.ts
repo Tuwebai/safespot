@@ -46,8 +46,23 @@ export const reportsCache = {
                 }
 
                 const updates = typeof patch === 'function' ? patch(old as Report) : patch;
+                const hasIsLikedInUpdates =
+                    updates !== null &&
+                    typeof updates === 'object' &&
+                    'is_liked' in updates;
+                const preservePersonalLikeState =
+                    old &&
+                    typeof old === 'object' &&
+                    'is_liked' in old &&
+                    !hasIsLikedInUpdates;
 
-                const updatedByObject = { ...old, ...updates };
+                const updatedByObject = {
+                    ...old,
+                    ...updates,
+                    ...(preservePersonalLikeState
+                        ? { is_liked: (old as Report).is_liked }
+                        : {}),
+                };
 
                 // 🟥 DEBT PURGED: Identity Reconciliation removed. 
                 // Authority resides in Backend/M4. No heuristic patching allowed.

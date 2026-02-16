@@ -26,6 +26,20 @@ import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 
 const router = express.Router();
 
+function resolveRequestAnonymousId(req) {
+  if (req.anonymousId && isValidUuid(req.anonymousId)) {
+    return req.anonymousId;
+  }
+  if (req.user?.anonymous_id && isValidUuid(req.user.anonymous_id)) {
+    return req.user.anonymous_id;
+  }
+  const headerId = req.headers['x-anonymous-id'];
+  if (typeof headerId === 'string' && isValidUuid(headerId)) {
+    return headerId;
+  }
+  return null;
+}
+
 // Configure multer for memory storage
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -61,8 +75,8 @@ import logger from '../utils/logger.js';
  */
 router.get('/', async (req, res, next) => {
   try {
-    // 🔒 SECURITY FIX: Use verified identity from JWT if available
-    const anonymousId = req.user?.anonymous_id || null;
+    // 🔒 IDENTITY SSOT: Prioritize req.anonymousId (same identity path as like/unlike)
+    const anonymousId = resolveRequestAnonymousId(req);
     const userRole = req.user?.role || 'citizen';
     const { search, category, zone, status, lat, lng, radius, limit, cursor, province } = req.query;
 
@@ -727,8 +741,8 @@ router.get('/:id/pdf', exportReportPDF);
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    // 🔒 SECURITY FIX: Use verified identity from JWT if available
-    const anonymousId = req.user?.anonymous_id || null;
+    // 🔒 IDENTITY SSOT: Prioritize req.anonymousId (same identity path as like/unlike)
+    const anonymousId = resolveRequestAnonymousId(req);
     const sanitizedId = sanitizeUuidParam(anonymousId);
 
     // Graceful handling for temp IDs
