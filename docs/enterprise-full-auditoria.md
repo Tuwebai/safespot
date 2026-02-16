@@ -826,7 +826,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 ---
 
-### Post Semana 3 - P1 Reports (Extraccion Mutaciones por Lotes) (DONE PARCIAL)
+### Post Semana 3 - P1 Reports (Extraccion Mutaciones por Lotes) (DONE)
 
 #### Scope cerrado en este ciclo
 - Se extrajeron a `server/src/routes/reports.mutations.js` (sin cambios funcionales):
@@ -838,6 +838,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `deleteReport`
   - `createReport`
   - `shareReport`
+  - `uploadReportImages`
 - `server/src/routes/reports.js` quedo como router/wiring para esas rutas.
 - En `share` se corrigio el servicio usado para `notifyActivity`:
   - antes: `NotificationService` externo (sin metodo `notifyActivity`)
@@ -855,8 +856,9 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
-#### Pendiente controlado
-- `POST /api/reports/:id/images` permanece inline en `reports.js` (pendiente para lote dedicado, sin mezclar scope).
+#### Estado
+- **DONE**: write-paths de `reports` extraidos a `reports.mutations.js` con contratos preservados.
+- `reports.js` queda como router/wiring para mutaciones de dominio.
 
 ---
 
