@@ -1496,6 +1496,19 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **25/25 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - Cierre P1 Consistencia Transaccional Chat (DONE)
+
+- Estado final del dominio `chat`:
+  - write-paths críticos normalizados a `transactionWithRLS`,
+  - side-effects realtime en mutaciones ejecutados post-commit,
+  - sin cambios de contrato público en rutas/shape/status.
+- Verificación de drift de driver:
+  - no quedan writes críticos en `chats.mutations.js` usando `pool.query` directo,
+  - `queryWithRLS` restante en chat corresponde a lecturas/membership (`typing`, `upload image`, `getStarred`, `getRooms`, `getRoomMessages`).
+
+**Resultado**
+- Riesgo de estados parciales y race conditions en mutaciones chat reducido a nivel operativo.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
