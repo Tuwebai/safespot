@@ -16,14 +16,13 @@ import { exportReportPDF } from '../controllers/exportController.js';
 import { NotificationService as AppNotificationService } from '../utils/appNotificationService.js';
 import { verifyUserStatus } from '../middleware/moderation.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
-import { NotificationService } from '../utils/notificationService.js';
 import { AppError, ValidationError, NotFoundError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
 import { reportsListResponseSchema, singleReportResponseSchema } from '../schemas/responses.js';
 import { executeUserAction } from '../utils/governance.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
-import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport } from './reports.mutations.js';
+import { toggleFavorite, likeReport, unlikeReport, patchReport, flagReport, deleteReport, shareReport } from './reports.mutations.js';
 
 const router = express.Router();
 
@@ -1338,23 +1337,7 @@ router.post('/:id/images', imageUploadLimiter, requireAnonymousId, upload.array(
  * POST /api/reports/:id/share
  * Register a share event and notify report owner
  */
-router.post('/:id/share', requireAnonymousId, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const anonymousId = req.anonymousId;
-
-    // Trigger notification for the owner
-    // We don't need to await this as it's non-critical for the response
-    NotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
-      logError(err, { context: 'notifyActivity.share', reportId: id });
-    });
-
-    res.json({ success: true, message: 'Share registered' });
-  } catch (error) {
-    logError(error, req);
-    res.status(500).json({ error: 'Failed to register share' });
-  }
-});
+router.post('/:id/share', requireAnonymousId, shareReport);
 
 export default router;
 
