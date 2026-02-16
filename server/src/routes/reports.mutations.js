@@ -10,7 +10,7 @@ import { AppError } from '../utils/AppError.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 import { executeUserAction } from '../utils/governance.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
-import { NotificationService } from '../utils/notificationService.js';
+import { NotificationService as AppNotificationService } from '../utils/appNotificationService.js';
 
 export async function toggleFavorite(req, res) {
   try {
@@ -591,7 +591,7 @@ export async function shareReport(req, res) {
 
     // Trigger notification for the owner
     // We don't need to await this as it's non-critical for the response
-    NotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
+    AppNotificationService.notifyActivity(id, 'share', id, anonymousId).catch(err => {
       logError(err, { context: 'notifyActivity.share', reportId: id });
     });
 
