@@ -820,9 +820,43 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
   - `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
   - `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
-  - `server/tests/security/reports-contract-shape.test.js` -> **4/4 PASS**.
+  - `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
 - Tipado:
   - `server`: `npx tsc --noEmit` -> **PASS**.
+
+---
+
+### Post Semana 3 - P1 Reports (Extraccion Mutaciones por Lotes) (DONE PARCIAL)
+
+#### Scope cerrado en este ciclo
+- Se extrajeron a `server/src/routes/reports.mutations.js` (sin cambios funcionales):
+  - `toggleFavorite`
+  - `likeReport`
+  - `unlikeReport`
+  - `patchReport`
+  - `flagReport`
+  - `deleteReport`
+  - `createReport`
+  - `shareReport`
+- `server/src/routes/reports.js` quedo como router/wiring para esas rutas.
+- En `share` se corrigio el servicio usado para `notifyActivity`:
+  - antes: `NotificationService` externo (sin metodo `notifyActivity`)
+  - ahora: `AppNotificationService` (metodo correcto)
+
+#### Contrato preservado
+- Paths y orden de middlewares sin cambios.
+- Status codes y shape JSON preservados.
+- Side-effects mantenidos como fire-and-forget con `catch`.
+- Sin cambios de schema ni de contratos API.
+
+#### Evidencia de validacion
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS** (incluye `POST /api/reports/:id/share` y `POST /api/reports` 201/200 idempotent).
+- `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+- `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+#### Pendiente controlado
+- `POST /api/reports/:id/images` permanece inline en `reports.js` (pendiente para lote dedicado, sin mezclar scope).
 
 ---
 
