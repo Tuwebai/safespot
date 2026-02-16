@@ -14,6 +14,7 @@ const transactionWithRLSMock = vi.hoisted(() => vi.fn(async (_anonymousId, callb
             if (method === 'emitUserChatUpdate') emitUserChatUpdateMock(...args);
             if (method === 'emitMessageDelivered') emitMessageDeliveredMock(...args);
             if (method === 'emitMessageRead') emitMessageReadMock(...args);
+            if (method === 'broadcast') broadcastMock(...args);
         })
     };
     return callback({ query: txQueryMock }, sse);
@@ -278,6 +279,23 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(broadcastMock).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith({ error: 'You can only edit your own messages' });
+    });
+
+    it('editRoomMessage falla en tx y no emite broadcast', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            params: { roomId: 'room-1', messageId: 'msg-1' },
+            body: { content: 'mensaje editado' }
+        };
+        const res = createRes();
+
+        transactionWithRLSMock.mockRejectedValueOnce(new Error('FORCED_ROLLBACK'));
+
+        await editRoomMessage(req, res);
+
+        expect(broadcastMock).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
 
     it('pinRoomMessage valida mensaje y actualiza pin en tx, luego emite estado', async () => {

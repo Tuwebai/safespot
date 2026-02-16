@@ -879,7 +879,7 @@ export async function editRoomMessage(req, res) {
     }
 
     try {
-        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+        const txResult = await transactionWithRLS(anonymousId, async (client, sse) => {
             const msgCheck = await client.query(
                 'SELECT sender_id, type, created_at FROM chat_messages WHERE id = $1 AND conversation_id = $2',
                 [messageId, roomId]
@@ -914,7 +914,24 @@ export async function editRoomMessage(req, res) {
                  RETURNING *`,
                 [sanitizedContent, messageId]
             );
-            return { updatedMessage: result.rows[0] };
+            const updatedMessage = result.rows[0];
+
+            sse.emit('broadcast', `room:${roomId}`, {
+                eventId: `message-edited:${roomId}:${updatedMessage.id}`,
+                conversationId: roomId,
+                roomId,
+                serverTimestamp: updatedMessage.edited_at ? new Date(updatedMessage.edited_at).getTime() : Date.now(),
+                originClientId: 'backend',
+                type: 'message-edited',
+                data: {
+                    id: updatedMessage.id,
+                    content: updatedMessage.content,
+                    is_edited: true,
+                    edited_at: updatedMessage.edited_at
+                }
+            });
+
+            return { updatedMessage };
         });
 
         if (txResult?.notFound) {
@@ -934,21 +951,6 @@ export async function editRoomMessage(req, res) {
         }
 
         const updatedMessage = txResult.updatedMessage;
-
-        realtimeEvents.broadcast(`room:${roomId}`, {
-            eventId: `message-edited:${roomId}:${updatedMessage.id}`,
-            conversationId: roomId,
-            roomId,
-            serverTimestamp: updatedMessage.edited_at ? new Date(updatedMessage.edited_at).getTime() : Date.now(),
-            originClientId: 'backend',
-            type: 'message-edited',
-            data: {
-                id: updatedMessage.id,
-                content: updatedMessage.content,
-                is_edited: true,
-                edited_at: updatedMessage.edited_at
-            }
-        });
 
         logSuccess('Message edited', { messageId, anonymousId });
         res.json({ success: true, message: updatedMessage });

@@ -1400,7 +1400,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `PATCH /api/chats/rooms/:roomId/messages/:messageId`
 - Ajuste aplicado en `server/src/routes/chats.mutations.js`:
   - ownership/type/window check + update bajo `transactionWithRLS`,
-  - `realtimeEvents.broadcast` ejecutado exclusivamente post-commit.
+  - broadcast realtime encolado con `sse.emit('broadcast', ...)` dentro de la tx y flush post-commit.
 - Contrato preservado:
   - `401` -> `{ error: 'Anonymous ID required' }`
   - `400` -> `{ error: 'Content is required' }` / `{ error: 'Only text messages can be edited' }` / `{ error: 'Message can only be edited within 24 hours' }`
@@ -1409,8 +1409,11 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - `200` -> `{ success: true, message: <updatedMessage> }`
 
 **Gate**
-- `server/tests/security/chat-mutations-sql.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-mutations-sql.test.js` -> **28/28 PASS** (incluye rollback sin broadcast en `editRoomMessage`).
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server/tests/security/chat-offline-push.test.js` -> **3/3 PASS**.
+- `server/tests/security/chat-read-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-ack-signature.test.js` -> **2/2 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
 
 ### Post Semana 3 - P1 Chats (PIN/UNPIN MESSAGE transaccional + side-effects post-commit) (DONE)
