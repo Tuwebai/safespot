@@ -208,5 +208,15 @@ describe('Reports Contract Shape', () => {
         expect(res.status).toBe(404);
         expect(res.body).toHaveProperty('error', 'Report not found');
     });
+
+    it('POST /api/reports/:id/images sin archivos -> status 400 + shape {error}', async () => {
+        const app = buildApp();
+        const res = await request(app)
+            .post('/api/reports/r1/images')
+            .set('x-anonymous-id', 'owner-1');
+
+        expect(res.status).toBe(400);
+        expect(res.body).toHaveProperty('error', 'No images provided');
+    });
 });
 

@@ -1,8 +1,8 @@
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
-import { transactionWithRLS } from '../utils/rls.js';
+import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { logError } from '../utils/logger.js';
 import { NotFoundError } from '../utils/AppError.js';
-import { validateFlagReason } from '../utils/validation.js';
+import { validateFlagReason, validateImageBuffer } from '../utils/validation.js';
 import { sanitizeText, sanitizeContent } from '../utils/sanitize.js';
 import { normalizeStatus } from '../utils/legacyShim.js';
 import logger, { logSuccess } from '../utils/logger.js';
@@ -11,6 +11,7 @@ import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
 import { executeUserAction } from '../utils/governance.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { NotificationService as AppNotificationService } from '../utils/appNotificationService.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 export async function toggleFavorite(req, res) {
   try {
@@ -599,5 +600,131 @@ export async function shareReport(req, res) {
   } catch (error) {
     logError(error, req);
     res.status(500).json({ error: 'Failed to register share' });
+  }
+}
+
+export async function uploadReportImages(req, res) {
+  try {
+    const { id } = req.params;
+    const anonymousId = req.anonymousId;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({
+        error: 'No images provided'
+      });
+    }
+
+    // Verify report exists and belongs to user
+    const reportResult = await queryWithRLS(anonymousId, `
+      SELECT id, anonymous_id, image_urls FROM reports WHERE id = $1
+    `, [id]);
+
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
+
+    const report = reportResult.rows[0];
+
+    if (report.anonymous_id !== anonymousId) {
+      return res.status(403).json({
+        error: 'Forbidden: You can only upload images to your own reports'
+      });
+    }
+
+    // Parse existing image URLs
+    let existingUrls = [];
+    if (report.image_urls) {
+      if (Array.isArray(report.image_urls)) {
+        existingUrls = report.image_urls;
+      } else if (typeof report.image_urls === 'string') {
+        try {
+          existingUrls = JSON.parse(report.image_urls);
+        } catch (e) {
+          existingUrls = [];
+        }
+      }
+    }
+
+    // Check if supabaseAdmin is available
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        error: 'Storage service not configured',
+        message: 'SUPABASE_SERVICE_ROLE_KEY is required for image uploads'
+      });
+    }
+
+    // Upload files to Supabase Storage
+    const newImageUrls = [];
+    const bucketName = 'report-images';
+
+    for (const file of files) {
+      try {
+        // VALIDATION: Strict MIME verification with Sharp
+        await validateImageBuffer(file.buffer);
+
+        // Generate unique filename
+        const fileExt = file.originalname.split('.').pop();
+        const fileName = `${id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from(bucketName)
+          .upload(fileName, file.buffer, {
+            contentType: file.mimetype,
+            upsert: false,
+          });
+
+        if (uploadError) {
+          logError(uploadError, req);
+          throw new Error(`Failed to upload ${file.originalname}: ${uploadError.message}`);
+        }
+
+        // Get public URL
+        const { data: urlData } = supabaseAdmin.storage
+          .from(bucketName)
+          .getPublicUrl(fileName);
+
+        if (urlData?.publicUrl) {
+          newImageUrls.push(urlData.publicUrl);
+        } else {
+          throw new Error(`Failed to get public URL for ${file.originalname}`);
+        }
+      } catch (fileError) {
+        logError(fileError, req);
+        // Continue with other files, but log the error (via logger in logError)
+      }
+    }
+
+    if (newImageUrls.length === 0) {
+      return res.status(500).json({
+        error: 'Failed to upload any images',
+        message: 'All image uploads failed'
+      });
+    }
+
+    const finalImageUrls = [...existingUrls, ...newImageUrls];
+
+    // Update report with merged image URLs using queryWithRLS for RLS consistency
+    await queryWithRLS(anonymousId, `
+      UPDATE reports SET image_urls = $1 WHERE id = $2 AND anonymous_id = $3
+    `, [JSON.stringify(finalImageUrls), id, anonymousId]);
+
+    logSuccess('Images uploaded and appended', { id, anonymousId, new_count: newImageUrls.length, total_count: finalImageUrls.length });
+
+    res.json({
+      success: true,
+      data: {
+        image_urls: finalImageUrls
+      },
+      message: `Successfully uploaded ${newImageUrls.length} image(s)`
+    });
+  } catch (error) {
+    logError(error, req);
+    res.status(500).json({
+      error: 'Failed to upload images'
+    });
   }
 }
