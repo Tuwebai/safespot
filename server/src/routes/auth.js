@@ -335,9 +335,8 @@ router.post('/reset-password', authLimiter, async (req, res, next) => {
  * Authenticated user password change.
  */
 router.post('/change-password', validateAuth, authLimiter, async (req, res, next) => {
-    if (!req.user) throw new UnauthorizedError('No autenticado');
-
     try {
+        if (!req.user) throw new UnauthorizedError('No autenticado');
         const { currentPassword, newPassword } = req.body;
         if (!currentPassword || !newPassword) throw new ValidationError('Faltan datos');
 
