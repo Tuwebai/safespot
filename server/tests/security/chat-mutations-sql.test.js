@@ -20,7 +20,7 @@ vi.mock('../../src/utils/eventEmitter.js', () => ({
     }
 }));
 
-import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage } from '../../src/routes/chats.mutations.js';
+import { unpinRoom, archiveRoom, unarchiveRoom, setUnreadRoom, deleteRoom, deleteRoomMessage, editRoomMessage, pinRoomMessage, unpinRoomMessage, starRoomMessage, unstarRoomMessage, createRoom } from '../../src/routes/chats.mutations.js';
 
 function createRes() {
     const res = {};
@@ -362,5 +362,43 @@ describe('Chats Mutations SQL Contracts', () => {
         expect(txQueryMock).toHaveBeenCalledTimes(1);
         expect(txQueryMock.mock.calls[0][0]).toContain('DELETE FROM starred_messages');
         expect(res.json).toHaveBeenCalledWith({ success: true, starred: false });
+    });
+
+    it('createRoom (DM existente) responde 201 con room sin recrear membresias', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            body: { recipientId: 'user-2' }
+        };
+        const res = createRes();
+
+        txQueryMock
+            .mockResolvedValueOnce({ rows: [{ id: 'conv-1' }] }) // existing
+            .mockResolvedValueOnce({ rows: [{ id: 'conv-1', unread_count: 0 }] }); // fullRoom
+
+        await createRoom(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(2);
+        expect(txQueryMock.mock.calls[0][0]).toContain('SELECT c.id FROM conversations c');
+        expect(txQueryMock.mock.calls[1][0]).toContain('FROM conversations c');
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'conv-1' }));
+    });
+
+    it('createRoom (report inexistente) mantiene contrato 404', async () => {
+        const req = {
+            anonymousId: 'user-1',
+            body: { report_id: 'report-404' }
+        };
+        const res = createRes();
+
+        txQueryMock.mockResolvedValueOnce({ rows: [] }); // report lookup
+
+        await createRoom(req, res);
+
+        expect(transactionWithRLSMock).toHaveBeenCalledTimes(1);
+        expect(txQueryMock).toHaveBeenCalledTimes(1);
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Report not found' });
     });
 });

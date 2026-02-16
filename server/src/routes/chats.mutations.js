@@ -1142,75 +1142,93 @@ export async function createRoom(req, res) {
     if (!anonymousId) { return res.status(400).json({ error: 'Anonymous ID required' }); }
 
     try {
-        let conversationId;
-        let participantB = final_recipient_id;
+        const txResult = await transactionWithRLS(anonymousId, async (client) => {
+            let conversationId;
+            let participantB = final_recipient_id;
 
-        if (final_report_id) {
-            const reportResult = await queryWithRLS(anonymousId, 'SELECT anonymous_id FROM reports WHERE id = $1', [final_report_id]);
-            if (reportResult.rows.length === 0) { return res.status(404).json({ error: 'Report not found' }); }
-            participantB = reportResult.rows[0].anonymous_id;
-        }
+            if (final_report_id) {
+                const reportResult = await client.query(
+                    'SELECT anonymous_id FROM reports WHERE id = $1',
+                    [final_report_id]
+                );
+                if (reportResult.rows.length === 0) {
+                    return { status: 'report_not_found' };
+                }
+                participantB = reportResult.rows[0].anonymous_id;
+            }
 
-        if (participantB === anonymousId) { return res.status(400).json({ error: 'Cannot start a chat with yourself' }); }
+            if (participantB === anonymousId) {
+                return { status: 'self_chat' };
+            }
 
-        let existingConvQuery;
-        let existingConvParams;
+            let existingConvQuery;
+            let existingConvParams;
 
-        if (final_report_id) {
-            existingConvQuery = `
-                SELECT c.id FROM conversations c
-                JOIN conversation_members cm1 ON cm1.conversation_id = c.id
-                JOIN conversation_members cm2 ON cm2.conversation_id = c.id
-                WHERE c.report_id = $1 AND cm1.user_id = $2 AND cm2.user_id = $3
+            if (final_report_id) {
+                existingConvQuery = `
+                    SELECT c.id FROM conversations c
+                    JOIN conversation_members cm1 ON cm1.conversation_id = c.id
+                    JOIN conversation_members cm2 ON cm2.conversation_id = c.id
+                    WHERE c.report_id = $1 AND cm1.user_id = $2 AND cm2.user_id = $3
+                `;
+                existingConvParams = [final_report_id, anonymousId, participantB];
+            } else {
+                existingConvQuery = `
+                    SELECT c.id FROM conversations c
+                    JOIN conversation_members cm1 ON cm1.conversation_id = c.id
+                    JOIN conversation_members cm2 ON cm2.conversation_id = c.id
+                    WHERE c.report_id IS NULL AND c.type = 'dm' AND cm1.user_id = $1 AND cm2.user_id = $2
+                `;
+                existingConvParams = [anonymousId, participantB];
+            }
+
+            const existingResult = await client.query(existingConvQuery, existingConvParams);
+
+            if (existingResult.rows.length > 0) {
+                conversationId = existingResult.rows[0].id;
+            } else {
+                const newConv = await client.query(
+                    'INSERT INTO conversations (report_id, type) VALUES ($1, $2) RETURNING id',
+                    [final_report_id || null, 'dm']
+                );
+                conversationId = newConv.rows[0].id;
+
+                await client.query(
+                    'INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2), ($1, $3)',
+                    [conversationId, anonymousId, participantB]
+                );
+            }
+
+            const fullRoomQuery = `
+                SELECT 
+                    c.*,
+                    r.title as report_title,
+                    r.category as report_category,
+                    u_other.alias as other_participant_alias,
+                    u_other.avatar_url as other_participant_avatar,
+                    u_other.anonymous_id as other_participant_id,
+                    u_other.last_seen_at as other_participant_last_seen,
+                    0 as unread_count
+
+                FROM conversations c
+                LEFT JOIN reports r ON c.report_id = r.id
+                LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
+                LEFT JOIN anonymous_users u_other ON cm_other.user_id = u_other.anonymous_id
+                WHERE c.id = $2
             `;
-            existingConvParams = [final_report_id, anonymousId, participantB];
-        } else {
-            existingConvQuery = `
-                SELECT c.id FROM conversations c
-                JOIN conversation_members cm1 ON cm1.conversation_id = c.id
-                JOIN conversation_members cm2 ON cm2.conversation_id = c.id
-                WHERE c.report_id IS NULL AND c.type = 'dm' AND cm1.user_id = $1 AND cm2.user_id = $2
-            `;
-            existingConvParams = [anonymousId, participantB];
+            const fullRoom = await client.query(fullRoomQuery, [anonymousId, conversationId]);
+            return { status: 'ok', room: fullRoom.rows[0] };
+        });
+
+        if (txResult?.status === 'report_not_found') {
+            return res.status(404).json({ error: 'Report not found' });
         }
 
-        const existingResult = await queryWithRLS(anonymousId, existingConvQuery, existingConvParams);
-
-        if (existingResult.rows.length > 0) {
-            conversationId = existingResult.rows[0].id;
-        } else {
-            const newConv = await queryWithRLS(anonymousId,
-                'INSERT INTO conversations (report_id, type) VALUES ($1, $2) RETURNING id',
-                [final_report_id || null, 'dm']
-            );
-            conversationId = newConv.rows[0].id;
-
-            await queryWithRLS(anonymousId,
-                'INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2), ($1, $3)',
-                [conversationId, anonymousId, participantB]
-            );
+        if (txResult?.status === 'self_chat') {
+            return res.status(400).json({ error: 'Cannot start a chat with yourself' });
         }
 
-        const fullRoomQuery = `
-            SELECT 
-                c.*,
-                r.title as report_title,
-                r.category as report_category,
-                u_other.alias as other_participant_alias,
-                u_other.avatar_url as other_participant_avatar,
-                u_other.anonymous_id as other_participant_id,
-                u_other.last_seen_at as other_participant_last_seen,
-                0 as unread_count
-
-            FROM conversations c
-            LEFT JOIN reports r ON c.report_id = r.id
-            LEFT JOIN conversation_members cm_other ON cm_other.conversation_id = c.id AND cm_other.user_id != $1
-            LEFT JOIN anonymous_users u_other ON cm_other.user_id = u_other.anonymous_id
-            WHERE c.id = $2
-        `;
-        const fullRoom = await queryWithRLS(anonymousId, fullRoomQuery, [anonymousId, conversationId]);
-
-        res.status(201).json(fullRoom.rows[0]);
+        res.status(201).json(txResult.room);
     } catch (err) {
         logError(err, req);
         res.status(500).json({ error: 'Internal server error' });

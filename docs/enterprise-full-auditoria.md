@@ -1426,6 +1426,23 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/chat-mutations-sql.test.js` -> **17/17 PASS**.
 - `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Chats (CREATE ROOM transaccional homogéneo) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `POST /api/chats/rooms`
+- Ajuste aplicado en `server/src/routes/chats.mutations.js`:
+  - report lookup, dedupe de conversación, create members y readback final bajo `transactionWithRLS`,
+  - sin side-effects adicionales (comportamiento preservado).
+- Contrato preservado:
+  - `400` -> `{ error: 'Anonymous ID required' }` / `{ error: 'Cannot start a chat with yourself' }`
+  - `404` -> `{ error: 'Report not found' }`
+  - `201` -> `room` con shape previo (incluye `unread_count`, metadata de participante y reporte).
+
+**Gate**
+- `server/tests/security/chat-mutations-sql.test.js` -> **19/19 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
 ---
