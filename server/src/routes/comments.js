@@ -957,33 +957,6 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       throw error;
     }
 
-    // Verify comment exists and get owner
-    const { data: comment, error: commentError } = await supabase
-      .from('comments')
-      .select('id, anonymous_id')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (commentError) {
-      logError(commentError, req);
-      return res.status(500).json({
-        error: 'Failed to verify comment'
-      });
-    }
-
-    if (!comment) {
-      return res.status(404).json({
-        error: 'Comment not found'
-      });
-    }
-
-    // Check if user is trying to flag their own comment
-    if (comment.anonymous_id === anonymousId) {
-      return res.status(403).json({
-        error: 'You cannot flag your own comment'
-      });
-    }
-
     // Ensure anonymous user exists
     try {
       await ensureAnonymousUser(anonymousId);
@@ -994,44 +967,77 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       });
     }
 
-    // Check if already flagged using queryWithRLS for RLS enforcement
-    const checkResult = await queryWithRLS(
-      anonymousId,
-      `SELECT id FROM comment_flags 
-       WHERE anonymous_id = $1 AND comment_id = $2`,
-      [anonymousId, id]
-    );
+    const flagComment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
 
-    if (checkResult.rows.length > 0) {
+    const txResult = await transactionWithRLS(anonymousId, async (client) => {
+      const commentResult = await client.query(
+        `SELECT id, anonymous_id
+         FROM comments
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id]
+      );
+
+      if (commentResult.rows.length === 0) {
+        return { status: 'not_found' };
+      }
+
+      const comment = commentResult.rows[0];
+      if (comment.anonymous_id === anonymousId) {
+        return { status: 'own_comment' };
+      }
+
+      const checkResult = await client.query(
+        `SELECT id FROM comment_flags
+         WHERE anonymous_id = $1 AND comment_id = $2`,
+        [anonymousId, id]
+      );
+
+      if (checkResult.rows.length > 0) {
+        return { status: 'already_flagged' };
+      }
+
+      const insertResult = await client.query(
+        `INSERT INTO comment_flags (anonymous_id, comment_id, reason, comment)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, anonymous_id, comment_id, reason, created_at`,
+        [anonymousId, id, reason, flagComment]
+      );
+
+      if (insertResult.rows.length === 0) {
+        throw new Error('Insert flag returned no rows');
+      }
+
+      return {
+        status: 'created',
+        newFlag: insertResult.rows[0],
+        commentOwnerId: comment.anonymous_id
+      };
+    });
+
+    if (txResult.status === 'not_found') {
+      return res.status(404).json({
+        error: 'Comment not found'
+      });
+    }
+
+    if (txResult.status === 'own_comment') {
+      return res.status(403).json({
+        error: 'You cannot flag your own comment'
+      });
+    }
+
+    if (txResult.status === 'already_flagged') {
       return res.status(409).json({
         error: 'Comment already flagged by this user',
         message: 'You have already flagged this comment'
       });
     }
 
-    const flagComment = req.body.comment ? sanitizeText(req.body.comment, 'flag_comment', { anonymousId }) : null;
-
-    // Create flag using queryWithRLS for RLS enforcement
-    const insertResult = await queryWithRLS(
-      anonymousId,
-      `INSERT INTO comment_flags (anonymous_id, comment_id, reason, comment)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, anonymous_id, comment_id, reason, created_at`,
-      [anonymousId, id, reason, flagComment]
-    );
-
-    if (insertResult.rows.length === 0) {
-      logError(new Error('Insert flag returned no rows'), req);
-      return res.status(500).json({
-        error: 'Failed to flag comment'
-      });
-    }
-
-    const newFlag = insertResult.rows[0];
+    const newFlag = txResult.newFlag;
 
     logSuccess(`Comment ${id} flagged by ${anonymousId}`, req);
 
-    // AUDIT LOG
+    // AUDIT LOG post-commit
     auditLog({
       action: AuditAction.COMMENT_FLAG,
       actorType: ActorType.ANONYMOUS,
@@ -1039,7 +1045,7 @@ router.post('/:id/flag', requireAnonymousId, async (req, res) => {
       req,
       targetType: 'comment',
       targetId: id,
-      targetOwnerId: comment.anonymous_id,
+      targetOwnerId: txResult.commentOwnerId,
       metadata: { reason, flagId: newFlag.id },
       success: true
     }).catch(() => { });

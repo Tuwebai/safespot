@@ -545,6 +545,32 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - **DONE (scope acotado)** para `like/unlike`.
 - Siguiente objetivo de consistencia: endpoints `comments` restantes + `reports` (fuera de este cambio).
 
+### Post Semana 3 - P1 Consistencia Transaccional Comments (FLAG) (DONE)
+
+#### Scope cerrado
+- Endpoint `POST /api/comments/:id/flag`:
+  - verificacion de comentario + validaciones de negocio + insert de `comment_flags` unificados en `transactionWithRLS`.
+  - se elimina mezcla de write-path entre `supabase` y `queryWithRLS`.
+  - `auditLog` queda como side-effect post-commit (no se dispara si falla la transaccion).
+
+#### Beneficio tecnico concreto
+- El flujo deja de tener puntos de estado parcial en validacion/insert.
+- Se evita auditoria inconsistente ante fallas intermedias (sin commit -> sin audit log).
+- Se mejora trazabilidad y reproducibilidad de incidentes.
+
+#### Evidencia de validacion
+- Test dedicado:
+  - `tests/security/comment-flag-transaction.test.js` -> **2/2 PASS**.
+  - Cobertura:
+    - exito (201 + `flag_id` + `auditLog`).
+    - falla intermedia de insert (500 + cero side-effects: sin `auditLog`, sin notificaciones/realtime).
+- Tipado backend:
+  - `npx tsc --noEmit` -> **PASS**.
+
+#### Estado
+- **DONE (scope acotado)** para `flag`.
+- `pin/unpin` queda fuera de este bloque (solo abordar si hay bug visible o cierre higienico posterior).
+
 ---
 
 ## 🔟 Score Final
