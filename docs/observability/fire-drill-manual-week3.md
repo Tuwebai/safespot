@@ -14,6 +14,10 @@ Validar deteccion y respuesta operativa usando solo logs + 4 queries guardadas.
 2. Confirmar acceso a logs backend.
 3. Confirmar queries guardadas:
 - `docs/observability/log-queries-week3.md`
+4. Asignar roles:
+- conductor del drill
+- operador de mitigacion
+- observador/auditor de evidencia
 
 ## Escenarios de simulacion
 
@@ -50,11 +54,13 @@ Evidencia esperada:
 - [ ] Cada escenario dejo evidencia en logs.
 - [ ] Se registro MTTA y MTTR por escenario.
 - [ ] Se documento accion correctiva.
+- [ ] Se registro decision final (`GO`/`NO_GO`) por escenario.
 
 ## Criterio de aprobacion
 - Respuesta inicial <= 15 min en todos los escenarios.
 - Trazabilidad completa por `requestId`.
 - Mitigacion reproducible documentada.
+- Cierre con owner + fecha para cada mejora detectada.
 
 ## Plantilla de evidencia
 - Escenario:
@@ -65,4 +71,6 @@ Evidencia esperada:
 - `requestId` muestra:
 - Hallazgo:
 - Accion permanente:
-
+- Owner:
+- Fecha compromiso:
+- Decision (`GO`/`NO_GO`):

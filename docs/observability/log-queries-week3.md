@@ -8,6 +8,13 @@ Reemplazar dashboard externo por consultas guardadas de logs para operar Semana 
 - Correlacion por `requestId`.
 - Sin PII en payload.
 
+## Politica de ejecucion
+- Frecuencia minima: cada 4 horas en horario laboral y al inicio/cierre de guardia.
+- En release day: cada 30 minutos durante la primera hora post-deploy.
+- Retencion objetivo:
+  - 14 dias para `METRIC_HTTP_REQUEST`
+  - 30 dias para metricas criticas (`AUTHZ_DENIED`, `CATCHUP`, `ACK_FAILURE`, `AUTH_5XX`)
+
 ## Query 1 - 401/403 realtime (ultimos 10 min)
 Filtro:
 - `message = "METRIC_REALTIME_AUTHZ_DENIED"`
@@ -64,8 +71,13 @@ Uso:
 - ACK failures: > 5 / 5 min por 10 min.
 - Auth 5xx: > 0 por 5 min.
 
+## Accion por umbral (GO/NO-GO)
+- Si un umbral se cruza: abrir incidente y ejecutar `runbook-incidentes-metricas.md`.
+- Si 2 o mas umbrales se cruzan en simultaneo: congelar deploys y evaluar rollback.
+- Si no hay evidencia trazable por `requestId`: estado `NO_GO` para cierre.
+
 ## Evidencia minima por incidente
 - Captura o export de la query usada.
 - `requestId` de muestra.
 - Timestamp inicio/mitigacion/cierre.
-
+- Decision final: `GO` o `ROLLBACK`.

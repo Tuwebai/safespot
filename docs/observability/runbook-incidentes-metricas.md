@@ -8,6 +8,7 @@ Operar incidentes de `auth + realtime + push` con respuesta predecible, trazable
 - Stack observabilidad: logs estructurados (sin dependencia de Grafana).
 - No exponer PII en logs: nunca tokens, cookies, payloads completos ni query strings crudas.
 - Correlacion obligatoria por `requestId`.
+- Cierre obligatorio por evidencia: sin evidencia no hay incidente cerrado.
 
 ## 2. Metricas y SLO operativo
 - `METRIC_REALTIME_AUTHZ_DENIED` (401/403 realtime)
@@ -20,6 +21,10 @@ SLO de respuesta inicial:
 - SEV1: ack humano <= 5 min
 - SEV2: ack humano <= 15 min
 
+SLO de mitigacion:
+- SEV1: mitigacion inicial <= 30 min
+- SEV2: mitigacion inicial <= 60 min
+
 ## 3. Triage inicial (primeros 5 minutos)
 1. Confirmar severidad:
 - SEV1: login caido masivo, auth 5xx sostenido, realtime inutilizable.
@@ -28,6 +33,12 @@ SLO de respuesta inicial:
 3. Tomar `requestId` de casos reales y pivotear trazas.
 4. Congelar deploys si el incidente es auth/realtime activo.
 5. Abrir canal de incidente y registrar timestamp de inicio.
+
+Salida minima del triage:
+- severidad asignada (`SEV1` o `SEV2`)
+- metrica dominante
+- primer `requestId` ancla
+- owner operativo asignado
 
 ## 4. Playbook por tipo de incidente
 
@@ -132,6 +143,10 @@ Condiciones para declarar rollback exitoso:
 - 401/403 en rango esperado
 - sin crecimiento de ACK failures
 
+Decision formal:
+- `GO`: metrica estabilizada + smoke OK + sin errores nuevos.
+- `NO_GO`: persiste degradacion o evidencia incompleta.
+
 ## 8. Comandos de verificacion (copy/paste)
 ```bash
 npm run test --prefix server -- tests/security/auth-realtime-error-contract.test.js
@@ -151,6 +166,7 @@ Checklist de cierre:
 - [ ] Evidencia con `requestId`
 - [ ] Accion preventiva definida (test, alerta, guardrail)
 - [ ] Estado final comunicado a equipo
+- [ ] Owner y fecha comprometida para accion permanente
 
 Plantilla minima postmortem:
 - Impacto
