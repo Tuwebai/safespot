@@ -7,6 +7,7 @@ Reducir riesgo operativo por secretos faltantes, debiles o expuestos y asegurar 
 - Alcance activo: `api + worker`.
 - Modo: hard-fail para secretos criticos.
 - Evidencia requerida: ticket de cambio + timestamp de rotacion + validacion post-rotacion.
+- Registro obligatorio: `docs/observability/secrets-rotation-evidence-log.md`.
 
 ## Gobierno (RACI minimo)
 | Rol | Responsabilidad |
@@ -36,6 +37,11 @@ Reducir riesgo operativo por secretos faltantes, debiles o expuestos y asegurar 
 - `SUPABASE_*`: cada 90 dias o ante exposicion.
 - `VAPID_*`: cada 180 dias o ante sospecha de abuso.
 
+## Cadencia operativa obligatoria
+- Control mensual (sin rotacion): verificar expiracion/edad de secretos y estado de env validation.
+- Simulacro trimestral: fire-drill de rotacion con rollback controlado en entorno no productivo.
+- Rotacion inmediata: ante cualquier evidencia de exposicion o incidente de seguridad.
+
 ## Ventana y precondiciones
 Antes de rotar:
 1. Confirmar ventana de bajo trafico y on-call asignado.
@@ -62,6 +68,16 @@ Antes de rotar:
 - push operativo
 5. Revocar secreto anterior y cerrar incidente/cambio con evidencia.
 
+## Gate de cierre (GO/NO-GO)
+- GO:
+  - smoke post-rotacion en verde,
+  - `requestId` de verificaciones registrado,
+  - sin 5xx auth/realtime anomalo durante 15 minutos.
+- NO-GO:
+  - cualquier fallo de auth bootstrap,
+  - `ENV_VALIDATION_FAILED` en boot,
+  - degradacion sostenida en metricas criticas.
+
 ## Rollback operativo (obligatorio)
 Si falla validacion post-rotacion:
 1. Restaurar secreto previo en entorno.
@@ -75,3 +91,4 @@ Si falla validacion post-rotacion:
 - Timestamp inicio/fin.
 - Resultado de smoke post-rotacion.
 - Decision final: `GO` o `ROLLBACK`.
+- Link a entrada en `secrets-rotation-evidence-log.md`.

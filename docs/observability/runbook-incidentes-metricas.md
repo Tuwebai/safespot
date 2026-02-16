@@ -149,8 +149,8 @@ Decision formal:
 
 ## 8. Comandos de verificacion (copy/paste)
 ```bash
-npm run test --prefix server -- tests/security/auth-realtime-error-contract.test.js
 npm run test --prefix server -- tests/security/realtime-authz.test.js
+npm run test --prefix server -- tests/security/realtime-catchup-delivery-consistency.test.js
 npm run test --prefix server -- tests/security/env-validation.test.js
 cd server && npx tsc --noEmit
 ```
