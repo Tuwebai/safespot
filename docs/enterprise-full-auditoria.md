@@ -28,7 +28,7 @@ El proyecto está en estado **Scale-Ready parcial**: tiene bases enterprise vali
 |---|---|---|
 | AuthZ incompleto en `/api/realtime/user/:id`, `/api/realtime/chats/:roomId`, `/api/realtime/catchup` | **CORREGIDO** | `server/src/routes/realtime.js` + `tests/security/realtime-authz.test.js` en verde |
 | Catchup con fuga de metadatos globales | **CORREGIDO** | Filtros de visibilidad/membresía en `catchup` (`server/src/routes/realtime.js`) + suite seguridad |
-| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/auth-realtime-error-contract.test.js` |
+| Contratos 4xx/5xx inconsistentes en auth/realtime | **CORREGIDO** | `docs/observability/auth-realtime-error-matrix.md` + `tests/security/realtime-authz.test.js` |
 | Hardening de secretos (arranque inseguro) | **CORREGIDO PARCIAL** | `server/src/utils/env.js` + `tests/security/env-validation.test.js` (pendiente: operación continua de rotación) |
 | Deriva transaccional en comments (like/flag/pin/create/edit) | **CORREGIDO** | Secciones `Post Semana 3 - P1 Consistencia Transaccional Comments (...) (DONE)` |
 | Bug `/reportes` favoritos (mostraba no favoritos) | **CORREGIDO** | `server/src/routes/reports.js` (`favorites_only` con `EXISTS` + `1=0` sin identidad), `src/lib/cache-helpers.ts` (`matchesFilters`) |
@@ -503,7 +503,6 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Estandarizacion de errores `4xx/5xx` en `auth + realtime` con contrato uniforme y `requestId`.
   - Evidencia: `docs/observability/auth-realtime-error-matrix.md`.
   - Tests de contrato en verde:
-    - `tests/security/auth-realtime-error-contract.test.js`
     - `tests/security/realtime-authz.test.js`
 - Hardening de secretos y arranque seguro:
   - Validador centralizado: `server/src/utils/env.js`.
@@ -1544,7 +1543,40 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
 - `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
 - `cd server && npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Realtime (Catchup dedupe por eventId) (DONE)
+
+- Endpoint estabilizado sin cambio de contrato:
+  - `GET /api/realtime/catchup`
+- Ajuste aplicado en `server/src/routes/realtime.js`:
+  - deduplicación server-side por `eventId` antes de responder catchup,
+  - evita replay doble del mismo `message.delivered` cuando el evento aparece por múltiples fuentes (messages + delivery acks).
+- Contrato preservado:
+  - mismo shape de evento (`eventId`, `serverTimestamp`, `type`, `payload`, `isReplay`),
+  - misma semántica de catchup (solo sin duplicados).
+
+**Gate**
+- `server/tests/security/realtime-catchup-delivery-consistency.test.js` -> **2/2 PASS** (incluye no-duplicación).
+- `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P2 Frontend (Boundary API en Notificaciones) (DONE)
+
+- Alcance:
+  - `src/pages/NotificationsPage.tsx`
+  - `src/hooks/queries/useNotificationsQuery.ts`
+  - `src/components/notifications/NotificationItem.tsx`
+- Cambio aplicado (sin cambio funcional):
+  - se eliminó import runtime directo de `@/lib/api` en `NotificationsPage` para delete diferido;
+  - se incorporó `useDeleteNotificationMutation` en hook de queries para centralizar acceso API;
+  - `NotificationItem` pasó a `import type` para `Notification` (sin import runtime).
+- Beneficio real:
+  - cumple boundary enterprise UI -> hooks/mutations (sin bypass de capa de datos),
+  - reduce riesgo de drift de cache/credenciales al centralizar mutaciones en React Query,
+  - mantiene contrato y comportamiento visual/funcional intactos.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
 
 ---
 

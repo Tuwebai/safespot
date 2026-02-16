@@ -10,6 +10,13 @@ function buildTestApp() {
     const app = express();
     app.use(validateAuth);
     app.use('/api/realtime', realtimeRouter);
+    app.use((err, _req, res, _next) => {
+        res.status(err.statusCode || 500).json({
+            error: true,
+            code: err.code || 'INTERNAL_ERROR',
+            message: err.message || 'Internal error'
+        });
+    });
     return app;
 }
 

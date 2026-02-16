@@ -322,8 +322,19 @@ router.get('/catchup', async (req, res, next) => {
             });
         });
 
-        logRealtimeCatchup(req, { statusCode: 200, durationMs: Date.now() - catchupStart, eventCount: events.length });
-        res.json(events);
+        // Deduplicate by eventId to avoid replaying the same semantic event twice
+        // when multiple catchup sources include the same transition.
+        const seenEventIds = new Set();
+        const dedupedEvents = [];
+        for (const event of events) {
+            const dedupeKey = event?.eventId || `${event?.type}:${event?.serverTimestamp || 0}`;
+            if (seenEventIds.has(dedupeKey)) continue;
+            seenEventIds.add(dedupeKey);
+            dedupedEvents.push(event);
+        }
+
+        logRealtimeCatchup(req, { statusCode: 200, durationMs: Date.now() - catchupStart, eventCount: dedupedEvents.length });
+        res.json(dedupedEvents);
     } catch (err) {
         console.error('[Catchup] Error:', err);
         logRealtimeCatchup(req, { statusCode: 500, durationMs: Date.now() - catchupStart, eventCount: 0 });
