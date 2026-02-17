@@ -7,7 +7,7 @@ import type { UserProfile } from '@/lib/api';
 import { useFollowMutation } from '@/hooks/mutations/useFollowMutation';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getAvatarFallback, resolveAvatarUrl } from '@/lib/avatar';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -78,17 +78,24 @@ export function UserCard({
 
     const followMutation = useFollowMutation();
 
+    useEffect(() => {
+        setIsFollowing(user.is_following);
+    }, [user.is_following]);
+
     const handleFollowToggle = () => {
+        const nextFollowing = !isFollowing;
+        setIsFollowing(nextFollowing);
+
         followMutation.mutate(
             { anonymousId: user.anonymous_id, action: isFollowing ? 'unfollow' : 'follow' },
             {
                 onSuccess: () => {
-                    setIsFollowing(!isFollowing);
-                    if (!isFollowing) {
+                    if (nextFollowing) {
                         success(`Ahora sigues a ${displayName}`);
                     }
                 },
                 onError: () => {
+                    setIsFollowing(!nextFollowing);
                     error(isFollowing ? 'No se pudo dejar de seguir' : 'No se pudo seguir al usuario');
                 }
             }
