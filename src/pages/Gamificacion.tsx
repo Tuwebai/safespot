@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { Suspense, useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,9 +10,14 @@ import { usePointsAnimation } from '@/hooks/usePointsAnimation'
 import { PointsAddedFeedback, LevelUpFeedback } from '@/components/ui/points-feedback'
 import { getPointsToNextLevel, MAX_LEVEL } from '@/lib/levelCalculation'
 import { FeedbackState } from '@/components/ui/feedback-state'
-import { LegendaryBadgeReveal } from '@/components/gamification/LegendaryBadgeReveal'
 import { useGamificationSummaryQuery } from '@/hooks/queries'
 import { useHighlightContext } from '@/hooks/useHighlightContext'
+import { lazyRetry } from '@/lib/lazyRetry'
+
+const LegendaryBadgeReveal = lazyRetry(
+  () => import('@/components/gamification/LegendaryBadgeReveal').then((m) => ({ default: m.LegendaryBadgeReveal })),
+  'LegendaryBadgeReveal'
+)
 
 export function Gamificacion() {
   // React Query - cached, deduplicated
@@ -209,10 +214,12 @@ export function Gamificacion() {
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Legendary Reveal Modal */}
       {legendaryBadgeToReveal && (
-        <LegendaryBadgeReveal
-          badge={legendaryBadgeToReveal}
-          onClose={() => setLegendaryBadgeToReveal(null)}
-        />
+        <Suspense fallback={null}>
+          <LegendaryBadgeReveal
+            badge={legendaryBadgeToReveal}
+            onClose={() => setLegendaryBadgeToReveal(null)}
+          />
+        </Suspense>
       )}
 
       {/* Header - Always visible immediately */}

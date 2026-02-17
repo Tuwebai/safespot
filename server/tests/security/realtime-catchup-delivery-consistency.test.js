@@ -42,7 +42,8 @@ import realtimeRouter from '../../src/routes/realtime.js';
 import { validateAuth } from '../../src/middleware/auth.js';
 
 function signTestToken(anonymousId, role = 'citizen') {
-    const secret = process.env.JWT_SECRET || 'safespot-secret-key-change-me';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET must be defined in test environment');
     return jwt.sign({ anonymous_id: anonymousId, role }, secret, { expiresIn: '1h' });
 }
 

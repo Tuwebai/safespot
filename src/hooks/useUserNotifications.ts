@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
 import { getClientId } from '@/lib/clientId';
+import { playBadgeSound } from './badgeSound';
 
 interface NotificationPayload {
     id?: string;
@@ -46,7 +47,7 @@ export function useUserNotifications(onNotification?: (data: NotificationPayload
                     // sound and tracking
                     const notified = JSON.parse(localStorage.getItem('safespot_seen_sse_ids') || '[]');
                     if (!notified.includes(notif.id) && !isBadgeNotification) {
-                        import('./useBadgeNotifications').then(({ playBadgeSound }) => playBadgeSound());
+                        playBadgeSound();
                         notified.push(notif.id);
                         if (notified.length > 50) notified.shift();
                         localStorage.setItem('safespot_seen_sse_ids', JSON.stringify(notified));

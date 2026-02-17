@@ -14,17 +14,26 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/Avatar';
 import { useToast } from '../components/ui/toast';
+import { lazyRetry } from '@/lib/lazyRetry';
 
 import { SEO } from '../components/SEO';
-import { ChatWindow } from '../components/chat/ChatWindow';
 import { ChatContextMenu } from '../components/chat/ChatContextMenu';
-import { NewChatModal } from '../components/chat/NewChatModal';
 import useLongPress from '../hooks/useLongPress';
 import { ChevronDown, Pin } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 // 🔴 CRITICAL FIX: Auth guard for chat creation
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useChatApi } from '@/hooks/useChatApi';
+
+const ChatWindow = lazyRetry(
+    () => import('../components/chat/ChatWindow').then(m => ({ default: m.ChatWindow })),
+    'ChatWindow'
+);
+
+const NewChatModal = lazyRetry(
+    () => import('../components/chat/NewChatModal').then(m => ({ default: m.NewChatModal })),
+    'NewChatModal'
+);
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -379,12 +388,16 @@ const Mensajes: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                            {/* New Chat Modal */}
-                            <NewChatModal
-                                isOpen={isNewChatOpen}
-                                onClose={() => setIsNewChatOpen(false)}
-                                onCreateChat={handleCreateChat}
-                            />
+                            {/* New Chat Modal (lazy on-demand) */}
+                            {isNewChatOpen && (
+                                <React.Suspense fallback={null}>
+                                    <NewChatModal
+                                        isOpen={isNewChatOpen}
+                                        onClose={() => setIsNewChatOpen(false)}
+                                        onCreateChat={handleCreateChat}
+                                    />
+                                </React.Suspense>
+                            )}
 
                             {/* Archived Chats Access Row */}
                             {viewMode === 'inbox' && archivedCount > 0 && !searchTerm && (
@@ -456,10 +469,14 @@ const Mensajes: React.FC = () => {
                             className="flex-1 overflow-hidden h-full bg-background"
                         >
                             {selectedRoom && (
-                                <ChatWindow
-                                    room={selectedRoom}
-                                    onBack={() => handleSelectRoom(null)}
-                                />
+                                <React.Suspense
+                                    fallback={<div className="h-full w-full bg-background animate-pulse" />}
+                                >
+                                    <ChatWindow
+                                        room={selectedRoom}
+                                        onBack={() => handleSelectRoom(null)}
+                                    />
+                                </React.Suspense>
                             )}
                         </motion.div>
                     ) : (

@@ -326,3 +326,107 @@ SafeSpot es una plataforma de reportes ciudadanos anónimos con ~**372 archivos 
 **Fin del Documento de Auditoría**
 
 *Generado conforme al SafeSpot Enterprise Protocol v1.0*
+
+---
+
+## ADDENDUM SUPREMO (POST LINEA 330) - 2026-02-17
+
+### Objetivo del addendum
+Actualizar esta auditoria con evidencia real de codigo para detectar features faltantes o incompletas (no wishlist), priorizadas por riesgo e impacto operativo.
+
+### Metodo aplicado (read-only)
+- Barrido de hooks y componentes criticos en `src/admin`, `src/components`, `src/pages`.
+- Cruce de contratos UI -> API contra rutas reales en `server/src/routes`.
+- Verificacion de placeholders/TODO/FIXME que impactan funcionalidad visible o trazabilidad enterprise.
+
+### Matriz cerrada de gaps reales (confirmados en codigo)
+
+| Feature / Flujo | Estado real | Evidencia en codigo | Riesgo | Prioridad | Cierre minimo recomendado |
+|---|---|---|---|---|---|
+| Admin Profile: export de datos | Incompleto (frontend llama endpoint inexistente) | `src/admin/hooks/useAdminProfile.ts:344` llama `POST /profile/export`, pero `server/src/routes/adminProfile.js` solo tiene `GET /`, `PUT /`, `PUT /avatar`, `DELETE /avatar` (`:34`, `:84`, `:140`, `:228`) | Alto | P0 | Implementar `POST /api/admin/profile/export` o deshabilitar CTA hasta backend listo |
+| Admin Profile: solicitud de baja | Incompleto (frontend llama endpoint inexistente) | `src/admin/hooks/useAdminProfile.ts:365` llama `POST /profile/deletion-request`; sin ruta equivalente en `server/src/routes/adminProfile.js` | Alto | P0 | Implementar endpoint con auditoria M12 y reason obligatorio, o ocultar accion |
+| Admin Profile: cierre de sesiones | Incompleto (UI operativa sin backend) | `src/admin/hooks/useAdminProfile.ts:276`, `:298` llaman `DELETE /profile/sessions/all` y `DELETE /profile/sessions/:id`; no existen en `server/src/routes/adminProfile.js` | Alto | P0 | Implementar endpoints de invalidacion de sesiones o bloquear botones en UI con copy "proximamente" |
+| Admin Profile: metricas de moderacion | Parcial (hardcoded) | `src/admin/hooks/useAdminProfile.ts:175-176` fija `reports_moderated: 0` y `users_banned: 0` con TODO | Medio | P1 | Exponer metricas reales desde backend y eliminar valores fijos |
+| 2FA admin en hook legacy | Inconsistente (flujo duplicado) | `src/admin/hooks/useAdminProfile.ts:321` usa `/profile/2fa/toggle` (placeholder), mientras el flujo real vive en `server/src/routes/adminAuth.js:260-337` y `src/admin/pages/SecurityPage.tsx:59-141` | Medio | P1 | Deprecar hook legacy y centralizar 2FA en flujo `admin/auth/2fa/*` |
+| Chat Header Menu (acciones avanzadas) | Parcial (UI preparada, sin wiring en uso principal) | Props opcionales en `src/components/chat/ChatHeaderMenu.tsx:29-34`; en uso real (`src/components/chat/ChatWindow.tsx`) no se inyectan handlers de mute/export/clear/report/block | Medio | P2 | Definir roadmap: conectar handlers o remover opciones del contrato visual interno |
+| Diagnostico bootstrap-failure a monitoreo externo | Parcial (solo logging local) | `server/src/routes/diagnostics.js:44` TODO de envio a monitoring service | Medio | P1 | Integrar envio a Sentry/monitor enterprise y validar trazabilidad por `traceId` |
+| SafeScore invalid input observability | Parcial (falta telemetria real) | `src/lib/utils-score.ts:19` TODO para log a Sentry (`SAFESCORE_INVALID_INPUT`) | Bajo | P2 | Emitir evento de observabilidad sin payload sensible |
+| Filtros de categorias en Reportes | Parcial (hardcoded) | `src/pages/Reportes.tsx:218` comentario `TODO: Hacer dinamico` | Medio | P2 | Externalizar categorias a fuente unica (constantes/backend) para evitar drift |
+| Step4 wizard: dependencia de fecha | Deuda tecnica pendiente | `src/components/report-wizard/Step4ReviewSubmit.tsx:6` FIXME por modulo no encontrado en import comentado | Bajo | P3 | Cerrar FIXME (usar util estable o `date-fns`) para evitar regresion futura |
+
+### Rectificacion de estado (auditoria anterior desactualizada)
+
+- `2FA/MFA` **no** debe figurar como "faltante total": hoy existe implementacion real en backend y pantalla de seguridad admin.
+- El gap actual de 2FA es de **consistencia interna** (hook legacy placeholder), no de ausencia de feature.
+
+### Backlog recomendado (sin scope creep)
+
+1. P0: cerrar endpoints faltantes de `admin/profile` (export, deletion-request, sessions) con auditoria y reason obligatorio.
+2. P1: reemplazar metricas hardcoded del perfil admin por metricas reales backend.
+3. P1: unificar superficie de 2FA en `admin/auth/2fa/*` y deprecar toggle legacy.
+4. P1: completar integracion de diagnostics con monitoreo externo.
+5. P2: cerrar deudas parciales de UX/consistencia (chat actions wiring, categorias dinamicas, observabilidad de SafeScore).
+
+### Criterio de cierre para cada gap
+
+- Contrato no roto (sin cambios breaking en API existente).
+- `npx tsc --noEmit` en verde.
+- Evidencia funcional (smoke + trazabilidad en logs/telemetria cuando aplique).
+- Actualizacion de auditoria en este mismo archivo al cerrar cada item.
+
+---
+
+## FEATURES ENTERPRISE UNICAS Y NECESARIAS (FALTANTES)
+
+> Esta seccion lista iniciativas de nivel superior, con impacto transversal para todos los usuarios (no solo admins), para llevar SafeSpot a estandar top-tier.
+
+| Feature Enterprise | Por que es necesaria para todos | Diferencial/Unicidad | Prioridad | Complejidad | Resultado esperado |
+|---|---|---|---|---|---|
+| **Passkeys + sesion resistente (WebAuthn)** | Reduce friccion y elimina dependencia de password tradicional; mejora recuperacion de acceso | Login passwordless con seguridad fuerte y UX superior | P0 | Alta | Menos sesiones invalidas, menos abandono en login, mayor seguridad real |
+| **Offline-first real de reportes (cola durable + replay)** | Usuarios reportan en calle con conectividad mala/intermitente | Crear reporte sin red y sincronizar automaticamente al volver online | P0 | Alta | Cero perdida de reportes por mala señal; mayor tasa de reporte completado |
+| **Centro de alertas inteligentes por contexto (zona/horario/riesgo)** | Todos necesitan alertas relevantes, no ruido | Alertas hipercontextuales por rutina y ubicacion habitual | P0 | Media | Notificaciones utiles y accionables; mayor retencion diaria |
+| **Trust Score explicable por reporte (anti-fake enterprise)** | Todo usuario necesita saber si un reporte es confiable | Score interpretable con factores visibles (no caja negra) | P0 | Alta | Menor desinformacion, mejor toma de decision en tiempo real |
+| **Workflow de resolucion verificable (caso abierto->validado->cerrado)** | Sin cierre verificable, el usuario no ve valor completo del sistema | Ciclo de vida auditable de cada incidente con evidencia | P1 | Media | Mayor confianza en plataforma y percepcion de utilidad real |
+| **Identidad seudonima verificable (sin exponer PII)** | Protege privacidad y mejora calidad de aportes comunitarios | Reputacion portable sin revelar identidad real | P1 | Alta | Menos abuso, mejor calidad de comunidad, privacidad intacta |
+| **Modo crisis (evento masivo) con priorizacion automatica** | En incidentes grandes, todos los usuarios necesitan continuidad y orden | Degradacion controlada + prioridad de reportes criticos | P1 | Alta | App util bajo estres extremo; menos caos informativo |
+| **Asistente de reporte guiado por evidencia (texto+imagen+contexto)** | Facilita reportes de calidad para cualquier perfil de usuario | Copilot de reporte con validaciones en vivo | P1 | Media | Reportes mas completos, menos errores, mejor accionabilidad |
+| **Timeline personal de seguridad (riesgo dinamico por rutina)** | Todo usuario quiere decisiones preventivas concretas | Radar personal de riesgo por horarios y desplazamientos | P2 | Alta | Prevencion proactiva, no solo reaccion a incidentes |
+| **Canal de escalamiento institucional con SLA visible** | Usuarios necesitan saber si su reporte tuvo accion real | Integracion con actores institucionales + estado de atencion | P2 | Alta | Credibilidad alta y cierre de loop ciudadano-institucion |
+
+### Orden de ejecucion recomendado (maximo impacto)
+
+1. **P0 inmediato:** Passkeys, Offline-first real, Alertas inteligentes, Trust Score explicable.
+2. **P1 consolidacion:** Workflow de resolucion, Identidad seudonima verificable, Modo crisis, Asistente guiado.
+3. **P2 expansion:** Timeline personal de seguridad, Escalamiento institucional con SLA visible.
+
+### Criterio de admision (para evitar features "lindas" pero inutiles)
+
+- Debe mejorar una metrica universal: conversion de reporte, retencion, confianza, tiempo de accion.
+- Debe funcionar en escenarios mobile reales (Android, red inestable, uso en calle).
+- Debe mantener privacidad by design (sin exponer datos sensibles).
+- Debe poder auditarse end-to-end (decision, evento, resultado).
+
+### +20 features enterprise adicionales (faltantes)
+
+| Feature Enterprise | Por que es necesaria para todos | Diferencial/Unicidad | Prioridad | Complejidad | Resultado esperado |
+|---|---|---|---|---|---|
+| **Modo ahorro extremo de datos** | Usuarios con planes limitados necesitan usar la app igual | Compresion/agresividad adaptable por red | P0 | Media | Menor abandono por consumo de datos |
+| **Fallback SMS para alertas criticas** | No todos tienen datos activos todo el tiempo | Doble canal resiliente Push+SMS | P1 | Media | Continuidad de alertas en escenarios adversos |
+| **Deteccion de zonas ciegas de reporte** | Evita sesgo por baja participacion geografica | Mapa de cobertura comunitaria en tiempo real | P1 | Media | Mejor cobertura y calidad de inteligencia |
+| **Priorizacion de incidentes por severidad contextual** | Todos necesitan ver primero lo mas urgente | Ranking dinamico por riesgo real del contexto | P0 | Alta | Menor tiempo de reaccion del usuario |
+| **Verificacion cruzada comunitaria por quorum** | Reduce fake reports para toda la red | Confirmacion distribuida con evidencia minima | P0 | Alta | Mayor confianza en el feed |
+| **Deteccion de anomalias de abuso en tiempo real** | Protege la experiencia de todos contra spam coordinado | Motor anti-abuso adaptativo por comportamiento | P0 | Alta | Feed mas limpio y estable |
+| **Modo accesibilidad total (WCAG AAA operativo)** | App usable para usuarios con discapacidad | Flujos criticos accesibles sin perdida funcional | P0 | Media | Inclusividad real y adopcion mas amplia |
+| **Internacionalizacion regional inteligente** | Comunidades mixtas requieren idioma y formato local | Copys, fechas y mapas adaptados por region | P2 | Media | Menos friccion de uso y mejor comprension |
+| **Firma de integridad de eventos cliente-servidor** | Todos se benefician de datos no adulterados | Cadena verificable de eventos sensibles | P1 | Alta | Mayor trazabilidad y confianza legal |
+| **Replay forense de incidentes (audit trail visual)** | Usuarios y moderacion necesitan explicabilidad completa | Timeline reconstruible de cambios/eventos | P1 | Alta | Resolucion de disputas mas rapida |
+| **Notificaciones anti-fatiga (rate inteligente por usuario)** | Evita desinstalaciones por exceso de push | Politica de cadencia personalizada | P0 | Media | Retencion alta sin perder alerta critica |
+| **Enrutamiento por confiabilidad de red (multi-endpoint)** | Red movil inestable afecta a todos | Seleccion automatica de endpoint mas sano | P1 | Alta | Menos errores visibles y mejor latencia |
+| **Precarga predictiva de vistas criticas** | Reduce espera en flujos frecuentes | Warmup por patron de uso real | P1 | Media | UX mas rapida percibida |
+| **Mapa de riesgo por franja horaria personal** | Toma de decisiones diaria para cualquier usuario | Recomendaciones preventivas por horario/habito | P1 | Alta | Prevencion proactiva util |
+| **Modo evidencia protegida (metadata segura)** | Mejora validez de reportes con fotos/video | Sellado temporal + minimizacion de PII | P1 | Alta | Evidencia mas util sin comprometer privacidad |
+| **Control de calidad de reporte en tiempo real** | Todos reportan mejor con guia inmediata | Validaciones semanticas antes de publicar | P0 | Media | Menos reportes pobres/incompletos |
+| **Motor de recomendaciones de seguridad accionables** | Usuarios quieren accion concreta, no solo informacion | Sugerencias situacionales por contexto local | P1 | Media | Mayor utilidad diaria percibida |
+| **Sincronizacion robusta multi-dispositivo de preferencias** | Experiencia consistente entre telefono y desktop | Preferencias y alertas coherentes por cuenta | P2 | Media | Menos friccion y configuracion repetida |
+| **Gobernanza de cambios con feature flags auditables** | Protege a todos de regresiones en produccion | Rollout gradual con kill-switch inmediato | P0 | Media | Menos incidentes y rollback rapido |
+| **Panel publico de transparencia operativa** | Confianza comunitaria requiere visibilidad del sistema | SLA, uptime, latencia y tiempos de moderacion abiertos | P1 | Baja | Mayor credibilidad institucional |

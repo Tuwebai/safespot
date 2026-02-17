@@ -58,20 +58,18 @@ const AuthPage = lazyRetry(() => import('@/pages/AuthPage'), 'AuthPage')
 const RoboPiranaPage = lazyRetry(() => import('@/pages/intel/RoboPiranaPage').then(m => ({ default: m.RoboPiranaPage })), 'RoboPiranaPage')
 const CorredoresSegurosPage = lazyRetry(() => import('@/pages/intel/CorredoresSegurosPage').then(m => ({ default: m.CorredoresSegurosPage })), 'CorredoresSegurosPage')
 const NocturnaPage = lazyRetry(() => import('@/pages/intel/NocturnaPage').then(m => ({ default: m.NocturnaPage })), 'NocturnaPage')
-
-// Intel Pages (Lazy Load could be better but direct for now)
-import EstafasPage from '@/pages/guia/EstafasPage';
-import TransportePage from '@/pages/guia/TransportePage';
-import BancosPage from '@/pages/guia/BancosPage';
-import MascotasPage from '@/pages/guia/MascotasPage';
-import GeneroPage from '@/pages/guia/GeneroPage';
-import DenunciaPage from '@/pages/guia/DenunciaPage';
-import ProtocoloTestigoPage from '@/pages/guia/ProtocoloTestigoPage';
-import PrediccionPage from '@/pages/guia/PrediccionPage';
-import ManualUrbanoPage from '@/pages/guia/ManualUrbanoPage';
-import TransparenciaPage from '@/pages/guia/TransparenciaPage';
-import BlogPage from '@/pages/BlogPage';
-import BlogPostPage from '@/pages/BlogPostPage';
+const EstafasPage = lazyRetry(() => import('@/pages/guia/EstafasPage'), 'EstafasPage')
+const TransportePage = lazyRetry(() => import('@/pages/guia/TransportePage'), 'TransportePage')
+const BancosPage = lazyRetry(() => import('@/pages/guia/BancosPage'), 'BancosPage')
+const MascotasPage = lazyRetry(() => import('@/pages/guia/MascotasPage'), 'MascotasPage')
+const GeneroPage = lazyRetry(() => import('@/pages/guia/GeneroPage'), 'GeneroPage')
+const DenunciaPage = lazyRetry(() => import('@/pages/guia/DenunciaPage'), 'DenunciaPage')
+const ProtocoloTestigoPage = lazyRetry(() => import('@/pages/guia/ProtocoloTestigoPage'), 'ProtocoloTestigoPage')
+const PrediccionPage = lazyRetry(() => import('@/pages/guia/PrediccionPage'), 'PrediccionPage')
+const ManualUrbanoPage = lazyRetry(() => import('@/pages/guia/ManualUrbanoPage'), 'ManualUrbanoPage')
+const TransparenciaPage = lazyRetry(() => import('@/pages/guia/TransparenciaPage'), 'TransparenciaPage')
+const BlogPage = lazyRetry(() => import('@/pages/BlogPage'), 'BlogPage')
+const BlogPostPage = lazyRetry(() => import('@/pages/BlogPostPage'), 'BlogPostPage')
 
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { FirstTimeOnboardingTheme } from '@/components/onboarding/FirstTimeOnboardingTheme'

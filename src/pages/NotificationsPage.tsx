@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     useNotificationsQuery,
@@ -7,15 +8,20 @@ import {
     useDeleteNotificationMutation
 } from '@/hooks/queries/useNotificationsQuery';
 import { useToast } from '@/components/ui/toast/useToast';
-import { NotificationList } from '@/components/notifications/NotificationList';
 import { Trash2, CheckCircle2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserNotifications } from '@/hooks/useUserNotifications';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useAnonymousId } from '@/hooks/useAnonymousId';
+import { lazyRetry } from '@/lib/lazyRetry';
 
 import type { Notification } from '@/lib/api';
+
+const NotificationList = lazyRetry(
+    () => import('@/components/notifications/NotificationList').then((m) => ({ default: m.NotificationList })),
+    'NotificationList'
+);
 
 export default function NotificationsPage() {
     const navigate = useNavigate();
@@ -140,12 +146,14 @@ export default function NotificationsPage() {
             {isLoading ? (
                 <div className="p-8 text-center text-muted-foreground animate-pulse">Cargando...</div>
             ) : (
-                <NotificationList
-                    notifications={notifications}
-                    onRead={handleRead}
-                    onDelete={handleDelete}
-                    onOpenContext={handleOpenContext}
-                />
+                <Suspense fallback={<div className="p-8 text-center text-muted-foreground animate-pulse">Cargando...</div>}>
+                    <NotificationList
+                        notifications={notifications}
+                        onRead={handleRead}
+                        onDelete={handleDelete}
+                        onOpenContext={handleOpenContext}
+                    />
+                </Suspense>
             )}
         </div>
     );

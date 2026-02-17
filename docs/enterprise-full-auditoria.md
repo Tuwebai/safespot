@@ -2046,6 +2046,253 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - checklist de compat + smoke + rollback explicito.
   - no mezclar con refactors estructurales adicionales.
 
+### Post Semana 3 - P2 UX/Performance Reportes Mobile (Drawer + Lazy Interno + Georef Split) (DONE)
+
+- Alcance cerrado (sin cambios funcionales ni de contrato):
+  - drawer de filtros mobile en `/reportes` validado como overlay real (`fixed`, `100dvh`, backdrop, scroll interno en panel).
+  - cierre operativo completo del drawer: `X`, click en backdrop y `Escape`.
+  - lock de scroll endurecido en apertura:
+    - `document.body.style.overflow = 'hidden'` + restauracion al cerrar,
+    - `touchAction` bloqueado durante modal abierto,
+    - background feed no interactivo mientras `isFilterSheetOpen = true`.
+  - lazy interno del drawer aplicado:
+    - `BottomSheet` cargado por `lazyRetry`/`Suspense` solo cuando el usuario abre filtros.
+  - split de georef corregido:
+    - eliminado patron mixto `import` estatico + `import()` dinamico en `Reportes`,
+    - `searchAddresses` y `reverseGeocode` quedan por `import()` dinamico para permitir chunking correcto.
+
+- Root cause confirmado:
+  - `PullToRefresh`/gestos del feed y handlers de fondo seguian montados mientras el drawer estaba abierto.
+  - `georefClient` no se separaba por chunk debido a doble patron de import en el mismo modulo.
+
+- Evidencia tecnica:
+  - `src/pages/Reportes.tsx`
+  - `src/components/ui/bottom-sheet.tsx`
+  - `src/index.css`
+  - warning de build previo eliminado al unificar georef en import dinamico.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- Smoke manual Android -> **OK**:
+  - abrir filtros: no scroll afuera, scroll adentro correcto,
+  - cerrar: scroll de fondo restaurado,
+  - aplicar filtros: resultados funcionales sin cambios,
+  - geocode/reverse geocode operativo.
+
+### Post Semana 3 - P2 Performance Mensajes (Lazy Interno On-Demand) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - lazy interno aplicado en `/mensajes` para modulos de mayor costo de render inicial:
+    - `ChatWindow` (carga on-demand al abrir conversacion),
+    - `NewChatModal` (carga on-demand solo al abrir modal).
+  - shell de inbox/listado y flujo de navegacion se mantienen intactos.
+  - `ChatContextMenu` se mantiene eager en este lote para evitar riesgo de regresion UX en interacciones hover/long-press.
+
+- Root cause confirmado:
+  - `Mensajes` importaba runtime componentes pesados desde el entry de pagina, aumentando costo inicial del chunk de ruta.
+  - parte del costo de chat podia diferirse hasta evento real de uso (abrir sala o modal nuevo chat).
+
+- Evidencia tecnica:
+  - `src/pages/Mensajes.tsx`:
+    - migracion a `lazyRetry` para `ChatWindow` y `NewChatModal`,
+    - `Suspense` local con fallback no intrusivo.
+  - sin cambios de endpoints, payloads, status codes ni schema.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+
+### Post Semana 3 - P2 Performance Perfil (Lazy Interno Secciones No Criticas) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - lazy interno aplicado en `/perfil` para secciones no criticas del primer render:
+    - `TrustHub`,
+    - `ActivityTimeline`.
+  - shell principal de perfil (header/estadisticas/reportes) permanece eager para preservar UX inicial.
+  - comportamiento de modales, auth y queries de perfil sin cambios.
+
+- Root cause confirmado:
+  - la pagina `Perfil` cargaba eager bloques secundarios que no son indispensables para el primer paint.
+  - esos bloques pueden diferirse sin alterar flujo de negocio ni contrato visual principal.
+
+- Evidencia tecnica:
+  - `src/pages/Perfil.tsx`:
+    - `lazyRetry` para `TrustHub` y `ActivityTimeline`,
+    - `Suspense` local por seccion.
+  - sin cambios de endpoints, payloads, status codes ni schema.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+
+### Post Semana 3 - P2 Performance App Shell (Rutas Intel/Blog a Lazy por Ruta) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - `App.tsx` migra imports estaticos restantes de contenido a `lazyRetry` por ruta:
+    - Intel/Guia: `EstafasPage`, `TransportePage`, `BancosPage`, `MascotasPage`, `GeneroPage`, `DenunciaPage`, `ProtocoloTestigoPage`, `PrediccionPage`, `ManualUrbanoPage`, `TransparenciaPage`.
+    - Blog: `BlogPage`, `BlogPostPage`.
+  - se mantienen paths, elementos `<Route />`, fallback global de `Suspense` y contratos de navegacion sin cambios.
+
+- Root cause confirmado:
+  - esos modulos se cargaban eager en el shell principal (`App.tsx`), elevando costo de bundle inicial aunque el usuario no navegara a esas rutas.
+
+- Evidencia tecnica:
+  - `src/App.tsx` (imports estaticos eliminados, lazy por ruta aplicado).
+  - build de verificacion:
+    - `main` baja de ~197 KB a ~127 KB (raw),
+    - se generan chunks dedicados por pagina Intel/Blog (`EstafasPage-*`, `BlogPage-*`, `BlogPostPage-*`, etc.).
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance (Split Roto Badge Notifications) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - corregido el patron de import mixto (dinamico + estatico) que impedia chunking correcto en flujo de notificaciones de badge.
+  - extraccion de helper de sonido a modulo dedicado:
+    - `src/hooks/badgeSound.ts`.
+  - consumidores alineados al mismo contrato de import:
+    - `src/hooks/useBadgeNotifications.ts` usa `playBadgeSound` desde `badgeSound`.
+    - `src/hooks/useUserNotifications.ts` usa `playBadgeSound` sin `import()` mixto.
+
+- Root cause confirmado:
+  - warning de Vite por modulo importado en modo dinamico y estatico en paralelo:
+    - antes: `useUserNotifications` (dynamic import) + `BadgeNotificationManager/useBadgeNotifications` (static import) sobre el mismo modulo.
+
+- Evidencia tecnica:
+  - `src/hooks/badgeSound.ts` (nuevo).
+  - `src/hooks/useBadgeNotifications.ts`.
+  - `src/hooks/useUserNotifications.ts`.
+  - `npm run build` sin warning de split roto para badges.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance Comunidad (Lazy Interno Condicional) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - lazy interno aplicado en `/comunidad` para bloques de render condicional:
+    - `CommunitySearch`,
+    - `EmptyCommunityState`.
+  - mantenido comportamiento existente de tabs, filtros locales, queries e interacciones.
+  - sin cambios de endpoints, schema, payloads ni status codes.
+
+- Root cause confirmado:
+  - `Comunidad` cargaba eager componentes que no siempre se muestran (busqueda y estados vacios), aumentando costo de chunk inicial de ruta.
+
+- Evidencia tecnica:
+  - `src/pages/Comunidad.tsx`:
+    - migracion de imports estaticos a `lazyRetry`,
+    - `Suspense` local (`fallback: null`) para evitar cambio de UX.
+  - build de verificacion:
+    - `Comunidad-*` baja de ~34.11 kB a ~26.41 kB (raw),
+    - nuevos chunks dedicados: `CommunitySearch-*` y `EmptyCommunityState-*`.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance Gamificacion (Lazy Interno Modal Condicional) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - lazy interno aplicado en `/gamificacion` para bloque condicional de baja frecuencia:
+    - `LegendaryBadgeReveal`.
+  - se mantiene intacta la logica de progreso, puntos, confetti, badges y contratos de datos.
+  - sin cambios de endpoints, schema, payloads ni status codes.
+
+- Root cause confirmado:
+  - `LegendaryBadgeReveal` se importaba eager en entrada de ruta, aunque solo se renderiza cuando se desbloquea una insignia legendaria.
+
+- Evidencia tecnica:
+  - `src/pages/Gamificacion.tsx`:
+    - migracion a `lazyRetry` + `Suspense` local para `LegendaryBadgeReveal`.
+  - build de verificacion:
+    - `Gamificacion-*` baja de ~33.53 kB a ~30.16 kB (raw),
+    - nuevo chunk dedicado: `LegendaryBadgeReveal-*` (~4.98 kB raw).
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance DetalleReporte (RelatedReports Lazy + Single Mount) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - `RelatedReports` pasa a lazy interno en `DetalleReporte` con `lazyRetry` + `Suspense`.
+  - se elimina el doble mount simultaneo de `RelatedReports` (mobile + desktop hidden por CSS), manteniendo la misma UX visual por breakpoint.
+  - se conserva comportamiento de comentarios, acciones, dialogs y contratos API/schema.
+
+- Root cause confirmado:
+  - `src/pages/DetalleReporte.tsx` renderizaba dos instancias de `RelatedReports` en el arbol React (una mobile y otra desktop), ambas montadas aunque una quedara oculta por clases `hidden/lg:block`.
+  - como `RelatedReports` ejecuta `fetch` en `useEffect`, el doble mount generaba trabajo de red y render innecesario.
+
+- Evidencia tecnica:
+  - `src/pages/DetalleReporte.tsx`:
+    - lazy import de `RelatedReports`,
+    - render condicional por `matchMedia` estable (`isDesktop`) para asegurar una sola instancia montada.
+  - build de verificacion:
+    - chunk dedicado nuevo: `RelatedReports-*` (~3.21 kB raw),
+    - `DetalleReporte-*` queda desacoplado del bloque relacionado.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance Notifications (Lazy Interno Lista) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - `NotificationList` pasa a lazy interno en `NotificationsPage` usando `lazyRetry` + `Suspense`.
+  - se mantiene intacto el comportamiento de leer/eliminar/abrir contexto y confirmaciones.
+  - sin cambios de API, schema, payloads ni status codes.
+
+- Root cause confirmado:
+  - `NotificationsPage` importaba eager `NotificationList`, que a su vez arrastra `NotificationItem` (framer-motion, dropdowns y utilidades), elevando costo inicial de la ruta aun cuando el primer estado puede renderizar header + loading.
+
+- Evidencia tecnica:
+  - `src/pages/NotificationsPage.tsx`:
+    - import lazy de `NotificationList`,
+    - fallback visual consistente en `Suspense`.
+  - build de verificacion:
+    - nuevo chunk dedicado: `NotificationList-*` (~7.52 kB raw).
+    - `NotificationsPage-*` queda en ~3.93 kB raw (shell mas liviano).
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+- `npm run build` -> **PASS**.
+
+### Post Semana 3 - P2 Performance Home (Lazy Interno Modal SOS On-Demand) (DONE)
+
+- Alcance cerrado (sin cambios funcionales/contratos):
+  - se aplica lazy interno en `/` (Home) para `UrgentReportDialog`, cargandolo solo cuando el usuario abre SOS.
+  - se mantiene intacta la UX funcional: mismo boton, mismo modal, mismo flujo de creacion urgente.
+  - sin cambios en endpoints, payloads, schema ni estados de negocio.
+
+- Root cause confirmado:
+  - `HomeOrchestrator` importaba `UrgentReportDialog` en eager, aunque el componente solo se usa cuando `showUrgent === true`.
+  - eso agregaba costo innecesario al bundle inicial de Home.
+
+- Evidencia tecnica:
+  - `src/components/home/HomeOrchestrator.tsx`:
+    - migracion de import estatico a `lazyRetry` para `UrgentReportDialog`.
+    - render protegido por `showUrgent && <Suspense ...>`.
+  - resultado esperado:
+    - Home inicial mas liviano.
+    - carga del modal diferida al primer uso real.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts src/lib/auth/session-expired-flow.test.ts` -> **21/21 PASS**.
+- `npx vitest run` (suite global) -> **FAIL (baseline ajeno al cambio)**:
+  - fallos por entorno/tests existentes: `useToast` fuera de `ToastProvider` en tests de mutaciones frontend, y `EnvValidationError` en suites backend sin `JWT_SECRET` de test.
+
 ---
 
 ## 🔟 Score Final

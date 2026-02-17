@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { generateReportStructuredData } from '@/lib/seo'
 import { normalizeReportForUI } from '@/lib/normalizeReport'
@@ -31,6 +31,7 @@ import { useRealtimeComments } from '@/hooks/useRealtimeComments'
 import { useReportDeletionListener } from '@/hooks/useReportDeletionListener'
 import { useHighlightContext } from '@/hooks/useHighlightContext'
 import { useIsOwner } from '@/hooks/useIsOwner'
+import { lazyRetry } from '@/lib/lazyRetry'
 
 // Components
 import {
@@ -41,11 +42,15 @@ import {
   DeleteReportDialog,
   FlagReportDialog,
 } from '@/components/report-detail'
-import { RelatedReports } from '@/components/report-detail/RelatedReports'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { STATUS_OPTIONS } from '@/lib/constants'
 import { formatReportDate } from '@/lib/dateUtils'
 import { LazyReportMapFallback } from '@/components/ui/LazyReportMapFallback'
+
+const RelatedReports = lazyRetry(
+  () => import('@/components/report-detail/RelatedReports').then((m) => ({ default: m.RelatedReports })),
+  'RelatedReports'
+)
 
 // ============================================
 // HELPERS
@@ -83,6 +88,19 @@ function normalizeImageUrls(imageUrls: unknown): string[] {
 export function DetalleReporte() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(min-width: 1024px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(min-width: 1024px)')
+    const onChange = () => setIsDesktop(media.matches)
+    onChange()
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
 
   // Main hooks
   const reportDetail = useReportDetail({ reportId: id })
@@ -430,9 +448,13 @@ export function DetalleReporte() {
               </div>
 
               {/* MOBILE: Related Reports at bottom of left column */}
-              <div className="lg:hidden">
-                <RelatedReports reportId={id!} />
-              </div>
+              {!isDesktop && (
+                <div className="lg:hidden">
+                  <Suspense fallback={null}>
+                    <RelatedReports reportId={id!} />
+                  </Suspense>
+                </div>
+              )}
             </div>
 
             {/* RIGHT COLUMN (30%) - Sidebar Context */}
@@ -499,9 +521,13 @@ export function DetalleReporte() {
               {/* AUTHOR CARD - Ya no tiene botón, movido arriba */}
 
               {/* DESKTOP: Related Reports */}
-              <div className="hidden lg:block">
-                <RelatedReports reportId={id!} isSidebar={true} />
-              </div>
+              {isDesktop && (
+                <div className="hidden lg:block">
+                  <Suspense fallback={null}>
+                    <RelatedReports reportId={id!} isSidebar={true} />
+                  </Suspense>
+                </div>
+              )}
             </div>
           </div>
         </div>

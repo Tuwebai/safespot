@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef, Suspense } from 'react'
 // Force IDE refresh
 
 // import { generateSEOTags } from '@/lib/seo' // Remove old one if exists or unused
@@ -19,13 +19,11 @@ import { Filter } from 'lucide-react'
 import type { Report, ReportFilters } from '@/lib/schemas'
 import { ReportCardSkeleton } from '@/components/ui/skeletons'
 
-import { BottomSheet } from '@/components/ui/bottom-sheet'
-
 import { useReportsQuery, useFlagReportMutation } from '@/hooks/queries/useReportsQuery'
 import { useDebounce } from '@/hooks/useDebounce'
 import { queryKeys } from '@/lib/queryKeys'
 
-import { searchAddresses, type AddressSuggestion } from '@/services/georefClient'
+import type { AddressSuggestion } from '@/services/georefClient'
 import { PullToRefresh } from '@/components/ui/PullToRefresh'
 
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -37,10 +35,20 @@ import { reportsCache } from '@/lib/cache-helpers'
 import { QuickFilterType } from '@/components/reportes/QuickFilters'
 import { HighlightedReportCard } from '@/components/reportes/HighlightedReportCard'
 import { CompactReportCard } from '@/components/reportes/CompactReportCard'
-import { ReportsSidebar } from '@/components/reportes/ReportsSidebar'
 import { useUserZone } from '@/hooks/useUserZone'
 import { useLocationAuthority } from '@/hooks/useLocationAuthority'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { lazyRetry } from '@/lib/lazyRetry'
+
+const BottomSheet = lazyRetry(
+  () => import('@/components/ui/bottom-sheet').then((m) => ({ default: m.BottomSheet })),
+  'ReportsFiltersBottomSheet'
+)
+
+const ReportsSidebar = lazyRetry(
+  () => import('@/components/reportes/ReportsSidebar').then((m) => ({ default: m.ReportsSidebar })),
+  'ReportsSidebar'
+)
 
 // ============================================
 // PURE HELPER FUNCTIONS (outside component - no re-creation)
@@ -119,6 +127,7 @@ export function Reportes() {
         return
       }
 
+      const { searchAddresses } = await import('@/services/georefClient')
       const results = await searchAddresses(debouncedAddressQuery)
       setAddressSuggestions(results)
     }
@@ -413,112 +422,112 @@ export function Reportes() {
 
       {/* Desktop Sidebar */}
       {isDesktop && (
-        <ReportsSidebar
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          selectedStatus={selectedStatus}
-          setSelectedStatus={setSelectedStatus}
-          sortBy={sortBy}
-          setSortBy={setSortBy}
-          followedOnly={followedOnly}
-          setFollowedOnly={setFollowedOnly}
-          favoritesOnly={favoritesOnly}
-          setFavoritesOnly={setFavoritesOnly}
-          startDate={startDate}
-          setStartDate={setStartDate}
-          endDate={endDate}
-          setEndDate={setEndDate}
-          quickFilter={quickFilter}
-          setQuickFilter={setQuickFilter}
-          addressQuery={addressQuery}
-          setAddressQuery={setAddressQuery}
-          selectedLocation={selectedLocation}
-          setSelectedLocation={setSelectedLocation}
-          addressSuggestions={addressSuggestions}
-          setAddressSuggestions={setAddressSuggestions}
-          cityName={cityName}
-          searchInputRef={searchInputRef}
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={toggleSidebar}
-        />
+        <Suspense fallback={null}>
+          <ReportsSidebar
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            selectedStatus={selectedStatus}
+            setSelectedStatus={setSelectedStatus}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            followedOnly={followedOnly}
+            setFollowedOnly={setFollowedOnly}
+            favoritesOnly={favoritesOnly}
+            setFavoritesOnly={setFavoritesOnly}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            quickFilter={quickFilter}
+            setQuickFilter={setQuickFilter}
+            addressQuery={addressQuery}
+            setAddressQuery={setAddressQuery}
+            selectedLocation={selectedLocation}
+            setSelectedLocation={setSelectedLocation}
+            addressSuggestions={addressSuggestions}
+            setAddressSuggestions={setAddressSuggestions}
+            cityName={cityName}
+            searchInputRef={searchInputRef}
+            isCollapsed={isSidebarCollapsed}
+            setIsCollapsed={toggleSidebar}
+          />
+        </Suspense>
       )}
 
       {/* Mobile Drawer (Sidebar inside BottomSheet as a drawer) */}
-      {!isDesktop && (
-        <BottomSheet
-          isOpen={isFilterSheetOpen}
-          onClose={() => setIsFilterSheetOpen(false)}
-          title="Filtros y Exploración"
-        >
-          {/* Note: In mobile, we don't need the specialized Sidebar component logic 
-              but we reuse its sub-components or a simplified version for the drawer.
-              Actually, the user asked to move EVERYTHING to the sidebar, and for mobile it's a drawer.
-              I'll render the sidebar inside the drawer context partially or use the sidebar component without collapse logic.
-          */}
-          <div className="pb-10">
-            <ReportsSidebar
-               searchTerm={searchTerm}
-               setSearchTerm={setSearchTerm}
-               selectedCategory={selectedCategory}
-               setSelectedCategory={(val) => {
-                 setSelectedCategory(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               selectedStatus={selectedStatus}
-               setSelectedStatus={(val) => {
-                 setSelectedStatus(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               sortBy={sortBy}
-               setSortBy={(val) => {
-                 setSortBy(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               followedOnly={followedOnly}
-               setFollowedOnly={(val) => {
-                 setFollowedOnly(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               favoritesOnly={favoritesOnly}
-               setFavoritesOnly={(val) => {
-                 setFavoritesOnly(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               startDate={startDate}
-               setStartDate={(val) => {
-                 setStartDate(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               endDate={endDate}
-               setEndDate={(val) => {
-                 setEndDate(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               quickFilter={quickFilter}
-               setQuickFilter={(val) => {
-                 setQuickFilter(val)
-                 setIsFilterSheetOpen(false)
-               }}
-               addressQuery={addressQuery}
-               setAddressQuery={setAddressQuery}
-               selectedLocation={selectedLocation}
-               setSelectedLocation={(val) => {
-                 setSelectedLocation(val)
-                 if (val) {
-                   setIsFilterSheetOpen(false)
-                 }
-               }}
-               addressSuggestions={addressSuggestions}
-               setAddressSuggestions={setAddressSuggestions}
-               cityName={cityName}
-               searchInputRef={searchInputRef}
-               mode="drawer"
-               // No collapse logic in mobile drawer
-            />
-          </div>
-        </BottomSheet>
+      {!isDesktop && isFilterSheetOpen && (
+        <Suspense fallback={null}>
+          <BottomSheet
+            isOpen={isFilterSheetOpen}
+            onClose={() => setIsFilterSheetOpen(false)}
+            title="Filtros y Exploración"
+          >
+            <div className="pb-10">
+              <Suspense fallback={null}>
+                <ReportsSidebar
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={(val) => {
+                    setSelectedCategory(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  selectedStatus={selectedStatus}
+                  setSelectedStatus={(val) => {
+                    setSelectedStatus(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  sortBy={sortBy}
+                  setSortBy={(val) => {
+                    setSortBy(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  followedOnly={followedOnly}
+                  setFollowedOnly={(val) => {
+                    setFollowedOnly(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  favoritesOnly={favoritesOnly}
+                  setFavoritesOnly={(val) => {
+                    setFavoritesOnly(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  startDate={startDate}
+                  setStartDate={(val) => {
+                    setStartDate(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  endDate={endDate}
+                  setEndDate={(val) => {
+                    setEndDate(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  quickFilter={quickFilter}
+                  setQuickFilter={(val) => {
+                    setQuickFilter(val)
+                    setIsFilterSheetOpen(false)
+                  }}
+                  addressQuery={addressQuery}
+                  setAddressQuery={setAddressQuery}
+                  selectedLocation={selectedLocation}
+                  setSelectedLocation={(val) => {
+                    setSelectedLocation(val)
+                    if (val) {
+                      setIsFilterSheetOpen(false)
+                    }
+                  }}
+                  addressSuggestions={addressSuggestions}
+                  setAddressSuggestions={setAddressSuggestions}
+                  cityName={cityName}
+                  searchInputRef={searchInputRef}
+                  mode="drawer"
+                />
+              </Suspense>
+            </div>
+          </BottomSheet>
+        </Suspense>
       )}
 
       {/* Main Content Area */}

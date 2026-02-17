@@ -1,5 +1,9 @@
 import { vi, beforeEach } from 'vitest';
 
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+    process.env.JWT_SECRET = 'test-jwt-secret-local-only';
+}
+
 // 0. Force BullMQ Mock BEFORE anything else
 vi.mock('bullmq', () => ({
     Queue: vi.fn().mockImplementation(() => ({

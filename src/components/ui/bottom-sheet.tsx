@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './button'
 import { getOverlayZIndex } from '@/config/z-index'
@@ -18,12 +18,30 @@ export function BottomSheet({
     children,
     title
 }: BottomSheetProps) {
+    const originalBodyStyles = useRef<{ overflow: string; touchAction: string }>({
+        overflow: '',
+        touchAction: ''
+    })
+
     useEffect(() => {
         document.documentElement.classList.toggle('modalOpen', isOpen)
         document.body.classList.toggle('modalOpen', isOpen)
+        if (isOpen) {
+            originalBodyStyles.current = {
+                overflow: document.body.style.overflow,
+                touchAction: document.body.style.touchAction
+            }
+            document.body.style.overflow = 'hidden'
+            document.body.style.touchAction = 'none'
+        } else {
+            document.body.style.overflow = originalBodyStyles.current.overflow
+            document.body.style.touchAction = originalBodyStyles.current.touchAction
+        }
         return () => {
             document.documentElement.classList.remove('modalOpen')
             document.body.classList.remove('modalOpen')
+            document.body.style.overflow = originalBodyStyles.current.overflow
+            document.body.style.touchAction = originalBodyStyles.current.touchAction
         }
     }, [isOpen])
 

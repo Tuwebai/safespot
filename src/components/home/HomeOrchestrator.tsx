@@ -3,14 +3,18 @@ import { useHomeDataQuery } from '@/hooks/queries/useHomeDataQuery';
 import { HeroSection } from './HeroSection';
 import { OperationalFlow } from './OperationalFlow';
 import { UrgentReportButton } from '@/components/urgent-mode/UrgentReportButton';
-import { UrgentReportDialog } from '@/components/urgent-mode/UrgentReportDialog';
 import { useLocationAuthority } from '@/hooks/useLocationAuthority';
+import { lazyRetry } from '@/lib/lazyRetry';
 
 // Lazy Load Heavy/Secondary Components for LCP Optimization
 // Using adapter for named exports
 const LiveTicker = React.lazy(() => import('./LiveTicker').then(module => ({ default: module.LiveTicker })));
 const BentoGrid = React.lazy(() => import('./BentoGrid').then(module => ({ default: module.BentoGrid })));
 const SafetyIntel = React.lazy(() => import('./SafetyIntel').then(module => ({ default: module.SafetyIntel })));
+const UrgentReportDialog = lazyRetry(
+    () => import('@/components/urgent-mode/UrgentReportDialog').then(module => ({ default: module.UrgentReportDialog })),
+    'UrgentReportDialog'
+);
 
 export const HomeOrchestrator: React.FC = () => {
     const { data, isLoading, error } = useHomeDataQuery();
@@ -70,11 +74,15 @@ export const HomeOrchestrator: React.FC = () => {
                 className="fixed bottom-24 right-4 z-[9999] md:bottom-8 md:right-8"
             />
 
-            <UrgentReportDialog
-                isOpen={showUrgent}
-                onClose={() => setShowUrgent(false)}
-                currentLocation={position ? { lat: position.lat, lng: position.lng } : null}
-            />
+            {showUrgent && (
+                <Suspense fallback={null}>
+                    <UrgentReportDialog
+                        isOpen={showUrgent}
+                        onClose={() => setShowUrgent(false)}
+                        currentLocation={position ? { lat: position.lat, lng: position.lng } : null}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 };

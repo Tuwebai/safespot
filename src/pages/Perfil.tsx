@@ -10,11 +10,13 @@ import { getAnonymousIdSafe } from '@/lib/identity'
 import { ProfileSkeleton } from '@/components/ui/profile-skeleton'
 import { useGamificationSummaryQuery } from '@/hooks/queries/useGamificationQuery'
 import { useProfileQuery } from '@/hooks/queries/useProfileQuery'
-import { ProfileHeader, ReportList, StatsCards, BadgesGrid, NextBadgeCard, ActivityTimeline, EditAliasModal, TrustHub } from '@/components/profile'
+import { ProfileHeader, ReportList, StatsCards, BadgesGrid, NextBadgeCard, EditAliasModal } from '@/components/profile'
 import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal'
 import { useAuthStore } from '@/store/authStore'
 
 const LoginModal = lazyRetry(() => import('@/components/auth/LoginModal').then(m => ({ default: m.LoginModal })), 'LoginModal')
+const TrustHub = lazyRetry(() => import('@/components/profile/TrustHub').then(m => ({ default: m.TrustHub })), 'TrustHub')
+const ActivityTimeline = lazyRetry(() => import('@/components/profile/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })), 'ActivityTimeline')
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useNavigate } from 'react-router-dom'
@@ -124,7 +126,9 @@ export function Perfil() {
             />
 
             {/* Centro de Transparencia - TrustHub */}
-            <TrustHub />
+            <Suspense fallback={null}>
+              <TrustHub />
+            </Suspense>
           </div>
 
           {/* COLUMNA DERECHA */}
@@ -137,10 +141,12 @@ export function Perfil() {
             <BadgesGrid badges={obtainedBadges} />
 
             {/* 🏛️ SAFE MODE: ActivityTimeline extraído como componente independiente */}
-            <ActivityTimeline 
-              recentReports={userReports.slice(0, 2)} 
-              recentBadges={obtainedBadges.slice(-1)} 
-            />
+            <Suspense fallback={null}>
+              <ActivityTimeline 
+                recentReports={userReports.slice(0, 2)} 
+                recentBadges={obtainedBadges.slice(-1)} 
+              />
+            </Suspense>
 
           </div>
         </div>

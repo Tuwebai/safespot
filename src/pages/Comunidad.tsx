@@ -11,16 +11,25 @@
  * @version 2.0 - Enterprise Redesign
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { Suspense, useState, useMemo, useCallback, useEffect } from 'react';
 import { useNearbyUsersQuery, useGlobalUsersQuery } from '@/hooks/queries/useCommunityQueries';
+import { lazyRetry } from '@/lib/lazyRetry';
 
 import { CommunityErrorBoundary } from '@/components/comunidad/CommunityErrorBoundary';
 import { CommunityHeader } from '@/components/comunidad/CommunityHeader';
 import { CommunityTabs } from '@/components/comunidad/CommunityTabs';
-import { CommunitySearch } from '@/components/comunidad/CommunitySearch';
 import { UserGrid } from '@/components/comunidad/UserGrid';
-import { EmptyCommunityState } from '@/components/comunidad/EmptyCommunityState';
 import { queryClient } from '@/lib/queryClient';
+
+const CommunitySearch = lazyRetry(
+    () => import('@/components/comunidad/CommunitySearch').then((m) => ({ default: m.CommunitySearch })),
+    'CommunitySearch'
+);
+
+const EmptyCommunityState = lazyRetry(
+    () => import('@/components/comunidad/EmptyCommunityState').then((m) => ({ default: m.EmptyCommunityState })),
+    'EmptyCommunityState'
+);
 
 export function Comunidad() {
     const [activeTab, setActiveTab] = useState<'nearby' | 'global'>('nearby');
@@ -120,12 +129,14 @@ export function Comunidad() {
     const renderEmptyState = () => {
         const variant = getEmptyStateVariant();
         return (
-            <EmptyCommunityState
-                variant={variant}
-                locality={userLocality}
-                query={searchQuery}
-                onClearSearch={handleClearSearch}
-            />
+            <Suspense fallback={null}>
+                <EmptyCommunityState
+                    variant={variant}
+                    locality={userLocality}
+                    query={searchQuery}
+                    onClearSearch={handleClearSearch}
+                />
+            </Suspense>
         );
     };
 
@@ -150,13 +161,15 @@ export function Comunidad() {
                     {/* Search (solo cuando hay datos o cuando no es loading/error) */}
                     {(rawUsers.length > 0 || searchQuery) && !isLoading && !error && (
                         <div className="mb-4">
-                            <CommunitySearch
-                                value={searchQuery}
-                                onChange={setSearchQuery}
-                                resultsCount={filteredUsers.length}
-                                totalCount={rawUsers.length}
-                                placeholder={`Buscar ${activeTab === 'nearby' ? 'cerca' : 'global'}...`}
-                            />
+                            <Suspense fallback={null}>
+                                <CommunitySearch
+                                    value={searchQuery}
+                                    onChange={setSearchQuery}
+                                    resultsCount={filteredUsers.length}
+                                    totalCount={rawUsers.length}
+                                    placeholder={`Buscar ${activeTab === 'nearby' ? 'cerca' : 'global'}...`}
+                                />
+                            </Suspense>
                         </div>
                     )}
 

@@ -116,7 +116,10 @@ function buildApp() {
 describe('Reports Contract Shape', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        ensureAnonymousUserMock.mockResolvedValue(true);
+        txMock.mockReset();
+        queryWithRLSMock.mockReset().mockResolvedValue({ rows: [], rowCount: 0 });
+        poolQueryMock.mockReset().mockResolvedValue({ rows: [], rowCount: 0 });
+        ensureAnonymousUserMock.mockReset().mockResolvedValue(true);
     });
 
     it('PATCH /api/reports/:id success -> status 200 + shape {success,data,message}', async () => {
@@ -187,18 +190,20 @@ describe('Reports Contract Shape', () => {
             return callback(client, { emit: vi.fn() });
         });
 
-        poolQueryMock
-            .mockResolvedValueOnce({ rows: [] }) // primera request: sin idempotencia previa
-            .mockResolvedValueOnce({ rows: [{ id: 'r-idem-1', title: 'titulo', created_at: new Date().toISOString() }] }); // segunda request: ya existe
-
-        queryWithRLSMock.mockResolvedValueOnce({
+        queryWithRLSMock
+            .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // primera request: pre-check sin idempotencia previa
+            .mockResolvedValueOnce({
+                rows: [{ id: 'r-idem-1', title: 'titulo', created_at: new Date().toISOString() }],
+                rowCount: 1
+            }) // segunda request: pre-check idempotente encuentra existente
+            .mockResolvedValueOnce({
             rows: [{
                 id: 'r-idem-1',
                 title: 'titulo',
                 description: 'desc',
             }],
             rowCount: 1
-        });
+        }); // fetch detalle para respuesta idempotente
 
         const app = buildApp();
 
