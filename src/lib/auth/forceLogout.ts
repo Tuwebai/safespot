@@ -31,7 +31,9 @@ export function forceLogout(
   trafficController.clear();
   localStorage.removeItem('auth-storage');
   localStorage.setItem('safespot_auth_logout', 'true');
+  localStorage.setItem('safespot_auth_logout_reason', reason);
   void queryClient.cancelQueries();
+  queryClient.clear();
 
   window.dispatchEvent(
     new CustomEvent('safespot:force-logout', { detail: { reason } })

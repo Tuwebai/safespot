@@ -11,6 +11,7 @@ import { createGamificationApi } from './domains/gamification';
 import { createFavoritesApi } from './domains/favorites';
 import { createSeoApi } from './domains/seo';
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window: GamificationBadge, NewBadge, ChatRoom, GeocodeResult, GamificationSummary */
 export { type Report, type Comment, type GamificationBadge, type NewBadge, type ChatMessage, type ChatRoom, type GeocodeResult, type GamificationSummary };
 
 // Extended Badge interface to match usage in Gamification.tsx
@@ -565,6 +566,7 @@ export interface CreateCommentData {
   is_thread?: boolean; // Para crear un nuevo hilo (debe ser false si parent_id está presente)
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface PaginatedComments {
   comments: Comment[];
   nextCursor: string | null;
@@ -727,6 +729,7 @@ export const commentsApi = {
 // VOTES API
 // ============================================
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface Vote {
   id: string;
   anonymous_id: string;
@@ -735,11 +738,13 @@ export interface Vote {
   created_at: string;
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface CreateVoteData {
   report_id?: string;
   comment_id?: string;
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export const votesApi = {
   /**
    * Create a vote (upvote)
@@ -822,6 +827,7 @@ export interface GlobalStats {
   active_users_month: number;
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface TransparencyAction {
   id: string;
   target_type: 'report' | 'user' | 'comment';
@@ -833,6 +839,7 @@ export interface TransparencyAction {
   target_display_name?: string;
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface CategoryStats {
   Celulares: number;
   Bicicletas: number;
@@ -1076,6 +1083,7 @@ export const usersApi = {
 // NOTIFICATIONS API
 // ============================================
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export type NotificationMetadata = {
   motive: 'proximity' | 'similar' | 'social' | 'system' | 'gamification';
   subtype?: string; // ej: 'mention', 'reply', 'like'
@@ -1335,10 +1343,12 @@ export const geocodeApi = createGeocodeApi(apiRequest);
 // USER ZONES API
 // ============================================
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface UserZoneData {
   zone: UserZone; // Reusing UserZone from above
 }
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 export interface ZoneSafetyData {
   score: number;
   level: 'safe' | 'moderate' | 'risky';
@@ -1352,6 +1362,7 @@ export const userZonesApi = createUserZonesApi<UserZone, UserZoneData>(apiReques
 // GAMIFICATION API
 // ============================================
 
+/** @deprecated - dead export (sin consumers) - remover en cleanup window */
 // Helper type alias: We alias Badge to GamificationBadge to avoid breaking other files importing 'Badge'
 export type Badge = GamificationBadge;
 

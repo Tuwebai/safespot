@@ -88,14 +88,14 @@ export function HighlightedReportCard({
                             </h3>
 
                             {/* Ubicación + Tiempo */}
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                                <div className="flex items-center gap-1">
+                            <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-sm text-muted-foreground mb-3 min-w-0">
+                                <div className="flex items-center gap-1 min-w-0 flex-1">
                                     <MapPin className="h-4 w-4 text-neon-green" />
                                     {/* ✅ Enterprise Fix: Use normalized address */}
-                                    <span className="truncate" title={report.fullAddress}>{report.fullAddress}</span>
+                                    <span className="truncate block min-w-0" title={report.fullAddress}>{report.fullAddress}</span>
                                 </div>
-                                <span>•</span>
-                                <span>{report.formattedDate}</span>
+                                <span className="text-muted-foreground/70 shrink-0">•</span>
+                                <span className="shrink-0">{report.formattedDate}</span>
                             </div>
 
                             <div className="h-px bg-border/50 my-3" />

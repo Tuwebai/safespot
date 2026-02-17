@@ -190,6 +190,56 @@
     min-height: 100vh;
   }
 
+  html.modalOpen,
+  body.modalOpen {
+    overflow: hidden;
+    height: 100%;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+
+  html.modalOpen #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .filtersBackdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    touch-action: none;
+  }
+
+  .filtersDrawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    width: min(86vw, 360px);
+    background: hsl(var(--card));
+    display: flex;
+    flex-direction: column;
+    transform: translateX(0);
+    will-change: transform;
+    overscroll-behavior: contain;
+  }
+
+  .filtersHeader {
+    flex: 0 0 auto;
+  }
+
+  .filtersBody {
+    flex: 1 1 auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
   /* --- THEMING SYSTEM --- */
 
   /* Pastel Theme */

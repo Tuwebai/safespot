@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:contract && npm run test:e2e",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:api-exports": "node scripts/check-deprecated-api-exports.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

@@ -58,7 +58,8 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
   - `server/src/routes/comments.engagement.js` (453 líneas, pin/unpin/like/unlike/flag extraídos)
   - `server/src/routes/comments.create.js` (257 líneas, create extraído)
   - `server/src/routes/comments.lifecycle.js` (146 líneas, update/delete extraídos)
-  - `src/lib/api.ts` (1251 líneas)
+  - `src/lib/api.ts` (barrel/facade puro, 1 línea de reexport)
+  - `src/lib/api/index.ts` (1229 líneas, implementación consolidada pendiente de cleanup de exports muertos)
 - **Riesgo real**: cambios locales siguen pudiendo generar efectos laterales sistémicos, especialmente en módulos >800 líneas.
 
 ### Acoplamientos peligrosos
@@ -1983,6 +1984,12 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - Riesgo real cerrado:
   - post-rotacion de `JWT_SECRET`, la app deja de quedar trabada en 401 storm.
   - no requiere borrar `localStorage` manual para recuperar UX.
+- Polish P0 aplicado (sin refactor, sin cambiar contratos):
+  - toast especifico por `SESSION_EXPIRED`: "Sesion expirada. Inicia sesion de nuevo" en `AuthToastListener`.
+  - mapping por `reason=session-expired` (query param) y `safespot_auth_logout_reason`.
+  - limpieza de query param tras consumo para evitar repeticion en refresh.
+  - reset global real de React Query en logout forzado (`cancelQueries` + `queryClient.clear()`), evitando data stale post-401.
+  - anti-loop preservado con `isForceLogoutActive` (ejecucion unica por evento).
 
 **Gate**
 - `npx vitest run src/lib/auth/session-expired-flow.test.ts` -> **2/2 PASS**.
@@ -2010,18 +2017,34 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `npx tsc --noEmit` (root) -> **PASS**.
 - `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
 
-### Proximo Lote - Dead Exports Cleanup (`api/index.ts`) (PROXIMAMENTE)
+### Post Semana 3 - P1 Frontend API (Dead Exports Cleanup Lote 1, NO BREAKING) (DONE)
+
+- Alcance ejecutado:
+  - deprecacion explicita (`@deprecated`) de exports sin consumers en `src/lib/api/index.ts`:
+    `Badge`, `CategoryStats`, `CreateVoteData`, `GamificationBadge`, `GamificationSummary`, `GeocodeResult`, `NewBadge`, `NotificationMetadata`, `PaginatedComments`, `TransparencyAction`, `UserZoneData`, `Vote`, `ZoneSafetyData`, `ChatRoom`, `votesApi`.
+  - guardrail CI/read-only agregado:
+    - script `scripts/check-deprecated-api-exports.js`,
+    - comando `npm run check:api-exports` para detectar reintroduccion de imports deprecados desde `@/lib/api`.
+  - micro-fix de boundary/type-only:
+    - imports de tipos ajustados a `import type` donde correspondia (`GlobalStats`, `Report`, `UserZone`).
+- Contrato preservado:
+  - no se removio ningun export runtime.
+  - `src/lib/api.ts` se mantiene facade/barrel compatible.
+  - cero cambios de endpoints, payloads o status codes.
+
+**Gate**
+- `npm run check:api-exports` -> **PASS**.
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/cache-helpers.report-like.test.ts src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **20/20 PASS**.
+
+### Proximo Lote - Dead Exports Cleanup Lote 2 (BREAKING CONTROLADO, FUTURO)
 
 - Objetivo:
-  - eliminar exports sin consumers y reducir superficie publica innecesaria.
-- Alcance propuesto:
-  - inventario final de exports usados vs no usados en `src/lib/api/index.ts`.
-  - deprecacion controlada en 2 pasos:
-    1) marcar/no exponer exports muertos en `api/index.ts`,
-    2) retirar codigo muerto en lote separado tras verificacion de `tsc` + smoke.
+  - retiro fisico de exports deprecados ya sin consumers.
 - Guardrails:
-  - mantener compat en `src/lib/api.ts` durante toda la transicion.
-  - cero cambios de contrato runtime.
+  - ejecutar solo en ventana de migracion controlada.
+  - checklist de compat + smoke + rollback explicito.
+  - no mezclar con refactors estructurales adicionales.
 
 ---
 
@@ -2079,6 +2102,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `src/pages/Mensajes.tsx`
 - `src/hooks/useGlobalRealtime.ts`
 - `src/lib/api.ts`
+- `src/lib/api/index.ts`
 - `src/lib/api/client.ts`
 - `src/lib/api/types.ts`
 - `src/lib/api/domains/index.ts`

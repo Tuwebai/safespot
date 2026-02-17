@@ -64,6 +64,7 @@ interface ReportsSidebarProps {
   // Layout Controls
   isCollapsed?: boolean
   setIsCollapsed?: (val: boolean) => void
+  mode?: 'desktop' | 'drawer'
 }
 
 const QUICK_FILTERS = [
@@ -102,7 +103,8 @@ export function ReportsSidebar({
   cityName,
   searchInputRef,
   isCollapsed,
-  setIsCollapsed
+  setIsCollapsed,
+  mode = 'desktop'
 }: ReportsSidebarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
@@ -127,7 +129,9 @@ export function ReportsSidebar({
     setQuickFilter('all')
   }
 
-  if (isCollapsed) {
+  const isDrawerMode = mode === 'drawer'
+
+  if (isCollapsed && !isDrawerMode) {
     return (
       <div className="w-[72px] h-screen sticky top-0 border-r border-border bg-card/50 backdrop-blur-md flex flex-col items-center py-6 gap-6 transition-all duration-200 overflow-y-auto scrollbar-hide">
         <Button 
@@ -171,25 +175,27 @@ export function ReportsSidebar({
   }
 
   return (
-    <aside className="w-[280px] h-screen sticky top-0 border-r border-border bg-card/50 backdrop-blur-md flex flex-col transition-all duration-200 overflow-hidden">
+    <aside className={`${isDrawerMode ? 'w-full h-full border-0 bg-card/90 backdrop-blur-xl' : 'w-[280px] h-screen sticky top-0 border-r border-border bg-card/50 backdrop-blur-md'} flex flex-col transition-all duration-200 overflow-hidden`}>
       {/* Header Sidebar */}
-      <div className="p-6 border-b border-border/50 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Filter className="h-5 w-5 text-neon-green" />
-          <h2 className="font-bold text-lg tracking-tight">Filtros</h2>
+      {!isDrawerMode && (
+        <div className="p-6 border-b border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-neon-green" />
+            <h2 className="font-bold text-lg tracking-tight">Filtros</h2>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setIsCollapsed?.(true)}
+            className="hover:bg-muted"
+          >
+            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+          </Button>
         </div>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setIsCollapsed?.(true)}
-          className="hover:bg-muted"
-        >
-          <ChevronLeft className="h-5 w-5 text-muted-foreground" />
-        </Button>
-      </div>
+      )}
 
       {/* Content Sidebar */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-white/20">
+      <div className={`flex-1 overflow-y-auto ${isDrawerMode ? 'p-4 space-y-5' : 'p-6 space-y-8'} scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-white/20`}>
         
         {/* Tu Zona Block */}
         <section>

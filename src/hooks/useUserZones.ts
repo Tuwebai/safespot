@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, ZoneType, UserZone } from '@/lib/api';
+import { apiRequest } from '@/lib/api';
+import type { ZoneType, UserZone } from '@/lib/api';
 import { getAnonymousIdSafe } from '@/lib/identity';
 import { useToast } from '@/components/ui/toast';
 import { useAuthGuard } from '@/hooks/useAuthGuard';

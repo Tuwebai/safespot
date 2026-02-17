@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, reportsApi, GlobalStats, Report } from '@/lib/api';
+import { usersApi, reportsApi } from '@/lib/api';
+import type { GlobalStats, Report } from '@/lib/api';
 
 export interface HomeData {
     stats: GlobalStats | null;

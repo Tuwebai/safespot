@@ -462,29 +462,59 @@ export function Reportes() {
                searchTerm={searchTerm}
                setSearchTerm={setSearchTerm}
                selectedCategory={selectedCategory}
-               setSelectedCategory={setSelectedCategory}
+               setSelectedCategory={(val) => {
+                 setSelectedCategory(val)
+                 setIsFilterSheetOpen(false)
+               }}
                selectedStatus={selectedStatus}
-               setSelectedStatus={setSelectedStatus}
+               setSelectedStatus={(val) => {
+                 setSelectedStatus(val)
+                 setIsFilterSheetOpen(false)
+               }}
                sortBy={sortBy}
-               setSortBy={setSortBy}
+               setSortBy={(val) => {
+                 setSortBy(val)
+                 setIsFilterSheetOpen(false)
+               }}
                followedOnly={followedOnly}
-               setFollowedOnly={setFollowedOnly}
+               setFollowedOnly={(val) => {
+                 setFollowedOnly(val)
+                 setIsFilterSheetOpen(false)
+               }}
                favoritesOnly={favoritesOnly}
-               setFavoritesOnly={setFavoritesOnly}
+               setFavoritesOnly={(val) => {
+                 setFavoritesOnly(val)
+                 setIsFilterSheetOpen(false)
+               }}
                startDate={startDate}
-               setStartDate={setStartDate}
+               setStartDate={(val) => {
+                 setStartDate(val)
+                 setIsFilterSheetOpen(false)
+               }}
                endDate={endDate}
-               setEndDate={setEndDate}
+               setEndDate={(val) => {
+                 setEndDate(val)
+                 setIsFilterSheetOpen(false)
+               }}
                quickFilter={quickFilter}
-               setQuickFilter={setQuickFilter}
+               setQuickFilter={(val) => {
+                 setQuickFilter(val)
+                 setIsFilterSheetOpen(false)
+               }}
                addressQuery={addressQuery}
                setAddressQuery={setAddressQuery}
                selectedLocation={selectedLocation}
-               setSelectedLocation={setSelectedLocation}
+               setSelectedLocation={(val) => {
+                 setSelectedLocation(val)
+                 if (val) {
+                   setIsFilterSheetOpen(false)
+                 }
+               }}
                addressSuggestions={addressSuggestions}
                setAddressSuggestions={setAddressSuggestions}
                cityName={cityName}
                searchInputRef={searchInputRef}
+               mode="drawer"
                // No collapse logic in mobile drawer
             />
           </div>
@@ -492,7 +522,7 @@ export function Reportes() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 overflow-y-auto">
+      <main className={`flex-1 min-w-0 ${!isDesktop && isFilterSheetOpen ? 'overflow-y-hidden pointer-events-none' : 'overflow-y-auto'}`}>
         <div className={`container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 transition-all duration-300 ${isDesktop ? 'max-w-[1200px]' : ''}`}>
           
           {/* Header Moble / Desktop simplified */}
@@ -520,6 +550,7 @@ export function Reportes() {
 
       {/* Listado de Reportes */}
       < PullToRefresh
+        disabled={!isDesktop && isFilterSheetOpen}
         onRefresh={async () => {
           // HOTFIX: Don't invalidate reports - violates SSE-only invariant
           // Pull-to-refresh should rely on SSE for updates
