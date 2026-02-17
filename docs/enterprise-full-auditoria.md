@@ -44,8 +44,9 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
 ### Análisis de separación de responsabilidades
 - **Fortaleza**: existe intención de capas (routes/services/utils + hooks/query client).
 - **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
-  - `server/src/routes/reports.js` (857 líneas, router/wiring)
+  - `server/src/routes/reports.js` (127 líneas, router/wiring)
   - `server/src/routes/reports.mutations.js` (855 líneas, mutaciones de dominio)
+  - `server/src/routes/reports.reads.js` (753 líneas, lecturas extraídas)
   - `server/src/routes/chats.js` (201 líneas, router puro / wiring)
   - `server/src/routes/chats.mutations.js` (1134 líneas, lógica de mutaciones)
   - `server/src/routes/chats.reads.js` (228 líneas, lecturas de chat extraídas)
@@ -878,6 +879,73 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 #### Estado
 - **DONE**: write-paths de `reports` extraidos a `reports.mutations.js` con contratos preservados.
 - `reports.js` queda como router/wiring para mutaciones de dominio.
+
+### Post Semana 3 - P1 Reports (Extraccion Lectura Related Lote R1) (DONE)
+
+#### Scope cerrado en este lote
+- Se extrajo `GET /api/reports/:id/related` a `server/src/routes/reports.reads.js` como `getRelatedReports`.
+- `server/src/routes/reports.js` mantiene la misma ruta (`router.get('/:id/related', getRelatedReports)`), sin cambios de middleware ni contrato.
+- Sin cambios en mutaciones, schema ni contratos API.
+
+#### Contrato preservado
+- Misma respuesta `200` -> `{ success: true, data }`.
+- Misma respuesta `404` -> `{ error: 'Report not found' }`.
+- Misma respuesta `500` -> `{ error: 'Failed to fetch related reports' }`.
+- Misma semántica para IDs temporales/invalidos (`{ success: true, data: [] }`).
+
+#### Evidencia de validacion
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
+- `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+- `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (Extraccion Lectura Detail Lote R2) (DONE)
+
+#### Scope cerrado en este lote
+- Se extrajo `GET /api/reports/:id` a `server/src/routes/reports.reads.js` como `getReportById`.
+- `server/src/routes/reports.js` mantiene la misma ruta (`router.get('/:id', getReportById)`), sin cambios de middleware ni contrato.
+- Sin cambios en mutaciones, schema ni contratos API.
+
+#### Contrato preservado
+- Misma respuesta `200` validada con `singleReportResponseSchema`.
+- Misma respuesta `404` para IDs temporales/inválidos (`Report not found (Optimistic state)`).
+- Misma semántica de visibilidad (`deleted_at/is_hidden`) y campos `is_favorite/is_flagged/is_liked`.
+
+#### Evidencia de validacion
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
+- `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+- `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (Extraccion Lectura Feed Principal Lote R3) (DONE)
+
+#### Scope cerrado en este lote
+- Se extrajo `GET /api/reports` a `server/src/routes/reports.reads.js` como `getReportsList`.
+- `server/src/routes/reports.js` mantiene la misma ruta (`router.get('/', getReportsList)`), sin cambios de middleware ni contrato.
+- Sin cambios en mutaciones, schema ni contratos API.
+
+#### Contrato preservado
+- Misma semántica de feed:
+  - `bounds` (`bounds=`) con respuesta validada por `reportsListResponseSchema`.
+  - `geographic` (`lat/lng`) con cursor por distancia.
+  - `chronological` con cursor por `created_at/id`.
+- Misma compatibilidad de filtros (`favorites_only`, `followed_only`, `search`, `category`, `zone`, `province`, `status`, fechas).
+- Misma shape de respuesta (`success`, `data`, `pagination`, `meta` cuando aplica).
+
+#### Evidencia de validacion
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
+- `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+- `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
 
 ### Estado Actual Consolidado (Post cierre bloque reports)
 
@@ -1747,6 +1815,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/src/routes/comments.lifecycle.js`
 - `server/src/routes/reports.js`
 - `server/src/routes/reports.mutations.js`
+- `server/src/routes/reports.reads.js`
 - `server/src/routes/chats.js`
 - `server/src/routes/chats.mutations.js`
 - `server/src/routes/chats.reads.js`
