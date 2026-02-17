@@ -1,5 +1,3 @@
-const TEST_JWT_FALLBACK = 'safespot-secret-key-change-me';
-
 function isBlank(value) {
     return typeof value !== 'string' || value.trim().length === 0;
 }
@@ -17,12 +15,7 @@ export function getJwtSecret() {
     if (!isBlank(process.env.JWT_SECRET)) {
         return process.env.JWT_SECRET;
     }
-
-    if (process.env.NODE_ENV === 'test') {
-        return TEST_JWT_FALLBACK;
-    }
-
-    throw new Error('JWT_SECRET is required');
+    throw new EnvValidationError('Missing required environment variables', ['JWT_SECRET']);
 }
 
 export function getVapidSubject() {

@@ -1,5 +1,5 @@
 import { logError, logSuccess } from '../utils/logger.js';
-import { transactionWithRLS } from '../utils/rls.js';
+import { queryWithRLS, transactionWithRLS } from '../utils/rls.js';
 import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { syncGamification } from '../utils/gamificationCore.js';
@@ -7,7 +7,6 @@ import { NotificationService } from '../utils/appNotificationService.js';
 import { isValidUuid } from '../utils/validation.js';
 import { sanitizeCommentContent } from '../utils/sanitize.js';
 import { auditLog, AuditAction, ActorType } from '../services/auditService.js';
-import supabase from '../config/supabase.js';
 import { extractMentions } from '../utils/mentions.js';
 import { AppError, ValidationError, NotFoundError } from '../utils/AppError.js';
 import { ErrorCodes } from '../utils/errorCodes.js';
@@ -30,16 +29,20 @@ export async function createComment(req, res, next) {
         try {
             const verificationPromises = [
                 ensureAnonymousUser(anonymousId),
-                supabase.from('reports').select('id').eq('id', req.body.report_id).maybeSingle()
+                queryWithRLS(
+                    anonymousId,
+                    'SELECT id FROM reports WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+                    [req.body.report_id]
+                )
             ];
 
             if (hasParentId) {
                 verificationPromises.push(
-                    supabase.from('comments')
-                        .select('id, report_id')
-                        .eq('id', req.body.parent_id)
-                        .is('deleted_at', null)
-                        .maybeSingle()
+                    queryWithRLS(
+                        anonymousId,
+                        'SELECT id, report_id FROM comments WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+                        [req.body.parent_id]
+                    )
                 );
             }
 
@@ -54,22 +57,16 @@ export async function createComment(req, res, next) {
             const visibilityResult = hasParentId ? results[3] : results[2];
 
             // Handle Report Check Result
-            if (reportResult.error) {
-                throw reportResult.error;
-            }
-            if (!reportResult.data) {
+            if (reportResult.rows.length === 0) {
                 return res.status(404).json({ error: 'Report not found' });
             }
 
             // Handle Parent Check Result
             if (hasParentId) {
-                if (parentResult.error) {
-                    throw parentResult.error;
-                }
-                if (!parentResult.data) {
+                if (parentResult.rows.length === 0) {
                     throw new NotFoundError('Parent comment not found');
                 }
-                if (parentResult.data.report_id !== req.body.report_id) {
+                if (parentResult.rows[0].report_id !== req.body.report_id) {
                     throw new AppError('Parent comment must belong to the same report', 400, ErrorCodes.BAD_REQUEST, true);
                 }
             }

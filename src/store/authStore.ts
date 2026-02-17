@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { sessionAuthority, SessionState, type UserMetadata } from '../engine/session/SessionAuthority';
-import { realtimeOrchestrator } from '@/lib/realtime/RealtimeOrchestrator';
+import { forceLogout } from '@/lib/auth/forceLogout';
 
 /**
  * Auth Store v3 - UI State Only
@@ -66,9 +66,8 @@ export const useAuthStore = create<AuthState>()((set) => ({
     },
 
     logout: () => {
-        // Stop realtime channels before session state transition to avoid 401 reconnect loops.
-        realtimeOrchestrator.clear();
-        sessionAuthority.logout();
+        // Local-first logout: clear identity/session state before any remote side effect.
+        forceLogout('MANUAL_LOGOUT', { redirectToLogin: false });
         
         set({
             isAuthenticated: false,

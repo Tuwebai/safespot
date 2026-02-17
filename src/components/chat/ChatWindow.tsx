@@ -14,9 +14,10 @@ import {
     useRetryMessageMutation
 } from '../../hooks/queries/useChatsQuery';
 import useLongPress from '../../hooks/useLongPress';
+import { useChatApi } from '../../hooks/useChatApi';
 
 
-import { ChatRoom, ChatMessage, chatsApi } from '../../lib/api';
+import type { ChatRoom, ChatMessage } from '../../lib/api';
 import { getAvatarUrl, getAvatarFallback } from '../../lib/avatar';
 import { useAnonymousId } from '../../hooks/useAnonymousId';
 import { isOwnMessage } from '../../lib/chatHelpers';
@@ -465,6 +466,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
     const [selectedMessageForActions, setSelectedMessageForActions] = useState<ChatMessage | null>(null);
     const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+    const chatApi = useChatApi();
 
     // 🏛️ FEATURE: Estado de búsqueda de mensajes (modal externo)
     const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -726,7 +728,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     useEffect(() => {
         const hasText = message.trim().length > 0;
         if (hasText !== lastTypingStatus.current) {
-            chatsApi.notifyTyping(room.id, hasText);
+            chatApi.notifyTyping(room.id, hasText);
             lastTypingStatus.current = hasText;
         }
     }, [message, room.id]);
@@ -734,7 +736,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
     useEffect(() => {
         return () => {
             if (lastTypingStatus.current) {
-                chatsApi.notifyTyping(room.id, false);
+                chatApi.notifyTyping(room.id, false);
             }
         };
     }, [room.id]);
@@ -789,9 +791,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
         try {
             if (messageId) {
-                await chatsApi.pinMessage(room.id, messageId);
+                await chatApi.pinMessage(room.id, messageId);
             } else if (room.pinned_message_id) {
-                await chatsApi.unpinMessage(room.id, room.pinned_message_id);
+                await chatApi.unpinMessage(room.id, room.pinned_message_id);
             }
 
             // 3. Broadcast to other tabs
@@ -825,9 +827,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
 
         try {
             if (msg.is_starred) {
-                await chatsApi.unstarMessage(room.id, msg.id);
+                await chatApi.unstarMessage(room.id, msg.id);
             } else {
-                await chatsApi.starMessage(room.id, msg.id);
+                await chatApi.starMessage(room.id, msg.id);
             }
         } catch (err) {
             console.error('[Chat] Star toggle failed:', err);
@@ -882,7 +884,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ room, onBack }) => {
                 setPreviewUrl(null);
 
                 try {
-                    await chatsApi.editMessage(room.id, messageId, contentToSend);
+                    await chatApi.editMessage(room.id, messageId, contentToSend);
                 } catch (err) {
                     console.error('Error editando mensaje:', err);
                     // Rollback (se rehydrata del server via SSE)

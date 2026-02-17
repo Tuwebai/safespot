@@ -8,7 +8,7 @@ import { Search, MessageSquare, ArrowLeft, Camera, Plus, Archive } from 'lucide-
 
 import { useChatRooms, useConversation, useUserPresence } from '../hooks/queries/useChatsQuery';
 import { useAnonymousId } from '../hooks/useAnonymousId';
-import { ChatRoom, chatsApi } from '../lib/api';
+import type { ChatRoom } from '../lib/api';
 import { getAvatarUrl, getAvatarFallback } from '../lib/avatar';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -24,6 +24,7 @@ import { ChevronDown, Pin } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 // 🔴 CRITICAL FIX: Auth guard for chat creation
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { useChatApi } from '@/hooks/useChatApi';
 
 interface ChatRoomItemProps {
     room: ChatRoom;
@@ -147,6 +148,7 @@ const Mensajes: React.FC = () => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const { data: rooms, isLoading } = useChatRooms();
+    const chatApi = useChatApi();
     const anonymousId = useAnonymousId();
     const [searchTerm, setSearchTerm] = useState('');
     const { checkAuth } = useAuthGuard(); // 🔴 CRITICAL FIX: Auth guard
@@ -247,7 +249,7 @@ const Mensajes: React.FC = () => {
                 }
 
                 try {
-                    const newRoom = await chatsApi.createRoom({ recipientId: startChatUserId });
+                    const newRoom = await chatApi.createRoom({ recipientId: startChatUserId });
                     // Invalidate to refresh sidebar
                     queryClient.invalidateQueries({ queryKey: ['chats', 'rooms'] });
                     navigate(`/mensajes/${newRoom.id}`, { replace: true });
@@ -270,7 +272,7 @@ const Mensajes: React.FC = () => {
             if (!checkAuth()) {
                 throw new Error('AUTH_REQUIRED');
             }
-            return chatsApi.createRoom({ recipientId });
+            return chatApi.createRoom({ recipientId });
         },
         onSuccess: (newRoom) => {
             if (anonymousId) {

@@ -7,7 +7,6 @@ import { ensureAnonymousUser } from '../utils/anonymousUser.js';
 import { syncGamification } from '../utils/gamificationCore.js';
 import { queryWithRLS } from '../utils/rls.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
-import supabase from '../config/supabase.js';
 import { voteLimiter } from '../utils/rateLimiter.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { executeUserAction } from '../utils/governance.js';
@@ -47,21 +46,13 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
     // Verify target exists using Supabase
     if (report_id) {
       logSuccess('Verifying report exists', { reportId: report_id });
-      const { data: reportCheck, error: reportError } = await supabase
-        .from('reports')
-        .select('id')
-        .eq('id', report_id)
-        .maybeSingle();
+      const reportCheck = await queryWithRLS(
+        anonymousId,
+        'SELECT id FROM reports WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+        [report_id]
+      );
 
-      if (reportError) {
-        logError(reportError, req);
-        return res.status(500).json({
-          error: 'Failed to verify report',
-          message: reportError.message
-        });
-      }
-
-      if (!reportCheck) {
+      if (reportCheck.rows.length === 0) {
         return res.status(404).json({
           error: 'Report not found'
         });
@@ -70,21 +61,13 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
 
     if (comment_id) {
       logSuccess('Verifying comment exists', { commentId: comment_id });
-      const { data: commentCheck, error: commentError } = await supabase
-        .from('comments')
-        .select('id')
-        .eq('id', comment_id)
-        .maybeSingle();
+      const commentCheck = await queryWithRLS(
+        anonymousId,
+        'SELECT id FROM comments WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+        [comment_id]
+      );
 
-      if (commentError) {
-        logError(commentError, req);
-        return res.status(500).json({
-          error: 'Failed to verify comment',
-          message: commentError.message
-        });
-      }
-
-      if (!commentCheck) {
+      if (commentCheck.rows.length === 0) {
         return res.status(404).json({
           error: 'Comment not found'
         });
@@ -138,24 +121,24 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
     // Get the owner of the report/comment that received the vote
     let ownerId = null;
     if (report_id) {
-      const { data: report } = await supabase
-        .from('reports')
-        .select('anonymous_id')
-        .eq('id', report_id)
-        .single();
+      const reportOwnerResult = await queryWithRLS(
+        anonymousId,
+        'SELECT anonymous_id FROM reports WHERE id = $1 LIMIT 1',
+        [report_id]
+      );
 
-      if (report && report.anonymous_id) {
-        ownerId = report.anonymous_id;
+      if (reportOwnerResult.rows[0]?.anonymous_id) {
+        ownerId = reportOwnerResult.rows[0].anonymous_id;
       }
     } else if (comment_id) {
-      const { data: comment } = await supabase
-        .from('comments')
-        .select('anonymous_id')
-        .eq('id', comment_id)
-        .single();
+      const commentOwnerResult = await queryWithRLS(
+        anonymousId,
+        'SELECT anonymous_id FROM comments WHERE id = $1 LIMIT 1',
+        [comment_id]
+      );
 
-      if (comment && comment.anonymous_id) {
-        ownerId = comment.anonymous_id;
+      if (commentOwnerResult.rows[0]?.anonymous_id) {
+        ownerId = commentOwnerResult.rows[0].anonymous_id;
       }
     }
 
@@ -227,7 +210,12 @@ router.post('/', requireAnonymousId, validate(voteSchema), voteLimiter, async (r
       // REALTIME: Broadcast updated count
       const clientId = req.headers['x-client-id'];
       if (report_id) {
-        const { data: report } = await supabase.from('reports').select('category, status').eq('id', report_id).single();
+        const reportMetaResult = await queryWithRLS(
+          anonymousId,
+          'SELECT category, status FROM reports WHERE id = $1 LIMIT 1',
+          [report_id]
+        );
+        const report = reportMetaResult.rows[0];
         realtimeEvents.emitLikeUpdate(report_id, updatedCount, report?.category, report?.status, clientId);
       } else {
         realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);
@@ -344,7 +332,12 @@ router.delete('/', voteLimiter, requireAnonymousId, async (req, res) => {
       // REALTIME: Broadcast updated count
       const clientId = req.headers['x-client-id'];
       if (report_id) {
-        const { data: report } = await supabase.from('reports').select('category, status').eq('id', report_id).single();
+        const reportMetaResult = await queryWithRLS(
+          anonymousId,
+          'SELECT category, status FROM reports WHERE id = $1 LIMIT 1',
+          [report_id]
+        );
+        const report = reportMetaResult.rows[0];
         realtimeEvents.emitLikeUpdate(report_id, updatedCount, report?.category, report?.status, clientId);
       } else {
         realtimeEvents.emitVoteUpdate('comment', comment_id, { upvotes_count: updatedCount }, clientId);

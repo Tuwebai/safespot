@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { Mail, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { API_BASE_URL } from '../../lib/api';
+import { useAuthApi } from '../../hooks/useAuthApi';
 import { getAnonymousId } from '../../lib/identity';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
@@ -34,23 +34,13 @@ export function AuthForm({
     const [success, setSuccess] = useState<string | null>(null);
 
     const { loginSuccess } = useAuthStore();
+    const authApi = useAuthApi();
 
     const handleGoogleLogin = useGoogleLogin({
         onSuccess: async (response) => {
             setIsLoading(true);
             try {
-                // Call our backend
-                const backendRes = await fetch(`${API_BASE_URL}/auth/google`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        google_access_token: response.access_token,
-                        current_anonymous_id: getAnonymousId()
-                    })
-                });
-
-                const data = await backendRes.json();
-                if (!backendRes.ok) throw new Error(data.error || 'Error con Google');
+                const data = await authApi.googleLogin(response.access_token, getAnonymousId());
 
                 // Success
                 localStorage.setItem('safespot_auth_swapped', 'true');
@@ -83,35 +73,19 @@ export function AuthForm({
         setSuccess(null);
 
         try {
-            let endpoint = '';
-            let payload: any = {};
+            let data: any;
 
             if (mode === 'login') {
-                endpoint = '/auth/login';
-                payload = { email, password };
+                data = await authApi.login(email, password);
             } else if (mode === 'register') {
-                endpoint = '/auth/register';
-                payload = { email, password, current_anonymous_id: getAnonymousId() };
+                data = await authApi.register(email, password, getAnonymousId());
             } else if (mode === 'forgot-password') {
-                endpoint = '/auth/forgot-password';
-                payload = { email };
-            }
-
-            const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Ocurrió un error inesperado');
+                data = await authApi.forgotPassword(email);
             }
 
             // SUCCESS HANDLERS
             if (mode === 'forgot-password') {
-                setSuccess('Si el correo existe, recibirás un enlace de recuperación en breve.');
+                setSuccess('Si el correo existe, recibirÃ¡s un enlace de recuperaciÃ³n en breve.');
                 setIsLoading(false);
             } else {
                 // Identity Swap Success -> Set flag for Toast after reload
@@ -120,7 +94,7 @@ export function AuthForm({
                 if (mode === 'register') {
                     setSuccess('Cuenta creada. Ingresando...');
                 } else {
-                    setSuccess('Sesión iniciada. Ingresando...');
+                    setSuccess('SesiÃ³n iniciada. Ingresando...');
                 }
 
                 // Small delay to let user see "Ingresando..."
@@ -128,7 +102,7 @@ export function AuthForm({
                     try {
                         await performLogin(data);
                     } catch (err: any) {
-                        setError(getHumanError(err?.message || 'Ocurrió un error al iniciar sesión.'));
+                        setError(getHumanError(err?.message || 'OcurriÃ³ un error al iniciar sesiÃ³n.'));
                         setIsLoading(false);
                     }
                 }, 800);
@@ -343,3 +317,4 @@ export function AuthForm({
         handleGoogleLogin();
     }
 }
+

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
-import { API_BASE_URL } from '../lib/api';
+import { useAuthApi } from '../hooks/useAuthApi';
 
 export default function ResetPassword() {
     const [searchParams] = useSearchParams();
@@ -17,6 +17,7 @@ export default function ResetPassword() {
 
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
+    const authApi = useAuthApi();
 
     useEffect(() => {
         if (!token) {
@@ -44,17 +45,10 @@ export default function ResetPassword() {
         setMessage('');
 
         try {
-            const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token, email, newPassword: password })
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Error al restablecer contraseña');
+            if (!token) {
+                throw new Error('Enlace invÃ¡lido o expirado.');
             }
+            await authApi.resetPassword(token, email, password);
 
             setStatus('success');
             setMessage('¡Contraseña restablecida correctamente!');

@@ -12,7 +12,6 @@ import { executeUserAction } from '../utils/governance.js';
 import { realtimeEvents } from '../utils/eventEmitter.js';
 import { checkContentVisibility } from '../utils/trustScore.js';
 import { reverseGeocode } from '../utils/georef.js';
-import pool from '../config/database.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { NotificationService as AppNotificationService } from '../utils/appNotificationService.js';
 import { NotificationService } from '../utils/notificationService.js';
@@ -93,7 +92,7 @@ export async function createReport(req, res, _next) {
     
     if (idempotencyKey && typeof idempotencyKey === 'string' && idempotencyKey.length > 0) {
       // Check if this idempotency key was already used (within last 60 minutes)
-      const idempotencyCheck = await pool.query(`
+      const idempotencyCheck = await queryWithRLS(anonymousId, `
         SELECT id, title, created_at FROM reports 
         WHERE idempotency_key = $1 AND anonymous_id = $2 
         AND created_at >= NOW() - INTERVAL '60 minutes'

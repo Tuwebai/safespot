@@ -11,6 +11,7 @@ import { reportSchema, Comment } from '../schemas';
 import { transformComment, type RawComment } from '../adapters';
 import { getAvatarUrl } from '../avatar';
 import { upsertInList } from '@/lib/realtime-utils';
+import { forceLogout } from '@/lib/auth/forceLogout';
 // NOTIFICATIONS_QUERY_KEY dinámico - debe incluir anonymousId para consistencia
 const getNotificationsQueryKey = (anonymousId: string | null): string[] => 
     anonymousId ? ['notifications', 'list', anonymousId] : ['notifications', 'list'];
@@ -153,6 +154,11 @@ class RealtimeOrchestrator {
     // 🛡️ MEM-ROOT-001: Flag para prevenir inicialización múltiple
     private isInitialized = false;
 
+    private hasValidAuthToken(): boolean {
+        const jwt = sessionAuthority.getToken()?.jwt;
+        return typeof jwt === 'string' && jwt.length > 0;
+    }
+
     constructor() {
         // 🛡️ MEM-ROOT-001: SSE Safety Guard
         // Prevent multiple instances during HMR or component remounts
@@ -202,16 +208,21 @@ class RealtimeOrchestrator {
      * connect() - Subscribes to ssePool and starts orchestration
      */
     async connect(userId: string): Promise<void> {
+        if (!this.hasValidAuthToken()) {
+            this.clear();
+            return;
+        }
+
         this.userId = userId;
         // EventSource cannot send Authorization headers, so JWT goes in query for realtime endpoints.
         const anonymousId = sessionAuthority.getAnonymousId() || userId;
-        const jwt = sessionAuthority.getToken()?.jwt;
-        const authQuery = jwt ? `&token=${encodeURIComponent(jwt)}` : '';
+        const jwt = sessionAuthority.getToken()?.jwt!;
+        const authQuery = `&token=${encodeURIComponent(jwt)}`;
         const userUrl = `${API_BASE_URL}/realtime/user/${userId}?anonymousId=${anonymousId}${authQuery}`;
         const feedUrl = `${API_BASE_URL}/realtime/feed?anonymousId=${anonymousId}${authQuery}`;
 
         // 1. User Stream (Domain Events: Chats, Notifications, Presence) - requires JWT
-        if (jwt && !this.activeSubscriptions.includes(userUrl)) {
+        if (!this.activeSubscriptions.includes(userUrl)) {
             ssePool.subscribe(userUrl, 'message', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'message.delivered', (event) => this.processRawEvent(event, 'user'));
             ssePool.subscribe(userUrl, 'message.read', (event) => this.processRawEvent(event, 'user'));
@@ -811,22 +822,29 @@ class RealtimeOrchestrator {
      */
     async resync(): Promise<void> {
         if (!this.userId) return;
-        const jwt = sessionAuthority.getToken()?.jwt;
-        if (!jwt) return;
+        if (!this.hasValidAuthToken()) {
+            this.clear();
+            return;
+        }
+        const jwt = sessionAuthority.getToken()?.jwt!;
 
         const lastAt = await localProcessedLog.getLastProcessedAt(this.userId, 'user');
         console.debug(`[Orchestrator] 🚑 Starting Resync from cursor: ${lastAt}`);
 
         try {
             const anonymousId = sessionAuthority.getAnonymousId() || this.userId;
-            const authQuery = jwt ? `&token=${encodeURIComponent(jwt)}` : '';
+            const authQuery = `&token=${encodeURIComponent(jwt)}`;
             const resp = await fetch(`${API_BASE_URL}/realtime/catchup?since=${lastAt}&anonymousId=${anonymousId}${authQuery}`, {
-                headers: jwt ? { Authorization: `Bearer ${jwt}` } : undefined
+                headers: { Authorization: `Bearer ${jwt}` }
             });
 
             if (!resp.ok) {
                 if (resp.status === 404) {
                     console.warn('[Orchestrator] ⚠️ Catchup API not found (404). Backend might be outdated.');
+                }
+                if (resp.status === 401 && this.hasValidAuthToken()) {
+                    forceLogout('SESSION_EXPIRED');
+                    this.clear();
                 }
                 throw new Error(`CATCHUP_HTTP_${resp.status}`);
             }
@@ -879,6 +897,10 @@ class RealtimeOrchestrator {
 
     wake(reason: string): void {
         console.debug(`[Orchestrator] ⏰ Waking up: ${reason}`);
+        if (!this.hasValidAuthToken()) {
+            this.clear();
+            return;
+        }
         this.resync(); // Always resync on wake
     }
 

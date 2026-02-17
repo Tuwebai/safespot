@@ -17,7 +17,7 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
 **Scale-Ready alto (cercano a Enterprise-Grade en backend crítico)**.
 
 ### Top 5 riesgos críticos
-1. **Gestión de secretos sin evidencia de vault/rotación** (`server/.env:1`): credenciales sensibles presentes en archivo local de entorno. Riesgo operativo alto si el host o backups quedan expuestos.
+1. **Gestión de secretos en entornos desplegados**: secretos críticos ya gestionados en servicios correspondientes (Render/Netlify) y `.env` reservado para desarrollo local. Fire-drill de rotación en staging validado (`2026-02-17`, `GO` en `docs/observability/secrets-rotation-evidence-log.md`). **[CORREGIDO]**
 2. **Canales realtime con autorización incompleta** (`server/src/routes/realtime.js:470`, `server/src/routes/realtime.js:608`, `server/src/routes/realtime.js:312`): posible lectura no autorizada de eventos/estados de terceros. **[CORREGIDO]**
 3. **Catchup con fuga de metadatos globales** (`server/src/routes/realtime.js:88`): `comment-delete` no filtra por membresía/visibilidad. **[CORREGIDO]**
 4. **Módulos de dominio aún grandes con alto acoplamiento** (`server/src/routes/chats.mutations.js`, `server/src/routes/comments.mutations.js`): eleva riesgo de regresiones por cambios locales. En `reports` y `comments` el riesgo bajó tras extracción de mutaciones.
@@ -46,7 +46,9 @@ El proyecto está en estado **Scale-Ready sólido**: tiene controles transaccion
 - **Debilidad**: capa de transporte, dominio y persistencia están mezcladas en archivos gigantes:
   - `server/src/routes/reports.js` (127 líneas, router/wiring)
   - `server/src/routes/reports.mutations.js` (855 líneas, mutaciones de dominio)
-  - `server/src/routes/reports.reads.js` (753 líneas, lecturas extraídas)
+  - `server/src/routes/reports.reads.js` (607 líneas, feed/listado)
+  - `server/src/routes/reports.reads.detail.js` (66 líneas, detalle)
+  - `server/src/routes/reports.reads.related.js` (101 líneas, related)
   - `server/src/routes/chats.js` (201 líneas, router puro / wiring)
   - `server/src/routes/chats.mutations.js` (1134 líneas, lógica de mutaciones)
   - `server/src/routes/chats.reads.js` (228 líneas, lecturas de chat extraídas)
@@ -277,9 +279,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
 ## 6️⃣ Seguridad
 
 ### Riesgos reales
-- Secretos sensibles en `.env` local/servidor sin evidencia en este repo de gestión centralizada (vault/KMS) ni política explícita de rotación.
+- Uso de `.env` limitado a desarrollo local; secretos críticos operativos en servicios desplegados (Render/Netlify) con política/evidencia de rotación activa. **[CORREGIDO]**
 - Endpoints realtime con control de autorización incompleto.
-- Hardening de `JWT_SECRET` aplicado (sin fallback inseguro fuera de `test`); pendiente consolidar rotación operativa continua.
+- Hardening de `JWT_SECRET` aplicado (sin fallback inseguro fuera de `test`); rotación operativa validada en staging (`2026-02-17`, `GO`) y pendiente sostener cadencia continua.
 - Endpoint de `message-status` sin verificación de membresía.
 
 ### Superficie de ataque
@@ -350,13 +352,13 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 | Tarea | Impacto | Esfuerzo | Riesgo | Prioridad real |
 |---|---|---|---|---|
-| Formalizar gestión de secretos (vault/KMS) y rotación; evitar secretos estáticos de larga vida en `.env` de servidor | Muy Alto | Medio | Alto | P0 |
-| Cerrar AuthZ de realtime (`/user/:id`, `/chats/:roomId`, `/message-status`, `/catchup`) | Muy Alto | Medio | Alto | P0 |
-| Eliminar fallback de `JWT_SECRET` y endurecer startup checks | Alto | Bajo | Medio | P0 |
-| Unificar persistencia por caso de uso (sin mezclar `supabase` + `pool` + `queryWithRLS`) | Alto | Alto | Medio | P1 |
+| Gestión operativa de secretos en servicios desplegados + rotación evidenciada (`secrets-rotation-policy`/`evidence-log`) | **CERRADO** | N/A | Bajo | DONE |
+| AuthZ realtime (`/user/:id`, `/chats/:roomId`, `/message-status`, `/catchup`) revalidado con matriz de seguridad y tests de no-fuga | **CERRADO** | N/A | Bajo | DONE |
+| Eliminar fallback de `JWT_SECRET` y endurecer startup checks (runtime + harness de tests) | **CERRADO** | N/A | Bajo | DONE |
+| Unificar persistencia por caso de uso (sin mezclar `supabase` + `pool` + `queryWithRLS`) | **CERRADO** | Alto | Medio | DONE |
 | Reducir tamaño de handlers (extraer servicios de dominio) | Alto | Alto | Medio | P1 |
-| Estandarizar manejo de errores (4xx/5xx) en auth y rutas críticas | Alto | Medio | Bajo | P1 |
-| Reestructurar `src/lib/api.ts` en módulos de dominio + hooks exclusivos | Medio | Medio | Bajo | P1 |
+| Estandarizar manejo de errores (4xx/5xx) en auth y rutas críticas | **CERRADO** | Medio | Bajo | DONE |
+| Reestructurar `src/lib/api.ts` en módulos de dominio + hooks exclusivos | Medio | Medio | Bajo | P1 (EN PROGRESO - FACADE PURO, CLEANUP PENDIENTE) |
 | Mover imports eager de contenido a lazy chunks | Medio | Bajo | Bajo | P2 |
 | Eliminar acceso API directo en componentes/páginas; dejar solo hooks/services | Medio | Medio | Bajo | P2 |
 | Implementar outbox para eventos post-commit (SSE/push/notificaciones) | Muy Alto | Alto | Medio | P2 |
@@ -519,6 +521,8 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
   - Evidencia de pruebas:
     - `tests/security/env-validation.test.js` (2/2 verde).
     - `npx tsc --noEmit` (server) en verde.
+  - Fire-drill operativo de rotación ejecutado en staging (`2026-02-17`) con resultado `GO`:
+    - evidencia registrada en `docs/observability/secrets-rotation-evidence-log.md` (`CHG-2026-02-17-DRILL-POST`).
 - Runbook operativo enterprise:
   - `docs/observability/runbook-incidentes-metricas.md`.
   - `docs/observability/secrets-rotation-policy.md`.
@@ -883,7 +887,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 ### Post Semana 3 - P1 Reports (Extraccion Lectura Related Lote R1) (DONE)
 
 #### Scope cerrado en este lote
-- Se extrajo `GET /api/reports/:id/related` a `server/src/routes/reports.reads.js` como `getRelatedReports`.
+- Se extrajo `GET /api/reports/:id/related` a `server/src/routes/reports.reads.related.js` como `getRelatedReports`.
 - `server/src/routes/reports.js` mantiene la misma ruta (`router.get('/:id/related', getRelatedReports)`), sin cambios de middleware ni contrato.
 - Sin cambios en mutaciones, schema ni contratos API.
 
@@ -905,7 +909,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 ### Post Semana 3 - P1 Reports (Extraccion Lectura Detail Lote R2) (DONE)
 
 #### Scope cerrado en este lote
-- Se extrajo `GET /api/reports/:id` a `server/src/routes/reports.reads.js` como `getReportById`.
+- Se extrajo `GET /api/reports/:id` a `server/src/routes/reports.reads.detail.js` como `getReportById`.
 - `server/src/routes/reports.js` mantiene la misma ruta (`router.get('/:id', getReportById)`), sin cambios de middleware ni contrato.
 - Sin cambios en mutaciones, schema ni contratos API.
 
@@ -946,6 +950,77 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/tests/security/report-flag-transaction.test.js` -> **2/2 PASS**.
 - `server/tests/security/report-patch-transaction.test.js` -> **3/3 PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (Hardening Interno Feed sin Split Estructural) (DONE)
+
+#### Scope cerrado en este lote
+- Sin nuevas rutas ni cambios de contratos.
+- Sin nuevas capas ni movimiento de wiring del router.
+- Solo extracción de helpers internos dentro de `server/src/routes/reports.reads.js` para aislar lógica de consulta:
+  - parseo de `limit`
+  - construcción de filtros geo/cronológico
+  - `ORDER BY` por estrategia de sort
+  - normalización de filas del feed
+
+#### Contrato preservado
+- Se mantiene exactamente la semántica de `GET /api/reports` (bounds, geo y cronológico).
+- Sin cambios en status codes, shape JSON, ni parámetros soportados.
+
+#### Evidencia de validación
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
+- `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Reports (CREATE idempotency pre-check unificado a RLS) (DONE)
+
+#### Scope cerrado en este lote
+- Endpoint: `POST /api/reports`.
+- Cambio quirurgico: se elimina `pool.query` en pre-check de idempotencia y se unifica a `queryWithRLS` (mismo flujo, mismo contrato).
+- Sin cambios de rutas, schema, DTOs ni side-effects post-commit.
+
+#### Riesgo real cerrado
+- Se reduce mezcla de driver/persistencia en el mismo caso de uso (`pool` + `queryWithRLS` + `transactionWithRLS`).
+- Se mantiene el write-path bajo `transactionWithRLS` y el comportamiento idempotente original.
+
+#### Contrato preservado
+- Primera llamada con `idempotency_key` valida: `201` + `{ success, data, message }`.
+- Reintento con misma key: `200` + `{ success, data, idempotent: true }`.
+- Sin cambios en shape/status de `PATCH`, `favorite`, `like`, `flag`.
+
+#### Evidencia de validacion
+- `server/tests/security/reports-contract-shape.test.js` -> **7/7 PASS**.
+- `server/tests/security/reports-identity-source.test.js` -> **2/2 PASS**.
+- `server/tests/security/report-favorite-transaction.test.js` -> **3/3 PASS**.
+- `server/tests/security/report-like-transaction.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+- `root`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Persistencia Unificada por Caso de Uso (Cierre Scope Producto) (DONE)
+
+#### Alcance cerrado (sin cambio de contrato)
+- `POST /api/comments` (`server/src/routes/comments.create.js`):
+  - pre-check de `report` y `parent` migrado de `supabase.from(...)` a `queryWithRLS(...)`.
+  - insert sigue en `transactionWithRLS` (write-path y side-effects preservados).
+- `POST /api/votes` y `DELETE /api/votes` (`server/src/routes/votes.js`):
+  - verificaciones de existencia/owner/meta migradas de `supabase.from(...)` a `queryWithRLS(...)`.
+  - mutacion permanece bajo `executeUserAction` (semantica idempotente/contrato intacta).
+
+#### Riesgo real cerrado
+- Se elimina mezcla de drivers de DB (`supabase` + `queryWithRLS`) dentro del mismo caso de uso en rutas de producto.
+- Persistencia queda consistente con pipeline SQL/RLS en los endpoints intervenidos.
+
+#### Contrato preservado
+- Sin cambios de rutas, status codes esperados ni shape JSON en `comments`/`votes`.
+- Sin cambios de schema ni side-effects post-commit existentes.
+
+#### Evidencia de validacion
+- `server/tests/security/comment-pin-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-like-transaction.test.js` -> **4/4 PASS**.
+- `server/tests/security/comment-flag-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-edit-transaction.test.js` -> **2/2 PASS**.
+- `server/tests/security/comment-delete-idempotency.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+- `root`: `npx tsc --noEmit` -> **PASS**.
 
 ### Estado Actual Consolidado (Post cierre bloque reports)
 
@@ -1754,6 +1829,58 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `cd server && npx tsc --noEmit` -> **PASS**.
 - `server`: `npx tsc --noEmit` -> **PASS**.
 
+### Post Semana 3 - P0 Realtime (AuthZ revalidacion enterprise) (DONE)
+
+- Alcance auditado y revalidado:
+  - `GET /api/realtime/catchup`
+  - `GET /api/realtime/message-status/:messageId`
+  - `GET /api/realtime/chats/:roomId`
+  - `GET /api/realtime/user/:anonymousId`
+- Estado:
+  - sin bypass confirmado en runtime (auth required + membership/ownership checks activos),
+  - no-fuga de estado en `message-status` para no miembro/no owner (respuesta funcional `200 { delivered:false, read:false }`).
+- Evidencia agregada:
+  - nueva suite `server/tests/security/realtime-authz-hardening.test.js` (casos explícitos de `NOT_ROOM_MEMBER` y no-fuga `message-status`).
+
+**Gate**
+- `server/tests/security/realtime-authz-hardening.test.js` -> **2/2 PASS**.
+- `server/tests/security/realtime-authz.test.js` -> **6/6 PASS**.
+- `server/tests/security/realtime-catchup-delivery-consistency.test.js` -> **2/2 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P1 Error Contract Auth/Realtime (Revalidacion Operativa) (DONE)
+
+- Alcance:
+  - sin cambios de codigo en rutas; cierre por evidencia de contrato estandar en runtime.
+  - cobertura validada en `auth` y `realtime` para respuestas 400/401/403 esperadas.
+- Evidencia:
+  - `server/tests/security/auth-error-contract.test.js` -> **3/3 PASS**.
+  - `server/tests/security/realtime-authz.test.js` -> **6/6 PASS**.
+  - `server/tests/security/realtime-authz-hardening.test.js` -> **2/2 PASS**.
+  - `server`: `npx tsc --noEmit` -> **PASS**.
+
+### Post Semana 3 - P0 JWT Secret (Sin fallback + startup checks endurecidos) (DONE)
+
+- Root cause confirmado:
+  - fallback de `JWT_SECRET` permitido en `test` desde `server/src/utils/env.js` y uso de secretos por defecto en pruebas de seguridad.
+- Ajuste aplicado:
+  - `server/src/utils/env.js`: `getJwtSecret()` ahora exige `process.env.JWT_SECRET` sin excepciones por entorno.
+  - `server/vitest.config.js`: setup de tests normalizado a `../tests/setup.ts`.
+  - `tests/setup.ts`: inyección explícita de `JWT_SECRET` solo para entorno de pruebas.
+  - tests de seguridad actualizados para eliminar `|| <secret>` y fallar explícitamente si no existe `JWT_SECRET` de test:
+    - `server/tests/security/realtime-authz.test.js`
+    - `server/tests/security/realtime-catchup-delivery-consistency.test.js`
+    - `server/tests/security/realtime-authz-hardening.test.js`
+    - `server/tests/security/chat-membership.test.js`
+
+**Gate**
+- `server/tests/security/env-validation.test.js` -> **4/4 PASS**.
+- `server/tests/security/realtime-authz.test.js` -> **6/6 PASS**.
+- `server/tests/security/realtime-authz-hardening.test.js` -> **2/2 PASS**.
+- `server/tests/security/realtime-catchup-delivery-consistency.test.js` -> **2/2 PASS**.
+- `server/tests/security/chat-membership.test.js` -> **11/11 PASS**.
+- `server`: `npx tsc --noEmit` -> **PASS**.
+
 ### Post Semana 3 - P2 Frontend (Boundary API en Notificaciones) (DONE)
 
 - Alcance:
@@ -1772,6 +1899,130 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 **Gate**
 - `npx tsc --noEmit` (root) -> **PASS**.
 
+### Post Semana 3 - P1 Frontend API Modular (Lote 1: Client/Types/Domains con Barrel Compatible) (DONE)
+
+- Alcance (sin cambio funcional):
+  - se agregan modulos internos:
+    - `src/lib/api/client.ts`
+    - `src/lib/api/types.ts`
+    - `src/lib/api/domains/*` (reports/comments/votes/users/notifications/chats/geocode/user-zones/gamification/favorites/seo + `index.ts`)
+  - `src/lib/api.ts` se mantiene como barrel principal compatible (sin cambios de contratos ni imports existentes).
+- Riesgo real mitigado:
+  - se habilita migracion progresiva por dominio sin blast radius ni breaking changes.
+  - se prepara base para eliminar imports runtime en UI en lote posterior (boundary fix).
+
+**Gate**
+- `npx vitest run src/lib/cache-helpers.report-like.test.ts src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **20/20 PASS**.
+- `npx tsc --noEmit` (root) -> **PASS**.
+
+### Post Semana 3 - P1 Frontend API Modular (Lote 2: Implementacion real por dominios low-risk con facade estable) (DONE)
+
+- Alcance (sin cambio funcional ni contratos):
+  - implementacion movida desde `src/lib/api.ts` a modulos de dominio:
+    - `src/lib/api/domains/geocode.ts`
+    - `src/lib/api/domains/user-zones.ts`
+    - `src/lib/api/domains/gamification.ts`
+    - `src/lib/api/domains/favorites.ts`
+    - `src/lib/api/domains/seo.ts`
+  - `src/lib/api.ts` mantiene facade/export publico estable (`geocodeApi`, `userZonesApi`, `gamificationApi`, `favoritesApi`, `seoApi`) via factories.
+- Riesgo controlado:
+  - se extrae solo bloque low-risk para evitar refactor masivo.
+  - imports existentes del proyecto permanecen intactos (compatibilidad total).
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/cache-helpers.report-like.test.ts src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **20/20 PASS**.
+
+### Post Semana 3 - P1 Frontend Boundary UI (Sin imports runtime directos a lib/api en pages/components) (DONE)
+
+- Alcance (quirurgico, sin cambio de contrato):
+  - se encapsularon llamadas de auth en hook dedicado:
+    - `src/hooks/useAuthApi.ts`
+  - se encapsularon llamadas runtime de chat en hook dedicado:
+    - `src/hooks/useChatApi.ts`
+  - se eliminaron imports runtime de `lib/api` en UI critica:
+    - `src/components/auth/AuthForm.tsx`
+    - `src/components/auth/ChangePasswordModal.tsx`
+    - `src/pages/ResetPassword.tsx`
+    - `src/components/chat/ChatWindow.tsx`
+    - `src/pages/Mensajes.tsx`
+  - en UI solo quedan imports `type` desde `lib/api`.
+- Riesgo real cerrado:
+  - se remueve bypass de boundary de capa de datos en pages/components.
+  - estabilidad preservada (mismos endpoints/shape/status, sin cambios de contrato publico).
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/cache-helpers.report-like.test.ts src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **20/20 PASS**.
+
+### Post Semana 3 - P1 Frontend API (Facade puro en `src/lib/api.ts` + `api/index.ts`) (DONE)
+
+- Alcance (sin cambio funcional):
+  - `src/lib/api.ts` queda como barrel/facade puro (solo reexport).
+  - implementacion se consolida en `src/lib/api/index.ts`.
+  - `src/lib/api/client.ts` queda apuntando a `./index` para evitar depender del facade legacy.
+- Contrato preservado:
+  - imports existentes `@/lib/api` siguen funcionando sin cambios.
+  - sin cambios de endpoints, payloads ni status codes.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/cache-helpers.report-like.test.ts src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **20/20 PASS**.
+
+### Post Semana 3 - P1 UX/Auth (401 Session Expired Local-First + Realtime Teardown) (DONE)
+
+- Alcance (quirurgico, sin cambio de contrato API/schema):
+  - `apiRequest` fuerza cierre de sesion ante `401` con sesion autenticada activa (`SESSION_EXPIRED`), cleanup local-first e invalidacion de retries.
+  - logout centralizado via helper (`src/lib/auth/forceLogout.ts`) con:
+    - limpieza de sesion/token local,
+    - clear de trafico y cancelacion de queries activas,
+    - evento `safespot:force-logout`,
+    - redireccion a `/login` sin loops.
+  - `RealtimeOrchestrator` corta reconexion/catchup/feed sin token valido y, en `401` de catchup, fuerza teardown de sesion.
+  - `logout` manual queda local-first en `authStore` (independiente de request remoto).
+- Riesgo real cerrado:
+  - post-rotacion de `JWT_SECRET`, la app deja de quedar trabada en 401 storm.
+  - no requiere borrar `localStorage` manual para recuperar UX.
+
+**Gate**
+- `npx vitest run src/lib/auth/session-expired-flow.test.ts` -> **2/2 PASS**.
+- `npx tsc --noEmit` (root) -> **PASS**.
+
+### Post Semana 3 - P1 UX Follow (Optimistic 0ms en Seguir/Dejar de Seguir) (DONE)
+
+- Root cause confirmado:
+  - `useFollowMutation` solo invalidaba cache en `onSuccess`; la UI esperaba roundtrip/refetch para reflejar `is_following`.
+  - `UserCard` cambiaba estado local recien en `onSuccess`.
+- Fix quirurgico aplicado:
+  - `src/hooks/mutations/useFollowMutation.ts`:
+    - `onMutate` con optimistic patch inmediato de cache (`publicProfile`, listas followers/following/suggestions y `user.profile.following_count`),
+    - rollback en `onError`,
+    - `onSettled` mantiene invalidacion como red de seguridad.
+  - `src/components/comunidad/UserCard.tsx`:
+    - flip local inmediato del boton en click,
+    - rollback local ante error,
+    - sync defensivo con prop `user.is_following`.
+- Resultado:
+  - feedback visual inmediato (0ms perceptual) en follow/unfollow sin esperar respuesta de red.
+  - contratos API y schema intactos.
+
+**Gate**
+- `npx tsc --noEmit` (root) -> **PASS**.
+- `npx vitest run src/lib/realtime-utils.test.ts src/lib/ssePool.test.ts` -> **19/19 PASS**.
+
+### Proximo Lote - Dead Exports Cleanup (`api/index.ts`) (PROXIMAMENTE)
+
+- Objetivo:
+  - eliminar exports sin consumers y reducir superficie publica innecesaria.
+- Alcance propuesto:
+  - inventario final de exports usados vs no usados en `src/lib/api/index.ts`.
+  - deprecacion controlada en 2 pasos:
+    1) marcar/no exponer exports muertos en `api/index.ts`,
+    2) retirar codigo muerto en lote separado tras verificacion de `tsc` + smoke.
+- Guardrails:
+  - mantener compat en `src/lib/api.ts` durante toda la transicion.
+  - cero cambios de contrato runtime.
+
 ---
 
 ## 🔟 Score Final
@@ -1789,7 +2040,7 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 
 ### Recomendación estratégica
 - **Tocar primero**:
-  1. Reducir acoplamiento en `chats` (modularización interna de `chats.mutations.js`) manteniendo contratos actuales.
+  1. **PROXIMAMENTE**: Reducir acoplamiento en `chats` (modularización interna de `chats.mutations.js`) manteniendo contratos actuales.
   2. Mantener hardening operativo de secretos (rotación continua, evidencia periódica y drill de recuperación).
   3. Normalizar reconciliación realtime/frontend en dominios no cerrados para evitar drift de estado en cache.
 - **No tocar ahora**:
@@ -1816,6 +2067,8 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `server/src/routes/reports.js`
 - `server/src/routes/reports.mutations.js`
 - `server/src/routes/reports.reads.js`
+- `server/src/routes/reports.reads.detail.js`
+- `server/src/routes/reports.reads.related.js`
 - `server/src/routes/chats.js`
 - `server/src/routes/chats.mutations.js`
 - `server/src/routes/chats.reads.js`
@@ -1825,5 +2078,12 @@ Nota: `roomId` sera eliminado en una futura Fase 4 cuando no existan consumidore
 - `src/pages/NotificationsPage.tsx`
 - `src/pages/Mensajes.tsx`
 - `src/hooks/useGlobalRealtime.ts`
-
-
+- `src/lib/api.ts`
+- `src/lib/api/client.ts`
+- `src/lib/api/types.ts`
+- `src/lib/api/domains/index.ts`
+- `src/lib/api/domains/geocode.ts`
+- `src/lib/api/domains/user-zones.ts`
+- `src/lib/api/domains/gamification.ts`
+- `src/lib/api/domains/favorites.ts`
+- `src/lib/api/domains/seo.ts`

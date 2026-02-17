@@ -1,11 +1,10 @@
 import { createPortal } from 'react-dom';
 import React, { useState } from 'react';
-import { sessionAuthority } from '@/engine/session/SessionAuthority';
 import { X, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { API_BASE_URL } from '../../lib/api';
 import { getOverlayZIndex } from '@/config/z-index';
 import { useScrollLock } from '@/hooks/useScrollLock';
 import { useKeyPress } from '@/hooks/useKeyPress';
+import { useAuthApi } from '@/hooks/useAuthApi';
 
 interface ChangePasswordModalProps {
     isOpen: boolean;
@@ -29,6 +28,7 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const authApi = useAuthApi();
 
     // 🏛️ ENTERPRISE: Bloquear scroll cuando está abierto
     useScrollLock(isOpen);
@@ -57,26 +57,7 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
         }
 
         try {
-            // ✅ SSOT: Obtener JWT de SessionAuthority
-            const jwt = sessionAuthority.getToken()?.jwt;
-            if (!jwt) {
-                throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
-            }
-            
-            const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${jwt}`
-                },
-                body: JSON.stringify({ currentPassword, newPassword })
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Ocurrió un error inesperado');
-            }
+            await authApi.changePassword(currentPassword, newPassword);
 
             setSuccess('Contraseña actualizada con éxito');
             setCurrentPassword('');
